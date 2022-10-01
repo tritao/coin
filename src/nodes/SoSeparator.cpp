@@ -657,7 +657,7 @@ SoSeparator::GLRenderBelowPath(SoGLRenderAction * action)
   SbBool didcull = FALSE;
 
   SoGLCacheList * createcache = NULL;
-  if ((this->renderCaching.getValue() != OFF) &&
+  if ((this->renderCaching.getValue() != OFF && sogl_compatibility_profile(state)) &&
       (SoSeparator::getNumRenderCaches() > 0)) {
 
     // test if bbox is outside view-volume

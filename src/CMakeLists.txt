@@ -47,6 +47,8 @@ set(SUBDIRS
   vrml97 foreignfiles scxml soscxml
 )
 
+add_compile_definitions(GL_COMPAT=1)
+
 foreach(_subdir ${SUBDIRS})
   add_subdirectory(${_subdir})
 endforeach()
