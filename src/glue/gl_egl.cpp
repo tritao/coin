@@ -163,7 +163,7 @@ static EGLDisplay
 eglglue_get_display(void)
 {
   if (eglglue_display == EGL_NO_DISPLAY) {
-      eglglue_display = eglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR, EGL_DEFAULT_DISPLAY, NULL);
+      eglglue_display = eglGetPlatformDisplay(EGL_PLATFORM_X11_EXT, EGL_DEFAULT_DISPLAY, NULL);
       if (eglglue_display == EGL_NO_DISPLAY) {
         cc_debugerror_post("eglglue_get_display",
                            "Display not found.");
