@@ -2326,8 +2326,8 @@ cc_glglue_instance(int contextid)
       if (env) gi->nvidia_color_per_face_bug = 0;
     }
 
-    gi->rendererstr = (const char *)glGetString(GL_RENDERER);
-    gi->extensionsstr = (const char *)glGetString(GL_EXTENSIONS);
+    if (gi->version.major < 3)
+      gi->rendererstr = (const char *)glGetString(GL_RENDERER);
 
     /* Randall O'Reilly reports that the above call is deprecated from OpenGL 3.0
        onwards and may, particularly on some Linux systems, return NULL.
@@ -2378,9 +2378,22 @@ cc_glglue_instance(int contextid)
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &gltmp);
     gi->max_texture_size = gltmp;
 
+#ifdef GL_COMPAT
+  if (cc_glglue_glprofile_compat(gi))
+  {
     glGetIntegerv(GL_MAX_LIGHTS, &gltmp);
     gi->max_lights = (int) gltmp;
+  }
+  else {
+#endif
+      // Let's assume a max of 8 lights for core profiles.
+    gi->max_lights = 8;
+#ifdef GL_COMPAT
+  }
+#endif
 
+#ifdef GL_COMPAT
+    if (cc_glglue_glprofile_compat(gi))
     {
       GLfloat vals[2];
       glGetFloatv(GL_POINT_SIZE_RANGE, vals);
@@ -2400,6 +2413,10 @@ cc_glglue_instance(int contextid)
       gi->point_size_range[0] = vals[0];
       gi->point_size_range[1] = vals[1];
     }
+#endif
+
+#ifdef GL_COMPAT
+    if (cc_glglue_glprofile_compat(gi))
     {
       GLfloat vals[2];
       glGetFloatv(GL_LINE_WIDTH_RANGE, vals);
@@ -2416,6 +2433,7 @@ cc_glglue_instance(int contextid)
       gi->line_width_range[0] = vals[0];
       gi->line_width_range[1] = vals[1];
     }
+#endif
 
     if (coin_glglue_debug()) {
       cc_debugerror_postinfo("cc_glglue_instance",
@@ -3172,6 +3190,11 @@ cc_glglue_glGetCompressedTexImage(const cc_glglue * glue,
                                 level,
                                 img);
 }
+
+
+
+
+
 
 SbBool
 cc_glglue_has_paletted_textures(const cc_glglue * glue)
@@ -5058,39 +5081,77 @@ GLint coin_glglue_get_internal_texture_format(const cc_glglue * glw,
                                               SbBool compress)
 {
   GLenum format;
-  if (compress) {
-    switch (numcomponents) {
-    case 1:
-      format = GL_COMPRESSED_LUMINANCE_ARB;
-      break;
-    case 2:
-      format = GL_COMPRESSED_LUMINANCE_ALPHA_ARB;
-      break;
-    case 3:
-      format = GL_COMPRESSED_RGB_ARB;
-      break;
-    case 4:
-    default:
-      format = GL_COMPRESSED_RGBA_ARB;
-      break;
+#ifdef GL_COMPAT
+  if (cc_glglue_glprofile_compat(glw)) {
+    if (compress) {
+      switch (numcomponents) {
+      case 1:
+        format = GL_COMPRESSED_LUMINANCE_ARB;
+        break;
+      case 2:
+        format = GL_COMPRESSED_LUMINANCE_ALPHA_ARB;
+        break;
+      case 3:
+        format = GL_COMPRESSED_RGB_ARB;
+        break;
+      case 4:
+      default:
+        format = GL_COMPRESSED_RGBA_ARB;
+        break;
+      }
+    } else {
+      SbBool usenewenums = glglue_allow_newer_opengl(glw) && cc_glglue_glversion_matches_at_least(glw,1,1,0);
+      switch (numcomponents) {
+      case 1:
+        format = usenewenums ? GL_LUMINANCE8 : GL_LUMINANCE;
+        break;
+      case 2:
+        format = usenewenums ? GL_LUMINANCE8_ALPHA8 : GL_LUMINANCE_ALPHA;
+        break;
+      case 3:
+        format = usenewenums ? GL_RGB8 : GL_RGB;
+        break;
+      case 4:
+      default:
+        format = usenewenums ? GL_RGBA8 : GL_RGBA;
+        break;
+      }
     }
-  }
-  else {
-    SbBool usenewenums = glglue_allow_newer_opengl(glw) && cc_glglue_glversion_matches_at_least(glw,1,1,0);
-    switch (numcomponents) {
-    case 1:
-      format = usenewenums ? GL_LUMINANCE8 : GL_LUMINANCE;
-      break;
-    case 2:
-      format = usenewenums ? GL_LUMINANCE8_ALPHA8 : GL_LUMINANCE_ALPHA;
-      break;
-    case 3:
-      format = usenewenums ? GL_RGB8 : GL_RGB;
-      break;
-    case 4:
-    default:
-      format = usenewenums ? GL_RGBA8 : GL_RGBA;
-      break;
+  } else
+#endif
+ {
+    if (compress) {
+      switch (numcomponents) {
+      case 1:
+        format = GL_COMPRESSED_RED;
+        break;
+      case 2:
+        format = GL_COMPRESSED_RG;
+        break;
+      case 3:
+        format = GL_COMPRESSED_RGB;
+        break;
+      case 4:
+      default:
+        format = GL_COMPRESSED_RGBA;
+        break;
+      }
+    } else {
+      switch (numcomponents) {
+      case 1:
+        format = GL_RED;
+        break;
+      case 2:
+        format = GL_RG;
+        break;
+      case 3:
+        format = GL_RGB;
+        break;
+      case 4:
+      default:
+        format = GL_RGBA;
+        break;
+      }
     }
   }
   return format;
@@ -5102,21 +5163,42 @@ GLint coin_glglue_get_internal_texture_format(const cc_glglue * glw,
 */
 GLenum coin_glglue_get_texture_format(const cc_glglue * COIN_UNUSED_ARG(glw), int numcomponents)
 {
-  GLenum format;
-  switch (numcomponents) {
-  case 1:
-    format = GL_LUMINANCE;
-    break;
-  case 2:
-    format = GL_LUMINANCE_ALPHA;
-    break;
-  case 3:
-    format = GL_RGB;
-    break;
-  case 4:
-  default:
-    format = GL_RGBA;
-    break;
+    GLenum format;
+#ifdef GL_COMPAT
+  if (cc_glglue_glprofile_compat(glw)) {
+    switch (numcomponents) {
+    case 1:
+      format = GL_LUMINANCE;
+      break;
+    case 2:
+      format = GL_LUMINANCE_ALPHA;
+      break;
+    case 3:
+      format = GL_RGB;
+      break;
+    case 4:
+    default:
+      format = GL_RGBA;
+      break;
+    }
+  } else
+#endif
+  {
+    switch (numcomponents) {
+    case 1:
+      format = GL_RED;
+      break;
+    case 2:
+      format = GL_RG;
+      break;
+    case 3:
+      format = GL_RGB;
+      break;
+    case 4:
+    default:
+      format = GL_RGBA;
+      break;
+    }
   }
   return format;
 }

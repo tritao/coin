@@ -1081,10 +1081,15 @@ SoGLRenderAction::beginTraversal(SoNode * node)
   if (PRIVATE(this)->needglinit) {
     PRIVATE(this)->needglinit = FALSE;
 
-    // we are always using GL_COLOR_MATERIAL in Coin
-    glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);
-    glEnable(GL_COLOR_MATERIAL);
-    glEnable(GL_NORMALIZE);
+#ifdef GL_COMPAT
+    if (sogl_compatibility_profile(this->state))
+    {
+      // we are always using GL_COLOR_MATERIAL in Coin
+      glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);
+      glEnable(GL_COLOR_MATERIAL);
+      glEnable(GL_NORMALIZE);
+    }
+#endif
 
     // initialize the depth function to the default Coin/Inventor
     // value.  SoGLDepthBufferElement doesn't check for this, it just
@@ -1095,12 +1100,22 @@ SoGLRenderAction::beginTraversal(SoNode * node)
     glDepthFunc(GL_LEQUAL);
 
     if (PRIVATE(this)->smoothing) {
+#ifdef GL_COMPAT
+    if (sogl_compatibility_profile(this->state))
+    {
       glEnable(GL_POINT_SMOOTH);
       glEnable(GL_LINE_SMOOTH);
     }
+#endif
+    }
     else {
-      glDisable(GL_POINT_SMOOTH);
-      glDisable(GL_LINE_SMOOTH);
+#ifdef GL_COMPAT
+      if (sogl_compatibility_profile(this->state))
+      {
+        glDisable(GL_POINT_SMOOTH);
+        glDisable(GL_LINE_SMOOTH);
+      }
+#endif
     }
   }
 

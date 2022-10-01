@@ -111,7 +111,12 @@ SoGLLightIdElement::pop(SoState * state,
   int prevdata = ((SoGLLightIdElement*)prevTopElement)->data;
   // disable used light sources
   while (idx <= prevdata) {
-    glDisable((GLenum)((int32_t)GL_LIGHT0 + idx));
+#if GL_COMPAT
+    if (sogl_compatibility_profile(state))
+    {
+      glDisable((GLenum)((int32_t)GL_LIGHT0 + idx));
+    }
+#endif
     idx++;
   }
 }
@@ -155,8 +160,12 @@ SoGLLightIdElement::increment(SoState * const state,
 #endif
       return -1;
     }
-    glEnable((GLenum)((int32_t)GL_LIGHT0 + element->data));
-
+#ifdef GL_COMPAT
+    if (sogl_compatibility_profile(state))
+    {
+      glEnable((GLenum)((int32_t)GL_LIGHT0 + element->data));
+    }
+#endif
     return element->data;
   }
   return -1;

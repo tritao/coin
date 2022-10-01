@@ -76,6 +76,7 @@
 #include "coindefs.h"
 #include "tidbitsp.h"
 #include "misc/AudioTools.h"
+#include "rendering/SoGL.h"
 #include "coindefs.h"
 
 #if BOOST_WORKAROUND(COIN_MSVC, <= COIN_MSVC_6_0_VERSION)
@@ -708,10 +709,15 @@ SoRenderManager::actuallyRender(SoGLRenderAction * action,
   if (clearzbuffer) mask |= GL_DEPTH_BUFFER_BIT;
 
   if (initmatrices) {
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
+#ifdef GL_COMPAT
+    if (sogl_compatibility_profile(action->getState()))
+    {
+      glMatrixMode(GL_PROJECTION);
+      glLoadIdentity();
+      glMatrixMode(GL_MODELVIEW);
+      glLoadIdentity();
+    }
+#endif
   }
 
   // If there have been changes in the scene graph leading to a node

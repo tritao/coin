@@ -107,6 +107,7 @@
 #include <Inventor/system/gl.h>
 
 #include "nodes/SoSubNodeP.h"
+#include "rendering/SoGL.h"
 
 // *************************************************************************
 
@@ -176,13 +177,23 @@ SoDirectionalLight::GLRender(SoGLRenderAction * action)
   
   SbColor4f lightcolor(0.0f, 0.0f, 0.0f, 1.0f);
   // disable ambient contribution from this light source
-  glLightfv(light, GL_AMBIENT, lightcolor.getValue()); 
-  
+#ifdef GL_COMPAT
+  if (sogl_compatibility_profile(state))
+  {
+    glLightfv(light, GL_AMBIENT, lightcolor.getValue());
+  }
+#endif
+
   lightcolor.setRGB(this->color.getValue());
   lightcolor *= this->intensity.getValue();
 
-  glLightfv(light, GL_DIFFUSE, lightcolor.getValue());
-  glLightfv(light, GL_SPECULAR, lightcolor.getValue());
+#ifdef GL_COMPAT
+  if (sogl_compatibility_profile(state))
+  {
+    glLightfv(light, GL_DIFFUSE, lightcolor.getValue());
+    glLightfv(light, GL_SPECULAR, lightcolor.getValue());
+  }
+#endif
 
   // GL directional light is specified towards light source
   SbVec3f dir = - this->direction.getValue();
@@ -192,15 +203,21 @@ SoDirectionalLight::GLRender(SoGLRenderAction * action)
                               "Direction is a null vector.");
 #endif // COIN_DEBUG
   }
+
   // directional when w = 0.0
   SbVec4f dirvec(dir[0], dir[1], dir[2], 0.0f);
-  glLightfv(light, GL_POSITION, dirvec.getValue());
+#ifdef GL_COMPAT
+  if (sogl_compatibility_profile(state))
+  {
+    glLightfv(light, GL_POSITION, dirvec.getValue());
 
-  glLightf(light, GL_SPOT_EXPONENT, 0.0);
-  glLightf(light, GL_SPOT_CUTOFF, 180.0);
-  glLightf(light, GL_CONSTANT_ATTENUATION, 1);
-  glLightf(light, GL_LINEAR_ATTENUATION, 0);
-  glLightf(light, GL_QUADRATIC_ATTENUATION, 0);
+    glLightf(light, GL_SPOT_EXPONENT, 0.0);
+    glLightf(light, GL_SPOT_CUTOFF, 180.0);
+    glLightf(light, GL_CONSTANT_ATTENUATION, 1);
+    glLightf(light, GL_LINEAR_ATTENUATION, 0);
+    glLightf(light, GL_QUADRATIC_ATTENUATION, 0);
+  }
+#endif
 }
 
 // *************************************************************************
