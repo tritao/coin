@@ -239,7 +239,7 @@ if(WIN32)
   )
 elseif(APPLE)
   if(COIN_BUILD_MAC_FRAMEWORK)
-    # Set the framework target properties just to make sure the relevant links inside the framework 
+    # Set the framework target properties just to make sure the relevant links inside the framework
     # are created.  Because the default framework name differs from the project name we change the
     # output name property.
     set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -318,17 +318,17 @@ if(COIN_BUILD_MAC_FRAMEWORK)
 # ############################################################################
 
   if(COIN_BUILD_DOCUMENTATION)
-    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD 
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${PROJECT_NAME}>/Documentation
       COMMAND ${CMAKE_COMMAND} -E create_symlink ./Versions/Current/Documentation $<TARGET_FILE_DIR:${PROJECT_NAME}>/../../Documentation
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/html $<TARGET_FILE_DIR:${PROJECT_NAME}>/Documentation/html)
     if(COIN_BUILD_DOCUMENTATION_QTHELP)
-      add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD 
+      add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E remove $<TARGET_FILE_DIR:${PROJECT_NAME}>/Documentation/html/${PROJECT_NAME}-${PROJECT_VERSION_MAJOR}.qch
         COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/html/${PROJECT_NAME}-${PROJECT_VERSION_MAJOR}.qch $<TARGET_FILE_DIR:${PROJECT_NAME}>/Documentation)
     endif()
     if(COIN_BUILD_DOCUMENTATION_MAN)
-      add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD 
+      add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/man/man3 $<TARGET_FILE_DIR:${PROJECT_NAME}>/Documentation/man)
     endif()
   endif()
@@ -337,7 +337,7 @@ if(COIN_BUILD_MAC_FRAMEWORK)
 # Add framework links
 # ############################################################################
 
-  add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD 
+  add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${PROJECT_NAME}>/Libraries
     COMMAND ${CMAKE_COMMAND} -E create_symlink ./Versions/Current/Libraries $<TARGET_FILE_DIR:${PROJECT_NAME}>/../../Libraries
     COMMAND ${CMAKE_COMMAND} -E create_symlink ../${COIN_MAC_FRAMEWORK_NAME} $<TARGET_FILE_DIR:${PROJECT_NAME}>/Libraries/${CMAKE_SHARED_LIBRARY_PREFIX}${PROJECT_NAME}${COIN_SO_VERSION}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}${CMAKE_SHARED_LIBRARY_SUFFIX}
@@ -377,7 +377,7 @@ if(COIN_INSTALL)
 # ############################################################################
 
   install(DIRECTORY ${PROJECT_SOURCE_DIR}/data/ DESTINATION ${CMAKE_INSTALL_DATADIR} COMPONENT development FILES_MATCHING PATTERN [cep]*.xml PATTERN *.iv PATTERN *.glsl)
-  
+
 # ############################################################################
 # Install target
 # ############################################################################
