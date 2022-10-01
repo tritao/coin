@@ -304,6 +304,7 @@
 #include <Inventor/elements/SoGLLazyElement.h> // internal element
 #include <Inventor/misc/SoState.h>
 #include <Inventor/lists/SoTypeList.h>
+#include <Inventor/system/renderer.h>
 
 #include "elements/SoTextureScalePolicyElement.h" // internal element
 #include "elements/SoTextureScaleQualityElement.h" // internal  element
@@ -379,11 +380,19 @@ SoElement::initElements(void)
 {
   SoAccumulatedElement::initClass();
   SoClipPlaneElement::initClass();
-  SoGLClipPlaneElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLClipPlaneElement::initClass();
+  }
+#endif
   SoLightElement::initClass();
   SoModelMatrixElement::initClass();
   SoBBoxModelMatrixElement::initClass();
-  SoGLModelMatrixElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLModelMatrixElement::initClass();
+  }
+#endif
   SoProfileElement::initClass();
   SoCacheElement::initClass();
   SoInt32Element::initClass();
@@ -393,10 +402,18 @@ SoElement::initElements(void)
   SoComplexityTypeElement::initClass();
   SoDecimationTypeElement::initClass();
   SoDrawStyleElement::initClass();
-  SoGLDrawStyleElement::initClass();
-  SoGLLightIdElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLDrawStyleElement::initClass();
+    SoGLLightIdElement::initClass();
+  }
+#endif
   SoLinePatternElement::initClass();
-  SoGLLinePatternElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLLinePatternElement::initClass();
+  }
+#endif
   SoMaterialBindingElement::initClass();
   SoNormalBindingElement::initClass();
   SoPickStyleElement::initClass();
@@ -411,41 +428,86 @@ SoElement::initElements(void)
   SoFocalDistanceElement::initClass();
   SoFontSizeElement::initClass();
   SoLineWidthElement::initClass();
-  SoGLLineWidthElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLLineWidthElement::initClass();
+  }
+#endif
   SoPointSizeElement::initClass();
-  SoGLPointSizeElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLPointSizeElement::initClass();
+  }
+#endif
   SoTextureQualityElement::initClass();
-  SoGLRenderPassElement::initClass();
-  SoGLUpdateAreaElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLRenderPassElement::initClass();
+    SoGLUpdateAreaElement::initClass();
+  }
+#endif
   SoLocalBBoxMatrixElement::initClass();
   SoOverrideElement::initClass();
   SoTextureOverrideElement::initClass();
   SoPickRayElement::initClass();
   SoReplacedElement::initClass();
   SoCoordinateElement::initClass();
-  SoGLCoordinateElement::initClass();
-  SoGLColorIndexElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLCoordinateElement::initClass();
+    SoGLColorIndexElement::initClass();
+  }
+#endif
+
   SoEnvironmentElement::initClass();
-  SoGLEnvironmentElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLEnvironmentElement::initClass();
+  }
+#endif
   SoFontNameElement::initClass();
   SoLightAttenuationElement::initClass();
   SoNormalElement::initClass();
-  SoGLNormalElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLNormalElement::initClass();
+  }
+#endif
+
   SoPolygonOffsetElement::initClass();
-  SoGLPolygonOffsetElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLPolygonOffsetElement::initClass();
+  }
+#endif
   SoProjectionMatrixElement::initClass();
-  SoGLProjectionMatrixElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLProjectionMatrixElement::initClass();
+  }
+#endif
   SoProfileCoordinateElement::initClass();
   SoViewingMatrixElement::initClass();
-  SoGLViewingMatrixElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLViewingMatrixElement::initClass();
+  }
+#endif
   SoViewVolumeElement::initClass();
   SoShapeHintsElement::initClass();
-  SoGLShapeHintsElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLShapeHintsElement::initClass();
+  }
+#endif
   SoShapeStyleElement::initClass();
   SoViewportRegionElement::initClass();
-  SoGLViewportRegionElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLViewportRegionElement::initClass();
+  }
+#endif
   SoWindowElement::initClass();
-
   SoTransparencyElement::initClass();
   SoAmbientColorElement::initClass();
   SoDiffuseColorElement::initClass();
@@ -455,9 +517,17 @@ SoElement::initElements(void)
   SoSpecularColorElement::initClass();
 
   SoLazyElement::initClass();
-  SoGLLazyElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLLazyElement::initClass();
+  }
+#endif
   SoCullElement::initClass();
-  SoGLCacheContextElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLCacheContextElement::initClass();
+  }
+#endif
 
   SoTextureScalePolicyElement::initClass();
   SoTextureScaleQualityElement::initClass();
@@ -475,10 +545,14 @@ SoElement::initElements(void)
   SoMultiTextureImageElement::initClass();
   SoMultiTextureEnabledElement::initClass();
   SoMultiTextureMatrixElement::initClass();
-  SoGLMultiTextureCoordinateElement::initClass();
-  SoGLMultiTextureImageElement::initClass();
-  SoGLMultiTextureEnabledElement::initClass();
-  SoGLMultiTextureMatrixElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLMultiTextureCoordinateElement::initClass();
+    SoGLMultiTextureImageElement::initClass();
+    SoGLMultiTextureEnabledElement::initClass();
+    SoGLMultiTextureMatrixElement::initClass();
+  }
+#endif
 
   SoBumpMapElement::initClass();
   SoBumpMapCoordinateElement::initClass();
@@ -487,13 +561,24 @@ SoElement::initElements(void)
   SoTextureCombineElement::initClass();
   SoCacheHintElement::initClass();
 
-  SoGLVBOElement::initClass();
-
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLVBOElement::initClass();
+  }
+#endif
   SoDepthBufferElement::initClass();
-  SoGLDepthBufferElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLDepthBufferElement::initClass();
+  }
+#endif
 
   SoVertexAttributeElement::initClass();
-  SoGLVertexAttributeElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLVertexAttributeElement::initClass();
+  }
+#endif
   SoVertexAttributeBindingElement::initClass();
 }
 

@@ -192,6 +192,7 @@
 #include <Inventor/elements/SoGLShaderProgramElement.h>
 #include <Inventor/C/tidbits.h>
 #include <Inventor/errors/SoDebugError.h>
+#include <Inventor/system/renderer.h>
 
 #include "glue/cg.h"
 #include "misc/SbHash.h"
@@ -199,6 +200,9 @@
 
 // *************************************************************************
 
+#include <data/shaders/base/Unlit_vertex.h>
+#include <data/shaders/base/Unlit_fragment.h>
+#include <data/shaders/images/Image.h>
 #include <data/shaders/lights/SpotLight.h>
 #include <data/shaders/lights/PointLight.h>
 #include <data/shaders/lights/DirectionalLight.h>
@@ -239,8 +243,13 @@ SoShader::init(void)
   (void)cc_cgglue_available();
 
   // --- initialization of elements (must be done first) ---------------
-  if (SoGLShaderProgramElement::getClassTypeId() == SoType::badType())
-    SoGLShaderProgramElement::initClass();
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    if (SoGLShaderProgramElement::getClassTypeId() == SoType::badType())
+      SoGLShaderProgramElement::initClass();
+  }
+#endif
+
 
   // --- initialization of shader nodes --------------------------------
   if (SoShaderProgram::getClassTypeId() == SoType::badType())
@@ -389,9 +398,16 @@ SoShader::getNamedScript(const SbName & name, const Type type)
 void
 SoShader::setupBuiltinShaders(void)
 {
-  shader_builtin_dict->put(SbName("lights/PointLight").getString(), (char*) POINTLIGHT_shadersource);
-  shader_builtin_dict->put(SbName("lights/SpotLight").getString(), (char*) SPOTLIGHT_shadersource);
-  shader_builtin_dict->put(SbName("lights/DirectionalLight").getString(), (char*) DIRECTIONALLIGHT_shadersource);
-  shader_builtin_dict->put(SbName("lights/DirSpotLight").getString(), (char*) DIRSPOTLIGHT_shadersource);
-  shader_builtin_dict->put(SbName("vsm/VsmLookup").getString(), (char*) VSMLOOKUP_shadersource);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    shader_builtin_dict->put(SbName("base/Unlit.vert").getString(), (char*) UNLIT_VERTEX_shadersource);
+    shader_builtin_dict->put(SbName("base/Unlit.frag").getString(), (char*) UNLIT_FRAGMENT_shadersource);
+    shader_builtin_dict->put(SbName("images/Image").getString(), (char*) IMAGE_shadersource);
+    shader_builtin_dict->put(SbName("lights/PointLight").getString(), (char*) POINTLIGHT_shadersource);
+    shader_builtin_dict->put(SbName("lights/SpotLight").getString(), (char*) SPOTLIGHT_shadersource);
+    shader_builtin_dict->put(SbName("lights/DirectionalLight").getString(), (char*) DIRECTIONALLIGHT_shadersource);
+    shader_builtin_dict->put(SbName("lights/DirSpotLight").getString(), (char*) DIRSPOTLIGHT_shadersource);
+    shader_builtin_dict->put(SbName("vsm/VsmLookup").getString(), (char*) VSMLOOKUP_shadersource);
+  }
+#endif
 }

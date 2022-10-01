@@ -33,6 +33,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
+#include "Inventor/C/basic.h"
 #include <Inventor/elements/SoLinePatternElement.h>
 
 class COIN_DLL_API SoGLLinePatternElement : public SoLinePatternElement {
@@ -56,7 +57,9 @@ protected:
 
 private:
   void updategl();
-
+#if defined(COIN_GL_COMPATIBILITY)
+  SbBool hasGLCompatibilityProfile;
+#endif
 };
 
 #endif // !COIN_SOGLLINEPATTERNELEMENT_H

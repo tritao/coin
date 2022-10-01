@@ -49,7 +49,7 @@ public:
   enum Type {
     ARB_SHADER,
     CG_SHADER,
-    GLSL_SHADER
+    GLSL_SHADER,
   };
 
   static const char * getNamedScript(const SbName & name, const Type type);

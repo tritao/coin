@@ -6,6 +6,7 @@ set(COIN_RENDERING_FILES
 	SoGLImage.cpp
 	SoGLCubeMapImage.cpp
 	SoGLNurbs.cpp
+	SoRenderer.cpp
 	SoRenderManager.cpp
 	SoRenderManagerP.cpp
 	SoOffscreenRenderer.cpp
@@ -13,6 +14,8 @@ set(COIN_RENDERING_FILES
 	SoOffscreenGLXData.cpp
 	SoOffscreenWGLData.cpp
 	SoVBO.cpp
+	SoVertexLayout.cpp
+	SoVAO.cpp
 	SoVertexArrayIndexer.cpp
 	CoinOffscreenGLCanvas.cpp
 )
@@ -33,6 +36,10 @@ set(COIN_RENDERING_INTERNAL_FILES
 	SoOffscreenWGLData.cpp
 	SoVBO.h
 	SoVBO.cpp
+	SoVertexLayout.h
+	SoVertexLayout.cpp
+	SoVAO.h
+	SoVAO.cpp
 	SoVertexArrayIndexer.h
 	SoVertexArrayIndexer.cpp
 	CoinOffscreenGLCanvas.h

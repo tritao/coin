@@ -65,6 +65,7 @@
 #include <vector>
 
 #include <Inventor/system/gl.h>
+#include <Inventor/system/renderer.h>
 #include <Inventor/nodes/SoInfo.h>
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
@@ -87,6 +88,7 @@
 #include "coindefs.h"
 #include "tidbitsp.h"
 #include "misc/AudioTools.h"
+#include "rendering/SoGL.h"
 #include "coindefs.h"
 
 #if BOOST_WORKAROUND(COIN_MSVC, <= COIN_MSVC_6_0_VERSION)
@@ -512,8 +514,12 @@ SoRenderManager::prerendercb(void * userdata, SoGLRenderAction * action)
                          view[0], view[1], view[2], view[3]);
 #endif // debug
 
-  // clear the viewport
-  glClear(mask);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    // clear the viewport
+    glClear(mask);
+  }
+#endif
 }
 
 /*!
@@ -635,6 +641,8 @@ SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
     action->setCurPass(0, numpasses);
     this->render(action, TRUE, clearwindow, clearzbuffer);
 
+#if defined(COIN_GL_COMPATIBILITY)
+  if (sogl_compatibility_profile(action->getState())) {
     // check if we have an accumulation buffer, and render additional passes
     GLint accumbits;
     glGetIntegerv(GL_ACCUM_RED_BITS, &accumbits);
@@ -649,6 +657,9 @@ SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
       }
       glAccum(GL_RETURN, 1.0f);
     }
+  }
+#endif
+
     action->setCurPass(0, 1);
     action->setNumPasses(numpasses);
   }
@@ -725,10 +736,16 @@ SoRenderManager::actuallyRender(SoGLRenderAction * action,
   if (clearzbuffer) mask |= GL_DEPTH_BUFFER_BIT;
 
   if (initmatrices) {
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
+#if defined(COIN_USE_GL_RENDERER)
+    if (SoRenderer::isOpenGL()) {
+      if (sogl_compatibility_profile(action->getState())) {
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+      }
+    }
+#endif
   }
 
   // If there have been changes in the scene graph leading to a node
@@ -783,11 +800,25 @@ SoRenderManager::renderScene( SoGLRenderAction * action,
   if (clearmask) {
     if (clearmask & GL_COLOR_BUFFER_BIT) {
       if (PRIVATE(this)->isrgbmode) {
-        const SbColor4f bgcol = PRIVATE(this)->backgroundcolor;
-        glClearColor(bgcol[0], bgcol[1], bgcol[2], bgcol[3]);
-      }
-      else {
-        glClearIndex((GLfloat) PRIVATE(this)->backgroundindex);
+#if defined(COIN_USE_GL_RENDERER)
+        if (SoRenderer::isOpenGL()) {
+          const SbColor4f bgcol = PRIVATE(this)->backgroundcolor;
+          glClearColor(bgcol[0], bgcol[1], bgcol[2], bgcol[3]);
+        }
+#endif
+      } else {
+
+#if defined(COIN_USE_GL_RENDERER)
+        if (SoRenderer::isOpenGL()) {
+#if defined(COIN_GL_COMPATIBILITY)
+          if (sogl_compatibility_profile(action->getState())) {
+            glClearIndex((GLfloat) PRIVATE(this)->backgroundindex);
+          }
+#else
+          assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
+        }
+#endif
       }
     }
     // Registering a callback is needed since the correct GL viewport
@@ -1155,9 +1186,15 @@ SoRenderManager::initStencilBufferForInterleavedStereo(void)
     // XFree86 v4.1.0.1). Should test on other systems to see if they
     // show the same artifact.
 
+#if defined(COIN_GL_COMPATIBILITY)
+  //if (sogl_compatibility_profile(state)) {
     glRasterPos2f(0, 0);
     glDrawPixels(newsize[0], newsize[1], GL_STENCIL_INDEX, GL_BITMAP,
                  PRIVATE(this)->stereostencilmask);
+  //}
+#else
+  assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
 
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();

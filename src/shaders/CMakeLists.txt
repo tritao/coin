@@ -15,6 +15,7 @@ set(COIN_SHADERS_FILES
 	SoGLShaderParameter.cpp
 	SoGLShaderProgram.cpp
 	SoGLShaderProgramElement.cpp
+	SoGLShaderProgramElement.cpp
 	SoShaderObject.cpp
 	SoShaderParameter.cpp
 	SoShaderProgram.cpp

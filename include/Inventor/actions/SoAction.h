@@ -66,6 +66,12 @@
                           element::getClassStackIndex()); \
   } WHILE_0
 
+#define SO_ENABLE_GL(action, element) \
+  do { \
+    if (SoRenderer::isOpenGL()) { \
+      SO_ENABLE(action, element); \
+    } \
+  } WHILE_0
 
 class SoEnabledElementsList;
 class SoNode;

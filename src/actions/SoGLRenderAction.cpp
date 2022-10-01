@@ -645,15 +645,15 @@ SoGLRenderAction::initClass(void)
 
   SO_ENABLE(SoGLRenderAction, SoDecimationPercentageElement);
   SO_ENABLE(SoGLRenderAction, SoDecimationTypeElement);
-  SO_ENABLE(SoGLRenderAction, SoGLLightIdElement);
-  SO_ENABLE(SoGLRenderAction, SoGLRenderPassElement);
-  SO_ENABLE(SoGLRenderAction, SoGLUpdateAreaElement);
+  SO_ENABLE_GL(SoGLRenderAction, SoGLLightIdElement);
+  SO_ENABLE_GL(SoGLRenderAction, SoGLRenderPassElement);
+  SO_ENABLE_GL(SoGLRenderAction, SoGLUpdateAreaElement);
   SO_ENABLE(SoGLRenderAction, SoLazyElement);
   SO_ENABLE(SoGLRenderAction, SoOverrideElement);
   SO_ENABLE(SoGLRenderAction, SoTextureOverrideElement);
   SO_ENABLE(SoGLRenderAction, SoWindowElement);
-  SO_ENABLE(SoGLRenderAction, SoGLViewportRegionElement);
-  SO_ENABLE(SoGLRenderAction, SoGLCacheContextElement);
+  SO_ENABLE_GL(SoGLRenderAction, SoGLViewportRegionElement);
+  SO_ENABLE_GL(SoGLRenderAction, SoGLCacheContextElement);
 
   const char * env = coin_getenv("COIN_GLBBOX");
   if (env) {
@@ -1073,50 +1073,63 @@ SoGLRenderAction::beginTraversal(SoNode * node)
   if (COIN_GLBBOX) {
     PRIVATE(this)->bboxaction->apply(node);
   }
-  int err_before_init = GL_NO_ERROR;
 
-  if (sogl_glerror_debugging()) {
-    err_before_init = glGetError();
-  }
-  if (PRIVATE(this)->needglinit) {
-    PRIVATE(this)->needglinit = FALSE;
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    int err_before_init = GL_NO_ERROR;
 
-    // we are always using GL_COLOR_MATERIAL in Coin
-    glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);
-    glEnable(GL_COLOR_MATERIAL);
-    glEnable(GL_NORMALIZE);
-
-    // initialize the depth function to the default Coin/Inventor
-    // value.  SoGLDepthBufferElement doesn't check for this, it just
-    // assumes that the function is initialized to GL_LEQUAL, which is
-    // not correct (the OpenGL specification says the initial value is
-    // GL_LESS, but I've seen drivers that defaults to GL_LEQUAL as
-    // well).
-    glDepthFunc(GL_LEQUAL);
-
-    if (PRIVATE(this)->smoothing) {
-      glEnable(GL_POINT_SMOOTH);
-      glEnable(GL_LINE_SMOOTH);
+    if (sogl_glerror_debugging()) {
+      err_before_init = glGetError();
     }
-    else {
-      glDisable(GL_POINT_SMOOTH);
-      glDisable(GL_LINE_SMOOTH);
+    if (PRIVATE(this)->needglinit) {
+      PRIVATE(this)->needglinit = FALSE;
+
+#if defined(COIN_GL_COMPATIBILITY)
+      if (sogl_compatibility_profile(this->state)) {
+        // we are always using GL_COLOR_MATERIAL in Coin
+        glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);
+        glEnable(GL_COLOR_MATERIAL);
+        glEnable(GL_NORMALIZE);
+      }
+#endif
+
+      // initialize the depth function to the default Coin/Inventor
+      // value.  SoGLDepthBufferElement doesn't check for this, it just
+      // assumes that the function is initialized to GL_LEQUAL, which is
+      // not correct (the OpenGL specification says the initial value is
+      // GL_LESS, but I've seen drivers that defaults to GL_LEQUAL as
+      // well).
+      glDepthFunc(GL_LEQUAL);
+
+      if (PRIVATE(this)->smoothing) {
+        if (sogl_compatibility_profile(this->state)) {
+          glEnable(GL_POINT_SMOOTH);
+          glEnable(GL_LINE_SMOOTH);
+        }
+      }
+      else {
+        if (sogl_compatibility_profile(this->state)) {
+          glDisable(GL_POINT_SMOOTH);
+          glDisable(GL_LINE_SMOOTH);
+        }
+      }
+    }
+
+    int err_after_init = GL_NO_ERROR;
+
+    if (sogl_glerror_debugging()) {
+      err_after_init = glGetError();
+    }
+
+    if (COIN_DEBUG && ((err_before_init != GL_NO_ERROR) || (err_after_init != GL_NO_ERROR))) {
+      int err = (err_before_init != GL_NO_ERROR) ? err_before_init : err_after_init;
+      SoDebugError::postWarning("SoGLRenderAction::beginTraversal",
+                                "GL error %s initialization: %s",
+                                (err_before_init != GL_NO_ERROR) ? "before" : "after",
+                                coin_glerror_string(err));
     }
   }
-
-  int err_after_init = GL_NO_ERROR;
-
-  if (sogl_glerror_debugging()) {
-    err_after_init = glGetError();
-  }
-
-  if (COIN_DEBUG && ((err_before_init != GL_NO_ERROR) || (err_after_init != GL_NO_ERROR))) {
-    int err = (err_before_init != GL_NO_ERROR) ? err_before_init : err_after_init;
-    SoDebugError::postWarning("SoGLRenderAction::beginTraversal",
-                              "GL error %s initialization: %s",
-                              (err_before_init != GL_NO_ERROR) ? "before" : "after",
-                              coin_glerror_string(err));
-  }
+#endif
 
   PRIVATE(this)->render(node);
   // GL errors after rendering will be caught in SoNode::GLRenderS().
@@ -1206,7 +1219,12 @@ SbBool
 SoGLRenderAction::handleTransparency(SbBool istransparent)
 {
   SoState * thestate = this->getState();
-  const cc_glglue *glue = sogl_glue_instance(thestate);
+#if defined(COIN_USE_GL_RENDERER)
+  const cc_glglue *glue = NULL;
+  if (SoRenderer::isOpenGL()) {
+     glue = sogl_glue_instance(thestate);
+  }
+#endif
 
   SoGLRenderAction::TransparencyType transptype =
     static_cast<SoGLRenderAction::TransparencyType>(
@@ -1222,14 +1240,18 @@ SoGLRenderAction::handleTransparency(SbBool istransparent)
     PRIVATE(this)->sortedlayersblendprojectionmatrix =
       SoProjectionMatrixElement::get(thestate);
 
-    if (!SoMultiTextureEnabledElement::get(thestate, 0)) {
-      if (glue->has_arb_fragment_program && !PRIVATE(this)->usenvidiaregistercombiners) {
-        PRIVATE(this)->setupFragmentProgram();
-      }
-      else {
-        PRIVATE(this)->setupRegisterCombinersNV();
+#if defined(COIN_USE_GL_RENDERER)
+    if (SoRenderer::isOpenGL()) {
+      if (!SoMultiTextureEnabledElement::get(thestate, 0)) {
+        if (glue->has_arb_fragment_program && !PRIVATE(this)->usenvidiaregistercombiners) {
+          PRIVATE(this)->setupFragmentProgram();
+        }
+        else {
+          PRIVATE(this)->setupRegisterCombinersNV();
+        }
       }
     }
+#endif
 
     // Must always return FALSE as everything must be rendered to the
     // RGBA layers (which are blended together at the end of each
@@ -1670,8 +1692,12 @@ SoGLRenderActionP::isDirectRendering(const SoState * state) const
 {
   SbBool isdirect;
   if (this->rendering == RENDERING_UNSET) {
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
     const cc_glglue * w = sogl_glue_instance(state);
     isdirect = cc_glglue_isdirect(w);
+  }
+#endif
   }
   else {
     isdirect = this->rendering == RENDERING_SET_DIRECT;
@@ -1713,37 +1739,45 @@ SoGLRenderActionP::render(SoNode * node)
 
   SoLazyElement::setColorMaterial(state, TRUE);
 
-  SoGLUpdateAreaElement::set(state,
-                             this->updateorigin, this->updatesize);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLUpdateAreaElement::set(state,
+                              this->updateorigin, this->updatesize);
 
-  SoGLCacheContextElement::set(state, this->cachecontext,
-                               FALSE, !this->isDirectRendering(state));
-  SoGLRenderPassElement::set(state, 0);
+    SoGLCacheContextElement::set(state, this->cachecontext,
+                                FALSE, !this->isDirectRendering(state));
+    SoGLRenderPassElement::set(state, 0);
+  }
+#endif
 
   this->precblist.invokeCallbacks(static_cast<void *>(this->action));
 
-  if (this->action->getNumPasses() > 1 && this->internal_multipass) {
-    // Check if the current OpenGL context has an accumulation buffer
-    // (rendering multiple passes doesn't make much sense otherwise).
-    GLint accumbits;
-    glGetIntegerv(GL_ACCUM_RED_BITS, &accumbits);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    if (this->action->getNumPasses() > 1 && this->internal_multipass) {
+      // Check if the current OpenGL context has an accumulation buffer
+      // (rendering multiple passes doesn't make much sense otherwise).
+      GLint accumbits;
+      glGetIntegerv(GL_ACCUM_RED_BITS, &accumbits);
 
-    if (accumbits == 0) {
-      static SbBool first = TRUE;
-      if (first) {
-        SoDebugError::postWarning("SoGLRenderActionP::render",
-                                  "Multipass rendering requested,\nbut current "
-                                  "GL context has no accumulation buffer - "
-                                  "falling back to single pass\nrendering.");
-        first = FALSE;
+      if (accumbits == 0) {
+        static SbBool first = TRUE;
+        if (first) {
+          SoDebugError::postWarning("SoGLRenderActionP::render",
+                                    "Multipass rendering requested,\nbut current "
+                                    "GL context has no accumulation buffer - "
+                                    "falling back to single pass\nrendering.");
+          first = FALSE;
+        }
+        this->renderSingle(node);
+      } else {
+        this->renderMulti(node);
       }
-      this->renderSingle(node);
     } else {
-      this->renderMulti(node);
+      this->renderSingle(node);
     }
-  } else {
-    this->renderSingle(node);
   }
+#endif
 
   if (SoProfiler::isOverlayActive()) {
     if (node == this->cachedprofilingsg) {
@@ -1784,6 +1818,10 @@ SoGLRenderActionP::renderMulti(SoNode * node)
   this->currentpass = 0;
   this->renderSingle(node);
   if (this->action->hasTerminated()) return;
+
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+#if defined(COIN_GL_COMPATIBILITY)
   glAccum(GL_LOAD, fraction);
 
   for (int i = 1; i < this->numpasses; i++) {
@@ -1803,6 +1841,11 @@ SoGLRenderActionP::renderMulti(SoNode * node)
   }
   this->currentpass = storedpass;
   glAccum(GL_RETURN, 1.0f);
+#else
+  assert(0 && "Not implemented yet");
+#endif
+  }
+#endif
 }
 
 //
@@ -1814,9 +1857,13 @@ SoGLRenderActionP::renderSingle(SoNode * node)
 {
   SoState * state = this->action->getState();
 
-  SoGLRenderPassElement::set(state, this->currentpass);
-  SoGLCacheContextElement::set(state, this->cachecontext,
-                               FALSE, !this->isDirectRendering(state));
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLRenderPassElement::set(state, this->currentpass);
+    SoGLCacheContextElement::set(state, this->cachecontext,
+                                FALSE, !this->isDirectRendering(state));
+  }
+#endif
 
   assert(this->delayedpathrender == FALSE);
   assert(this->transparencyrender == FALSE);
@@ -1829,6 +1876,7 @@ SoGLRenderActionP::renderSingle(SoNode * node)
 
   // Do order independent transparency rendering
   if (this->transparencytype == SoGLRenderAction::SORTED_LAYERS_BLEND) {
+#if defined(COIN_USE_GL_RENDERER)
     GLint depthbits, alphabits;
     glGetIntegerv(GL_DEPTH_BITS, &depthbits);
     glGetIntegerv(GL_ALPHA_BITS, &alphabits);
@@ -1854,7 +1902,7 @@ SoGLRenderActionP::renderSingle(SoNode * node)
       this->transparencytype = SoGLRenderAction::SORTED_OBJECT_BLEND;
       render(node); // Render again using the fallback transparency type.
     }
-
+#endif
     return;
   }
 
@@ -2096,22 +2144,26 @@ SoGLRenderActionP::texgenEnable(SbBool enable)
 void
 SoGLRenderActionP::eyeLinearTexgen()
 {
+#if defined(COIN_GL_COMPATIBILITY)
+  if (sogl_compatibility_profile(action->getState())) {
+    const float col1[] = { 1, 0, 0, 0 };
+    const float col2[] = { 0, 1, 0, 0 };
+    const float col3[] = { 0, 0, 1, 0 };
+    const float col4[] = { 0, 0, 0, 1 };
 
-  const float col1[] = { 1, 0, 0, 0 };
-  const float col2[] = { 0, 1, 0, 0 };
-  const float col3[] = { 0, 0, 1, 0 };
-  const float col4[] = { 0, 0, 0, 1 };
+    glTexGenfv(GL_S,GL_EYE_PLANE, col1);
+    glTexGenfv(GL_T,GL_EYE_PLANE, col2);
+    glTexGenfv(GL_R,GL_EYE_PLANE, col3);
+    glTexGenfv(GL_Q,GL_EYE_PLANE, col4);
 
-  glTexGenfv(GL_S,GL_EYE_PLANE, col1);
-  glTexGenfv(GL_T,GL_EYE_PLANE, col2);
-  glTexGenfv(GL_R,GL_EYE_PLANE, col3);
-  glTexGenfv(GL_Q,GL_EYE_PLANE, col4);
-
-  glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-  glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-  glTexGeni(GL_R, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-  glTexGeni(GL_Q, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-
+    glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+    glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+    glTexGeni(GL_R, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+    glTexGeni(GL_Q, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+  }
+#else
+  assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
 }
 
 void
