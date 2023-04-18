@@ -369,7 +369,8 @@ SoPrimitiveVertexCache::renderTriangles(SoState * state, const int arrays) const
     SoGLVBOElement::shouldCreateVBO(state, PRIVATE(this)->vertexlist.getLength());
 
   if (renderasvbo) {
-    if (!SoGLDriverDatabase::isSupported(glue, SO_GL_VBO_IN_DISPLAYLIST)) {
+    if (!SoGLDriverDatabase::isSupported(glue, SO_GL_VBO_IN_DISPLAYLIST) ||
+        !sogl_compatibility_profile(state)) {
       SoCacheElement::invalidate(state);
       SoGLCacheContextElement::shouldAutoCache(state,
                                                SoGLCacheContextElement::DONT_AUTO_CACHE);
@@ -1023,8 +1024,15 @@ SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
                                    this->rgbalist.getLength() * sizeof(uint8_t));
     }
     this->rgbavbo->bindBuffer(contextid);
-    cc_glglue_glColorPointer(glue, 4, GL_UNSIGNED_BYTE, 0, NULL);
-    cc_glglue_glEnableClientState(glue, GL_COLOR_ARRAY);
+#ifdef GL_COMPAT
+    if (cc_glglue_glprofile_compat(glue)) {
+      cc_glglue_glColorPointer(glue, 4, GL_UNSIGNED_BYTE, 0, NULL);
+      cc_glglue_glEnableClientState(glue, GL_COLOR_ARRAY);
+    } else
+#endif
+    {
+
+    }
   }
   if (texture) {
     if (this->texcoord0vbo == NULL) {
@@ -1033,8 +1041,12 @@ SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
                                         this->texcoordlist.getLength()*4*sizeof(float));
     }
     this->texcoord0vbo->bindBuffer(contextid);
-    cc_glglue_glTexCoordPointer(glue, 4, GL_FLOAT, 0, NULL);
-    cc_glglue_glEnableClientState(glue, GL_TEXTURE_COORD_ARRAY);
+#ifdef GL_COMPAT
+    if (cc_glglue_glprofile_compat(glue)) {
+      cc_glglue_glTexCoordPointer(glue, 4, GL_FLOAT, 0, NULL);
+      cc_glglue_glEnableClientState(glue, GL_TEXTURE_COORD_ARRAY);
+    }
+#endif
 
     for (i = 1; i <= lastenabled; i++) {
       while (this->multitexvbo.getLength() <= i) {
@@ -1048,9 +1060,13 @@ SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
           this->multitexvbo[i] = vbo;
         }
         this->multitexvbo[i]->bindBuffer(contextid);
-        cc_glglue_glClientActiveTexture(glue, GL_TEXTURE0 + i);
-        cc_glglue_glTexCoordPointer(glue, 4, GL_FLOAT, 0, NULL);
-        cc_glglue_glEnableClientState(glue, GL_TEXTURE_COORD_ARRAY);
+#ifdef GL_COMPAT
+        if (cc_glglue_glprofile_compat(glue)) {
+            cc_glglue_glClientActiveTexture(glue, GL_TEXTURE0 + i);
+            cc_glglue_glTexCoordPointer(glue, 4, GL_FLOAT, 0, NULL);
+            cc_glglue_glEnableClientState(glue, GL_TEXTURE_COORD_ARRAY);
+        }
+#endif
       }
     }
   }
@@ -1061,8 +1077,15 @@ SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
                                      this->normallist.getLength()*3*sizeof(float));
     }
     this->normalvbo->bindBuffer(contextid);
-    cc_glglue_glNormalPointer(glue, GL_FLOAT, 0, NULL);
-    cc_glglue_glEnableClientState(glue, GL_NORMAL_ARRAY);
+#ifdef GL_COMPAT
+    if (cc_glglue_glprofile_compat(glue)) {
+      cc_glglue_glNormalPointer(glue, GL_FLOAT, 0, NULL);
+      cc_glglue_glEnableClientState(glue, GL_NORMAL_ARRAY);
+    } else
+#endif
+    {
+      //glVertexAttribP
+    }
   }
 
   if (this->vertexvbo == NULL) {
@@ -1071,8 +1094,12 @@ SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
                                    this->vertexlist.getLength()*3*sizeof(float));
   }
   this->vertexvbo->bindBuffer(contextid);
-  cc_glglue_glVertexPointer(glue, 3, GL_FLOAT, 0, NULL);
-  cc_glglue_glEnableClientState(glue, GL_VERTEX_ARRAY);
+#ifdef GL_COMPAT
+  if (cc_glglue_glprofile_compat(glue)) {
+    cc_glglue_glVertexPointer(glue, 3, GL_FLOAT, 0, NULL);
+    cc_glglue_glEnableClientState(glue, GL_VERTEX_ARRAY);
+  }
+#endif
 }
 
 void
@@ -1081,8 +1108,15 @@ SoPrimitiveVertexCacheP::disableVBOs(const cc_glglue * glue,
                                      const SbBool texture, const SbBool * enabled,
                                      const int lastenabled)
 {
-  this->disableArrays(glue, color, normal, texture, enabled, lastenabled);
-  cc_glglue_glBindBuffer(glue, GL_ARRAY_BUFFER, 0); // Reset VBO binding
+#ifdef GL_COMPAT
+  if (cc_glglue_glprofile_compat(glue)) {
+    this->disableArrays(glue, color, normal, texture, enabled, lastenabled);
+    cc_glglue_glBindBuffer(glue, GL_ARRAY_BUFFER, 0); // Reset VBO binding
+  } else
+#endif
+  {
+    glBindBuffer(GL_ARRAY_BUFFER, 0); // Reset VBO binding
+  }
 }
 
 void

@@ -34,6 +34,7 @@
 #include "Inventor/C/glue/gl.h"
 #include "coindefs.h"
 
+#include <GL/glext.h>
 #include <cassert>
 #include <cstdio>
 #include <Inventor/errors/SoDebugError.h>
@@ -329,8 +330,17 @@ SoGLSLShaderObject::updateCoinParameter(SoState * COIN_UNUSED_ARG(state), const 
       if (p->value.getValue() != value) p->value = value;
     }
     else {
-      GLint location = glue->glGetUniformLocationARB(pHandle,
-                                                     (const COIN_GLchar *)name.getString());
+      GLint location;
+#ifdef GL_COMPAT
+      if (sogl_compatibility_profile(state)) {
+        location = glue->glGetUniformLocationARB(pHandle,
+                                                    (const COIN_GLchar *)name.getString());
+      } else
+#endif
+      {
+        location = glGetUniformLocation(pHandle,
+                                              (const COIN_GLchar *)name.getString());
+      }
 
 #if 0
       fprintf(stderr,"action: %s, name: %s, loc: %d, handle: %p\n",
@@ -338,7 +348,14 @@ SoGLSLShaderObject::updateCoinParameter(SoState * COIN_UNUSED_ARG(state), const 
               name.getString(), location, pHandle);
 #endif
       if (location >= 0) {
-        glue->glUniform1iARB(location, value);
+#ifdef GL_COMPAT
+        if (sogl_compatibility_profile(state)) {
+          glue->glUniform1iARB(location, value);
+        } else
+#endif
+        {
+        glUniform1i(location, value);
+        }
       }
     }
   }

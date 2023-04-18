@@ -69,6 +69,7 @@
 #include <Inventor/elements/SoMultiTextureCoordinateElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
+#include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/lists/SbList.h>
 #include <Inventor/nodes/SoCallback.h>
@@ -826,6 +827,7 @@ sogl_render_cube(const float width,
                          width * 0.5f,
                          height * 0.5f,
                          depth * 0.5f);
+#ifdef GL_COMPAT
   glBegin(GL_QUADS);
   int *iptr = sogl_cube_vindices;
   int u;
@@ -854,6 +856,7 @@ sogl_render_cube(const float width,
     }
   }
   glEnd();
+#endif
 
   if (state) {
     // always encourage auto caching for cubes

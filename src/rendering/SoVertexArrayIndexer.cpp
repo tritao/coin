@@ -39,6 +39,7 @@
 
 #include "rendering/SoVertexArrayIndexer.h"
 
+#include <GL/gl.h>
 #include <cassert>
 #include <cstring>
 #include <cstdio>
@@ -46,6 +47,7 @@
 #include <Inventor/elements/SoGLCacheContextElement.h>
 #include <Inventor/misc/SoGLDriverDatabase.h>
 
+#include "Inventor/C/glue/gl.h"
 #include "tidbitsp.h"
 #include "rendering/SoVBO.h"
 #include "coindefs.h"
@@ -269,11 +271,21 @@ SoVertexArrayIndexer::render(const cc_glglue * glue, const SbBool renderasvbo, c
         }
       }
       this->vbo->bindBuffer(contextid);
-      cc_glglue_glDrawElements(glue,
-                               this->target,
-                               this->indexarray.getLength(),
-                               this->use_shorts ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, NULL);
-      cc_glglue_glBindBuffer(glue, GL_ELEMENT_ARRAY_BUFFER, 0);
+#ifdef GL_COMPAT
+      if (cc_glglue_glprofile_compat(glue)) {
+        cc_glglue_glDrawElements(glue,
+                                this->target,
+                                this->indexarray.getLength(),
+                                this->use_shorts ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, NULL);
+        cc_glglue_glBindBuffer(glue, GL_ELEMENT_ARRAY_BUFFER, 0);
+      } else
+#endif
+      {
+        glDrawElements(this->target,
+                                this->indexarray.getLength(),
+                                this->use_shorts ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, NULL);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+      }
     }
     else {
       const GLint * idxptr = this->indexarray.getArrayPtr();

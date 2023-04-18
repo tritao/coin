@@ -199,6 +199,7 @@
 
 // *************************************************************************
 
+#include <data/shaders/images/Image.h>
 #include <data/shaders/lights/SpotLight.h>
 #include <data/shaders/lights/PointLight.h>
 #include <data/shaders/lights/DirectionalLight.h>
@@ -389,6 +390,7 @@ SoShader::getNamedScript(const SbName & name, const Type type)
 void
 SoShader::setupBuiltinShaders(void)
 {
+  shader_builtin_dict->put(SbName("images/Image").getString(), (char*) IMAGE_shadersource);
   shader_builtin_dict->put(SbName("lights/PointLight").getString(), (char*) POINTLIGHT_shadersource);
   shader_builtin_dict->put(SbName("lights/SpotLight").getString(), (char*) SPOTLIGHT_shadersource);
   shader_builtin_dict->put(SbName("lights/DirectionalLight").getString(), (char*) DIRECTIONALLIGHT_shadersource);

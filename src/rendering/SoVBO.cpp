@@ -53,6 +53,7 @@
 #include <Inventor/SbVec3f.h>
 #include <Inventor/errors/SoDebugError.h>
 
+#include "Inventor/C/glue/gl.h"
 #include "rendering/SoVertexArrayIndexer.h"
 #include "threads/threadsutilp.h"
 #include "glue/glp.h"
@@ -67,7 +68,7 @@ static int vbo_debug = -1;
 // VBO rendering seems to be faster than other rendering, even for
 // large VBOs. Just set the default limit very high
 static const int DEFAULT_MAX_LIMIT = 100000000;
-static const int DEFAULT_MIN_LIMIT = 20;
+static const int DEFAULT_MIN_LIMIT = 0;
 
 static SbHash<uint32_t, SbBool> * vbo_isfast_hash;
 
