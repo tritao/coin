@@ -1084,7 +1084,7 @@ SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
     } else
 #endif
     {
-      //glVertexAttribP
+      //cc_glglue_glVertexAttribPointer()
     }
   }
 

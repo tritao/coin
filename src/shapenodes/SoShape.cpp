@@ -1407,6 +1407,7 @@ SoShape::GLRenderBoundingBox(SoGLRenderAction * action)
     SoGLShapeHintsElement::forceSend(action->getState(), TRUE, FALSE, FALSE);
   }
 
+  // TODO: GLES
   glPushMatrix();
   glTranslatef(center[0], center[1], center[2]);
   sogl_render_cube(size[0], size[1], size[2], &mb,
