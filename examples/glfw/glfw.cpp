@@ -20,9 +20,9 @@
 
 #include <cstdlib>
 
-#define HAVE_EGL
-//#define HAVE_GLES
-//#define HAVE_GL_COMPAT
+static bool useEGL = true;
+static bool useGLES = false;
+static bool useGLCompatibilityProfile = false;
 
 #define GL_GLEXT_PROTOTYPES
 #include <GLFW/glfw3.h>
@@ -58,14 +58,13 @@ SbBool sogl_compatibility_profile(const SoState * state);
 // Redraw on scenegraph changes.
 void redrawCallback(void * user, SoSceneManager * manager)
 {
-//#ifdef GL_COMPAT
   const SoState* state = manager->getGLRenderAction()->getState();
   if (sogl_compatibility_profile(state))
   {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_LIGHTING);
   }
-//#endif
+
   sceneManager->render();
   glfwSwapBuffers(window);
 }
@@ -73,14 +72,13 @@ void redrawCallback(void * user, SoSceneManager * manager)
 // Redraw on expose events.
 void exposeCallback(void)
 {
-//#ifdef GL_COMPAT
   const SoState* state = sceneManager->getGLRenderAction()->getState();
   if (sogl_compatibility_profile(state))
   {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_LIGHTING);
   }
-//#endif
+
   sceneManager->render();
   glfwSwapBuffers(window);
 }
@@ -122,23 +120,27 @@ int main(void)
     if (!glfwInit())
         return EXIT_FAILURE;
 
-#ifdef HAVE_EGL
-    glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
-#endif
+    if (useEGL) {
+        glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
+    }
 
-#ifdef HAVE_GLES
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-#else
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
-    //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-#endif
-
+    // Needs at least OpenGL 4.3 for KHR_debug to be available (on Linux)
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
+
+    if (useGLES) {
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+    } else {
+        glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    }
+
+    if (useGLCompatibilityProfile) {
+        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
+    }
+
 
     window = glfwCreateWindow(1920, 1080, "Coin3D", NULL, NULL);
     if (!window)
@@ -185,24 +187,28 @@ SoSeparator* createScene()
     root->addChild(camera);
     root->addChild(new SoDirectionalLight);
 
+
     SoInput in;
     in.setBuffer(scene_iv, strlen(scene_iv));
     
+#if 0
     SoSeparator* result = SoDB::readAll(&in);
     if (result == nullptr) {
       fprintf(stderr, "Could not load scene graph from text");
       exit(EXIT_FAILURE); 
     }
+    root->addChild(result);
+#endif
 
-    //SoImage * nimage = new SoImage;
-    //nimage->vertAlignment = SoImage::HALF;
-    //nimage->horAlignment = SoImage::CENTER;
-    //nimage->image.setValue(SbVec2s(IMGWIDTH, IMGHEIGHT), 1, img);
-    //result->addChild(nimage);
-    //root->addChild(nimage);
-  
-    //root->addChild(new SoCube);
-    //root->addChild(result);
+#if 0
+    SoImage * nimage = new SoImage;
+    nimage->vertAlignment = SoImage::HALF;
+    nimage->horAlignment = SoImage::CENTER;
+    nimage->image.setValue(SbVec2s(IMGWIDTH, IMGHEIGHT), 1, img);
+    root->addChild(nimage);
+#endif
+
+    root->addChild(new SoCube);
 
     sceneManager = new SoSceneManager;
     sceneManager->setRenderCallback(redrawCallback, (void *)1);
