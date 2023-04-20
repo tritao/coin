@@ -80,6 +80,7 @@
 #include <Inventor/elements/SoGLMultiTextureEnabledElement.h>
 #include <Inventor/elements/SoMaterialBindingElement.h>
 #include <Inventor/elements/SoMultiTextureCoordinateElement.h>
+#include <Inventor/elements/SoShapeStyleElement.h>
 #include <Inventor/misc/SoState.h>
 
 #include "nodes/SoSubNodeP.h"
@@ -137,8 +138,16 @@ SoCube::initClass(void)
 void
 SoCube::GLRender(SoGLRenderAction * action)
 {
-  if (!this->shouldGLRender(action)) return;
   SoState * state = action->getState();
+  if (!sogl_compatibility_profile(state))
+  {
+    const SoShapeStyleElement * shapestyle = SoShapeStyleElement::get(state);
+    shapestyle->setVertexArrayRendering(state, true);
+    return SoShape::GLRender(action);
+  }
+
+#ifdef GL_COMPAT
+  if (!this->shouldGLRender(action)) return;
 
   SoMaterialBindingElement::Binding binding =
     SoMaterialBindingElement::get(state);
@@ -185,6 +194,7 @@ SoCube::GLRender(SoGLRenderAction * action)
                    depth.getValue(),
                    &mb,
                    flags, state);
+#endif
 }
 
 // Doc in parent.

@@ -63,7 +63,7 @@ static int vbo_vertex_count_min_limit = -1;
 static int vbo_vertex_count_max_limit = -1;
 static int vbo_render_as_vertex_arrays = -1;
 static int vbo_enabled = -1;
-static int vbo_debug = -1;
+static int vbo_debug = 1;
 
 // VBO rendering seems to be faster than other rendering, even for
 // large VBOs. Just set the default limit very high
