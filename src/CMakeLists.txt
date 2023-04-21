@@ -38,6 +38,12 @@ foreach(_tgt ${COIN_TARGET_LINK_LIBRARIES})
   endif()
 endforeach()
 
+include_directories($<TARGET_PROPERTY:bx,INTERFACE_INCLUDE_DIRECTORIES>)
+include_directories($<TARGET_PROPERTY:bgfx,INTERFACE_INCLUDE_DIRECTORIES>)
+
+add_compile_definitions($<TARGET_PROPERTY:bx,INTERFACE_COMPILE_DEFINITIONS>)
+add_compile_definitions($<TARGET_PROPERTY:bgfx,INTERFACE_COMPILE_DEFINITIONS>)
+
 set(COIN_SOURCE tidbits.cpp CACHE INTERNAL "COIN_SOURCE")
 set(SUBDIRS
   extensions xml actions base bundles caches details draggers elements
@@ -48,6 +54,7 @@ set(SUBDIRS
 )
 
 add_compile_definitions(GL_COMPAT=1)
+add_compile_definitions(COIN_USE_BGFX_RENDERER=1)
 
 foreach(_subdir ${SUBDIRS})
   add_subdirectory(${_subdir})
@@ -262,6 +269,12 @@ endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${COIN_TARGET_INCLUDE_DIRECTORIES})
 target_link_libraries(${PROJECT_NAME} PRIVATE ${COIN_TARGET_LINK_LIBRARIES})
+
+if(COIN_USE_BGFX_RENDERER)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE COIN_USE_BGFX_RENDERER=1)
+  target_link_libraries(${PROJECT_NAME} PRIVATE bgfx)
+endif()
+
 if(NOT COIN_BUILD_MAC_FRAMEWORK)
   target_include_directories(${PROJECT_NAME} INTERFACE $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 endif()

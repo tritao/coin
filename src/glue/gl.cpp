@@ -2214,6 +2214,10 @@ static void APIENTRY coin_gldebug_report(GLenum source, GLenum type, GLuint id,
 const cc_glglue *
 cc_glglue_instance(int contextid)
 {
+#if defined(COIN_USE_BGFX_RENDERER)
+  assert(0 && "OpenGL state cannot be acessed in BGFX renderer mode");
+  return 0;
+#else
   SbBool found;
   void * ptr;
   GLint gltmp;
@@ -2506,6 +2510,7 @@ cc_glglue_instance(int contextid)
     }
   }
   return gi;
+#endif
 }
 
 const cc_glglue *

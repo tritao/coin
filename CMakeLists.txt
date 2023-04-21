@@ -60,6 +60,10 @@ include(GNUInstallDirs)
 include(FeatureSummary)
 include(CoinCMakeUtilities)
 
+set(BGFX_BUILD_EXAMPLES OFF)
+set(BGFX_BUILD_TOOLS OFF)
+add_subdirectory(bgfx.cmake)
+
 # ############################################################################
 # Provide options to customise the build
 # ############################################################################
@@ -102,6 +106,7 @@ cmake_dependent_option(COIN_BUILD_MAC_X11 "Build for X11 on Mac OS X when ON. De
 cmake_dependent_option(COIN_BUILD_MAC_AGL "Build for AGL on Mac OS X when ON. Default is OFF." OFF "APPLE" OFF)
 
 option(COIN_BUILD_EGL "Build for EGL on Linux when ON. Default is OFF." OFF)
+option(COIN_USE_BGFX_RENDERER "If enabled the BGFX renderer is used" ON)
 
 report_prepare(
   COIN_BUILD_SHARED_LIBS
@@ -463,6 +468,8 @@ if(NOT SIMAGE_RUNTIME_LINKING)
     list(APPEND COIN_TARGET_LINK_LIBRARIES simage::simage)
   endif()
 endif()
+
+#list(APPEND COIN_TARGET_LINK_LIBRARIES bgfx::bgfx)
 
 message(STATUS "${COIN_TARGET_INCLUDE_DIRECTORIES}")
 message(STATUS "${COIN_TARGET_LINK_LIBRARIES}")

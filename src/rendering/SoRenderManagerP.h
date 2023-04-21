@@ -51,6 +51,11 @@
 #include <Inventor/sensors/SoNodeSensor.h>
 #include <Inventor/misc/SoNotification.h>
 
+#if defined(COIN_USE_BGFX_RENDERER)
+#include <bx/bx.h>
+#include <bgfx/bgfx.h>
+#endif
+
 class SbMatrix;
 class SoNodeSensor;
 class SoInfo;
@@ -121,6 +126,10 @@ public:
   SoOneShotSensor * redrawshot;
 
   SbPList * superimpositions;
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  bgfx::ViewId mainviewid;
+#endif
 
   void invokePreRenderCallbacks(void);
   void invokePostRenderCallbacks(void);

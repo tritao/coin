@@ -8,13 +8,14 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug",
-            "program": "${workspaceFolder}/examples/glfw/glfw",
+            "program": "${workspaceFolder}/examples/glfw/glfw_bgfx",
             "args": [],
             "cwd": "${workspaceFolder}/examples/glfw",
             "env": {
                 "LD_LIBRARY_PATH": "${workspaceFolder}/../coin/bld/lib:${LD_LIBRARY_PATH}",
                 "COIN_GLERROR_DEBUGGING": "1"
-            }
+            },
+            "preLaunchTask": "Run build"
         }
     ]
 }

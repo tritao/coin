@@ -18,14 +18,27 @@
 #include <Inventor/nodes/SoRotationXYZ.h>
 #include <Inventor/nodes/SoImage.h>
 
+#include <bx/bx.h>
+#include <bgfx/bgfx.h>
+
 #include <cstdlib>
 
 static bool useEGL = true;
+static bool useGL = false;
 static bool useGLES = false;
 static bool useGLCompatibilityProfile = false;
 
 #define GL_GLEXT_PROTOTYPES
 #include <GLFW/glfw3.h>
+
+#if BX_PLATFORM_LINUX
+#define GLFW_EXPOSE_NATIVE_X11
+#elif BX_PLATFORM_WINDOWS
+#define GLFW_EXPOSE_NATIVE_WIN32
+#elif BX_PLATFORM_OSX
+#define GLFW_EXPOSE_NATIVE_COCOA
+#endif
+#include <GLFW/glfw3native.h>
 
 // ----------------------------------------------------------------------
 
@@ -58,37 +71,47 @@ SbBool sogl_compatibility_profile(const SoState * state);
 // Redraw on scenegraph changes.
 void redrawCallback(void * user, SoSceneManager * manager)
 {
+#if !defined(COIN_USE_BGFX_RENDERER)  
   const SoState* state = manager->getGLRenderAction()->getState();
   if (sogl_compatibility_profile(state))
   {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_LIGHTING);
   }
+#endif
 
   sceneManager->render();
-  glfwSwapBuffers(window);
+
+  if (useGL || useGLES) {
+    glfwSwapBuffers(window);
+  }
 }
 
 // Redraw on expose events.
 void exposeCallback(void)
 {
+#if !defined(COIN_USE_BGFX_RENDERER)
   const SoState* state = sceneManager->getGLRenderAction()->getState();
   if (sogl_compatibility_profile(state))
   {
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_LIGHTING);
   }
+#endif
 
   sceneManager->render();
-  glfwSwapBuffers(window);
+
+  if (useGL || useGLES) {
+    glfwSwapBuffers(window);
+  }
 }
 
 // Reconfigure on changes to window dimensions.
 void framebufferSizeCallback(GLFWwindow* window,int w, int h)
 {
   sceneManager->setWindowSize(SbVec2s(w, h));
-  sceneManager->setSize(SbVec2s(w, h));
-  sceneManager->setViewportRegion(SbViewportRegion(w, h));
+  //sceneManager->setSize(SbVec2s(w, h));
+  //sceneManager->setViewportRegion(SbViewportRegion(w, h));
   sceneManager->scheduleRedraw();
 }
 
@@ -122,6 +145,7 @@ int main(void)
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
+/*
     if (useEGL) {
         glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
     }
@@ -142,6 +166,9 @@ int main(void)
     if (useGLCompatibilityProfile) {
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
     }
+*/
+
+    //glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
 
     window = glfwCreateWindow(1920, 1080, "Coin3D", NULL, NULL);
     if (!window)
@@ -150,30 +177,57 @@ int main(void)
         return EXIT_FAILURE;
     }
 
+    // Initialize bgfx after window is created and before main loop
+    bgfx::Init init_object;
+#if BX_PLATFORM_LINUX
+    init_object.platformData.ndt = glfwGetX11Display();
+    init_object.platformData.nwh = reinterpret_cast<void *>(glfwGetX11Window(window));
+#elif BX_PLATFORM_OSX
+    init_object.platformData.nwh = glfwGetCocoaWindow(window);
+#elif BX_PLATFORM_WINDOWS
+    init_object.platformData.nwh = glfwGetWin32Window(window);
+#endif
+    //init_object.type = bgfx::RendererType::OpenGL;
+
+    int32_t width, height;
+    glfwGetWindowSize(window, &width, &height);
+    init_object.resolution.width = static_cast<uint32_t>(width);
+    init_object.resolution.height = static_cast<uint32_t>(height);
+    init_object.resolution.reset = BGFX_RESET_VSYNC;
+
+    if (!bgfx::init(init_object))
+    {
+        return 1;
+    }
+
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
-    glfwMakeContextCurrent(window);
+  
+    if (useGL || useGLES) {
+      glfwMakeContextCurrent(window);
+    }
 
     img = new unsigned char[IMGWIDTH * IMGHEIGHT];
     mandel(-0.5, 0.6, 0.025, 0.025, IMGWIDTH, IMGHEIGHT, 1, img, 256);
 
     SoSeparator* root = createScene();
 
-    int width, height;
+    //int width, height;
     glfwGetFramebufferSize(window, &width, &height);
     framebufferSizeCallback(window, width, height);    
 
     while (!glfwWindowShouldClose(window))
     {
+        glfwPollEvents();
+
         idleCallback();
         exposeCallback();
-
-        glfwPollEvents();
     }
 
     root->unref();
     delete sceneManager;
     delete[] img;
   
+    bgfx::shutdown();
     glfwTerminate();
     return 0;
 }

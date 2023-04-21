@@ -678,6 +678,8 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
     }
   }
 
+
+#if !defined(COIN_USE_BGFX_RENDERER)
   const cc_glglue * glue = sogl_glue_instance(state);
 
   if (shapestyleflags & SoShapeStyleElement::BUMPMAP) {
@@ -765,7 +767,6 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
 
       }
 
-
       PRIVATE(this)->unlock();
 
       glPopAttrib();
@@ -779,7 +780,7 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
       return FALSE;
     }
   }
-
+#endif
 
   if (shapestyleflags & SoShapeStyleElement::VERTEXARRAY) {
     // lock since pvcache is shared among all threads
@@ -1402,7 +1403,6 @@ SoShape::GLRenderBoundingBox(SoGLRenderAction * action)
     SoGLShapeHintsElement::forceSend(action->getState(), TRUE, FALSE, FALSE);
   }
 
-  // TODO: GLES
   glPushMatrix();
   glTranslatef(center[0], center[1], center[2]);
   sogl_render_cube(size[0], size[1], size[2], &mb,

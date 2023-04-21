@@ -156,6 +156,9 @@ SoDirectionalLight::initClass(void)
 void
 SoDirectionalLight::GLRender(SoGLRenderAction * action)
 {
+#if defined(COIN_USE_BGFX_RENDERER)
+
+#else
   if (!this->on.getValue()) return;
 
   SoState * state = action->getState();
@@ -217,6 +220,7 @@ SoDirectionalLight::GLRender(SoGLRenderAction * action)
     glLightf(light, GL_LINEAR_ATTENUATION, 0);
     glLightf(light, GL_QUADRATIC_ATTENUATION, 0);
   }
+#endif
 #endif
 }
 

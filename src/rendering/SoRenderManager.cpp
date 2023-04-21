@@ -73,6 +73,11 @@
 #include <Inventor/misc/SoAudioDevice.h>
 #include <Inventor/SoDB.h>
 
+#if defined(COIN_USE_BGFX_RENDERER)
+#include <bx/bx.h>
+#include <bgfx/bgfx.h>
+#endif
+
 #include "coindefs.h"
 #include "tidbitsp.h"
 #include "misc/AudioTools.h"
@@ -276,6 +281,9 @@ SoRenderManager::SoRenderManager(void)
     new SoNodeSensor(SoRenderManagerP::updateClippingPlanesCB, PRIVATE(this));
   PRIVATE(this)->clipsensor->setPriority(this->getRedrawPriority() - 1);
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  PRIVATE(this)->mainviewid = 0;
+#endif
 }
 
 /*!
@@ -655,6 +663,10 @@ SoRenderManager::render(SoGLRenderAction * action,
                         const SbBool clearwindow,
                         const SbBool clearzbuffer)
 {
+#if defined(COIN_USE_BGFX_RENDERER)
+		bgfx::touch(PRIVATE(this)->mainviewid);
+#endif
+
   SbBool clearwindow_tmp = clearwindow; // make sure we only clear the color buffer once
   PRIVATE(this)->invokePreRenderCallbacks();
 
@@ -680,6 +692,10 @@ SoRenderManager::render(SoGLRenderAction * action,
       }
     }
   }
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  bgfx::frame();
+#endif
 
   PRIVATE(this)->invokePostRenderCallbacks();
 }
@@ -709,6 +725,7 @@ SoRenderManager::actuallyRender(SoGLRenderAction * action,
   if (clearzbuffer) mask |= GL_DEPTH_BUFFER_BIT;
 
   if (initmatrices) {
+#if !defined(COIN_USE_BGFX_RENDERER)
 #ifdef GL_COMPAT
     if (sogl_compatibility_profile(action->getState()))
     {
@@ -717,6 +734,7 @@ SoRenderManager::actuallyRender(SoGLRenderAction * action,
       glMatrixMode(GL_MODELVIEW);
       glLoadIdentity();
     }
+#endif
 #endif
   }
 
@@ -772,11 +790,19 @@ SoRenderManager::renderScene( SoGLRenderAction * action,
   if (clearmask) {
     if (clearmask & GL_COLOR_BUFFER_BIT) {
       if (PRIVATE(this)->isrgbmode) {
+#if defined(COIN_USE_BGFX_RENDERER)
+        bgfx::setViewClear(PRIVATE(this)->mainviewid, BGFX_CLEAR_COLOR, PRIVATE(this)->backgroundcolor.getPackedValue());
+#else
         const SbColor4f bgcol = PRIVATE(this)->backgroundcolor;
         glClearColor(bgcol[0], bgcol[1], bgcol[2], bgcol[3]);
+#endif
       }
       else {
+#if defined(COIN_USE_BGFX_RENDERER)
+        assert(0 && "Indexed mode view clearing not supported for BGFX renderer");
+#else
         glClearIndex((GLfloat) PRIVATE(this)->backgroundindex);
+#endif
       }
     }
     // Registering a callback is needed since the correct GL viewport
