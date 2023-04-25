@@ -1,6 +1,3 @@
-#ifndef COIN_VERTEXARRAYINDEXER_H
-#define COIN_VERTEXARRAYINDEXER_H
-
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
  * All rights reserved.
@@ -33,63 +30,77 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#ifndef COIN_INTERNAL
-#error this is a private header file
-#endif /* !COIN_INTERNAL */
+/*!
+  \class SoBGFXViewIdElement Inventor/elements/SoBGFXViewIdElement.h
+  \brief The SoBGFXViewIdElement class is yet to be documented.
 
-#include <Inventor/lists/SbList.h>
-#include <Inventor/system/gl.h>
-#include <Inventor/C/glue/gl.h>
-#include <stdlib.h>
+  \ingroup coin_elements
 
-class SoVBO;
-class SoState;
+  FIXME: write doc.
+*/
 
-class SoVertexArrayIndexer {
-public:
-  SoVertexArrayIndexer(void);
-  ~SoVertexArrayIndexer();
+#include <Inventor/elements/SoBGFXViewIdElement.h>
+#include <cassert>
 
-  void addTriangle(const int32_t v0,
-                   const int32_t v1,
-                   const int32_t v2);
-  void addLine(const int32_t v0,
-               const int32_t v1);
-  void addPoint(const int32_t v0);
+// *************************************************************************
 
+SO_ELEMENT_SOURCE(SoBGFXViewIdElement);
 
-  void addQuad(const int32_t v0,
-               const int32_t v1,
-               const int32_t v2,
-               const int32_t v3);
+// *************************************************************************
 
-  void beginTarget(GLenum target);
-  void targetVertex(GLenum target, const int32_t v);
-  void endTarget(GLenum target);
+/*!
+  \copydetails SoElement::initClass(void)
+*/
 
-  void close(void);
-  void render(SoState * state, const SbBool renderasvbo, const uint32_t vbocontextid);
+void
+SoBGFXViewIdElement::initClass(void)
+{
+  SO_ELEMENT_INIT_CLASS(SoBGFXViewIdElement, inherited);
+}
 
-  int getNumVertices(void);
-  int getNumIndices(void) const;
-  const GLint * getIndices(void) const;
-  GLint * getWriteableIndices(void);
+/*!
+  Destructor.
+*/
 
-private:
-  void addIndex(int32_t i);
-  void sort_triangles(void);
-  void sort_lines(void);
-  SoVertexArrayIndexer * getNext(void);
+SoBGFXViewIdElement::~SoBGFXViewIdElement()
+{
+  //this->viewId = NULL;
+}
 
-  GLenum target;
-  SoVertexArrayIndexer * next;
+void
+SoBGFXViewIdElement::init(SoState *state)
+{
+  inherited::init(state);
+}
 
-  int targetcounter;
-  SbList <GLsizei> countarray;
-  SbList <const GLint *> ciarray;
-  SbList <GLint> indexarray;
-  SoVBO * vbo;
-  SbBool use_shorts;
-};
+void
+SoBGFXViewIdElement::set(SoState* const state, SoNode *const node, bgfx::ViewId id)
+{
+  SoBGFXViewIdElement* element =
+    (SoBGFXViewIdElement*)inherited::getElement(state,classStackIndex, node);
+  element->viewId = id;
+}
 
-#endif // COIN_VERTEXARRAYINDEXER_H
+bgfx::ViewId
+SoBGFXViewIdElement::get(SoState *state)
+{
+  const SoElement *element = getConstElement(state, classStackIndex);
+  assert(element);
+  return ((const SoBGFXViewIdElement *)element)->viewId;
+}
+
+SbBool
+SoBGFXViewIdElement::matches(const SoElement * element) const
+{
+  SoBGFXViewIdElement * elem = (SoBGFXViewIdElement*) element;
+  return (this->viewId == elem->viewId);
+}
+
+SoElement *
+SoBGFXViewIdElement::copyMatchInfo(void) const
+{
+  SoBGFXViewIdElement * elem = 
+    (SoBGFXViewIdElement*) inherited::copyMatchInfo();
+  elem->viewId = this->viewId;
+  return elem;
+}

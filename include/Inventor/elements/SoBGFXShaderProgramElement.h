@@ -1,5 +1,5 @@
-#ifndef COIN_VERTEXARRAYINDEXER_H
-#define COIN_VERTEXARRAYINDEXER_H
+#ifndef  COIN_SOBGFXSHADERPROGRAMELEMENT_H
+#define  COIN_SOBGFXSHADERPROGRAMELEMENT_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
@@ -33,63 +33,33 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#ifndef COIN_INTERNAL
-#error this is a private header file
-#endif /* !COIN_INTERNAL */
-
+#include <Inventor/elements/SoReplacedElement.h>
 #include <Inventor/lists/SbList.h>
-#include <Inventor/system/gl.h>
-#include <Inventor/C/glue/gl.h>
-#include <stdlib.h>
 
-class SoVBO;
-class SoState;
+class SoBGFXShaderProgram;
 
-class SoVertexArrayIndexer {
+// *************************************************************************
+
+class COIN_DLL_API SoBGFXShaderProgramElement : public SoReplacedElement {
+  typedef SoReplacedElement inherited;
+  SO_ELEMENT_HEADER(SoBGFXShaderProgramElement);
+
 public:
-  SoVertexArrayIndexer(void);
-  ~SoVertexArrayIndexer();
+  virtual void init(SoState * state);
 
-  void addTriangle(const int32_t v0,
-                   const int32_t v1,
-                   const int32_t v2);
-  void addLine(const int32_t v0,
-               const int32_t v1);
-  void addPoint(const int32_t v0);
+  static void set(SoState *const state, SoNode *const node,
+                          SoBGFXShaderProgram * program);
+  static SoBGFXShaderProgram * get(SoState * state);
 
+  virtual SbBool matches(const SoElement * element) const;
+  virtual SoElement * copyMatchInfo() const;
 
-  void addQuad(const int32_t v0,
-               const int32_t v1,
-               const int32_t v2,
-               const int32_t v3);
-
-  void beginTarget(GLenum target);
-  void targetVertex(GLenum target, const int32_t v);
-  void endTarget(GLenum target);
-
-  void close(void);
-  void render(SoState * state, const SbBool renderasvbo, const uint32_t vbocontextid);
-
-  int getNumVertices(void);
-  int getNumIndices(void) const;
-  const GLint * getIndices(void) const;
-  GLint * getWriteableIndices(void);
+SoINTERNAL public:
+  static void initClass(void);
+  SoBGFXShaderProgram *shaderProgram;
 
 private:
-  void addIndex(int32_t i);
-  void sort_triangles(void);
-  void sort_lines(void);
-  SoVertexArrayIndexer * getNext(void);
-
-  GLenum target;
-  SoVertexArrayIndexer * next;
-
-  int targetcounter;
-  SbList <GLsizei> countarray;
-  SbList <const GLint *> ciarray;
-  SbList <GLint> indexarray;
-  SoVBO * vbo;
-  SbBool use_shorts;
+  virtual ~SoBGFXShaderProgramElement();
 };
 
-#endif // COIN_VERTEXARRAYINDEXER_H
+#endif /* ! COIN_SOBGFXSHADERPROGRAMELEMENT_H */

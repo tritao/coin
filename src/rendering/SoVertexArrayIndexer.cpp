@@ -48,9 +48,14 @@
 #include <Inventor/misc/SoGLDriverDatabase.h>
 
 #include "Inventor/C/glue/gl.h"
+#include "Inventor/elements/SoBGFXShaderProgramElement.h"
+#include "Inventor/elements/SoBGFXViewIdElement.h"
+
 #include "tidbitsp.h"
 #include "rendering/SoVBO.h"
+#include "rendering/SoGL.h"
 #include "coindefs.h"
+#include "shaders/SoBGFXShaderProgram.h"
 
 #if BOOST_WORKAROUND(COIN_MSVC, <= COIN_MSVC_6_0_VERSION)
 // symbol length truncation
@@ -246,8 +251,15 @@ SoVertexArrayIndexer::close(void)
   Render all added targets/indices.
 */
 void
-SoVertexArrayIndexer::render(const cc_glglue * glue, const SbBool renderasvbo, const uint32_t contextid)
+SoVertexArrayIndexer::render(SoState * state, const SbBool renderasvbo, const uint32_t contextid)
 {
+#if defined(COIN_USE_GL_RENDERER)
+  const int useGLRenderer = false;
+  const cc_glglue * glue = NULL;
+  if (useGLRenderer)
+    glue = sogl_glue_instance(state);
+#endif
+
   switch (this->target) {
   case GL_TRIANGLES:
   case GL_QUADS:
@@ -271,31 +283,41 @@ SoVertexArrayIndexer::render(const cc_glglue * glue, const SbBool renderasvbo, c
         }
       }
       this->vbo->bindBuffer(contextid);
-#ifdef GL_COMPAT
-      if (cc_glglue_glprofile_compat(glue)) {
+#if defined(COIN_USE_BGFX_RENDERER)
+      SoBGFXShaderProgram *program = SoBGFXShaderProgramElement::get(state);
+      if (program == NULL) {
+        SoDebugError::post("SoVertexArrayIndexer::render", "Expected shader program in state");
+        return;
+      }
+
+      bgfx::ViewId viewId = SoBGFXViewIdElement::get(state);
+      bgfx::submit(viewId, program->getProgramHandle());
+#elif defined(COIN_USE_GL_RENDERER)
+      if (useGLRenderer) {
+        if (cc_glglue_glprofile_compat(glue)) {
+          cc_glglue_glDrawElements(glue,
+                                  this->target,
+                                  this->indexarray.getLength(),
+                                  this->use_shorts ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, NULL);
+          cc_glglue_glBindBuffer(glue, GL_ELEMENT_ARRAY_BUFFER, 0);
+        } else {
+          glDrawElements(this->target,
+                                  this->indexarray.getLength(),
+                                  this->use_shorts ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, NULL);
+          glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+        }
+      } else {
+        const GLint * idxptr = this->indexarray.getArrayPtr();
         cc_glglue_glDrawElements(glue,
                                 this->target,
                                 this->indexarray.getLength(),
-                                this->use_shorts ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, NULL);
-        cc_glglue_glBindBuffer(glue, GL_ELEMENT_ARRAY_BUFFER, 0);
-      } else
-#endif
-      {
-        glDrawElements(this->target,
-                                this->indexarray.getLength(),
-                                this->use_shorts ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, NULL);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+                                GL_UNSIGNED_INT,
+                                idxptr);
       }
-    }
-    else {
-      const GLint * idxptr = this->indexarray.getArrayPtr();
-      cc_glglue_glDrawElements(glue,
-                               this->target,
-                               this->indexarray.getLength(),
-                               GL_UNSIGNED_INT,
-                               idxptr);
+#endif
     }
     break;
+#if defined(COIN_USE_GL_RENDERER)
   default:
     if (SoGLDriverDatabase::isSupported(glue, SO_GL_MULTIDRAW_ELEMENTS)) {
       cc_glglue_glMultiDrawElements(glue,
@@ -317,9 +339,10 @@ SoVertexArrayIndexer::render(const cc_glglue * glue, const SbBool renderasvbo, c
       }
     }
     break;
+#endif
   }
 
-  if (this->next) this->next->render(glue, renderasvbo, contextid);
+  if (this->next) this->next->render(state, renderasvbo, contextid);
 }
 
 /*!

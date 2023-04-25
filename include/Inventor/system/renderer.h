@@ -1,5 +1,5 @@
-#ifndef COIN_VERTEXARRAYINDEXER_H
-#define COIN_VERTEXARRAYINDEXER_H
+#ifndef COIN_SYSTEM_RENDERER_H
+#define COIN_SYSTEM_RENDERER_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
@@ -33,63 +33,24 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#ifndef COIN_INTERNAL
-#error this is a private header file
-#endif /* !COIN_INTERNAL */
+#if defined(COIN_USE_BGFX_RENDERER)
+#include <bx/bx.h>
+#include <bgfx/bgfx.h>
+#include <bgfx/embedded_shader.h>
 
-#include <Inventor/lists/SbList.h>
-#include <Inventor/system/gl.h>
-#include <Inventor/C/glue/gl.h>
-#include <stdlib.h>
+#if BX_PLATFORM_LINUX
+#undef BGFX_EMBEDDED_SHADER_METAL
+#undef BGFX_EMBEDDED_SHADER_DXBC
+#undef BGFX_EMBEDDED_SHADER_DX9BC
+#undef BGFX_EMBEDDED_SHADER_NVN
 
-class SoVBO;
-class SoState;
+#define BGFX_EMBEDDED_SHADER_METAL(...)
+#define BGFX_EMBEDDED_SHADER_DXBC(...)
+#define BGFX_EMBEDDED_SHADER_DX9BC(...)
+#define BGFX_EMBEDDED_SHADER_NVN(...)
+#endif
 
-class SoVertexArrayIndexer {
-public:
-  SoVertexArrayIndexer(void);
-  ~SoVertexArrayIndexer();
+#include <generated/shaders/src/all.h>
+#endif
 
-  void addTriangle(const int32_t v0,
-                   const int32_t v1,
-                   const int32_t v2);
-  void addLine(const int32_t v0,
-               const int32_t v1);
-  void addPoint(const int32_t v0);
-
-
-  void addQuad(const int32_t v0,
-               const int32_t v1,
-               const int32_t v2,
-               const int32_t v3);
-
-  void beginTarget(GLenum target);
-  void targetVertex(GLenum target, const int32_t v);
-  void endTarget(GLenum target);
-
-  void close(void);
-  void render(SoState * state, const SbBool renderasvbo, const uint32_t vbocontextid);
-
-  int getNumVertices(void);
-  int getNumIndices(void) const;
-  const GLint * getIndices(void) const;
-  GLint * getWriteableIndices(void);
-
-private:
-  void addIndex(int32_t i);
-  void sort_triangles(void);
-  void sort_lines(void);
-  SoVertexArrayIndexer * getNext(void);
-
-  GLenum target;
-  SoVertexArrayIndexer * next;
-
-  int targetcounter;
-  SbList <GLsizei> countarray;
-  SbList <const GLint *> ciarray;
-  SbList <GLint> indexarray;
-  SoVBO * vbo;
-  SbBool use_shorts;
-};
-
-#endif // COIN_VERTEXARRAYINDEXER_H
+#endif /* ! COIN_SYSTEM_RENDERER_H */

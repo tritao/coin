@@ -83,7 +83,7 @@ SoGLSLShaderObject::isLoaded(void) const
 void
 SoGLSLShaderObject::load(const char* srcStr)
 {
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (cc_glglue_glprofile_compat(this->glctx)) {
     loadARB(srcStr);
     return;
@@ -135,7 +135,7 @@ SoGLSLShaderObject::load(const char* srcStr)
   }
 }
 
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
 void
 SoGLSLShaderObject::loadARB(const char* srcStr)
 {
@@ -212,7 +212,7 @@ SoGLSLShaderObject::attach(COIN_GLhandle programHandle)
 
   if (this->shaderHandle) {
     this->programHandle = programHandle;
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
     if (cc_glglue_glprofile_compat(this->glctx)) {
       this->glctx->glAttachObjectARB(this->programHandle, this->shaderHandle);
     }
@@ -246,7 +246,7 @@ SoGLSLShaderObject::printInfoLog(const cc_glglue * g, COIN_GLhandle handle, int 
 {
   GLint length = 0;
 
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (cc_glglue_glprofile_compat(g)) {
     g->glGetObjectParameterivARB(handle, GL_OBJECT_INFO_LOG_LENGTH_ARB, &length);
   } else
@@ -258,7 +258,7 @@ SoGLSLShaderObject::printInfoLog(const cc_glglue * g, COIN_GLhandle handle, int 
   if (length > 1) {
     COIN_GLchar *infoLog = new COIN_GLchar[length];
     GLsizei charsWritten = 0;
-  #ifdef GL_COMPAT
+  #ifdef COIN_USE_GL_RENDERER
     if (cc_glglue_glprofile_compat(g)) {
       g->glGetInfoLogARB(handle, length, &charsWritten, infoLog);
     } else
@@ -331,7 +331,7 @@ SoGLSLShaderObject::updateCoinParameter(SoState * COIN_UNUSED_ARG(state), const 
     }
     else {
       GLint location;
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
       if (sogl_compatibility_profile(state)) {
         location = glue->glGetUniformLocationARB(pHandle,
                                                     (const COIN_GLchar *)name.getString());
@@ -348,7 +348,7 @@ SoGLSLShaderObject::updateCoinParameter(SoState * COIN_UNUSED_ARG(state), const 
               name.getString(), location, pHandle);
 #endif
       if (location >= 0) {
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
         if (sogl_compatibility_profile(state)) {
           glue->glUniform1iARB(location, value);
         } else

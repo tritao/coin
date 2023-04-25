@@ -61,7 +61,7 @@ include(FeatureSummary)
 include(CoinCMakeUtilities)
 
 set(BGFX_BUILD_EXAMPLES OFF)
-set(BGFX_BUILD_TOOLS OFF)
+set(BGFX_BUILD_TOOLS ON)
 add_subdirectory(bgfx.cmake)
 
 # ############################################################################

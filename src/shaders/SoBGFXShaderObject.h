@@ -1,5 +1,5 @@
-#ifndef COIN_VERTEXARRAYINDEXER_H
-#define COIN_VERTEXARRAYINDEXER_H
+#ifndef COIN_SOBGFXSHADEROBJECT_H
+#define COIN_SOBGFXSHADEROBJECT_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
@@ -35,61 +35,71 @@
 
 #ifndef COIN_INTERNAL
 #error this is a private header file
-#endif /* !COIN_INTERNAL */
+#endif
 
-#include <Inventor/lists/SbList.h>
-#include <Inventor/system/gl.h>
-#include <Inventor/C/glue/gl.h>
-#include <stdlib.h>
+// *************************************************************************
 
-class SoVBO;
+#include <Inventor/system/renderer.h>
+#include <Inventor/SbString.h>
+#include "SoShader.h"
+
+class SoBGFXShaderParameter;
+class SoShaderParameter;
 class SoState;
 
-class SoVertexArrayIndexer {
+// *************************************************************************
+
+class SoBGFXShaderObject
+{
 public:
-  SoVertexArrayIndexer(void);
-  ~SoVertexArrayIndexer();
+  SoBGFXShaderObject(const uint32_t cachecontext);
+  virtual ~SoBGFXShaderObject() { }
 
-  void addTriangle(const int32_t v0,
-                   const int32_t v1,
-                   const int32_t v2);
-  void addLine(const int32_t v0,
-               const int32_t v1);
-  void addPoint(const int32_t v0);
+  //const cc_glglue * GLContext(void) const;
+  uint32_t getCacheContext(void) const;
 
+  virtual SbBool isLoaded(void) const;
+  virtual void load(const bgfx::EmbeddedShader& shader);
+  virtual void unload(void);
+  virtual SoShader::Type shaderType(void) const;
+  //virtual SoBGFXShaderParameter* getNewParameter(void) const = 0;
+  virtual void updateCoinParameter(SoState * state, const SbName & name,
+                                   SoShaderParameter * param, const int val);
 
-  void addQuad(const int32_t v0,
-               const int32_t v1,
-               const int32_t v2,
-               const int32_t v3);
+  uint32_t getShaderObjectId(void) const;
 
-  void beginTarget(GLenum target);
-  void targetVertex(GLenum target, const int32_t v);
-  void endTarget(GLenum target);
+  static bool create(const bgfx::EmbeddedShader& shader, bgfx::ShaderHandle& handle);
 
-  void close(void);
-  void render(SoState * state, const SbBool renderasvbo, const uint32_t vbocontextid);
+public:
 
-  int getNumVertices(void);
-  int getNumIndices(void) const;
-  const GLint * getIndices(void) const;
-  GLint * getWriteableIndices(void);
+  enum ShaderType {
+    VERTEX,
+    FRAGMENT,
+    GEOMETRY
+  };
+
+  void setShaderType(const ShaderType type);
+  ShaderType getShaderType(void) const;
+
+  void setIsActive(SbBool flag);
+  SbBool isActive(void) const;
+
+  void setParametersDirty(SbBool flag);
+  SbBool getParametersDirty(void) const;
+
+#if defined(SOURCE_HINT)
+  SbString sourceHint; // either the file name or the first line of source code
+#endif
+
+protected:
+  uint32_t cachecontext;
 
 private:
-  void addIndex(int32_t i);
-  void sort_triangles(void);
-  void sort_lines(void);
-  SoVertexArrayIndexer * getNext(void);
-
-  GLenum target;
-  SoVertexArrayIndexer * next;
-
-  int targetcounter;
-  SbList <GLsizei> countarray;
-  SbList <const GLint *> ciarray;
-  SbList <GLint> indexarray;
-  SoVBO * vbo;
-  SbBool use_shorts;
+  ShaderType shadertype;
+  SbBool isActiveFlag ;
+  SbBool paramsdirty;
+  uint32_t id;
+  bgfx::ShaderHandle handle;
 };
 
-#endif // COIN_VERTEXARRAYINDEXER_H
+#endif /* ! COIN_SOBGFXSHADEROBJECT_H */

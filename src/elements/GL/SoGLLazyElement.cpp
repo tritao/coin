@@ -215,7 +215,7 @@ SoGLLazyElement::getInstance(const SoState *state)
 inline void
 SoGLLazyElement::sendPackedDiffuse(const uint32_t col) const
 {
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(this->state))
   {
     glColor4ub((unsigned char)((col>>24)&0xff),
@@ -231,7 +231,7 @@ SoGLLazyElement::sendPackedDiffuse(const uint32_t col) const
 inline void
 SoGLLazyElement::sendLightModel(const int32_t model) const
 {
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(this->state))
   {
     if (model == PHONG) glEnable(GL_LIGHTING);
@@ -245,7 +245,7 @@ SoGLLazyElement::sendLightModel(const int32_t model) const
 inline void
 SoGLLazyElement::sendFlatshading(const SbBool onoff) const
 {
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(this->state))
   {
     if (onoff) glShadeModel(GL_FLAT);
@@ -259,7 +259,7 @@ SoGLLazyElement::sendFlatshading(const SbBool onoff) const
 inline void
 SoGLLazyElement::sendAlphaTest(int func, float value) const
 {
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(this->state))
   {
     if (func) {
@@ -288,7 +288,7 @@ SoGLLazyElement::sendVertexOrdering(const VertexOrdering ordering) const
 inline void
 SoGLLazyElement::sendTwosideLighting(const SbBool onoff) const
 {
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(this->state))
   {
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, onoff ? GL_TRUE : GL_FALSE);
@@ -301,7 +301,7 @@ SoGLLazyElement::sendTwosideLighting(const SbBool onoff) const
 inline void
 SoGLLazyElement::sendBackfaceCulling(const SbBool onoff) const
 {
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(this->state))
   {
     if (onoff) glEnable(GL_CULL_FACE);
@@ -318,7 +318,7 @@ send_gl_material(SoState* state, GLenum pname, const SbColor & color)
   GLfloat col[4];
   color.getValue(col[0], col[1], col[2]);
   col[3] = 1.0f;
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(state))
   {
     glMaterialfv(GL_FRONT_AND_BACK, pname, col);
@@ -354,7 +354,7 @@ SoGLLazyElement::sendSpecular(const SbColor & color) const
 inline void
 SoGLLazyElement::sendShininess(const float shine) const
 {
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(this->state))
   {
     glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shine*128.0f);
@@ -367,7 +367,7 @@ SoGLLazyElement::sendShininess(const float shine) const
 inline void
 SoGLLazyElement::sendTransparency(const int stipplenum) const
 {
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(this->state))
   {
     if (stipplenum == 0) {
@@ -469,14 +469,14 @@ SoGLLazyElement::init(SoState * stateptr)
   this->cachebitmask = 0;
 
 #if !defined(COIN_USE_BGFX_RENDERER)
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(this->state))
   {
     glDisable(GL_POLYGON_STIPPLE);
   }
 #endif
 
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(this->state))
   {
     GLboolean rgba;
@@ -486,7 +486,7 @@ SoGLLazyElement::init(SoState * stateptr)
   else {
 #endif
     this->sendPackedDiffuse(0xccccccff);
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   }
 #endif
 #endif

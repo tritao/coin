@@ -71,7 +71,7 @@ SbBool sogl_compatibility_profile(const SoState * state);
 // Redraw on scenegraph changes.
 void redrawCallback(void * user, SoSceneManager * manager)
 {
-#if !defined(COIN_USE_BGFX_RENDERER)  
+#if !defined(COIN_USE_BGFX_RENDERER)
   const SoState* state = manager->getGLRenderAction()->getState();
   if (sogl_compatibility_profile(state))
   {
@@ -213,7 +213,7 @@ int main(void)
 
     //int width, height;
     glfwGetFramebufferSize(window, &width, &height);
-    framebufferSizeCallback(window, width, height);    
+    framebufferSizeCallback(window, width, height);
 
     while (!glfwWindowShouldClose(window))
     {

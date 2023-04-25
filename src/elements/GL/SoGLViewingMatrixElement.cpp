@@ -148,7 +148,7 @@ SoGLViewingMatrixElement::updategl(void)
   if (!this->mmidentity) {
     mat.multRight(this->modelmatrix);
   }
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(this->state))
   {
     glLoadMatrixf((float*)mat);

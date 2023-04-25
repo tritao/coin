@@ -117,6 +117,10 @@
 #include <Inventor/annex/Profiler/elements/SoProfilerElement.h>
 #include <Inventor/annex/Profiler/SoProfiler.h>
 
+#if defined(COIN_USE_BGFX_RENDERER)
+#include <Inventor/elements/SoBGFXViewIdElement.h>
+#endif
+
 #include "coindefs.h"
 #include "tidbitsp.h"
 #include "SbBasicP.h"
@@ -659,6 +663,10 @@ SoGLRenderAction::initClass(void)
   SO_ENABLE(SoGLRenderAction, SoGLViewportRegionElement);
   SO_ENABLE(SoGLRenderAction, SoGLCacheContextElement);
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  SO_ENABLE(SoGLRenderAction, SoBGFXViewIdElement);
+#endif
+
   const char * env = coin_getenv("COIN_GLBBOX");
   if (env) {
     COIN_GLBBOX = atoi(env);
@@ -1094,7 +1102,7 @@ SoGLRenderAction::beginTraversal(SoNode * node)
   if (PRIVATE(this)->needglinit) {
     PRIVATE(this)->needglinit = FALSE;
 
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
     if (sogl_compatibility_profile(this->state))
     {
       // we are always using GL_COLOR_MATERIAL in Coin
@@ -1113,7 +1121,7 @@ SoGLRenderAction::beginTraversal(SoNode * node)
     glDepthFunc(GL_LEQUAL);
 
     if (PRIVATE(this)->smoothing) {
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
     if (sogl_compatibility_profile(this->state))
     {
       glEnable(GL_POINT_SMOOTH);
@@ -1122,7 +1130,7 @@ SoGLRenderAction::beginTraversal(SoNode * node)
 #endif
     }
     else {
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
       if (sogl_compatibility_profile(this->state))
       {
         glDisable(GL_POINT_SMOOTH);
@@ -1869,6 +1877,10 @@ SoGLRenderActionP::renderSingle(SoNode * node)
   SoGLRenderPassElement::set(state, this->currentpass);
   SoGLCacheContextElement::set(state, this->cachecontext,
                                FALSE, !this->isDirectRendering(state));
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  SoBGFXViewIdElement::set(state, node, this->viewid);
+#endif
 
   assert(this->delayedpathrender == FALSE);
   assert(this->transparencyrender == FALSE);

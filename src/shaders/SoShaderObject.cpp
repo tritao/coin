@@ -123,8 +123,14 @@
 #include <Inventor/SoInput.h>
 #include <Inventor/lists/SbStringList.h>
 
+#if defined(COIN_USE_BGFX_RENDERER)
+#include <Inventor/elements/SoBGFXShaderProgramElement.h>
+#include "shaders/SoBGFXShaderProgram.h"
+#endif
+
 #include "nodes/SoSubNodeP.h"
 #include "misc/SbHash.h"
+#include "shaders/SoBGFXShaderObject.h"
 #include "shaders/SoGLARBShaderObject.h"
 #include "shaders/SoGLCgShaderObject.h"
 #include "shaders/SoGLSLShaderObject.h"
@@ -396,6 +402,10 @@ SoShaderObjectP::GLRender(SoGLRenderAction * action)
 
   SoState * state = action->getState();
 
+#if defined(COIN_USE_BGFX_RENDERER)
+
+
+#elif defined(COIN_USE_GL_RENDERER)
   SoGLShaderProgram * shaderProgram = SoGLShaderProgramElement::get(state);
   if (!shaderProgram) {
     SoDebugError::postWarning("SoShaderObject::GLRender",
@@ -471,6 +481,7 @@ SoShaderObjectP::GLRender(SoGLRenderAction * action)
     shaderProgram->addShaderObject(shaderobject);
     shaderobject->setIsActive(isactive);
   }
+#endif
 }
 
 // sets this->cachedSourceType to [ARB|CG|GLSL]_PROGRAM

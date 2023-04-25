@@ -39,6 +39,8 @@
 
 // *************************************************************************
 
+#include <Inventor/system/renderer.h>
+
 class SbName;
 
 class SoShader
@@ -49,11 +51,16 @@ public:
   enum Type {
     ARB_SHADER,
     CG_SHADER,
-    GLSL_SHADER
+    GLSL_SHADER,
+    BGFX_SHADER,
   };
 
   static const char * getNamedScript(const SbName & name, const Type type);
   static void setupBuiltinShaders(void);
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  static bool getBGFXEmbeddedShader(const SbName & name, bgfx::EmbeddedShader & shader);
+#endif
 };
 
 // *************************************************************************

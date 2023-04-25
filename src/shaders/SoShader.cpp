@@ -190,8 +190,10 @@
 #include <Inventor/nodes/SoGeometryShader.h>
 #include <Inventor/nodes/SoShaderParameter.h>
 #include <Inventor/elements/SoGLShaderProgramElement.h>
+#include <Inventor/elements/SoBGFXShaderProgramElement.h>
 #include <Inventor/C/tidbits.h>
 #include <Inventor/errors/SoDebugError.h>
+#include <Inventor/system/renderer.h>
 
 #include "glue/cg.h"
 #include "misc/SbHash.h"
@@ -212,6 +214,10 @@ static const char * SO_SHADER_DIR = NULL;
 static SbHash<const char *, char *> * shader_dict = NULL;
 static SbHash<const char *, char *> * shader_builtin_dict = NULL;
 
+#if defined(COIN_USE_BGFX_RENDERER)
+static SbHash<const char *, bgfx::EmbeddedShader> * shader_builtin_bgfx_dict = NULL;
+#endif
+
 static void
 soshader_cleanup(void)
 {
@@ -228,6 +234,10 @@ soshader_cleanup(void)
   // no need to apply on objects since strings are compiled into the
   // library and should not be deleted
   delete shader_builtin_dict;
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  delete shader_builtin_bgfx_dict;
+#endif
 }
 
 void
@@ -240,8 +250,15 @@ SoShader::init(void)
   (void)cc_cgglue_available();
 
   // --- initialization of elements (must be done first) ---------------
+#if defined(COIN_USE_GL_RENDERER)
   if (SoGLShaderProgramElement::getClassTypeId() == SoType::badType())
     SoGLShaderProgramElement::initClass();
+#endif
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoBGFXShaderProgramElement::getClassTypeId() == SoType::badType())
+    SoBGFXShaderProgramElement::initClass();
+#endif
 
   // --- initialization of shader nodes --------------------------------
   if (SoShaderProgram::getClassTypeId() == SoType::badType())
@@ -314,6 +331,11 @@ SoShader::init(void)
   SO_SHADER_DIR = coin_getenv("SO_SHADER_DIR");
   shader_dict = new SbHash<const char *, char *>;
   shader_builtin_dict = new SbHash<const char *, char *>;
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  shader_builtin_bgfx_dict = new SbHash<const char *, bgfx::EmbeddedShader>;
+#endif
+
   setupBuiltinShaders();
 
   coin_atexit((coin_atexit_f*) soshader_cleanup, CC_ATEXIT_NORMAL);
@@ -387,13 +409,72 @@ SoShader::getNamedScript(const SbName & name, const Type type)
   return shader;
 }
 
+#if defined(COIN_USE_BGFX_RENDERER)
+bool
+SoShader::getBGFXEmbeddedShader(const SbName & name, bgfx::EmbeddedShader & shader)
+{
+#if 0
+  if (SO_SHADER_DIR) {
+    SbString filename(SO_SHADER_DIR);
+    filename += "/";
+    filename += name.getString();
+
+    SbName shadername(filename.getString());
+
+    if (!shader_dict->get(shadername.getString(), shader)) {
+      FILE * fp = fopen(filename.getString(), "rb");
+      if (fp) {
+        (void) fseek(fp, 0, SEEK_END);
+        size_t size = (size_t) ftell(fp);
+        (void) fseek(fp, 0, SEEK_SET);
+
+        shader = new char[size+1];
+        shader[size] = 0;
+        shader_dict->put(shadername, shader);
+
+        if (!(fread(shader, size, 1, fp) == 1)) {
+          SoDebugError::postWarning("SoShader::getNamedScript",
+                                    "Unable to read shader: %s",
+                                    filename.getString());
+        }
+        fclose(fp);
+      }
+      else {
+        shader_dict->put(shadername, NULL);
+        SoDebugError::postWarning("SoShader::getNamedScript",
+                                  "Unable to find shader: %s",
+                                  filename.getString());
+      }
+    }
+  }
+#endif
+
+  // try builtin shaders
+  if (!shader_builtin_bgfx_dict->get(name.getString(), shader)) {
+    SoDebugError::postWarning("SoShader::getNamedScript",
+                              "Unable to find builtin shader: %s",
+                              name.getString());
+    return false;
+  }
+
+  return true;
+}
+#endif
+
 void
 SoShader::setupBuiltinShaders(void)
 {
+#if defined(COIN_USE_GL_RENDERER)
   shader_builtin_dict->put(SbName("images/Image").getString(), (char*) IMAGE_shadersource);
   shader_builtin_dict->put(SbName("lights/PointLight").getString(), (char*) POINTLIGHT_shadersource);
   shader_builtin_dict->put(SbName("lights/SpotLight").getString(), (char*) SPOTLIGHT_shadersource);
   shader_builtin_dict->put(SbName("lights/DirectionalLight").getString(), (char*) DIRECTIONALLIGHT_shadersource);
   shader_builtin_dict->put(SbName("lights/DirSpotLight").getString(), (char*) DIRSPOTLIGHT_shadersource);
   shader_builtin_dict->put(SbName("vsm/VsmLookup").getString(), (char*) VSMLOOKUP_shadersource);
+#endif
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  shader_builtin_bgfx_dict->put(SbName("fs_basic").getString(), BGFX_EMBEDDED_SHADER(fs_basic));
+  shader_builtin_bgfx_dict->put(SbName("vs_basic").getString(), BGFX_EMBEDDED_SHADER(vs_basic));
+#endif
 }

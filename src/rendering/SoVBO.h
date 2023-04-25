@@ -37,6 +37,7 @@
 #error this is a private header file
 #endif /* !COIN_INTERNAL */
 
+#include <Inventor/system/renderer.h>
 #include <Inventor/system/gl.h>
 #include <Inventor/C/glue/gl.h>
 
@@ -52,11 +53,16 @@ class SoVBO {
 
   static void init(void);
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  void setVertexLayout(const bgfx::VertexLayout& layout);
+  bgfx::VertexLayout& getVertexLayout();
+#endif
+
   void setBufferData(const GLvoid * data, intptr_t size, SbUniqueId dataid = 0);
   void * allocBufferData(intptr_t size, SbUniqueId dataid = 0);
   SbUniqueId getBufferDataId(void) const;
   void getBufferData(const GLvoid *& data, intptr_t & size);
-  void bindBuffer(uint32_t contextid);
+  void bindBuffer(uint32_t contextid, uint8_t stream = 0);
 
   static void setVertexCountLimits(const int minlimit, const int maxlimit);
   static int getVertexCountMinLimit(void);
@@ -83,6 +89,13 @@ class SoVBO {
   SbBool didalloc;
 
   SbHash<uint32_t, GLuint> vbohash;
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  bgfx::IndexBufferHandle ibhandle;
+  bgfx::VertexBufferHandle vbhandle;
+  bgfx::VertexLayout layout;
+  const bgfx::Memory * memory;
+#endif
 };
 
 #endif // COIN_VERTEXARRAYINDEXER_H
