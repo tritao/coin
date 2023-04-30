@@ -61,6 +61,7 @@ SoBGFXShaderProgram * SoBGFXShaderProgram::create(bgfx::ShaderHandle vertex, bgf
   SoBGFXShaderProgram * program = new SoBGFXShaderProgram();
   program->setVertexShader(vertex);
   program->setFragmentShader(fragment);
+  program->setProgramHandle(programHandle);
 
   return program;
 }

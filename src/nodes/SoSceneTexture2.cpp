@@ -437,8 +437,12 @@ SoSceneTexture2::initClass(void)
 {
   SO_NODE_INTERNAL_INIT_CLASS(SoSceneTexture2, SO_FROM_COIN_2_2);
 
-  SO_ENABLE(SoGLRenderAction, SoGLMultiTextureImageElement);
-  SO_ENABLE(SoGLRenderAction, SoGLMultiTextureEnabledElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLMultiTextureImageElement);
+    SO_ENABLE(SoGLRenderAction, SoGLMultiTextureEnabledElement);
+  }
+#endif
 
   SO_ENABLE(SoCallbackAction, SoMultiTextureImageElement);
   SO_ENABLE(SoCallbackAction, SoMultiTextureEnabledElement);

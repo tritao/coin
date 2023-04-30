@@ -205,11 +205,19 @@ SoDrawStyle::initClass(void)
 {
   SO_NODE_INTERNAL_INIT_CLASS(SoDrawStyle, SO_FROM_INVENTOR_1);
 
-  SO_ENABLE(SoGLRenderAction, SoGLDrawStyleElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLDrawStyleElement);
+  }
+#endif
   SO_ENABLE(SoGLRenderAction, SoShapeStyleElement);
-  SO_ENABLE(SoGLRenderAction, SoGLLinePatternElement);
-  SO_ENABLE(SoGLRenderAction, SoGLLineWidthElement);
-  SO_ENABLE(SoGLRenderAction, SoGLPointSizeElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLLinePatternElement);
+    SO_ENABLE(SoGLRenderAction, SoGLLineWidthElement);
+    SO_ENABLE(SoGLRenderAction, SoGLPointSizeElement);
+  }
+#endif
 
   SO_ENABLE(SoCallbackAction, SoDrawStyleElement);
   SO_ENABLE(SoCallbackAction, SoShapeStyleElement);

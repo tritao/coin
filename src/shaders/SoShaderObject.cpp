@@ -403,83 +403,87 @@ SoShaderObjectP::GLRender(SoGLRenderAction * action)
   SoState * state = action->getState();
 
 #if defined(COIN_USE_BGFX_RENDERER)
-
-
-#elif defined(COIN_USE_GL_RENDERER)
-  SoGLShaderProgram * shaderProgram = SoGLShaderProgramElement::get(state);
-  if (!shaderProgram) {
-    SoDebugError::postWarning("SoShaderObject::GLRender",
-                              "SoShaderObject seems to not be under a SoShaderProgram node");
-    return;
+  if (SoRenderer::isBGFX()) {
   }
+#endif
 
-  const uint32_t cachecontext = SoGLCacheContextElement::get(state);
-  const cc_glglue * glue = cc_glglue_instance(cachecontext);
-
-  SoGLShaderObject * shaderobject = this->getGLShaderObject(cachecontext);
-
-  if (this->owner->sourceProgram.isDefault() ||
-      this->owner->sourceProgram.getValue().getLength() == 0) { return; }
-
-  if (shaderobject == NULL) {
-    if (this->shouldload) {
-      this->checkType(); // set this->cachedSourceType
-      this->readSource(); // set this->cachedSourceProgram
-      this->shouldload = FALSE;
-    }
-    // if file could not be read
-    if (this->cachedSourceType == SoShaderObject::FILENAME) return;
-
-    if (!this->isSupported(this->cachedSourceType, glue)) {
-      SbString s;
-      switch (this->cachedSourceType) {
-      case SoShaderObject::ARB_PROGRAM: s = "ARB_PROGRAM"; break;
-      case SoShaderObject::CG_PROGRAM: s = "CG_PROGRAM"; break;
-      case SoShaderObject::GLSL_PROGRAM: s = "GLSL_PROGRAM"; break;
-      default: assert(FALSE && "unknown shader");
-      }
-      SoDebugError::postWarning("SoShaderObjectP::GLRender",
-                                "%s is not supported", s.getString());
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLShaderProgram * shaderProgram = SoGLShaderProgramElement::get(state);
+    if (!shaderProgram) {
+      SoDebugError::postWarning("SoShaderObject::GLRender",
+                                "SoShaderObject seems to not be under a SoShaderProgram node");
       return;
     }
 
-    switch (this->cachedSourceType) {
-    case SoShaderObject::ARB_PROGRAM:
-      shaderobject = new SoGLARBShaderObject(cachecontext);
-      break;
-    case SoShaderObject::CG_PROGRAM:
-      shaderobject = new SoGLCgShaderObject(cachecontext);
-      break;
-    case SoShaderObject::GLSL_PROGRAM:
-      shaderobject = new SoGLSLShaderObject(cachecontext);
-      break;
-    default:
-      assert(FALSE && "This shouldn't happen!");
-    }
+    const uint32_t cachecontext = SoGLCacheContextElement::get(state);
+    const cc_glglue * glue = cc_glglue_instance(cachecontext);
 
-    if (this->owner->isOfType(SoVertexShader::getClassTypeId())) {
-      shaderobject->setShaderType(SoGLShaderObject::VERTEX);
-    }
-    else if (this->owner->isOfType(SoFragmentShader::getClassTypeId())) {
-      shaderobject->setShaderType(SoGLShaderObject::FRAGMENT);
-    }
-    else {
-      assert(this->owner->isOfType(SoGeometryShader::getClassTypeId()));
-      shaderobject->setShaderType(SoGLShaderObject::GEOMETRY);
+    SoGLShaderObject * shaderobject = this->getGLShaderObject(cachecontext);
 
-      //SoGeometryShader * geomshader = (SoGeometryShader*) this->owner;
+    if (this->owner->sourceProgram.isDefault() ||
+        this->owner->sourceProgram.getValue().getLength() == 0) { return; }
 
+    if (shaderobject == NULL) {
+      if (this->shouldload) {
+        this->checkType(); // set this->cachedSourceType
+        this->readSource(); // set this->cachedSourceProgram
+        this->shouldload = FALSE;
+      }
+      // if file could not be read
+      if (this->cachedSourceType == SoShaderObject::FILENAME) return;
+
+      if (!this->isSupported(this->cachedSourceType, glue)) {
+        SbString s;
+        switch (this->cachedSourceType) {
+        case SoShaderObject::ARB_PROGRAM: s = "ARB_PROGRAM"; break;
+        case SoShaderObject::CG_PROGRAM: s = "CG_PROGRAM"; break;
+        case SoShaderObject::GLSL_PROGRAM: s = "GLSL_PROGRAM"; break;
+        default: assert(FALSE && "unknown shader");
+        }
+        SoDebugError::postWarning("SoShaderObjectP::GLRender",
+                                  "%s is not supported", s.getString());
+        return;
+      }
+
+      switch (this->cachedSourceType) {
+      case SoShaderObject::ARB_PROGRAM:
+        shaderobject = new SoGLARBShaderObject(cachecontext);
+        break;
+      case SoShaderObject::CG_PROGRAM:
+        shaderobject = new SoGLCgShaderObject(cachecontext);
+        break;
+      case SoShaderObject::GLSL_PROGRAM:
+        shaderobject = new SoGLSLShaderObject(cachecontext);
+        break;
+      default:
+        assert(FALSE && "This shouldn't happen!");
+      }
+
+      if (this->owner->isOfType(SoVertexShader::getClassTypeId())) {
+        shaderobject->setShaderType(SoGLShaderObject::VERTEX);
+      }
+      else if (this->owner->isOfType(SoFragmentShader::getClassTypeId())) {
+        shaderobject->setShaderType(SoGLShaderObject::FRAGMENT);
+      }
+      else {
+        assert(this->owner->isOfType(SoGeometryShader::getClassTypeId()));
+        shaderobject->setShaderType(SoGLShaderObject::GEOMETRY);
+
+        //SoGeometryShader * geomshader = (SoGeometryShader*) this->owner;
+
+      }
+
+  #if defined(SOURCE_HINT)
+      shaderobject->sourceHint = getSourceHint();
+  #endif
+      shaderobject->load(this->cachedSourceProgram.getString());
+      this->setGLShaderObject(shaderobject, cachecontext);
     }
-
-#if defined(SOURCE_HINT)
-    shaderobject->sourceHint = getSourceHint();
-#endif
-    shaderobject->load(this->cachedSourceProgram.getString());
-    this->setGLShaderObject(shaderobject, cachecontext);
-  }
-  if (shaderobject) {
-    shaderProgram->addShaderObject(shaderobject);
-    shaderobject->setIsActive(isactive);
+    if (shaderobject) {
+      shaderProgram->addShaderObject(shaderobject);
+      shaderobject->setIsActive(isactive);
+    }
   }
 #endif
 }

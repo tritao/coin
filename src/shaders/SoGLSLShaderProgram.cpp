@@ -181,7 +181,6 @@ SoGLSLShaderProgram::ensureLinking(const cc_glglue * g)
 
     }
 
-#ifdef COIN_USE_GL_RENDERER
     if (cc_glglue_glprofile_compat(g)) {
       g->glLinkProgramARB(programHandle);
 
@@ -191,9 +190,7 @@ SoGLSLShaderProgram::ensureLinking(const cc_glglue * g)
 
       g->glGetObjectParameterivARB(programHandle,
                                   GL_OBJECT_LINK_STATUS_ARB, &didLink);
-    } else
-#endif
-    {
+    } else {
       glLinkProgram(programHandle);
       glGetProgramiv(programHandle, GL_LINK_STATUS, &didLink);
 
@@ -250,12 +247,9 @@ SoGLSLShaderProgram::getProgramHandle(const cc_glglue * g, const SbBool create)
 {
   COIN_GLhandle handle = 0;
   if (!this->programHandles.get(g->contextid, handle) && create) {
-#ifdef COIN_USE_GL_RENDERER
     if (cc_glglue_glprofile_compat(g)) {
       handle = g->glCreateProgramObjectARB();
-    } else
-#endif
-    {
+    } else {
       handle = glCreateProgram();
     }
     this->programHandles.put(g->contextid, handle);

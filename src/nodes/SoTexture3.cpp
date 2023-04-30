@@ -241,7 +241,11 @@ SoTexture3::initClass(void)
 {
   SO_NODE_INTERNAL_INIT_CLASS(SoTexture3, SO_FROM_INVENTOR_2_6|SO_FROM_COIN_2_0);
 
-  SO_ENABLE(SoGLRenderAction, SoGLMultiTextureImageElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLMultiTextureImageElement);
+  }
+#endif
   SO_ENABLE(SoCallbackAction, SoMultiTextureImageElement);
 }
 

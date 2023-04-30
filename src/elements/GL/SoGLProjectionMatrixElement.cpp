@@ -116,8 +116,7 @@ SoGLProjectionMatrixElement::updategl(void)
   SoDebugError::postInfo("SoGLProjectionMatrixElement::updategl", "");
 #endif // debug
 #ifdef COIN_USE_GL_RENDERER
-  if (sogl_compatibility_profile(state))
-  {
+  if (sogl_compatibility_profile(state)) {
     glMatrixMode(GL_PROJECTION);
     glLoadMatrixf((float*)this->projectionMatrix);
     glMatrixMode(GL_MODELVIEW);

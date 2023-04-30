@@ -83,12 +83,10 @@ SoGLSLShaderObject::isLoaded(void) const
 void
 SoGLSLShaderObject::load(const char* srcStr)
 {
-#ifdef COIN_USE_GL_RENDERER
   if (cc_glglue_glprofile_compat(this->glctx)) {
     loadARB(srcStr);
     return;
   }
-#endif
 
   this->unload();
   this->setParametersDirty(TRUE);
@@ -135,7 +133,6 @@ SoGLSLShaderObject::load(const char* srcStr)
   }
 }
 
-#ifdef COIN_USE_GL_RENDERER
 void
 SoGLSLShaderObject::loadARB(const char* srcStr)
 {
@@ -183,7 +180,6 @@ SoGLSLShaderObject::loadARB(const char* srcStr)
 
   if (!flag) this->shaderHandle = 0;
 }
-#endif
 
 void
 SoGLSLShaderObject::unload(void)
@@ -212,13 +208,9 @@ SoGLSLShaderObject::attach(COIN_GLhandle programHandle)
 
   if (this->shaderHandle) {
     this->programHandle = programHandle;
-#ifdef COIN_USE_GL_RENDERER
     if (cc_glglue_glprofile_compat(this->glctx)) {
       this->glctx->glAttachObjectARB(this->programHandle, this->shaderHandle);
-    }
-    else
-#endif
-    {
+    } else {
       glAttachShader(this->programHandle, this->shaderHandle);
     }
     this->isattached = TRUE;
@@ -246,24 +238,18 @@ SoGLSLShaderObject::printInfoLog(const cc_glglue * g, COIN_GLhandle handle, int 
 {
   GLint length = 0;
 
-#ifdef COIN_USE_GL_RENDERER
   if (cc_glglue_glprofile_compat(g)) {
     g->glGetObjectParameterivARB(handle, GL_OBJECT_INFO_LOG_LENGTH_ARB, &length);
-  } else
-#endif
-  {
+  } else {
     glGetShaderiv(handle, GL_INFO_LOG_LENGTH, &length);
   }
 
   if (length > 1) {
     COIN_GLchar *infoLog = new COIN_GLchar[length];
     GLsizei charsWritten = 0;
-  #ifdef COIN_USE_GL_RENDERER
     if (cc_glglue_glprofile_compat(g)) {
       g->glGetInfoLogARB(handle, length, &charsWritten, infoLog);
-    } else
-  #endif
-    {
+    } else {
       glGetShaderInfoLog(handle, length, &charsWritten, infoLog);
     }
     SbString s("GLSL");
@@ -331,13 +317,10 @@ SoGLSLShaderObject::updateCoinParameter(SoState * COIN_UNUSED_ARG(state), const 
     }
     else {
       GLint location;
-#ifdef COIN_USE_GL_RENDERER
       if (sogl_compatibility_profile(state)) {
         location = glue->glGetUniformLocationARB(pHandle,
                                                     (const COIN_GLchar *)name.getString());
-      } else
-#endif
-      {
+      } else {
         location = glGetUniformLocation(pHandle,
                                               (const COIN_GLchar *)name.getString());
       }
@@ -348,13 +331,10 @@ SoGLSLShaderObject::updateCoinParameter(SoState * COIN_UNUSED_ARG(state), const 
               name.getString(), location, pHandle);
 #endif
       if (location >= 0) {
-#ifdef COIN_USE_GL_RENDERER
         if (sogl_compatibility_profile(state)) {
           glue->glUniform1iARB(location, value);
-        } else
-#endif
-        {
-        glUniform1i(location, value);
+        } else {
+          glUniform1i(location, value);
         }
       }
     }

@@ -111,9 +111,8 @@ SoGLLightIdElement::pop(SoState * state,
   int prevdata = ((SoGLLightIdElement*)prevTopElement)->data;
   // disable used light sources
   while (idx <= prevdata) {
-#if COIN_USE_GL_RENDERER
-    if (sogl_compatibility_profile(state))
-    {
+#ifdef COIN_USE_GL_RENDERER
+    if (sogl_compatibility_profile(state)) {
       glDisable((GLenum)((int32_t)GL_LIGHT0 + idx));
     }
 #endif
@@ -130,9 +129,6 @@ SoGLLightIdElement::increment(SoState * const state,
   SoGLLightIdElement * element = (SoGLLightIdElement *)
     getElement(state, getClassStackIndex());
 
-#if defined(COIN_USE_BGFX_RENDERER)
-  // TODO: BGFX
-#else
   if (element) {
     const cc_glglue * glue = sogl_glue_instance(state);
     element->data++;
@@ -160,12 +156,10 @@ SoGLLightIdElement::increment(SoState * const state,
 
                                   maxl);
       }
-#endif
       return -1;
     }
 #ifdef COIN_USE_GL_RENDERER
-    if (sogl_compatibility_profile(state))
-    {
+    if (sogl_compatibility_profile(state)) {
       glEnable((GLenum)((int32_t)GL_LIGHT0 + element->data));
     }
 #endif

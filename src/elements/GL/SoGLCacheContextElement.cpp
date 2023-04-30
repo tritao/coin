@@ -49,7 +49,7 @@
 #include <Inventor/elements/SoGLDisplayList.h>
 #include <Inventor/lists/SbList.h>
 #include <Inventor/misc/SoState.h>
-#include <Inventor/system/gl.h>
+#include <Inventor/system/renderer.h>
 #include <Inventor/misc/SoContextHandler.h>
 #include <Inventor/misc/SoGLDriverDatabase.h>
 
@@ -442,10 +442,16 @@ SoGLCacheContextElement::isDirectRendering(SoState * state) const
   SbBool isdirect;
   if (this->rendering == RENDERING_UNSET) {
 #if defined(COIN_USE_BGFX_RENDERER)
-    isdirect = 1;
-#else
-    const cc_glglue * w = sogl_glue_instance(state);
-    isdirect = cc_glglue_isdirect(w);
+    if (SoRenderer::isBGFX()) {
+      isdirect = 1;
+    }
+#endif
+
+#if defined(COIN_USE_GL_RENDERER)
+    if (SoRenderer::isOpenGL()) {
+      const cc_glglue * w = sogl_glue_instance(state);
+      isdirect = cc_glglue_isdirect(w);
+    }
 #endif
   }
   else {

@@ -48,6 +48,8 @@
 #include <Inventor/misc/SoGLDriverDatabase.h>
 
 #include "Inventor/C/glue/gl.h"
+#include "Inventor/elements/SoViewingMatrixElement.h"
+#include "Inventor/elements/SoProjectionMatrixElement.h"
 #include "Inventor/elements/SoBGFXShaderProgramElement.h"
 #include "Inventor/elements/SoBGFXViewIdElement.h"
 
@@ -56,6 +58,8 @@
 #include "rendering/SoGL.h"
 #include "coindefs.h"
 #include "shaders/SoBGFXShaderProgram.h"
+
+#include <bx/math.h>
 
 #if BOOST_WORKAROUND(COIN_MSVC, <= COIN_MSVC_6_0_VERSION)
 // symbol length truncation
@@ -254,10 +258,10 @@ void
 SoVertexArrayIndexer::render(SoState * state, const SbBool renderasvbo, const uint32_t contextid)
 {
 #if defined(COIN_USE_GL_RENDERER)
-  const int useGLRenderer = false;
-  const cc_glglue * glue = NULL;
-  if (useGLRenderer)
-    glue = sogl_glue_instance(state);
+    const cc_glglue * glue = NULL;
+    if (SoRenderer::isOpenGL()) {
+      glue = sogl_glue_instance(state);
+    }
 #endif
 
   switch (this->target) {
@@ -272,7 +276,7 @@ SoVertexArrayIndexer::render(SoState * state, const SbBool renderasvbo, const ui
         if (this->use_shorts) {
           GLushort * dst = reinterpret_cast<GLushort*> 
             (this->vbo->allocBufferData(this->indexarray.getLength()*sizeof(GLushort)));
-          const int32_t * src = this->indexarray.getArrayPtr();
+            const int32_t * src = this->indexarray.getArrayPtr();
           for (int i = 0; i < this->indexarray.getLength(); i++) {
             dst[i] = static_cast<GLushort> (src[i]);
           }
@@ -284,16 +288,24 @@ SoVertexArrayIndexer::render(SoState * state, const SbBool renderasvbo, const ui
       }
       this->vbo->bindBuffer(contextid);
 #if defined(COIN_USE_BGFX_RENDERER)
-      SoBGFXShaderProgram *program = SoBGFXShaderProgramElement::get(state);
-      if (program == NULL) {
-        SoDebugError::post("SoVertexArrayIndexer::render", "Expected shader program in state");
-        return;
-      }
+      if (SoRenderer::isBGFX()) {
+        SoBGFXShaderProgram *program = SoBGFXShaderProgramElement::get(state);
+        if (program == NULL) {
+          SoDebugError::post("SoVertexArrayIndexer::render", "Expected shader program in state");
+          return;
+        }
 
-      bgfx::ViewId viewId = SoBGFXViewIdElement::get(state);
-      bgfx::submit(viewId, program->getProgramHandle());
-#elif defined(COIN_USE_GL_RENDERER)
-      if (useGLRenderer) {
+        bgfx::ViewId viewId = SoBGFXViewIdElement::get(state);
+        const SbMatrix & view = SoViewingMatrixElement::get(state);
+        const SbMatrix & proj = SoProjectionMatrixElement::get(state);
+
+        bgfx::setViewTransform(viewId, view.getValue(), proj.getValue());
+        bgfx::submit(viewId, program->getProgramHandle());
+      }
+#endif
+
+#if defined(COIN_USE_GL_RENDERER)
+      if (SoRenderer::isOpenGL()) {
         if (cc_glglue_glprofile_compat(glue)) {
           cc_glglue_glDrawElements(glue,
                                   this->target,
@@ -306,36 +318,42 @@ SoVertexArrayIndexer::render(SoState * state, const SbBool renderasvbo, const ui
                                   this->use_shorts ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, NULL);
           glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
         }
-      } else {
-        const GLint * idxptr = this->indexarray.getArrayPtr();
-        cc_glglue_glDrawElements(glue,
-                                this->target,
-                                this->indexarray.getLength(),
-                                GL_UNSIGNED_INT,
-                                idxptr);
       }
+#endif
+    } else {
+#if defined(COIN_USE_GL_RENDERER)
+        if (SoRenderer::isOpenGL()) {
+          const GLint * idxptr = this->indexarray.getArrayPtr();
+          cc_glglue_glDrawElements(glue,
+                                  this->target,
+                                  this->indexarray.getLength(),
+                                  GL_UNSIGNED_INT,
+                                  idxptr);
+        }
 #endif
     }
     break;
 #if defined(COIN_USE_GL_RENDERER)
   default:
-    if (SoGLDriverDatabase::isSupported(glue, SO_GL_MULTIDRAW_ELEMENTS)) {
-      cc_glglue_glMultiDrawElements(glue,
-                                    this->target,
-                                    (GLsizei*) this->countarray.getArrayPtr(),
-                                    GL_UNSIGNED_INT,
-                                    (const GLvoid**) this->ciarray.getArrayPtr(),
-                                    this->countarray.getLength());
-    }
-    else {
-      for (int i = 0; i < this->countarray.getLength(); i++) {
-        const GLsizei * ptr = this->ciarray[i];
-        GLsizei cnt = this->countarray[i];
-        cc_glglue_glDrawElements(glue,
-                                 this->target,
-                                 cnt,
-                                 GL_UNSIGNED_INT,
-                                 (const GLvoid*) ptr);
+    if (SoRenderer::isOpenGL()) {
+      if (SoGLDriverDatabase::isSupported(glue, SO_GL_MULTIDRAW_ELEMENTS)) {
+        cc_glglue_glMultiDrawElements(glue,
+                                      this->target,
+                                      (GLsizei*) this->countarray.getArrayPtr(),
+                                      GL_UNSIGNED_INT,
+                                      (const GLvoid**) this->ciarray.getArrayPtr(),
+                                      this->countarray.getLength());
+      }
+      else {
+        for (int i = 0; i < this->countarray.getLength(); i++) {
+          const GLsizei * ptr = this->ciarray[i];
+          GLsizei cnt = this->countarray[i];
+          cc_glglue_glDrawElements(glue,
+                                  this->target,
+                                  cnt,
+                                  GL_UNSIGNED_INT,
+                                  (const GLvoid*) ptr);
+        }
       }
     }
     break;

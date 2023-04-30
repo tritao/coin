@@ -284,7 +284,9 @@ SoRenderManager::SoRenderManager(void)
   PRIVATE(this)->clipsensor->setPriority(this->getRedrawPriority() - 1);
 
 #if defined(COIN_USE_BGFX_RENDERER)
-  PRIVATE(this)->mainviewid = 0;
+  if (SoRenderer::isBGFX()) {
+    PRIVATE(this)->mainviewid = 0;
+  }
 #endif
 }
 
@@ -506,8 +508,12 @@ SoRenderManager::prerendercb(void * userdata, SoGLRenderAction * action)
                          view[0], view[1], view[2], view[3]);
 #endif // debug
 
-  // clear the viewport
-  glClear(mask);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    // clear the viewport
+    glClear(mask);
+  }
+#endif
 }
 
 /*!
@@ -666,7 +672,23 @@ SoRenderManager::render(SoGLRenderAction * action,
                         const SbBool clearzbuffer)
 {
 #if defined(COIN_USE_BGFX_RENDERER)
-		bgfx::touch(PRIVATE(this)->mainviewid);
+  if (SoRenderer::isBGFX()) {
+    //bgfx::ViewId viewId = action->getRenderView();
+    bgfx::ViewId viewId = 0;
+    action->setViewId(viewId);
+
+    bgfx::setViewRect(viewId, 0, 0, bgfx::BackbufferRatio::Equal);
+		bgfx::touch(viewId);
+    bgfx::setState(BGFX_STATE_WRITE_R | BGFX_STATE_WRITE_G | BGFX_STATE_WRITE_B | BGFX_STATE_WRITE_A);
+
+#if 0
+    bgfx::dbgTextClear();
+
+    const bgfx::Stats* stats = bgfx::getStats();
+    bgfx::dbgTextPrintf(2, 2, 0x0f, "Backbuffer %dW x %dH in pixels, debug text %dW x %dH in characters.",
+      stats->width, stats->height, stats->textWidth, stats->textHeight);
+#endif
+  }
 #endif
 
   SbBool clearwindow_tmp = clearwindow; // make sure we only clear the color buffer once
@@ -696,7 +718,9 @@ SoRenderManager::render(SoGLRenderAction * action,
   }
 
 #if defined(COIN_USE_BGFX_RENDERER)
-  bgfx::frame();
+  if (SoRenderer::isBGFX()) {
+    bgfx::frame();
+  }
 #endif
 
   PRIVATE(this)->invokePostRenderCallbacks();
@@ -727,16 +751,15 @@ SoRenderManager::actuallyRender(SoGLRenderAction * action,
   if (clearzbuffer) mask |= GL_DEPTH_BUFFER_BIT;
 
   if (initmatrices) {
-#if !defined(COIN_USE_BGFX_RENDERER)
-#ifdef COIN_USE_GL_RENDERER
-    if (sogl_compatibility_profile(action->getState()))
-    {
-      glMatrixMode(GL_PROJECTION);
-      glLoadIdentity();
-      glMatrixMode(GL_MODELVIEW);
-      glLoadIdentity();
+#if defined(COIN_USE_GL_RENDERER)
+    if (SoRenderer::isOpenGL()) {
+      if (sogl_compatibility_profile(action->getState())) {
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+        glMatrixMode(GL_MODELVIEW);
+        glLoadIdentity();
+      }
     }
-#endif
 #endif
   }
 
@@ -793,17 +816,29 @@ SoRenderManager::renderScene( SoGLRenderAction * action,
     if (clearmask & GL_COLOR_BUFFER_BIT) {
       if (PRIVATE(this)->isrgbmode) {
 #if defined(COIN_USE_BGFX_RENDERER)
-        bgfx::setViewClear(PRIVATE(this)->mainviewid, BGFX_CLEAR_COLOR, PRIVATE(this)->backgroundcolor.getPackedValue());
-#else
-        const SbColor4f bgcol = PRIVATE(this)->backgroundcolor;
-        glClearColor(bgcol[0], bgcol[1], bgcol[2], bgcol[3]);
+        if (SoRenderer::isBGFX()) {
+          bgfx::setViewClear(PRIVATE(this)->mainviewid, BGFX_CLEAR_COLOR,
+            PRIVATE(this)->backgroundcolor.getPackedValue());
+        }
 #endif
-      }
-      else {
+
+#if defined(COIN_USE_GL_RENDERER)
+        if (SoRenderer::isOpenGL()) {
+          const SbColor4f bgcol = PRIVATE(this)->backgroundcolor;
+          glClearColor(bgcol[0], bgcol[1], bgcol[2], bgcol[3]);
+        }
+#endif
+      } else {
 #if defined(COIN_USE_BGFX_RENDERER)
-        assert(0 && "Indexed mode view clearing not supported for BGFX renderer");
-#else
-        glClearIndex((GLfloat) PRIVATE(this)->backgroundindex);
+        if (SoRenderer::isBGFX()) {
+          assert(0 && "Indexed mode view clearing not supported for BGFX renderer");
+        }
+#endif
+
+#if defined(COIN_USE_GL_RENDERER)
+        if (SoRenderer::isOpenGL()) {
+          glClearIndex((GLfloat) PRIVATE(this)->backgroundindex);
+        }
 #endif
       }
     }

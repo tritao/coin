@@ -331,8 +331,12 @@ SoTextureCubeMap::initClass(void)
 {
   SO_NODE_INTERNAL_INIT_CLASS(SoTextureCubeMap, SO_FROM_COIN_2_4);
 
-  SO_ENABLE(SoGLRenderAction, SoGLMultiTextureImageElement);
-  SO_ENABLE(SoGLRenderAction, SoGLMultiTextureEnabledElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLMultiTextureImageElement);
+    SO_ENABLE(SoGLRenderAction, SoGLMultiTextureEnabledElement);
+  }
+#endif
 
   SO_ENABLE(SoCallbackAction, SoMultiTextureImageElement);
   SO_ENABLE(SoCallbackAction, SoMultiTextureEnabledElement);

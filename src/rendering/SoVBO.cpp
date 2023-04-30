@@ -234,11 +234,13 @@ SoVBO::allocBufferData(intptr_t size, SbUniqueId dataid)
   this->dataid = dataid;
 
 #if defined(COIN_USE_BGFX_RENDERER)
-  this->memory = bgfx::makeRef(data, size);
-  if (target == GL_ELEMENT_ARRAY_BUFFER)
-    this->ibhandle = bgfx::createIndexBuffer(this->memory);
-  else
-    this->vbhandle = bgfx::createVertexBuffer(this->memory, this->layout);
+  if (SoRenderer::isBGFX()) {
+    this->memory = bgfx::makeRef(data, size);
+    if (target == GL_ELEMENT_ARRAY_BUFFER)
+      this->ibhandle = bgfx::createIndexBuffer(this->memory);
+    else
+      this->vbhandle = bgfx::createVertexBuffer(this->memory, this->layout);
+  }
 #endif
 
   return (void*) this->data;
@@ -279,11 +281,13 @@ SoVBO::setBufferData(const GLvoid * data, intptr_t size, SbUniqueId dataid)
   this->didalloc = FALSE;
 
 #if defined(COIN_USE_BGFX_RENDERER)
-  this->memory = bgfx::makeRef(data, size);
-  if (target == GL_ELEMENT_ARRAY_BUFFER)
-    this->ibhandle = bgfx::createIndexBuffer(this->memory);
-  else
-    this->vbhandle = bgfx::createVertexBuffer(this->memory, this->layout);
+  if (SoRenderer::isBGFX()) {
+    this->memory = bgfx::makeRef(data, size);
+    if (target == GL_ELEMENT_ARRAY_BUFFER)
+      this->ibhandle = bgfx::createIndexBuffer(this->memory);
+    else
+      this->vbhandle = bgfx::createVertexBuffer(this->memory, this->layout);
+  }
 #endif
 }
 
@@ -332,27 +336,33 @@ SoVBO::bindBuffer(uint32_t contextid, uint8_t stream)
   }
 
 #if defined(COIN_USE_BGFX_RENDERER)
-  if (target == GL_ELEMENT_ARRAY_BUFFER)
-    bgfx::setIndexBuffer(this->ibhandle);
-  else
-    bgfx::setVertexBuffer(stream, this->vbhandle);
-#elif defined(COIN_USE_GL_RENDERER)
-  const cc_glglue * glue = cc_glglue_instance((int) contextid);
-
-  GLuint buffer;
-  if (!this->vbohash.get(contextid, buffer)) {
-    // need to create a new buffer for this context
-    cc_glglue_glGenBuffers(glue, 1, &buffer);
-    cc_glglue_glBindBuffer(glue, this->target, buffer);
-    cc_glglue_glBufferData(glue, this->target,
-                           this->datasize,
-                           this->data,
-                           this->usage);
-    this->vbohash.put(contextid, buffer);
+  if (SoRenderer::isBGFX()) {
+    if (target == GL_ELEMENT_ARRAY_BUFFER)
+      bgfx::setIndexBuffer(this->ibhandle);
+    else
+      bgfx::setVertexBuffer(stream, this->vbhandle);
   }
-  else {
-    // buffer already exists, bind it
-    cc_glglue_glBindBuffer(glue, this->target, buffer);
+#endif
+
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    const cc_glglue * glue = cc_glglue_instance((int) contextid);
+
+    GLuint buffer;
+    if (!this->vbohash.get(contextid, buffer)) {
+      // need to create a new buffer for this context
+      cc_glglue_glGenBuffers(glue, 1, &buffer);
+      cc_glglue_glBindBuffer(glue, this->target, buffer);
+      cc_glglue_glBufferData(glue, this->target,
+                            this->datasize,
+                            this->data,
+                            this->usage);
+      this->vbohash.put(contextid, buffer);
+    }
+    else {
+      // buffer already exists, bind it
+      cc_glglue_glBindBuffer(glue, this->target, buffer);
+    }
   }
 #endif
 

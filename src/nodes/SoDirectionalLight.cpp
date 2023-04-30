@@ -156,71 +156,69 @@ SoDirectionalLight::initClass(void)
 void
 SoDirectionalLight::GLRender(SoGLRenderAction * action)
 {
-#if defined(COIN_USE_BGFX_RENDERER)
-
-#else
   if (!this->on.getValue()) return;
 
-  SoState * state = action->getState();
-  int idx = SoGLLightIdElement::increment(state);
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
 
-  if (idx < 0) {
+  }
+#endif
+
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoState * state = action->getState();
+    int idx = SoGLLightIdElement::increment(state);
+
+    if (idx < 0) {
 #if COIN_DEBUG
-    SoDebugError::postWarning("SoDirectionalLight::GLRender",
-                              "Max # of OpenGL lights exceeded :(");
+      SoDebugError::postWarning("SoDirectionalLight::GLRender",
+                                "Max # of OpenGL lights exceeded :(");
 #endif // COIN_DEBUG
-    return;
+      return;
+    }
+
+    SoLightElement::add(state, this, SoModelMatrixElement::get(state) * 
+                        SoViewingMatrixElement::get(state));
+    
+    GLenum light = (GLenum) (idx + GL_LIGHT0);
+    
+    SbColor4f lightcolor(0.0f, 0.0f, 0.0f, 1.0f);
+    // disable ambient contribution from this light source
+    if (SoRenderer::isOpenGL()) {
+      if (sogl_compatibility_profile(state)) {
+        glLightfv(light, GL_AMBIENT, lightcolor.getValue());
+      }
+    }
+
+    lightcolor.setRGB(this->color.getValue());
+    lightcolor *= this->intensity.getValue();
+
+    if (sogl_compatibility_profile(state)) {
+      glLightfv(light, GL_DIFFUSE, lightcolor.getValue());
+      glLightfv(light, GL_SPECULAR, lightcolor.getValue());
+    }
+
+    // GL directional light is specified towards light source
+    SbVec3f dir = - this->direction.getValue();
+    if (dir.normalize() == 0.0f) {
+  #if COIN_DEBUG
+      SoDebugError::postWarning("SoDirectionalLight::GLRender",
+                                "Direction is a null vector.");
+  #endif // COIN_DEBUG
+    }
+
+    // directional when w = 0.0
+    SbVec4f dirvec(dir[0], dir[1], dir[2], 0.0f);
+      if (sogl_compatibility_profile(state)) {
+        glLightfv(light, GL_POSITION, dirvec.getValue());
+
+        glLightf(light, GL_SPOT_EXPONENT, 0.0);
+        glLightf(light, GL_SPOT_CUTOFF, 180.0);
+        glLightf(light, GL_CONSTANT_ATTENUATION, 1);
+        glLightf(light, GL_LINEAR_ATTENUATION, 0);
+        glLightf(light, GL_QUADRATIC_ATTENUATION, 0);
+      }
   }
-
-
-  SoLightElement::add(state, this, SoModelMatrixElement::get(state) * 
-                      SoViewingMatrixElement::get(state));
-  
-  GLenum light = (GLenum) (idx + GL_LIGHT0);
-  
-  SbColor4f lightcolor(0.0f, 0.0f, 0.0f, 1.0f);
-  // disable ambient contribution from this light source
-#ifdef COIN_USE_GL_RENDERER
-  if (sogl_compatibility_profile(state))
-  {
-    glLightfv(light, GL_AMBIENT, lightcolor.getValue());
-  }
-#endif
-
-  lightcolor.setRGB(this->color.getValue());
-  lightcolor *= this->intensity.getValue();
-
-#ifdef COIN_USE_GL_RENDERER
-  if (sogl_compatibility_profile(state))
-  {
-    glLightfv(light, GL_DIFFUSE, lightcolor.getValue());
-    glLightfv(light, GL_SPECULAR, lightcolor.getValue());
-  }
-#endif
-
-  // GL directional light is specified towards light source
-  SbVec3f dir = - this->direction.getValue();
-  if (dir.normalize() == 0.0f) {
-#if COIN_DEBUG
-    SoDebugError::postWarning("SoDirectionalLight::GLRender",
-                              "Direction is a null vector.");
-#endif // COIN_DEBUG
-  }
-
-  // directional when w = 0.0
-  SbVec4f dirvec(dir[0], dir[1], dir[2], 0.0f);
-#ifdef COIN_USE_GL_RENDERER
-  if (sogl_compatibility_profile(state))
-  {
-    glLightfv(light, GL_POSITION, dirvec.getValue());
-
-    glLightf(light, GL_SPOT_EXPONENT, 0.0);
-    glLightf(light, GL_SPOT_CUTOFF, 180.0);
-    glLightf(light, GL_CONSTANT_ATTENUATION, 1);
-    glLightf(light, GL_LINEAR_ATTENUATION, 0);
-    glLightf(light, GL_QUADRATIC_ATTENUATION, 0);
-  }
-#endif
 #endif
 }
 

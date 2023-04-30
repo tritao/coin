@@ -229,8 +229,12 @@ SoSceneTextureCubeMap::initClass(void)
 {
   SO_NODE_INIT_CLASS(SoSceneTextureCubeMap, SoNode, "Node");
 
-  SO_ENABLE(SoGLRenderAction, SoGLMultiTextureImageElement);
-  SO_ENABLE(SoGLRenderAction, SoGLMultiTextureEnabledElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLMultiTextureImageElement);
+    SO_ENABLE(SoGLRenderAction, SoGLMultiTextureEnabledElement);
+  }
+#endif
 
   SO_ENABLE(SoCallbackAction, SoMultiTextureImageElement);
   SO_ENABLE(SoCallbackAction, SoMultiTextureEnabledElement);

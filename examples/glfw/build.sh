@@ -7,12 +7,12 @@ export COIN_PATH=`pwd`/../..
 export COIN_BUILD_PATH=$COIN_PATH/bld
 ninja -C $COIN_BUILD_PATH
 
-g++ -ggdb glfw.cpp \
+g++ -O0 -ggdb glfw.cpp \
     -I$COIN_PATH/include -I$COIN_BUILD_PATH/include -L$COIN_BUILD_PATH/lib \
     -lGL -lGLU -lglut -lglfw -lCoin -o glfw
 
-g++ -ggdb glfw_bgfx.cpp \
-    -DBX_CONFIG_DEBUG=1 \
+g++ -O0 -ggdb glfw_bgfx.cpp \
+    -DBX_CONFIG_DEBUG=1 -DCOIN_USE_GL_RENDERER=1 -DCOIN_USE_BGFX_RENDERER=1 \
     -I$COIN_PATH/bgfx.cmake/bx/include -I$COIN_PATH/bgfx.cmake/bgfx/include \
     -I$COIN_PATH/include -I$COIN_BUILD_PATH/include -L$COIN_BUILD_PATH/lib \
     -L$COIN_BUILD_PATH/bgfx.cmake/cmake/bgfx/ -lbgfx -lX11 \

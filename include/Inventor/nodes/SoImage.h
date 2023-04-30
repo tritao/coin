@@ -75,7 +75,7 @@ public:
   SoSFString filename;
 
   virtual void GLRender(SoGLRenderAction * action);
-#ifdef COIN_USE_GL_RENDERER
+#if defined(COIN_USE_GL_RENDERER)
   virtual void GLRenderCompat(SoGLRenderAction * action);
 #endif
 

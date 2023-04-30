@@ -114,8 +114,12 @@ SoCoordinate3::initClass(void)
   SO_NODE_INTERNAL_INIT_CLASS(SoCoordinate3, SO_FROM_INVENTOR_1|SoNode::VRML1);
 
   SO_ENABLE(SoGetBoundingBoxAction, SoCoordinateElement);
-  SO_ENABLE(SoGLRenderAction, SoGLCoordinateElement);
-  SO_ENABLE(SoGLRenderAction, SoGLVBOElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLCoordinateElement);
+    SO_ENABLE(SoGLRenderAction, SoGLVBOElement);
+  }
+#endif
   SO_ENABLE(SoPickAction, SoCoordinateElement);
   SO_ENABLE(SoCallbackAction, SoCoordinateElement);
   SO_ENABLE(SoGetPrimitiveCountAction, SoCoordinateElement);

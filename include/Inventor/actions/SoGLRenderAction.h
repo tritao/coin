@@ -119,8 +119,8 @@ public:
   SbBool getRenderingIsRemote(void) const;
 
 #if defined(COIN_USE_BGFX_RENDERER)
-  void setRenderView(bgfx::ViewId viewid);
-  bgfx::ViewId getRenderView() const;
+  void setViewId(bgfx::ViewId viewid);
+  bgfx::ViewId getViewId() const;
 #endif
 
   virtual void invalidateState(void);

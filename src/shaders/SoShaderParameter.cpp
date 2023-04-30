@@ -648,7 +648,11 @@ void SoShaderStateMatrixParameter::initClass(void)
   SO_ENABLE(SoGLRenderAction, SoModelMatrixElement);
   SO_ENABLE(SoGLRenderAction, SoViewingMatrixElement);
   SO_ENABLE(SoGLRenderAction, SoProjectionMatrixElement);
-  SO_ENABLE(SoGLRenderAction, SoGLMultiTextureMatrixElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLMultiTextureMatrixElement);
+  }
+#endif
   SO_ENABLE(SoGLRenderAction, SoTextureUnitElement);
 }
 

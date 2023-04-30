@@ -653,18 +653,28 @@ SoGLRenderAction::initClass(void)
 
   SO_ENABLE(SoGLRenderAction, SoDecimationPercentageElement);
   SO_ENABLE(SoGLRenderAction, SoDecimationTypeElement);
-  SO_ENABLE(SoGLRenderAction, SoGLLightIdElement);
-  SO_ENABLE(SoGLRenderAction, SoGLRenderPassElement);
-  SO_ENABLE(SoGLRenderAction, SoGLUpdateAreaElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLLightIdElement);
+    SO_ENABLE(SoGLRenderAction, SoGLRenderPassElement);
+    SO_ENABLE(SoGLRenderAction, SoGLUpdateAreaElement);
+  }
+#endif
   SO_ENABLE(SoGLRenderAction, SoLazyElement);
   SO_ENABLE(SoGLRenderAction, SoOverrideElement);
   SO_ENABLE(SoGLRenderAction, SoTextureOverrideElement);
   SO_ENABLE(SoGLRenderAction, SoWindowElement);
-  SO_ENABLE(SoGLRenderAction, SoGLViewportRegionElement);
-  SO_ENABLE(SoGLRenderAction, SoGLCacheContextElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLViewportRegionElement);
+    SO_ENABLE(SoGLRenderAction, SoGLCacheContextElement);
+  }
+#endif
 
 #if defined(COIN_USE_BGFX_RENDERER)
-  SO_ENABLE(SoGLRenderAction, SoBGFXViewIdElement);
+  if (SoRenderer::isBGFX()) {
+    SO_ENABLE(SoGLRenderAction, SoBGFXViewIdElement);
+  }
 #endif
 
   const char * env = coin_getenv("COIN_GLBBOX");
@@ -772,10 +782,11 @@ SoGLRenderAction::setViewportRegion(const SbViewportRegion & newregion)
   // initialized before redraw in beginTraversal().
 
 #if defined(COIN_USE_BGFX_RENDERER)
-  short int winw, winh;
-  newregion.getWindowSize().getValue(winw, winh);
-  bgfx::reset(winw, winh, BGFX_RESET_VSYNC);
-  bgfx::setViewRect(PRIVATE(this)->viewid, 0, 0, bgfx::BackbufferRatio::Equal);
+  if (SoRenderer::isBGFX()) {
+    short int winw, winh;
+    newregion.getWindowSize().getValue(winw, winh);
+    bgfx::reset(winw, winh, BGFX_RESET_VSYNC);
+  }
 #endif
 }
 
@@ -1093,65 +1104,58 @@ SoGLRenderAction::beginTraversal(SoNode * node)
     PRIVATE(this)->bboxaction->apply(node);
   }
 
-#if !defined(COIN_USE_BGFX_RENDERER)
-  int err_before_init = GL_NO_ERROR;
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    int err_before_init = GL_NO_ERROR;
 
-  if (sogl_glerror_debugging()) {
-    err_before_init = glGetError();
-  }
-  if (PRIVATE(this)->needglinit) {
-    PRIVATE(this)->needglinit = FALSE;
-
-#ifdef COIN_USE_GL_RENDERER
-    if (sogl_compatibility_profile(this->state))
-    {
-      // we are always using GL_COLOR_MATERIAL in Coin
-      glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);
-      glEnable(GL_COLOR_MATERIAL);
-      glEnable(GL_NORMALIZE);
+    if (sogl_glerror_debugging()) {
+      err_before_init = glGetError();
     }
-#endif
+    if (PRIVATE(this)->needglinit) {
+      PRIVATE(this)->needglinit = FALSE;
 
-    // initialize the depth function to the default Coin/Inventor
-    // value.  SoGLDepthBufferElement doesn't check for this, it just
-    // assumes that the function is initialized to GL_LEQUAL, which is
-    // not correct (the OpenGL specification says the initial value is
-    // GL_LESS, but I've seen drivers that defaults to GL_LEQUAL as
-    // well).
-    glDepthFunc(GL_LEQUAL);
-
-    if (PRIVATE(this)->smoothing) {
-#ifdef COIN_USE_GL_RENDERER
-    if (sogl_compatibility_profile(this->state))
-    {
-      glEnable(GL_POINT_SMOOTH);
-      glEnable(GL_LINE_SMOOTH);
-    }
-#endif
-    }
-    else {
-#ifdef COIN_USE_GL_RENDERER
-      if (sogl_compatibility_profile(this->state))
-      {
-        glDisable(GL_POINT_SMOOTH);
-        glDisable(GL_LINE_SMOOTH);
+      if (sogl_compatibility_profile(this->state)) {
+        // we are always using GL_COLOR_MATERIAL in Coin
+        glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);
+        glEnable(GL_COLOR_MATERIAL);
+        glEnable(GL_NORMALIZE);
       }
-#endif
+
+      // initialize the depth function to the default Coin/Inventor
+      // value.  SoGLDepthBufferElement doesn't check for this, it just
+      // assumes that the function is initialized to GL_LEQUAL, which is
+      // not correct (the OpenGL specification says the initial value is
+      // GL_LESS, but I've seen drivers that defaults to GL_LEQUAL as
+      // well).
+      glDepthFunc(GL_LEQUAL);
+
+      if (PRIVATE(this)->smoothing) {
+        if (sogl_compatibility_profile(this->state)) {
+          glEnable(GL_POINT_SMOOTH);
+          glEnable(GL_LINE_SMOOTH);
+        }
+      }
+      else {
+        if (sogl_compatibility_profile(this->state)) {
+          glDisable(GL_POINT_SMOOTH);
+          glDisable(GL_LINE_SMOOTH);
+        }
+      }
     }
-  }
 
-  int err_after_init = GL_NO_ERROR;
+    int err_after_init = GL_NO_ERROR;
 
-  if (sogl_glerror_debugging()) {
-    err_after_init = glGetError();
-  }
+    if (sogl_glerror_debugging()) {
+      err_after_init = glGetError();
+    }
 
-  if (COIN_DEBUG && ((err_before_init != GL_NO_ERROR) || (err_after_init != GL_NO_ERROR))) {
-    int err = (err_before_init != GL_NO_ERROR) ? err_before_init : err_after_init;
-    SoDebugError::postWarning("SoGLRenderAction::beginTraversal",
-                              "GL error %s initialization: %s",
-                              (err_before_init != GL_NO_ERROR) ? "before" : "after",
-                              coin_glerror_string(err));
+    if (COIN_DEBUG && ((err_before_init != GL_NO_ERROR) || (err_after_init != GL_NO_ERROR))) {
+      int err = (err_before_init != GL_NO_ERROR) ? err_before_init : err_after_init;
+      SoDebugError::postWarning("SoGLRenderAction::beginTraversal",
+                                "GL error %s initialization: %s",
+                                (err_before_init != GL_NO_ERROR) ? "before" : "after",
+                                coin_glerror_string(err));
+    }
   }
 #endif
 
@@ -1243,8 +1247,11 @@ SbBool
 SoGLRenderAction::handleTransparency(SbBool istransparent)
 {
   SoState * thestate = this->getState();
-#if !defined(COIN_USE_BGFX_RENDERER)
-  const cc_glglue *glue = sogl_glue_instance(thestate);
+#if defined(COIN_USE_GL_RENDERER)
+  const cc_glglue *glue = NULL;
+  if (SoRenderer::isOpenGL()) {
+     glue = sogl_glue_instance(thestate);
+  }
 #endif
 
   SoGLRenderAction::TransparencyType transptype =
@@ -1261,13 +1268,15 @@ SoGLRenderAction::handleTransparency(SbBool istransparent)
     PRIVATE(this)->sortedlayersblendprojectionmatrix =
       SoProjectionMatrixElement::get(thestate);
 
-#if !defined(COIN_USE_BGFX_RENDERER)
-    if (!SoMultiTextureEnabledElement::get(thestate, 0)) {
-      if (glue->has_arb_fragment_program && !PRIVATE(this)->usenvidiaregistercombiners) {
-        PRIVATE(this)->setupFragmentProgram();
-      }
-      else {
-        PRIVATE(this)->setupRegisterCombinersNV();
+#if defined(COIN_USE_GL_RENDERER)
+    if (SoRenderer::isOpenGL()) {
+      if (!SoMultiTextureEnabledElement::get(thestate, 0)) {
+        if (glue->has_arb_fragment_program && !PRIVATE(this)->usenvidiaregistercombiners) {
+          PRIVATE(this)->setupFragmentProgram();
+        }
+        else {
+          PRIVATE(this)->setupRegisterCombinersNV();
+        }
       }
     }
 #endif
@@ -1479,12 +1488,12 @@ SoGLRenderAction::getRenderingIsRemote(void) const
 }
 
 #if defined(COIN_USE_BGFX_RENDERER)
-void SoGLRenderAction::setRenderView(bgfx::ViewId viewid)
+void SoGLRenderAction::setViewId(bgfx::ViewId viewid)
 {
   PRIVATE(this)->viewid = viewid;
 }
 
-bgfx::ViewId SoGLRenderAction::getRenderView() const
+bgfx::ViewId SoGLRenderAction::getViewId() const
 {
   return PRIVATE(this)->viewid;
 }
@@ -1723,11 +1732,16 @@ SoGLRenderActionP::isDirectRendering(const SoState * state) const
 {
   SbBool isdirect;
   if (this->rendering == RENDERING_UNSET) {
-#if defined(COIN_USE_BGFX_RENDERER)
-    isdirect = 1;
-#else
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
     const cc_glglue * w = sogl_glue_instance(state);
     isdirect = cc_glglue_isdirect(w);
+  }
+#endif
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    isdirect = 1;
+  }
 #endif
   }
   else {
@@ -1770,40 +1784,52 @@ SoGLRenderActionP::render(SoNode * node)
 
   SoLazyElement::setColorMaterial(state, TRUE);
 
-  SoGLUpdateAreaElement::set(state,
-                             this->updateorigin, this->updatesize);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLUpdateAreaElement::set(state,
+                              this->updateorigin, this->updatesize);
 
-  SoGLCacheContextElement::set(state, this->cachecontext,
-                               FALSE, !this->isDirectRendering(state));
-  SoGLRenderPassElement::set(state, 0);
+    SoGLCacheContextElement::set(state, this->cachecontext,
+                                FALSE, !this->isDirectRendering(state));
+    SoGLRenderPassElement::set(state, 0);
+  }
+#endif
 
   this->precblist.invokeCallbacks(static_cast<void *>(this->action));
 
-#if defined(COIN_USE_BGFX_RENDERER)
-  if (this->action->getNumPasses() > 1 && this->internal_multipass) {
-    // Check if the current OpenGL context has an accumulation buffer
-    // (rendering multiple passes doesn't make much sense otherwise).
-    GLint accumbits;
-    glGetIntegerv(GL_ACCUM_RED_BITS, &accumbits);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    if (this->action->getNumPasses() > 1 && this->internal_multipass) {
+      // Check if the current OpenGL context has an accumulation buffer
+      // (rendering multiple passes doesn't make much sense otherwise).
+      GLint accumbits;
+      glGetIntegerv(GL_ACCUM_RED_BITS, &accumbits);
 
-    if (accumbits == 0) {
-      static SbBool first = TRUE;
-      if (first) {
-        SoDebugError::postWarning("SoGLRenderActionP::render",
-                                  "Multipass rendering requested,\nbut current "
-                                  "GL context has no accumulation buffer - "
-                                  "falling back to single pass\nrendering.");
-        first = FALSE;
+      if (accumbits == 0) {
+        static SbBool first = TRUE;
+        if (first) {
+          SoDebugError::postWarning("SoGLRenderActionP::render",
+                                    "Multipass rendering requested,\nbut current "
+                                    "GL context has no accumulation buffer - "
+                                    "falling back to single pass\nrendering.");
+          first = FALSE;
+        }
+        this->renderSingle(node);
+      } else {
+        this->renderMulti(node);
       }
-      this->renderSingle(node);
     } else {
-      this->renderMulti(node);
+      this->renderSingle(node);
     }
-  } else
+  }
 #endif
-  {
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
     this->renderSingle(node);
   }
+#endif
+
 
   if (SoProfiler::isOverlayActive()) {
     if (node == this->cachedprofilingsg) {
@@ -1874,12 +1900,18 @@ SoGLRenderActionP::renderSingle(SoNode * node)
 {
   SoState * state = this->action->getState();
 
-  SoGLRenderPassElement::set(state, this->currentpass);
-  SoGLCacheContextElement::set(state, this->cachecontext,
-                               FALSE, !this->isDirectRendering(state));
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SoGLRenderPassElement::set(state, this->currentpass);
+    SoGLCacheContextElement::set(state, this->cachecontext,
+                                FALSE, !this->isDirectRendering(state));
+  }
+#endif
 
 #if defined(COIN_USE_BGFX_RENDERER)
-  SoBGFXViewIdElement::set(state, node, this->viewid);
+  if (SoRenderer::isBGFX()) {
+    SoBGFXViewIdElement::set(state, node, this->viewid);
+  }
 #endif
 
   assert(this->delayedpathrender == FALSE);
@@ -1893,7 +1925,7 @@ SoGLRenderActionP::renderSingle(SoNode * node)
 
   // Do order independent transparency rendering
   if (this->transparencytype == SoGLRenderAction::SORTED_LAYERS_BLEND) {
-#if !defined(COIN_USE_BGFX_RENDERER)
+#if defined(COIN_USE_GL_RENDERER)
     GLint depthbits, alphabits;
     glGetIntegerv(GL_DEPTH_BITS, &depthbits);
     glGetIntegerv(GL_ALPHA_BITS, &alphabits);
