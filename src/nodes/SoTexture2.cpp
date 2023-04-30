@@ -467,8 +467,12 @@ SoTexture2::initClass(void)
 {
   SO_NODE_INTERNAL_INIT_CLASS(SoTexture2, SO_FROM_INVENTOR_1|SoNode::VRML1);
 
-  SO_ENABLE(SoGLRenderAction, SoGLMultiTextureImageElement);
-  SO_ENABLE(SoGLRenderAction, SoGLMultiTextureEnabledElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLMultiTextureImageElement);
+    SO_ENABLE(SoGLRenderAction, SoGLMultiTextureEnabledElement);
+  }
+#endif
 
   SO_ENABLE(SoCallbackAction, SoMultiTextureEnabledElement);
   SO_ENABLE(SoCallbackAction, SoMultiTextureImageElement);

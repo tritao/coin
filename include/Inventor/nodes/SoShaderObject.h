@@ -45,10 +45,8 @@ class SoGLShaderObject;
 class SoGLShaderProgram;
 class SoState;
 
-#if defined(COIN_USE_BGFX_RENDERER)
 class SoBGFXShaderObject;
 class SoBGFXShaderProgram;
-#endif
 
 // *************************************************************************
 

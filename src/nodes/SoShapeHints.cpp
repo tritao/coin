@@ -343,7 +343,11 @@ SoShapeHints::initClass(void)
   SO_ENABLE(SoCallbackAction, SoCreaseAngleElement);
   SO_ENABLE(SoCallbackAction, SoShapeHintsElement);
   SO_ENABLE(SoGLRenderAction, SoCreaseAngleElement);
-  SO_ENABLE(SoGLRenderAction, SoGLShapeHintsElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLShapeHintsElement);
+  }
+#endif
   SO_ENABLE(SoGetBoundingBoxAction, SoCreaseAngleElement);
   SO_ENABLE(SoGetBoundingBoxAction, SoShapeHintsElement);
   SO_ENABLE(SoPickAction, SoCreaseAngleElement);

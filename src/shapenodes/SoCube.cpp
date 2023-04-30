@@ -89,6 +89,8 @@
 #include "rendering/SoGL.h"
 #include "misc/SoGenerate.h"
 #include "misc/SoPick.h"
+#include "shaders/SoBGFXShaderProgram.h"
+#include "Inventor/elements/SoBGFXViewIdElement.h"
 
 /*!
   \var SoSFFloat SoCube::width
@@ -143,67 +145,68 @@ SoCube::GLRender(SoGLRenderAction * action)
 {
   SoState * state = action->getState();
 
+  if (!this->shouldGLRender(action)) return;
+
 #if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    return SoShape::GLRender(action);
+  }
+#endif
 
-  return SoShape::GLRender(action);
-
-#elif defined(COIN_USE_GL_RENDERER)
-  #if 0
-    if (!sogl_compatibility_profile(state))
-    {
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    if (!sogl_compatibility_profile(state)) {
       const SoShapeStyleElement * shapestyle = SoShapeStyleElement::get(state);
       shapestyle->setVertexArrayRendering(state, true);
       return SoShape::GLRender(action);
     }
-  #endif
 
-  if (!this->shouldGLRender(action)) return;
+    SoMaterialBindingElement::Binding binding =
+      SoMaterialBindingElement::get(state);
 
-  SoMaterialBindingElement::Binding binding =
-    SoMaterialBindingElement::get(state);
+    SbBool materialPerPart =
+      (binding == SoMaterialBindingElement::PER_PART ||
+      binding == SoMaterialBindingElement::PER_PART_INDEXED ||
+      binding == SoMaterialBindingElement::PER_FACE ||
+      binding == SoMaterialBindingElement::PER_FACE_INDEXED);
 
-  SbBool materialPerPart =
-    (binding == SoMaterialBindingElement::PER_PART ||
-     binding == SoMaterialBindingElement::PER_PART_INDEXED ||
-     binding == SoMaterialBindingElement::PER_FACE ||
-     binding == SoMaterialBindingElement::PER_FACE_INDEXED);
-
-  SbBool doTextures = FALSE;
-  SbBool do3DTextures = FALSE;
-  if (SoGLMultiTextureEnabledElement::get(state, 0)) {
-    doTextures = TRUE;
-    if (SoGLMultiTextureEnabledElement::getMode(state,0) ==
-        SoMultiTextureEnabledElement::TEXTURE3D) {
-      do3DTextures = TRUE;
+    SbBool doTextures = FALSE;
+    SbBool do3DTextures = FALSE;
+    if (SoGLMultiTextureEnabledElement::get(state, 0)) {
+      doTextures = TRUE;
+      if (SoGLMultiTextureEnabledElement::getMode(state,0) ==
+          SoMultiTextureEnabledElement::TEXTURE3D) {
+        do3DTextures = TRUE;
+      }
     }
-  }
 
-  SoMaterialBundle mb(action);
-  mb.sendFirst();
+    SoMaterialBundle mb(action);
+    mb.sendFirst();
 
-  SbBool sendNormals = !mb.isColorOnly() ||
-    (SoMultiTextureCoordinateElement::getType(state) == SoMultiTextureCoordinateElement::FUNCTION);
+    SbBool sendNormals = !mb.isColorOnly() ||
+      (SoMultiTextureCoordinateElement::getType(state) == SoMultiTextureCoordinateElement::FUNCTION);
 
-  unsigned int flags = 0;
-  if (materialPerPart) flags |= SOGL_MATERIAL_PER_PART;
-  if (doTextures) {
-    switch (SoMultiTextureEnabledElement::getMode(state, 0)) {
-    default:
-      flags |= SOGL_NEED_TEXCOORDS;
-      break;
-    case SoMultiTextureEnabledElement::CUBEMAP:
-      flags |= SOGL_NEED_3DTEXCOORDS;
-      break;
+    unsigned int flags = 0;
+    if (materialPerPart) flags |= SOGL_MATERIAL_PER_PART;
+    if (doTextures) {
+      switch (SoMultiTextureEnabledElement::getMode(state, 0)) {
+      default:
+        flags |= SOGL_NEED_TEXCOORDS;
+        break;
+      case SoMultiTextureEnabledElement::CUBEMAP:
+        flags |= SOGL_NEED_3DTEXCOORDS;
+        break;
+      }
     }
-  }
-  else if (do3DTextures) flags |= SOGL_NEED_3DTEXCOORDS;
-  if (sendNormals) flags |= SOGL_NEED_NORMALS;
+    else if (do3DTextures) flags |= SOGL_NEED_3DTEXCOORDS;
+    if (sendNormals) flags |= SOGL_NEED_NORMALS;
 
-  sogl_render_cube(width.getValue(),
-                   height.getValue(),
-                   depth.getValue(),
-                   &mb,
-                   flags, state);
+    sogl_render_cube(width.getValue(),
+                    height.getValue(),
+                    depth.getValue(),
+                    &mb,
+                    flags, state);
+  }
 #endif
 }
 

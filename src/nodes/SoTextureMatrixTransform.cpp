@@ -110,7 +110,11 @@ SoTextureMatrixTransform::initClass(void)
 {
   SO_NODE_INTERNAL_INIT_CLASS(SoTextureMatrixTransform, SO_FROM_INVENTOR_1);
 
-  SO_ENABLE(SoGLRenderAction, SoGLMultiTextureMatrixElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLMultiTextureMatrixElement);
+  }
+#endif
   SO_ENABLE(SoCallbackAction, SoMultiTextureMatrixElement);
   SO_ENABLE(SoPickAction, SoMultiTextureMatrixElement);
 }

@@ -1,6 +1,3 @@
-#ifndef COIN_SYSTEM_RENDERER_H
-#define COIN_SYSTEM_RENDERER_H
-
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
  * All rights reserved.
@@ -33,25 +30,26 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#if defined(COIN_USE_BGFX_RENDERER)
-#include <bx/bx.h>
-#include <bx/math.h>
-#include <bgfx/bgfx.h>
-#include <bgfx/embedded_shader.h>
-#endif
+#include <Inventor/system/renderer.h>
 
-class SoRenderer {
-public:
-  enum Enum {
-    GL,
-    GLES,
-    BGFX
-  };
+static SoRenderer::Enum renderer = SoRenderer::GL;
 
-  static SoRenderer::Enum get();
-  static void set(SoRenderer::Enum renderer);
-  static bool isOpenGL();
-  static bool isBGFX();
-};
+SoRenderer::Enum SoRenderer::get()
+{
+    return renderer;
+}
 
-#endif /* ! COIN_SYSTEM_RENDERER_H */
+void SoRenderer::set(SoRenderer::Enum r)
+{
+    renderer = r;
+}
+
+bool SoRenderer::isOpenGL()
+{
+    return renderer == SoRenderer::GL || renderer == SoRenderer::GLES;
+}
+
+bool SoRenderer::isBGFX()
+{
+    return renderer == SoRenderer::BGFX;
+}

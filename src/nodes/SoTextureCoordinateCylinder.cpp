@@ -162,8 +162,12 @@ void
 SoTextureCoordinateCylinder::initClass(void)
 {
   SO_NODE_INTERNAL_INIT_CLASS(SoTextureCoordinateCylinder, SO_FROM_COIN_2_3);
-  
-  SO_ENABLE(SoGLRenderAction, SoGLMultiTextureCoordinateElement);
+
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLMultiTextureCoordinateElement);
+  }
+#endif
   SO_ENABLE(SoCallbackAction, SoMultiTextureCoordinateElement);
   SO_ENABLE(SoPickAction, SoMultiTextureCoordinateElement);
 

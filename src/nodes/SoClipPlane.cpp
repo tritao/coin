@@ -169,7 +169,11 @@ SoClipPlane::initClass(void)
 {
   SO_NODE_INTERNAL_INIT_CLASS(SoClipPlane, SO_FROM_INVENTOR_1);
 
-  SO_ENABLE(SoGLRenderAction, SoGLClipPlaneElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLClipPlaneElement);
+  }
+#endif
   SO_ENABLE(SoPickAction, SoClipPlaneElement);
   SO_ENABLE(SoCallbackAction, SoClipPlaneElement);
 }

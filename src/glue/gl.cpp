@@ -243,6 +243,7 @@
 #include <Inventor/C/glue/dl.h>
 #include <Inventor/C/tidbits.h>
 #include <Inventor/C/base/list.h>
+#include <Inventor/system/renderer.h>
 
 #include "coindefs.h"
 #include "tidbitsp.h"
@@ -2251,9 +2252,11 @@ const cc_glglue *
 cc_glglue_instance(int contextid)
 {
 #if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
   assert(0 && "OpenGL state cannot be acessed in BGFX renderer mode");
   return 0;
-#else
+}
+#endif
   SbBool found;
   void * ptr;
   GLint gltmp;
@@ -2445,23 +2448,16 @@ cc_glglue_instance(int contextid)
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &gltmp);
     gi->max_texture_size = gltmp;
 
-#ifdef COIN_USE_GL_RENDERER
-  if (cc_glglue_glprofile_compat(gi))
-  {
-    glGetIntegerv(GL_MAX_LIGHTS, &gltmp);
-    gi->max_lights = (int) gltmp;
-  }
-  else {
-#endif
-      // Let's assume a max of 8 lights for core profiles.
-    gi->max_lights = 8;
-#ifdef COIN_USE_GL_RENDERER
-  }
-#endif
+    if (cc_glglue_glprofile_compat(gi)) {
+      glGetIntegerv(GL_MAX_LIGHTS, &gltmp);
+      gi->max_lights = (int) gltmp;
+    }
+    else {
+        // Let's assume a max of 8 lights for core profiles.
+      gi->max_lights = 8;
+    }
 
-#ifdef COIN_USE_GL_RENDERER
-    if (cc_glglue_glprofile_compat(gi))
-    {
+    if (cc_glglue_glprofile_compat(gi)) {
       GLfloat vals[2];
       glGetFloatv(GL_POINT_SIZE_RANGE, vals);
 
@@ -2480,9 +2476,7 @@ cc_glglue_instance(int contextid)
       gi->point_size_range[0] = vals[0];
       gi->point_size_range[1] = vals[1];
     }
-#endif
 
-#ifdef COIN_USE_GL_RENDERER
     if (cc_glglue_glprofile_compat(gi))
     {
       GLfloat vals[2];
@@ -2500,7 +2494,6 @@ cc_glglue_instance(int contextid)
       gi->line_width_range[0] = vals[0];
       gi->line_width_range[1] = vals[1];
     }
-#endif
 
     if (coin_glglue_debug()) {
       cc_debugerror_postinfo("cc_glglue_instance",
@@ -2557,7 +2550,6 @@ cc_glglue_instance(int contextid)
     }
   }
   return gi;
-#endif
 }
 
 const cc_glglue *
@@ -5178,7 +5170,6 @@ GLint coin_glglue_get_internal_texture_format(const cc_glglue * glw,
                                               SbBool compress)
 {
   GLenum format;
-#ifdef COIN_USE_GL_RENDERER
   if (cc_glglue_glprofile_compat(glw)) {
     if (compress) {
       switch (numcomponents) {
@@ -5214,9 +5205,7 @@ GLint coin_glglue_get_internal_texture_format(const cc_glglue * glw,
         break;
       }
     }
-  } else
-#endif
- {
+  } else {
     if (compress) {
       switch (numcomponents) {
       case 1:
@@ -5261,7 +5250,6 @@ GLint coin_glglue_get_internal_texture_format(const cc_glglue * glw,
 GLenum coin_glglue_get_texture_format(const cc_glglue * COIN_UNUSED_ARG(glw), int numcomponents)
 {
     GLenum format;
-#ifdef COIN_USE_GL_RENDERER
   if (cc_glglue_glprofile_compat(glw)) {
     switch (numcomponents) {
     case 1:
@@ -5278,9 +5266,7 @@ GLenum coin_glglue_get_texture_format(const cc_glglue * COIN_UNUSED_ARG(glw), in
       format = GL_RGBA;
       break;
     }
-  } else
-#endif
-  {
+  } else {
     switch (numcomponents) {
     case 1:
       format = GL_RED;

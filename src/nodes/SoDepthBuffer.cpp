@@ -153,7 +153,11 @@ SoDepthBuffer::initClass(void)
 {
   SO_NODE_INTERNAL_INIT_CLASS(SoDepthBuffer, SO_FROM_COIN_3_0);
 
-  SO_ENABLE(SoGLRenderAction, SoGLDepthBufferElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLDepthBufferElement);
+  }
+#endif
 }
 
 /*!

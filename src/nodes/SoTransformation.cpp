@@ -125,7 +125,11 @@ SoTransformation::initClass(void)
   SO_ENABLE(SoGetBoundingBoxAction, SoBBoxModelMatrixElement);
   SO_ENABLE(SoGetBoundingBoxAction, SoLocalBBoxMatrixElement);
 
-  SO_ENABLE(SoGLRenderAction, SoGLModelMatrixElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLModelMatrixElement);
+  }
+#endif
 
   SO_ENABLE(SoPickAction, SoModelMatrixElement);
 

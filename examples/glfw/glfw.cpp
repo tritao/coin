@@ -1,3 +1,4 @@
+
 /* Simple example that demonstrates how to render with Coin3D and GLFW.
  * 
  * Note: This example uses GLFW, so you do not need to have any of the 

@@ -194,6 +194,7 @@
 #include <Inventor/C/tidbits.h>
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/system/renderer.h>
+#include <Inventor/system/bgfx-shaders.h>
 
 #include "glue/cg.h"
 #include "misc/SbHash.h"
@@ -236,7 +237,9 @@ soshader_cleanup(void)
   delete shader_builtin_dict;
 
 #if defined(COIN_USE_BGFX_RENDERER)
-  delete shader_builtin_bgfx_dict;
+  if (SoRenderer::isBGFX()) {
+    delete shader_builtin_bgfx_dict;
+  }
 #endif
 }
 
@@ -251,13 +254,17 @@ SoShader::init(void)
 
   // --- initialization of elements (must be done first) ---------------
 #if defined(COIN_USE_GL_RENDERER)
-  if (SoGLShaderProgramElement::getClassTypeId() == SoType::badType())
-    SoGLShaderProgramElement::initClass();
+  if (SoRenderer::isOpenGL()) {
+    if (SoGLShaderProgramElement::getClassTypeId() == SoType::badType())
+      SoGLShaderProgramElement::initClass();
+  }
 #endif
 
 #if defined(COIN_USE_BGFX_RENDERER)
-  if (SoBGFXShaderProgramElement::getClassTypeId() == SoType::badType())
-    SoBGFXShaderProgramElement::initClass();
+  if (SoRenderer::isBGFX()) {
+    if (SoBGFXShaderProgramElement::getClassTypeId() == SoType::badType())
+      SoBGFXShaderProgramElement::initClass();
+  }
 #endif
 
   // --- initialization of shader nodes --------------------------------
@@ -333,7 +340,9 @@ SoShader::init(void)
   shader_builtin_dict = new SbHash<const char *, char *>;
 
 #if defined(COIN_USE_BGFX_RENDERER)
-  shader_builtin_bgfx_dict = new SbHash<const char *, bgfx::EmbeddedShader>;
+  if (SoRenderer::isBGFX()) {
+    shader_builtin_bgfx_dict = new SbHash<const char *, bgfx::EmbeddedShader>;
+  }
 #endif
 
   setupBuiltinShaders();
@@ -465,16 +474,22 @@ void
 SoShader::setupBuiltinShaders(void)
 {
 #if defined(COIN_USE_GL_RENDERER)
-  shader_builtin_dict->put(SbName("images/Image").getString(), (char*) IMAGE_shadersource);
-  shader_builtin_dict->put(SbName("lights/PointLight").getString(), (char*) POINTLIGHT_shadersource);
-  shader_builtin_dict->put(SbName("lights/SpotLight").getString(), (char*) SPOTLIGHT_shadersource);
-  shader_builtin_dict->put(SbName("lights/DirectionalLight").getString(), (char*) DIRECTIONALLIGHT_shadersource);
-  shader_builtin_dict->put(SbName("lights/DirSpotLight").getString(), (char*) DIRSPOTLIGHT_shadersource);
-  shader_builtin_dict->put(SbName("vsm/VsmLookup").getString(), (char*) VSMLOOKUP_shadersource);
+  if (SoRenderer::isOpenGL()) {
+    shader_builtin_dict->put(SbName("images/Image").getString(), (char*) IMAGE_shadersource);
+    shader_builtin_dict->put(SbName("lights/PointLight").getString(), (char*) POINTLIGHT_shadersource);
+    shader_builtin_dict->put(SbName("lights/SpotLight").getString(), (char*) SPOTLIGHT_shadersource);
+    shader_builtin_dict->put(SbName("lights/DirectionalLight").getString(), (char*) DIRECTIONALLIGHT_shadersource);
+    shader_builtin_dict->put(SbName("lights/DirSpotLight").getString(), (char*) DIRSPOTLIGHT_shadersource);
+    shader_builtin_dict->put(SbName("vsm/VsmLookup").getString(), (char*) VSMLOOKUP_shadersource);
+  }
 #endif
 
 #if defined(COIN_USE_BGFX_RENDERER)
-  shader_builtin_bgfx_dict->put(SbName("fs_basic").getString(), BGFX_EMBEDDED_SHADER(fs_basic));
-  shader_builtin_bgfx_dict->put(SbName("vs_basic").getString(), BGFX_EMBEDDED_SHADER(vs_basic));
+  if (SoRenderer::isBGFX()) {
+    shader_builtin_bgfx_dict->put(SbName("fs_basic").getString(), BGFX_EMBEDDED_SHADER(fs_basic));
+    shader_builtin_bgfx_dict->put(SbName("vs_basic").getString(), BGFX_EMBEDDED_SHADER(vs_basic));
+    shader_builtin_bgfx_dict->put(SbName("fs_vp").getString(), BGFX_EMBEDDED_SHADER(fs_vp));
+    shader_builtin_bgfx_dict->put(SbName("vs_vp").getString(), BGFX_EMBEDDED_SHADER(vs_vp));
+  }
 #endif
 }

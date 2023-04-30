@@ -181,7 +181,12 @@ SoEnvironment::initClass(void)
 {
   SO_NODE_INTERNAL_INIT_CLASS(SoEnvironment, SO_FROM_INVENTOR_2_0);
 
-  SO_ENABLE(SoGLRenderAction, SoGLEnvironmentElement);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    SO_ENABLE(SoGLRenderAction, SoGLEnvironmentElement);
+  }
+#endif
+
   SO_ENABLE(SoCallbackAction, SoEnvironmentElement);
   SO_ENABLE(SoGLRenderAction, SoLightAttenuationElement);
   SO_ENABLE(SoCallbackAction, SoLightAttenuationElement);

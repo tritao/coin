@@ -401,52 +401,60 @@ SoImage::computeBBox(SoAction * action,
 void
 SoImage::GLRender(SoGLRenderAction * action)
 {
-#ifdef COIN_USE_GL_RENDERER
   SoState *state = action->getState();
-  if (sogl_compatibility_profile(state))
-  {
-    GLRenderCompat(action);
-    return;
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    assert(0 && "Not implemented yet");
   }
 #endif
 
-  SbVec2s size, orgsize;
-  int nc;
-  size = this->getSize();
-  if (size == SbVec2s(0,0)) return;
-
-  const unsigned char * dataptr = this->image.getValue(orgsize, nc);
-  if (dataptr == NULL) return; // no image
-
-  SoShapeStyleElement::setVertexArrayRendering(state, true);
-  if (!this->shouldGLRender(action)) return;
-
-  LOCK_GLIMAGE(this);
-
-  if (!PRIVATE(this)->glimagevalid) {
-    if (PRIVATE(this)->glimage) PRIVATE(this)->glimage->unref(state);
-    PRIVATE(this)->glimage = new SoGLImage();
-
-    float quality = SoTextureQualityElement::get(state);
-    PRIVATE(this)->glimage->setData(dataptr, size, nc,
-                            SoGLImage::CLAMP,
-                            SoGLImage::CLAMP,
-                            quality, 0, state);
-
-    PRIVATE(this)->glimagevalid = TRUE;
-
-    // don't cache while creating a texture object
-    SoCacheElement::setInvalid(TRUE);
-    if (state->isCacheOpen()) {
-      SoCacheElement::invalidate(state);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    if (sogl_compatibility_profile(state)) {
+      GLRenderCompat(action);
+      return;
     }
 
-    UNLOCK_GLIMAGE(this);
+    SbVec2s size, orgsize;
+    int nc;
+    size = this->getSize();
+    if (size == SbVec2s(0,0)) return;
 
-    PRIVATE(this)->program->GLRender(action);
+    const unsigned char * dataptr = this->image.getValue(orgsize, nc);
+    if (dataptr == NULL) return; // no image
 
-    SoShape::GLRender(action);
+    SoShapeStyleElement::setVertexArrayRendering(state, true);
+    if (!this->shouldGLRender(action)) return;
+
+    LOCK_GLIMAGE(this);
+
+    if (!PRIVATE(this)->glimagevalid) {
+      if (PRIVATE(this)->glimage) PRIVATE(this)->glimage->unref(state);
+      PRIVATE(this)->glimage = new SoGLImage();
+
+      float quality = SoTextureQualityElement::get(state);
+      PRIVATE(this)->glimage->setData(dataptr, size, nc,
+                              SoGLImage::CLAMP,
+                              SoGLImage::CLAMP,
+                              quality, 0, state);
+
+      PRIVATE(this)->glimagevalid = TRUE;
+
+      // don't cache while creating a texture object
+      SoCacheElement::setInvalid(TRUE);
+      if (state->isCacheOpen()) {
+        SoCacheElement::invalidate(state);
+      }
+
+      UNLOCK_GLIMAGE(this);
+
+      PRIVATE(this)->program->GLRender(action);
+
+      SoShape::GLRender(action);
+    }
   }
+#endif
 }
 
 // doc from parent

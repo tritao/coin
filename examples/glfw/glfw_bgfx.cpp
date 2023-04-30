@@ -17,16 +17,13 @@
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <Inventor/nodes/SoRotationXYZ.h>
 #include <Inventor/nodes/SoImage.h>
-
-#include <bx/bx.h>
-#include <bgfx/bgfx.h>
+#include <Inventor/system/renderer.h>
 
 #include <cstdlib>
 
+static SoRenderer::Enum renderer = SoRenderer::BGFX;
 static bool useEGL = true;
-static bool useGL = false;
-static bool useGLES = false;
-static bool useGLCompatibilityProfile = false;
+static bool useGLCompatibilityProfile = true;
 
 #define GL_GLEXT_PROTOTYPES
 #include <GLFW/glfw3.h>
@@ -44,23 +41,7 @@ static bool useGLCompatibilityProfile = false;
 
 GLFWwindow* window;
 SoSceneManager* sceneManager;
-
-static char scene_iv[] = {
-  "#Inventor V2.1 ascii\n\n"
-  "Separator {\n"
-  "  ShaderProgram {\n"
-  "    shaderObject [\n"
-  "      VertexShader {\n"
-  "        sourceProgram \"perpixel_vertex.glsl\"\n"
-  "      }\n"
-  "      FragmentShader {\n"
-  "        sourceProgram \"perpixel_fragment.glsl\"\n"
-  "      }\n"
-  "    ]\n"
-  "  }\n"
-  "  Cube { }\n"
-  "}\n"
-};
+SoCamera* camera;
 
 // ----------------------------------------------------------------------
 
@@ -71,39 +52,45 @@ SbBool sogl_compatibility_profile(const SoState * state);
 // Redraw on scenegraph changes.
 void redrawCallback(void * user, SoSceneManager * manager)
 {
-#if !defined(COIN_USE_BGFX_RENDERER)
-  const SoState* state = manager->getGLRenderAction()->getState();
-  if (sogl_compatibility_profile(state))
-  {
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_LIGHTING);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    const SoState* state = manager->getGLRenderAction()->getState();
+    if (sogl_compatibility_profile(state)) {
+      glEnable(GL_DEPTH_TEST);
+      glEnable(GL_LIGHTING);
+    }
   }
 #endif
 
   sceneManager->render();
 
-  if (useGL || useGLES) {
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
     glfwSwapBuffers(window);
   }
+#endif
 }
 
 // Redraw on expose events.
 void exposeCallback(void)
 {
-#if !defined(COIN_USE_BGFX_RENDERER)
-  const SoState* state = sceneManager->getGLRenderAction()->getState();
-  if (sogl_compatibility_profile(state))
-  {
-    glEnable(GL_DEPTH_TEST);
-    glEnable(GL_LIGHTING);
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+    const SoState* state = sceneManager->getGLRenderAction()->getState();
+    if (sogl_compatibility_profile(state)) {
+      glEnable(GL_DEPTH_TEST);
+      glEnable(GL_LIGHTING);
+    }
   }
 #endif
 
   sceneManager->render();
 
-  if (useGL || useGLES) {
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
     glfwSwapBuffers(window);
   }
+#endif
 }
 
 // Reconfigure on changes to window dimensions.
@@ -123,6 +110,85 @@ void idleCallback(void)
   SoDB::getSensorManager()->processDelayQueue(TRUE);
 }
 
+#if defined(COIN_USE_BGFX_RENDERER)
+bool glfwInitBgfx()
+{
+  bgfx::Init init_object;
+#if BX_PLATFORM_LINUX
+  init_object.platformData.ndt = glfwGetX11Display();
+  init_object.platformData.nwh = reinterpret_cast<void *>(glfwGetX11Window(window));
+#elif BX_PLATFORM_OSX
+  init_object.platformData.nwh = glfwGetCocoaWindow(window);
+#elif BX_PLATFORM_WINDOWS
+  init_object.platformData.nwh = glfwGetWin32Window(window);
+#endif
+  init_object.type = bgfx::RendererType::OpenGL;
+  init_object.debug = true;
+
+  int32_t width, height;
+  glfwGetWindowSize(window, &width, &height);
+  init_object.resolution.width = static_cast<uint32_t>(width);
+  init_object.resolution.height = static_cast<uint32_t>(height);
+  init_object.resolution.reset = BGFX_RESET_VSYNC;
+
+  if (!bgfx::init(init_object))
+      return false;
+
+  bgfx::setDebug(BGFX_DEBUG_TEXT);
+  return true;
+}
+#endif
+
+#if defined(COIN_USE_GL_RENDERER)
+void glfwInitGL()
+{
+  glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
+
+  if (useEGL) {
+    glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
+  }
+
+  // Needs at least OpenGL 4.3 for KHR_debug to be available (on Linux)
+  glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
+
+  if (SoRenderer::get() == SoRenderer::GLES) {
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+  } else {
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+  }
+
+  if (useGLCompatibilityProfile) {
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
+  }
+}
+#endif
+
+void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+{
+  SbVec3f position = camera->position.getValue();
+  if (action == GLFW_PRESS) {
+    switch(key) {
+      case GLFW_KEY_W:
+        camera->position.setValue(position + SbVec3f(0, 0, -1));
+        break;
+      case GLFW_KEY_A:
+      camera->position.setValue(position + SbVec3f(-1, 0, 0));
+        break;
+      case GLFW_KEY_S:
+        camera->position.setValue(position + SbVec3f(0, 0, 1));
+        break;
+      case GLFW_KEY_D:
+        camera->position.setValue(position + SbVec3f(1, 0, 0));
+        break;
+    }
+  }
+  camera->position.touch();
+}
+
 // ----------------------------------------------------------------------
 
 SoSeparator* createScene();
@@ -138,85 +204,59 @@ int main(void)
       fprintf(stderr, "Error: %s\n", description);
     });
 
+    SoRenderer::set(renderer);
     SoDB::init();
 
     if (!glfwInit())
         return EXIT_FAILURE;
 
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+#if defined(COIN_USE_GL_RENDERER)
+    if (SoRenderer::isOpenGL()) {
+      glfwInitGL();
+    }
+#endif
 
-/*
-    if (useEGL) {
-        glfwWindowHint(GLFW_CONTEXT_CREATION_API, GLFW_EGL_CONTEXT_API);
+#if defined(COIN_USE_BGFX_RENDERER)
+    if (SoRenderer::isBGFX()) {
+      glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    }
+#endif
+
+    window = glfwCreateWindow(640, 480, "Coin3D", NULL, NULL);
+    if (!window) {
+      glfwTerminate();
+      return EXIT_FAILURE;
     }
 
-    // Needs at least OpenGL 4.3 for KHR_debug to be available (on Linux)
-    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
-
-    if (useGLES) {
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_ES_API);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-    } else {
-        glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-        glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    }
-
-    if (useGLCompatibilityProfile) {
-        glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
-    }
-*/
-
-    //glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
-
-    window = glfwCreateWindow(1920, 1080, "Coin3D", NULL, NULL);
-    if (!window)
-    {
+#if defined(COIN_USE_BGFX_RENDERER)
+    if (SoRenderer::isBGFX()) {
+      if (!glfwInitBgfx()) {
         glfwTerminate();
         return EXIT_FAILURE;
+      }
     }
-
-    // Initialize bgfx after window is created and before main loop
-    bgfx::Init init_object;
-#if BX_PLATFORM_LINUX
-    init_object.platformData.ndt = glfwGetX11Display();
-    init_object.platformData.nwh = reinterpret_cast<void *>(glfwGetX11Window(window));
-#elif BX_PLATFORM_OSX
-    init_object.platformData.nwh = glfwGetCocoaWindow(window);
-#elif BX_PLATFORM_WINDOWS
-    init_object.platformData.nwh = glfwGetWin32Window(window);
 #endif
-    //init_object.type = bgfx::RendererType::OpenGL;
-
-    int32_t width, height;
-    glfwGetWindowSize(window, &width, &height);
-    init_object.resolution.width = static_cast<uint32_t>(width);
-    init_object.resolution.height = static_cast<uint32_t>(height);
-    init_object.resolution.reset = BGFX_RESET_VSYNC;
-
-    if (!bgfx::init(init_object))
-    {
-        return 1;
-    }
 
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
   
-    if (useGL || useGLES) {
+#if defined(COIN_USE_GL_RENDERER)
+    if (SoRenderer::isOpenGL()) {
       glfwMakeContextCurrent(window);
     }
+#endif
 
     img = new unsigned char[IMGWIDTH * IMGHEIGHT];
     mandel(-0.5, 0.6, 0.025, 0.025, IMGWIDTH, IMGHEIGHT, 1, img, 256);
 
     SoSeparator* root = createScene();
 
-    //int width, height;
+    int width, height;
     glfwGetFramebufferSize(window, &width, &height);
     framebufferSizeCallback(window, width, height);
 
-    while (!glfwWindowShouldClose(window))
-    {
+    glfwSetKeyCallback(window, keyCallback);
+
+    while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
         idleCallback();
@@ -227,26 +267,52 @@ int main(void)
     delete sceneManager;
     delete[] img;
   
-    bgfx::shutdown();
+#if defined(COIN_USE_BGFX_RENDERER)
+    if (SoRenderer::isBGFX()) {
+      bgfx::shutdown();
+    }
+#endif
+
     glfwTerminate();
     return 0;
 }
 
 // ----------------------------------------------------------------------
 
+static char scene_iv[] = {
+  "#Inventor V2.1 ascii\n\n"
+  "Separator {\n"
+  "  ShaderProgram {\n"
+  "    shaderObject [\n"
+  "      VertexShader {\n"
+  "        sourceProgram \"perpixel_vertex.glsl\"\n"
+  "      }\n"
+  "      FragmentShader {\n"
+  "        sourceProgram \"perpixel_fragment.glsl\"\n"
+  "      }\n"
+  "    ]\n"
+  "  }\n"
+  "  Cube { }\n"
+  "}\n"
+};
+
 SoSeparator* createScene()
 {
     auto root = new SoSeparator;
     root->ref();
-    SoPerspectiveCamera * camera = new SoPerspectiveCamera;
-    root->addChild(camera);
-    root->addChild(new SoDirectionalLight);
 
+    SoPerspectiveCamera * perspectiveCamera = new SoPerspectiveCamera;
+    perspectiveCamera->nearDistance = 0.01f;
+    perspectiveCamera->farDistance = 100.0f;
+    camera = perspectiveCamera;
+    root->addChild(perspectiveCamera);
 
+    //root->addChild(new SoDirectionalLight);
+
+#if 0
     SoInput in;
     in.setBuffer(scene_iv, strlen(scene_iv));
     
-#if 0
     SoSeparator* result = SoDB::readAll(&in);
     if (result == nullptr) {
       fprintf(stderr, "Could not load scene graph from text");
@@ -269,8 +335,9 @@ SoSeparator* createScene()
     sceneManager->setRenderCallback(redrawCallback, (void *)1);
     sceneManager->setBackgroundColor(SbColor(0.8f, 0.2f, 0.2f));
     sceneManager->activate();
-    camera->viewAll(root, sceneManager->getViewportRegion());
     sceneManager->setSceneGraph(root);
+
+    camera->viewAll(root, sceneManager->getViewportRegion());
 
     return root;
 }
