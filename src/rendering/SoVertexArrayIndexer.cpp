@@ -51,15 +51,18 @@
 #include "Inventor/elements/SoViewingMatrixElement.h"
 #include "Inventor/elements/SoProjectionMatrixElement.h"
 #include "Inventor/elements/SoBGFXShaderProgramElement.h"
+#if defined(COIN_USE_BGFX_RENDERER)
 #include "Inventor/elements/SoBGFXViewIdElement.h"
+#endif
 
 #include "tidbitsp.h"
 #include "rendering/SoVBO.h"
 #include "rendering/SoGL.h"
 #include "coindefs.h"
+#if defined(COIN_USE_BGFX_RENDERER)
 #include "shaders/SoBGFXShaderProgram.h"
-
 #include <bx/math.h>
+#endif
 
 #if BOOST_WORKAROUND(COIN_MSVC, <= COIN_MSVC_6_0_VERSION)
 // symbol length truncation

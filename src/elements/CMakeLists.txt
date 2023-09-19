@@ -8,7 +8,6 @@ set(COIN_ELEMENTS_FILES
 	SoAnnoText3FontSizeHintElement.cpp
 	SoAnnoText3RenderPrintElement.cpp
 	SoBBoxModelMatrixElement.cpp
-	SoBGFXViewIdElement.cpp
 	SoBumpMapElement.cpp
 	SoBumpMapCoordinateElement.cpp
 	SoBumpMapMatrixElement.cpp
@@ -85,6 +84,10 @@ set(COIN_ELEMENTS_FILES
 	SoSoundElement.cpp
 	SoVertexAttributeElement.cpp
 )
+
+if (COIN_BUILD_BGFX)
+	list(APPEND COIN_ELEMENTS_FILES SoBGFXViewIdElement.cpp)
+endif()
 
 # Files excluded from public API documentation, included in complete documentation.
 set(COIN_ELEMENTS_INTERNAL_FILES
