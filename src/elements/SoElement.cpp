@@ -308,6 +308,7 @@
 #include <Inventor/elements/SoGLLazyElement.h> // internal element
 #include <Inventor/misc/SoState.h>
 #include <Inventor/lists/SoTypeList.h>
+#include <Inventor/system/renderer.h>
 
 #include "elements/SoTextureScalePolicyElement.h" // internal element
 #include "elements/SoTextureScaleQualityElement.h" // internal  element
