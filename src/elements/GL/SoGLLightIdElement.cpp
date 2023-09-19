@@ -157,6 +157,7 @@ SoGLLightIdElement::increment(SoState * const state,
                                   maxl);
       }
       return -1;
+#endif
     }
 #ifdef COIN_USE_GL_RENDERER
     if (sogl_compatibility_profile(state)) {
@@ -165,8 +166,6 @@ SoGLLightIdElement::increment(SoState * const state,
 #endif
     return element->data;
   }
-#endif
-
   return -1;
 }
 
