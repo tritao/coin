@@ -2440,9 +2440,12 @@ cc_glglue_instance(int contextid)
       glEnable(GL_DEBUG_OUTPUT);
       glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 
-#if !defined(__EMSCRIPTEN__)
-      glDebugMessageCallback(coin_gldebug_report, nullptr);
-#endif
+      COIN_PFNGLDEBUGMESSAGECALLBACKPROC glDebugMessageCallback = NULL;
+      glDebugMessageCallback = (COIN_PFNGLDEBUGMESSAGECALLBACKPROC)cc_glglue_getprocaddress(gi,
+        "glDebugMessageCallback");
+      if (glDebugMessageCallback != NULL) {
+        glDebugMessageCallback(coin_gldebug_report, nullptr);
+      }
     }
 #endif
 
@@ -2623,15 +2626,7 @@ SbBool cc_glglue_glprofile_compat(const cc_glglue * glue)
         return TRUE;
       }
   } else if (major == 3 && minor == 1) {
-    GLint extensionsNum;
-    glGetIntegerv(GL_NUM_EXTENSIONS, &extensionsNum);
-    while (extensionsNum--) {
-        const auto extensionName =
-          reinterpret_cast<const char *>(glGetStringi(GL_EXTENSIONS, extensionsNum));
-        if (strcmp(extensionName, "GL_ARB_compatibility") == 0) {
-          return TRUE;
-        }
-    }
+
     return FALSE;
   } else {
       GLint profile;
