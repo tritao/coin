@@ -1,5 +1,5 @@
 export COIN_PATH="$PWD/../.."
-export COIN_BUILD_PATH="$COIN_PATH/$1"
+export COIN_BUILD_PATH="$COIN_PATH/{$1-bld_web}"
 
 emcc glfw.cpp -g -o bin/glfw.html \
     -DCOIN_USE_GL_RENDERER=1 -DCOIN_USE_EGL=1 \
