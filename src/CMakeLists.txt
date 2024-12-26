@@ -365,7 +365,12 @@ elseif(APPLE)
 endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE ${COIN_TARGET_INCLUDE_DIRECTORIES})
-target_link_libraries(${PROJECT_NAME} PRIVATE ${COIN_TARGET_LINK_LIBRARIES})
+
+if (COIN_BUILD_SHARED_LIBS)
+  target_link_libraries(${PROJECT_NAME} PRIVATE ${COIN_TARGET_LINK_LIBRARIES})
+else()
+  target_link_libraries(${PROJECT_NAME} INTERFACE ${COIN_TARGET_LINK_LIBRARIES})
+endif()
 
 if(COIN_GL_COMPATIBILITY)
   target_compile_definitions(${PROJECT_NAME} INTERFACE COIN_GL_COMPATIBILITY=1)
