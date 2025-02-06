@@ -71,48 +71,48 @@ public:
     if (!SoNodeProfiling::isActive(action)) return;
 
     SoState * state = action->getState();
-    SoProfilerElement * profilerelt = SoProfilerElement::get(state);
-    SbProfilingData & data = profilerelt->getProfilingData();
-    const SoFullPath * fullpath =
-      static_cast<const SoFullPath *>(action->getCurPath());
-    this->entryindex = data.getIndex(fullpath, TRUE);
-    assert(this->entryindex != -1);
-    size_t managedmem = 0, unmanagedmem = 0;
-    fullpath->getTail()->getFieldsMemorySize(managedmem, unmanagedmem);
-    data.setNodeFootprint(this->entryindex,
-                          SbProfilingData::MEMORY_SIZE, managedmem);
-    data.setNodeFootprint(this->entryindex,
-                          SbProfilingData::VIDEO_MEMORY_SIZE, 0);
-    this->pretime = SbTime::getTimeOfDay();
+    // SoProfilerElement * profilerelt = SoProfilerElement::get(state);
+    // SbProfilingData & data = profilerelt->getProfilingData();
+    // const SoFullPath * fullpath =
+    //   static_cast<const SoFullPath *>(action->getCurPath());
+    // this->entryindex = data.getIndex(fullpath, TRUE);
+    // assert(this->entryindex != -1);
+    // size_t managedmem = 0, unmanagedmem = 0;
+    // fullpath->getTail()->getFieldsMemorySize(managedmem, unmanagedmem);
+    // data.setNodeFootprint(this->entryindex,
+    //                       SbProfilingData::MEMORY_SIZE, managedmem);
+    // data.setNodeFootprint(this->entryindex,
+    //                       SbProfilingData::VIDEO_MEMORY_SIZE, 0);
+    // this->pretime = SbTime::getTimeOfDay();
   }
 
   void postTraversal(SoAction * action)
   {
     if (!SoNodeProfiling::isActive(action)) return;
 
-    if (action->isOfType(SoGLRenderAction::getClassTypeId()) &&
-        SoProfilerP::shouldSyncGL())
-      glFinish();
+    // if (action->isOfType(SoGLRenderAction::getClassTypeId()) &&
+    //     SoProfilerP::shouldSyncGL())
+    //   glFinish();
 
-    const SbTime duration(SbTime::getTimeOfDay() - this->pretime);
+    // const SbTime duration(SbTime::getTimeOfDay() - this->pretime);
 
-    SoState * state = action->getState();
-    SoProfilerElement * profilerelt = SoProfilerElement::get(state);
-    SbProfilingData & data = profilerelt->getProfilingData();
+    // SoState * state = action->getState();
+    // SoProfilerElement * profilerelt = SoProfilerElement::get(state);
+    // SbProfilingData & data = profilerelt->getProfilingData();
 
-    assert(this->entryindex != -1);
-    int parentindex = data.getParentIndex(this->entryindex);
-    if (parentindex != -1) {
-      data.preOffsetNodeTiming(parentindex, -duration);
-    }
+    // assert(this->entryindex != -1);
+    // int parentindex = data.getParentIndex(this->entryindex);
+    // if (parentindex != -1) {
+    //   data.preOffsetNodeTiming(parentindex, -duration);
+    // }
 
-    // see if a children offset has been stored for us and just add timing
-    // duration data to that
-    const SbTime childrenoffset(data.getNodeTiming(this->entryindex));
-    // childrenoffset will deduct the child node timings from this timing
-    const SbTime adjusted(childrenoffset + duration);
-    assert(adjusted.getValue() >= 0.0);
-    data.setNodeTiming(this->entryindex, adjusted);
+    // // see if a children offset has been stored for us and just add timing
+    // // duration data to that
+    // const SbTime childrenoffset(data.getNodeTiming(this->entryindex));
+    // // childrenoffset will deduct the child node timings from this timing
+    // const SbTime adjusted(childrenoffset + duration);
+    // assert(adjusted.getValue() >= 0.0);
+    // data.setNodeTiming(this->entryindex, adjusted);
 #if 0 // DEBUG
     const SoFullPath * fullpath = (const SoFullPath *)action->getCurPath();
     SoDebugError::postInfo("Profiling",

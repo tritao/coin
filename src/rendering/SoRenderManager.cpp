@@ -654,6 +654,8 @@ SoRenderManager::render(SoGLRenderAction * action,
                         const SbBool clearwindow,
                         const SbBool clearzbuffer)
 {
+  ZoneScopedN("SoRenderManager::render");
+
   SbBool clearwindow_tmp = clearwindow; // make sure we only clear the color buffer once
   PRIVATE(this)->invokePreRenderCallbacks();
 
@@ -703,6 +705,8 @@ SoRenderManager::actuallyRender(SoGLRenderAction * action,
                                 const SbBool clearwindow,
                                 const SbBool clearzbuffer)
 {
+  ZoneScopedN("SoRenderManager::actuallyRender");
+
   GLbitfield mask = 0;
   if (clearwindow) mask |= GL_COLOR_BUFFER_BIT;
   if (clearzbuffer) mask |= GL_DEPTH_BUFFER_BIT;
@@ -763,6 +767,7 @@ SoRenderManager::renderScene( SoGLRenderAction * action,
                               SoNode * scene,
                               uint32_t clearmask)
 {
+  ZoneScopedN("SoRenderManager::renderScene");
   if (clearmask) {
     if (clearmask & GL_COLOR_BUFFER_BIT) {
       if (PRIVATE(this)->isrgbmode) {
@@ -798,6 +803,8 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
                               SbBool clearwindow,
                               SbBool clearzbuffer)
 {
+  ZoneScopedN("SoRenderManager::renderSingle");
+
   SoState * state = action->getState();
   state->push();
 
@@ -808,24 +815,31 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
     SoTextureOverrideElement::setQualityOverride(state, TRUE);
   }
   switch (this->getRenderMode()) {
-  case SoRenderManager::AS_IS:
+  case SoRenderManager::AS_IS: {
+    ZoneScopedN("SoRenderManager::AS_IS");
     this->actuallyRender(action, initmatrices, clearwindow, clearzbuffer);
     break;
-  case SoRenderManager::WIREFRAME:
+  }
+  case SoRenderManager::WIREFRAME: {
+    ZoneScopedN("SoRenderManager::WIREFRAME");
     SoDrawStyleElement::set(state, node, SoDrawStyleElement::LINES);
     SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
     SoOverrideElement::setDrawStyleOverride(state, node, TRUE);
     SoOverrideElement::setLightModelOverride(state, node, TRUE);
     this->actuallyRender(action, initmatrices, clearwindow, clearzbuffer);
     break;
-  case SoRenderManager::POINTS:
+  }
+  case SoRenderManager::POINTS: {
+    ZoneScopedN("SoRenderManager::POINTS");
     SoDrawStyleElement::set(state, node, SoDrawStyleElement::POINTS);
     SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
     SoOverrideElement::setDrawStyleOverride(state, node, TRUE);
     SoOverrideElement::setLightModelOverride(state, node, TRUE);
     this->actuallyRender(action, initmatrices, clearwindow, clearzbuffer);
     break;
-  case SoRenderManager::HIDDEN_LINE:
+  }
+  case SoRenderManager::HIDDEN_LINE: {
+    ZoneScopedN("SoRenderManager::HIDDEN_LINE");
     {
       // must clear before setting draw mask
       this->clearBuffers(TRUE, TRUE);
@@ -851,7 +865,9 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
       this->actuallyRender(action, initmatrices, FALSE, FALSE);
     }
     break;
-  case SoRenderManager::WIREFRAME_OVERLAY:
+  }
+  case SoRenderManager::WIREFRAME_OVERLAY: {
+      ZoneScopedN("SoRenderManager::WIREFRAME_OVERLAY");
       SoPolygonOffsetElement::set(state, node, 1.0f, 1.0f,
                                   SoPolygonOffsetElement::FILLED, TRUE);
       SoOverrideElement::setPolygonOffsetOverride(state, node, TRUE);
@@ -869,8 +885,9 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
       SoOverrideElement::setDrawStyleOverride(state, node, TRUE);
       this->actuallyRender(action, initmatrices, FALSE, FALSE);
     break;
-
-  case SoRenderManager::BOUNDING_BOX:
+  }
+  case SoRenderManager::BOUNDING_BOX: {
+    ZoneScopedN("SoRenderManager::BOUNDING_BOX");
     SoDrawStyleElement::set(state, node, SoDrawStyleElement::LINES);
     SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
     SoComplexityTypeElement::set(state, node, SoComplexityTypeElement::BOUNDING_BOX);
@@ -879,6 +896,7 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
     SoOverrideElement::setComplexityTypeOverride(state, node, TRUE);
     this->actuallyRender(action, initmatrices, clearwindow, clearzbuffer);
     break;
+  }
   default:
     assert(0 && "unknown rendering mode");
     break;

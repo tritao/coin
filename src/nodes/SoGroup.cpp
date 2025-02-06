@@ -469,6 +469,7 @@ SoGroup::addChild(SoNode * node)
 void
 SoGroup::insertChild(SoNode * child, int newchildindex)
 {
+  ZoneScoped;
 #if COIN_DEBUG
   if (newchildindex < 0 || newchildindex > this->getNumChildren()) {
     SoDebugError::post("SoGroup::insertChild",

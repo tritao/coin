@@ -448,6 +448,7 @@ SoSensorManager::removeTimerSensor(SoTimerQueueSensor * entry)
 void
 SoSensorManager::processTimerQueue(void)
 {
+  ZoneScoped;
   SoSensorManagerP::assertAlive(PRIVATE(this));
 
   if (PRIVATE(this)->processingtimerqueue || PRIVATE(this)->timerqueue.getLength() == 0)
@@ -544,6 +545,7 @@ SoSensorManager::processTimerQueue(void)
 void
 SoSensorManager::processDelayQueue(SbBool isidle)
 {
+  ZoneScoped;
   SoSensorManagerP::assertAlive(PRIVATE(this));
 
   this->processImmediateQueue();
@@ -654,6 +656,7 @@ SoSensorManager::processDelayQueue(SbBool isidle)
 void
 SoSensorManager::processImmediateQueue(void)
 {
+  ZoneScoped;
   SoSensorManagerP::assertAlive(PRIVATE(this));
 
   if (PRIVATE(this)->processingimmediatequeue) return;
@@ -722,6 +725,7 @@ SoSensorManager::processImmediateQueue(void)
 void
 SoSensorManager::rescheduleTimer(SoTimerSensor * s)
 {
+  ZoneScoped;
   SoSensorManagerP::assertAlive(PRIVATE(this));
 
   LOCK_RESCHEDULE_LIST(this);

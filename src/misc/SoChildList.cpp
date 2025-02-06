@@ -327,6 +327,15 @@ SoChildList::traverseInPath(SoAction * const action,
   }
 }
 
+#ifdef COIN_DEBUG
+static void printSoChildList(SoChildList* list, const char* indent) {
+  for (int n = 0; n < list->getLength(); n++) {
+    auto node = (SoNode*) (*list)[n];
+    printf("%s%s\n", indent, node->getTypeId().getName().getString());
+  }
+}
+#endif
+
 /*!
   Traverse child nodes in the list from index \a first up to and
   including index \a last, or until the SoAction::hasTerminated() flag
@@ -359,6 +368,10 @@ SoChildList::traverse(SoAction * const action, const int first, const int last)
   uintptr_t chksum = 0xdeadbeef;
   for (i = first; i <= last; i++) { chksum ^= (uintptr_t)(*this)[i]; }
   SbBool changedetected = FALSE;
+#if 0
+  SoChildList originalNodes(this->parent);
+  originalNodes.copy(*this);
+#endif
 #endif // COIN_DEBUG
 
   SoAction::PathCode pathcode = action->getCurPathCode();
@@ -428,6 +441,12 @@ SoChildList::traverse(SoAction * const action, const int first, const int last)
     if (chksum != 0xdeadbeef) changedetected = TRUE;
   }
   if (changedetected) {
+    printf("SoChildList::traverse original nodes:\n");
+#if 0
+    printSoChildList(&originalNodes, " ");
+    printf("SoChildList::traverse new nodes:\n");
+#endif
+    printSoChildList(this, " ");
     SoDebugError::postWarning("SoChildList::traverse",
                               "Detected modification of scene graph layout "
                               "during action traversal. This is considered to "

@@ -79,6 +79,7 @@ cmake_dependent_option(COIN_BUILD_INTERNAL_DOCUMENTATION "Document internal code
 cmake_dependent_option(COIN_BUILD_DOCUMENTATION_MAN "Build Coin man pages." OFF "COIN_BUILD_DOCUMENTATION" OFF)
 cmake_dependent_option(COIN_BUILD_DOCUMENTATION_QTHELP "Build QtHelp documentation." OFF "COIN_BUILD_DOCUMENTATION" OFF)
 cmake_dependent_option(COIN_BUILD_DOCUMENTATION_CHM "Build compressed HTML help manual (requires HTML help compiler)" OFF "COIN_BUILD_DOCUMENTATION" OFF)
+option(COIN_BUILD_TRACY_PROFILER "Build support for Tracy frame profiler when ON (off by default)." OFF)
 
 option(COIN_THREADSAFE "Enable thread safe render traversals." OFF)
 option(HAVE_VRML97 "Enable VRML97 support." ON)
@@ -115,6 +116,7 @@ cmake_dependent_option(COIN_DEBUG_CHECK_THREAD "Enable thread check in several c
 report_prepare(
   COIN_BUILD_SHARED_LIBS
   COIN_BUILD_TESTS
+  COIN_BUILD_TRACY_PROFILER
   COIN_BUILD_DOCUMENTATION
   COIN_BUILD_INTERNAL_DOCUMENTATION
   COIN_BUILD_DOCUMENTATION_MAN
@@ -293,6 +295,13 @@ endif()
 # #include_directories(${BISON_INCLUDE_DIRS})
 # #list(APPEND COIN_TARGET_INCLUDE_DIRECTORIES ${BISON_INCLUDE_DIRS})
 #endif()
+
+if(COIN_BUILD_TRACY_PROFILER)
+  set(TRACY_STATIC 0)
+  add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/tracy)
+  add_definitions(-DTRACY_ENABLE)
+  list(APPEND COIN_TARGET_LINK_LIBRARIES TracyClient)
+endif()
 
 if(HAVE_SOUND)
   if(NOT OPENAL_RUNTIME_LINKING)

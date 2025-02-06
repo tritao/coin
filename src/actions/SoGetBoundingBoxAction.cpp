@@ -595,6 +595,8 @@ SoGetBoundingBoxAction::resetCenter(void)
 void
 SoGetBoundingBoxAction::beginTraversal(SoNode * node)
 {
+  ZoneScopedN("SoGetBoundingBoxAction::beginTraversal");
+
   this->resetCenter();
   this->bbox.makeEmpty();
 

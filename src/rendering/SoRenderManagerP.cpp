@@ -111,6 +111,7 @@ SoRenderManagerP::setClippingPlanes(void)
 
   SbViewportRegion vp = this->glaction->getViewportRegion();
 
+#if 1
   if (!this->getbboxaction) {
     this->getbboxaction = new SoGetBoundingBoxAction(vp);
   } else {
@@ -130,6 +131,9 @@ SoRenderManagerP::setClippingPlanes(void)
   mat = camera->orientation.getValue().inverse();
   xbox.transform(mat);
   SbBox3f box = xbox.project();
+#else
+  SbBox3f box;
+#endif
 
   float nearval = -box.getMax()[2];
   float farval = -box.getMin()[2];

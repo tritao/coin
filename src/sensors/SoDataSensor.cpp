@@ -51,6 +51,8 @@
 #include <Inventor/errors/SoDebugError.h>
 #endif // COIN_DEBUG
 
+#include "coindefs.h"
+
 
 /*!
   \fn void SoDataSensor::dyingReference(void)
@@ -311,6 +313,7 @@ SoDataSensor::trigger(void)
 void
 SoDataSensor::notify(SoNotList * l)
 {
+  ZoneScoped;
   if (this->triggerpath != NULL) {
     this->triggerpath->unref();
     this->triggerpath = NULL;

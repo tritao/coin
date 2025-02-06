@@ -494,6 +494,8 @@ SoSeparator::doAction(SoAction * action)
 void
 SoSeparator::getBoundingBox(SoGetBoundingBoxAction * action)
 {
+  ZoneScopedN("SoSeparator::getBoundingBox");
+
   SoState * state = action->getState();
 
   SbXfBox3f childrenbbox;
@@ -504,7 +506,9 @@ SoSeparator::getBoundingBox(SoGetBoundingBoxAction * action)
   // field, but we should trigger some heuristics based on scene graph
   // "behavior" in the children subgraphs if the value is set to
   // AUTO. 19990513 mortene.
+
   SbBool iscaching = this->boundingBoxCaching.getValue() != OFF;
+  ZoneValue(this->boundingBoxCaching.getValue());
 
   switch (action->getCurPathCode()) {
   case SoAction::IN_PATH:
@@ -525,6 +529,9 @@ SoSeparator::getBoundingBox(SoGetBoundingBoxAction * action)
   }
 
   SbBool validcache = iscaching && PRIVATE(this)->bboxcache && PRIVATE(this)->bboxcache->isValid(state);
+  // SbBool validcache = iscaching && PRIVATE(this)->bboxcache;
+
+  ZoneNameF("%s (%s) | Caching: %d | Valid: %d", this->getName().getString(), this->getTypeId().getName().getString(), iscaching, validcache);
 
   if (iscaching && validcache) {
     SoCacheElement::addCacheDependency(state, PRIVATE(this)->bboxcache);
@@ -542,11 +549,11 @@ SoSeparator::getBoundingBox(SoGetBoundingBoxAction * action)
     SbBool storedinvalid = FALSE;
 
     // check if we should disable auto caching
-    if (PRIVATE(this)->bboxcache_destroycount > 10 && this->boundingBoxCaching.getValue() == AUTO) {
-      if (float(PRIVATE(this)->bboxcache_usecount) / float(PRIVATE(this)->bboxcache_destroycount) < 5.0f) {
-        iscaching = FALSE;
-      }
-    }
+    // if (PRIVATE(this)->bboxcache_destroycount > 10 && this->boundingBoxCaching.getValue() == AUTO) {
+    //   if (float(PRIVATE(this)->bboxcache_usecount) / float(PRIVATE(this)->bboxcache_destroycount) < 5.0f) {
+    //     iscaching = FALSE;
+    //   }
+    // }
 
     if (iscaching) {
       storedinvalid = SoCacheElement::setInvalid(FALSE);
@@ -578,6 +585,9 @@ SoSeparator::getBoundingBox(SoGetBoundingBoxAction * action)
     if (childrencenterset) childrencenter = action->getCenter();
 
     action->getXfBoundingBox() = abox; // reset action bbox
+
+    float xmin, ymin, zmin, xmax, ymax, zmax;
+    childrenbbox.getBounds(xmin, ymin, zmin, xmax, ymax, zmax);
 
     if (iscaching) {
       PRIVATE(this)->bboxcache->set(childrenbbox, childrencenterset, childrencenter);
@@ -652,6 +662,10 @@ SoSeparator::GLRender(SoGLRenderAction * action)
 void
 SoSeparator::GLRenderBelowPath(SoGLRenderAction * action)
 {
+    ZoneScoped;
+    auto node = action->getCurPath()->getTail();
+    ZoneName(node->getTypeId().getName().getString(), strlen(node->getTypeId().getName().getString()));
+
   SoState * state = action->getState();
   state->push();
   SbBool didcull = FALSE;
@@ -927,6 +941,14 @@ SoSeparator::getNumRenderCaches(void)
   return SoSeparator::numrendercaches;
 }
 
+#if 0
+SoBoundingBoxCache*
+SoSeparator::getBoundingBoxCache() const
+{
+return PRIVATE(this)->bboxcache;
+}
+#endif
+
 // Doc from superclass.
 SbBool
 SoSeparator::affectsState(void) const
@@ -948,6 +970,7 @@ SoSeparator::getPrimitiveCount(SoGetPrimitiveCountAction * action)
 void
 SoSeparator::notify(SoNotList * nl)
 {
+  ZoneScoped;
   inherited::notify(nl);
 
   // lock before using the cache pointers so that we know the pointers

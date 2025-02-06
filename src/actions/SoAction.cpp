@@ -462,6 +462,8 @@ SoAction::isOfType(SoType type) const
 void
 SoAction::apply(SoNode * root)
 {
+  ZoneScopedN("SoAction::apply");
+  ZoneNameF("%s | %s [%s]", this->getTypeId().getName().getString(), root->getName().getString(), root->getTypeId().getName().getString());
   SoDB::readlock();
   // need to store these in case action is re-applied
   AppliedCode storedcode = PRIVATE(this)->appliedcode;
@@ -944,6 +946,9 @@ SoAction::traverse(SoNode * const node)
   int idx = SoNode::getActionMethodIndex(t);
   SoActionMethod func = (*this->traversalMethods)[idx];
 
+  ZoneScopedN("SoAction::traverse");
+  ZoneNameF("%s [%s] | %s::traverse", node->getName().getString(), t.getName().getString(), getTypeId().getName().getString());
+
   SoNodeProfiling profiling;
   profiling.preTraversal(this);
   func(this, node);
@@ -1268,6 +1273,7 @@ SoAction::getClassActionMethods(void)
 void
 SoAction::beginTraversal(SoNode * node)
 {
+  ZoneScopedN("SoAction::beginTraversal");
   this->traverse(node);
 }
 
@@ -1278,6 +1284,7 @@ SoAction::beginTraversal(SoNode * node)
 void
 SoAction::endTraversal(SoNode * COIN_UNUSED_ARG(node))
 {
+  ZoneScopedN("SoAction::endTraversal");
 }
 
 /*!

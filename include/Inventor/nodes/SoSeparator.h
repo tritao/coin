@@ -40,6 +40,7 @@
 
 class SoState;
 class SoSeparatorP;
+class SoBoundingBoxCache;
 
 class COIN_DLL_API SoSeparator : public SoGroup {
   typedef SoGroup inherited;
@@ -79,6 +80,7 @@ public:
   static void setNumRenderCaches(const int howmany);
   static int getNumRenderCaches(void);
   virtual SbBool affectsState(void) const;
+  // virtual SoBoundingBoxCache* getBoundingBoxCache() const;
 
 protected:
   virtual ~SoSeparator();
