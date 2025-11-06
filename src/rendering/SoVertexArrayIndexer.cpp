@@ -345,8 +345,8 @@ SoVertexArrayIndexer::render(SoState * state, const SbBool renderasvbo, const ui
                          GL_UNSIGNED_INT,
                          idxptr);
         }
-#endif
       }
+#endif
     }
     break;
 #if defined(COIN_USE_GL_RENDERER)

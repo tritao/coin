@@ -8,7 +8,7 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug",
-            "program": "${workspaceFolder}/examples/glfw/bin/glfw",
+            "program": "${workspaceFolder}/bld/bin/glfw_coin",
             "args": [],
             "cwd": "${workspaceFolder}/examples/glfw",
             "env": {

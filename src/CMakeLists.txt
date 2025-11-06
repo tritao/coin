@@ -18,6 +18,11 @@ configure_file(setup.h.cmake.in setup.h)
 
 add_compile_options(-DHAVE_CONFIG_H -DCOIN_INTERNAL -DCOIN_DEBUG=$<CONFIG:Debug>)
 
+if(COIN_USE_BGFX_RENDERER)
+  target_compile_definitions(${PROJECT_NAME} PUBLIC COIN_USE_BGFX_RENDERER=1)
+  target_link_libraries(${PROJECT_NAME} PRIVATE bgfx)
+endif()
+
 include_directories(BEFORE
   "${PROJECT_BINARY_DIR}/include"
   "${PROJECT_SOURCE_DIR}/include"
@@ -146,12 +151,6 @@ if(COIN_USE_BGFX_RENDERER)
 
   include(${CMAKE_CURRENT_LIST_DIR}/../bgfx.cmake/cmake/bgfxToolUtils.cmake)
   add_shaders_directory(${CMAKE_CURRENT_LIST_DIR}/../data/shaders/bgfx SHADERS_TARGET_NAME)
-endif()
-
-add_compile_definitions(COIN_USE_GL_RENDERER=1)
-
-if (COIN_GL_COMPATIBILITY)
-  add_compile_definitions(COIN_GL_COMPATIBILITY=1)
 endif()
 
 foreach(_subdir ${SUBDIRS})
@@ -368,9 +367,17 @@ endif()
 target_include_directories(${PROJECT_NAME} PRIVATE ${COIN_TARGET_INCLUDE_DIRECTORIES})
 target_link_libraries(${PROJECT_NAME} PRIVATE ${COIN_TARGET_LINK_LIBRARIES})
 
+if(COIN_GL_COMPATIBILITY)
+  target_compile_definitions(${PROJECT_NAME} INTERFACE COIN_GL_COMPATIBILITY=1)
+endif()
+
+if(COIN_USE_GL_RENDERER)
+  target_compile_definitions(${PROJECT_NAME} INTERFACE COIN_USE_GL_RENDERER=1)
+  target_link_libraries(${PROJECT_NAME} INTERFACE ${COIN_TARGET_LINK_LIBRARIES_GL})
+endif()
+
 if(COIN_USE_BGFX_RENDERER)
-  target_compile_definitions(${PROJECT_NAME} PRIVATE COIN_USE_BGFX_RENDERER=1)
-  target_link_libraries(${PROJECT_NAME} PRIVATE bgfx)
+  target_compile_definitions(${PROJECT_NAME} INTERFACE COIN_USE_BGFX_RENDERER=1)
 endif()
 
 if(NOT COIN_BUILD_MAC_FRAMEWORK)
