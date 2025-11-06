@@ -31,6 +31,7 @@
 \**************************************************************************/
 
 #include "shaders/SoGLSLShaderObject.h"
+#include "Inventor/C/glue/gl.h"
 #include "coindefs.h"
 
 #include <cassert>
@@ -81,6 +82,62 @@ SoGLSLShaderObject::isLoaded(void) const
 void
 SoGLSLShaderObject::load(const char* srcStr)
 {
+#ifdef GL_COMPAT
+  if (cc_glglue_glprofile_compat(this->glctx)) {
+    loadARB(srcStr);
+    return;
+  }
+#endif
+
+  this->unload();
+  this->setParametersDirty(TRUE);
+
+  GLint flag;
+  GLenum sType;
+
+  switch (this->getShaderType()) {
+  default:
+    assert(0 &&" unknown shader type");
+  case VERTEX:
+    sType = GL_VERTEX_SHADER;
+    break;
+  case FRAGMENT:
+    sType = GL_FRAGMENT_SHADER;
+    break;
+  case GEOMETRY:
+    sType = GL_GEOMETRY_SHADER;
+    break;
+  }
+
+  SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::load() : previous errors");
+
+  this->shaderHandle = glCreateShader(sType);
+  this->programid = 0;
+
+  if (this->shaderHandle == 0) return;
+  this->programid = soglshaderobject_idcounter++;
+
+  glShaderSource(this->shaderHandle, 1, (const COIN_GLchar **)&srcStr, NULL);
+  glCompileShader(this->shaderHandle);
+
+  if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::load()")) {
+    this->shaderHandle = 0;
+    return;
+  }
+
+  glGetShaderiv(this->shaderHandle, GL_COMPILE_STATUS, &flag);
+  SoGLSLShaderObject::printInfoLog(this->GLContext(), this->shaderHandle,
+                                   this->getShaderType());
+
+  if (!flag) {
+    this->shaderHandle = 0;
+  }
+}
+
+#ifdef GL_COMPAT
+void
+SoGLSLShaderObject::loadARB(const char* srcStr)
+{
   this->unload();
   this->setParametersDirty(TRUE);
 
@@ -101,7 +158,7 @@ SoGLSLShaderObject::load(const char* srcStr)
     break;
   }
 
-  SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::load() : previous errors");
+  SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::loadARB() : previous errors");
 
   this->shaderHandle = this->glctx->glCreateShaderObjectARB(sType);
   this->programid = 0;
@@ -125,6 +182,7 @@ SoGLSLShaderObject::load(const char* srcStr)
 
   if (!flag) this->shaderHandle = 0;
 }
+#endif
 
 void
 SoGLSLShaderObject::unload(void)
@@ -153,7 +211,15 @@ SoGLSLShaderObject::attach(COIN_GLhandle programHandle)
 
   if (this->shaderHandle) {
     this->programHandle = programHandle;
-    this->glctx->glAttachObjectARB(this->programHandle, this->shaderHandle);
+#ifdef GL_COMPAT
+    if (cc_glglue_glprofile_compat(this->glctx)) {
+      this->glctx->glAttachObjectARB(this->programHandle, this->shaderHandle);
+    }
+    else
+#endif
+    {
+      glAttachShader(this->programHandle, this->shaderHandle);
+    }
     this->isattached = TRUE;
   }
 }
@@ -179,12 +245,26 @@ SoGLSLShaderObject::printInfoLog(const cc_glglue * g, COIN_GLhandle handle, int 
 {
   GLint length = 0;
 
-  g->glGetObjectParameterivARB(handle, GL_OBJECT_INFO_LOG_LENGTH_ARB, &length);
+#ifdef GL_COMPAT
+  if (cc_glglue_glprofile_compat(g)) {
+    g->glGetObjectParameterivARB(handle, GL_OBJECT_INFO_LOG_LENGTH_ARB, &length);
+  } else
+#endif
+  {
+    glGetShaderiv(handle, GL_INFO_LOG_LENGTH, &length);
+  }
 
   if (length > 1) {
     COIN_GLchar *infoLog = new COIN_GLchar[length];
     GLsizei charsWritten = 0;
-    g->glGetInfoLogARB(handle, length, &charsWritten, infoLog);
+  #ifdef GL_COMPAT
+    if (cc_glglue_glprofile_compat(g)) {
+      g->glGetInfoLogARB(handle, length, &charsWritten, infoLog);
+    } else
+  #endif
+    {
+      glGetShaderInfoLog(handle, length, &charsWritten, infoLog);
+    }
     SbString s("GLSL");
     switch (objType) {
     case 0: s += "vertexShader "; break;

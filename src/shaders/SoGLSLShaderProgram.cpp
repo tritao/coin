@@ -35,6 +35,7 @@
 #include <Inventor/elements/SoGLCacheContextElement.h>
 #include <Inventor/misc/SoContextHandler.h>
 
+#include "Inventor/C/glue/gl.h"
 #include "shaders/SoGLSLShaderObject.h"
 #include <Inventor/errors/SoDebugError.h>
 #include "glue/glp.h"
@@ -180,18 +181,51 @@ SoGLSLShaderProgram::ensureLinking(const cc_glglue * g)
 
     }
 
-    g->glLinkProgramARB(programHandle);
+#ifdef GL_COMPAT
+    if (cc_glglue_glprofile_compat(g)) {
+      g->glLinkProgramARB(programHandle);
 
-    if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::ensureLinking")) {
-      SoGLSLShaderObject::printInfoLog(g, programHandle, 0);
+      if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::ensureLinking")) {
+        SoGLSLShaderObject::printInfoLog(g, programHandle, 0);
+      }
+
+      g->glGetObjectParameterivARB(programHandle,
+                                  GL_OBJECT_LINK_STATUS_ARB, &didLink);
+    } else
+#endif
+    {
+      glLinkProgram(programHandle);
+      glGetProgramiv(programHandle, GL_LINK_STATUS, &didLink);
+
+      if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::ensureLinking")
+        || !didLink) {
+        printInfoLog(g, programHandle);
+      }
     }
-    g->glGetObjectParameterivARB(programHandle,
-                                 GL_OBJECT_LINK_STATUS_ARB,&didLink);
 
     this->isExecutable = didLink;
     this->neededlinking = TRUE;
   }
 }
+
+void
+SoGLSLShaderProgram::printInfoLog(const cc_glglue * g, COIN_GLhandle handle)
+{
+  GLint length = 0;
+  glGetProgramiv(handle, GL_INFO_LOG_LENGTH, &length);
+
+  if (length > 1) {
+    COIN_GLchar *infoLog = new COIN_GLchar[length];
+    GLsizei charsWritten = 0;
+    glGetProgramInfoLog(handle, length, &charsWritten, infoLog);
+
+    SoDebugError::postInfo("SoGLSLShaderProgram::printInfoLog",
+                           "program log: '%s'",
+                           infoLog);
+    delete [] infoLog;
+  }
+}
+
 
 int
 SoGLSLShaderProgram::indexOfShaderObject(SoGLSLShaderObject *shaderObject)
@@ -216,7 +250,14 @@ SoGLSLShaderProgram::getProgramHandle(const cc_glglue * g, const SbBool create)
 {
   COIN_GLhandle handle = 0;
   if (!this->programHandles.get(g->contextid, handle) && create) {
-    handle = g->glCreateProgramObjectARB();
+#ifdef GL_COMPAT
+    if (cc_glglue_glprofile_compat(g)) {
+      handle = g->glCreateProgramObjectARB();
+    } else
+#endif
+    {
+      handle = glCreateProgram();
+    }
     this->programHandles.put(g->contextid, handle);
   }
   return handle;
