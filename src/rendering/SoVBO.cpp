@@ -291,6 +291,7 @@ SoVBO::setBufferData(const GLvoid * data, intptr_t size, SbUniqueId dataid)
 #endif
 }
 
+#if defined(COIN_USE_BGFX_RENDERER)
 void SoVBO::setVertexLayout(const bgfx::VertexLayout& layout)
 {
   this->layout = layout;
@@ -300,6 +301,7 @@ bgfx::VertexLayout& SoVBO::getVertexLayout()
 {
   return this->layout;
 }
+#endif
 
 /*!
   Returns the buffer data id.

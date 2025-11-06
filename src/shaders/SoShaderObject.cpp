@@ -130,7 +130,9 @@
 
 #include "nodes/SoSubNodeP.h"
 #include "misc/SbHash.h"
+#if defined(COIN_USE_BGFX_RENDERER)
 #include "shaders/SoBGFXShaderObject.h"
+#endif
 #include "shaders/SoGLARBShaderObject.h"
 #include "shaders/SoGLCgShaderObject.h"
 #include "shaders/SoGLSLShaderObject.h"
