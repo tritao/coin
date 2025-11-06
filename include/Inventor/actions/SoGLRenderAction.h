@@ -41,6 +41,11 @@
 #include <Inventor/lists/SoPathList.h>
 #include <Inventor/lists/SbList.h>
 
+#if defined(COIN_USE_BGFX_RENDERER)
+#include <bx/bx.h>
+#include <bgfx/bgfx.h>
+#endif
+
 typedef void SoGLRenderPassCB(void * userdata);
 typedef void SoGLPreRenderCB(void * userdata, class SoGLRenderAction * action);
 typedef float SoGLSortedObjectOrderCB(void * userdata, SoGLRenderAction * action);
@@ -116,6 +121,11 @@ public:
 
   void setRenderingIsRemote(SbBool isremote);
   SbBool getRenderingIsRemote(void) const;
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  void setRenderView(bgfx::ViewId viewid);
+  bgfx::ViewId getRenderView() const;
+#endif
 
   virtual void invalidateState(void);
 

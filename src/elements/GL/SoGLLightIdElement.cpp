@@ -130,6 +130,9 @@ SoGLLightIdElement::increment(SoState * const state,
   SoGLLightIdElement * element = (SoGLLightIdElement *)
     getElement(state, getClassStackIndex());
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  // TODO: BGFX
+#else
   if (element) {
     const cc_glglue * glue = sogl_glue_instance(state);
     element->data++;
@@ -168,6 +171,8 @@ SoGLLightIdElement::increment(SoState * const state,
 #endif
     return element->data;
   }
+#endif
+
   return -1;
 }
 

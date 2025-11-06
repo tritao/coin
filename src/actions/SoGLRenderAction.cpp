@@ -563,6 +563,10 @@ public:
   SoGLRenderAction::TransparentDelayedObjectRenderType transpdelayedrendertype;
   SbBool renderingtranspbackfaces;
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  bgfx::ViewId viewid;
+#endif
+
   boost::scoped_ptr<SoGetBoundingBoxAction> bboxaction;
   SbVec2f updateorigin, updatesize;
   SbBool needglinit;
@@ -758,6 +762,13 @@ SoGLRenderAction::setViewportRegion(const SbViewportRegion & newregion)
   PRIVATE(this)->bboxaction->setViewportRegion(newregion);
   // The SoViewportRegionElement is not set here, as it is always
   // initialized before redraw in beginTraversal().
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  short int winw, winh;
+  newregion.getWindowSize().getValue(winw, winh);
+  bgfx::reset(winw, winh, BGFX_RESET_VSYNC);
+  bgfx::setViewRect(PRIVATE(this)->viewid, 0, 0, bgfx::BackbufferRatio::Equal);
+#endif
 }
 
 /*!
@@ -1073,6 +1084,8 @@ SoGLRenderAction::beginTraversal(SoNode * node)
   if (COIN_GLBBOX) {
     PRIVATE(this)->bboxaction->apply(node);
   }
+
+#if !defined(COIN_USE_BGFX_RENDERER)
   int err_before_init = GL_NO_ERROR;
 
   if (sogl_glerror_debugging()) {
@@ -1132,6 +1145,7 @@ SoGLRenderAction::beginTraversal(SoNode * node)
                               (err_before_init != GL_NO_ERROR) ? "before" : "after",
                               coin_glerror_string(err));
   }
+#endif
 
   PRIVATE(this)->render(node);
   // GL errors after rendering will be caught in SoNode::GLRenderS().
@@ -1221,7 +1235,9 @@ SbBool
 SoGLRenderAction::handleTransparency(SbBool istransparent)
 {
   SoState * thestate = this->getState();
+#if !defined(COIN_USE_BGFX_RENDERER)
   const cc_glglue *glue = sogl_glue_instance(thestate);
+#endif
 
   SoGLRenderAction::TransparencyType transptype =
     static_cast<SoGLRenderAction::TransparencyType>(
@@ -1237,6 +1253,7 @@ SoGLRenderAction::handleTransparency(SbBool istransparent)
     PRIVATE(this)->sortedlayersblendprojectionmatrix =
       SoProjectionMatrixElement::get(thestate);
 
+#if !defined(COIN_USE_BGFX_RENDERER)
     if (!SoMultiTextureEnabledElement::get(thestate, 0)) {
       if (glue->has_arb_fragment_program && !PRIVATE(this)->usenvidiaregistercombiners) {
         PRIVATE(this)->setupFragmentProgram();
@@ -1245,6 +1262,7 @@ SoGLRenderAction::handleTransparency(SbBool istransparent)
         PRIVATE(this)->setupRegisterCombinersNV();
       }
     }
+#endif
 
     // Must always return FALSE as everything must be rendered to the
     // RGBA layers (which are blended together at the end of each
@@ -1451,6 +1469,18 @@ SoGLRenderAction::getRenderingIsRemote(void) const
   }
   return !isdirect;
 }
+
+#if defined(COIN_USE_BGFX_RENDERER)
+void SoGLRenderAction::setRenderView(bgfx::ViewId viewid)
+{
+  PRIVATE(this)->viewid = viewid;
+}
+
+bgfx::ViewId SoGLRenderAction::getRenderView() const
+{
+  return PRIVATE(this)->viewid;
+}
+#endif
 
 /*!
   Adds a path to the list of paths to render after the current pass.
@@ -1685,8 +1715,12 @@ SoGLRenderActionP::isDirectRendering(const SoState * state) const
 {
   SbBool isdirect;
   if (this->rendering == RENDERING_UNSET) {
+#if defined(COIN_USE_BGFX_RENDERER)
+    isdirect = 1;
+#else
     const cc_glglue * w = sogl_glue_instance(state);
     isdirect = cc_glglue_isdirect(w);
+#endif
   }
   else {
     isdirect = this->rendering == RENDERING_SET_DIRECT;
@@ -1737,6 +1771,7 @@ SoGLRenderActionP::render(SoNode * node)
 
   this->precblist.invokeCallbacks(static_cast<void *>(this->action));
 
+#if defined(COIN_USE_BGFX_RENDERER)
   if (this->action->getNumPasses() > 1 && this->internal_multipass) {
     // Check if the current OpenGL context has an accumulation buffer
     // (rendering multiple passes doesn't make much sense otherwise).
@@ -1756,7 +1791,9 @@ SoGLRenderActionP::render(SoNode * node)
     } else {
       this->renderMulti(node);
     }
-  } else {
+  } else
+#endif
+  {
     this->renderSingle(node);
   }
 
@@ -1844,6 +1881,7 @@ SoGLRenderActionP::renderSingle(SoNode * node)
 
   // Do order independent transparency rendering
   if (this->transparencytype == SoGLRenderAction::SORTED_LAYERS_BLEND) {
+#if !defined(COIN_USE_BGFX_RENDERER)
     GLint depthbits, alphabits;
     glGetIntegerv(GL_DEPTH_BITS, &depthbits);
     glGetIntegerv(GL_ALPHA_BITS, &alphabits);
@@ -1869,7 +1907,9 @@ SoGLRenderActionP::renderSingle(SoNode * node)
       this->transparencytype = SoGLRenderAction::SORTED_OBJECT_BLEND;
       render(node); // Render again using the fallback transparency type.
     }
-
+#else
+    assert(0 && "SoGLRenderAction::SORTED_LAYERS_BLEND not yet implemented for BGFX renderer");
+#endif
     return;
   }
 

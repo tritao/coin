@@ -76,6 +76,11 @@
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/misc/SoGLDriverDatabase.h>
 
+#if defined(COIN_USE_BGFX_RENDERER)
+#include <bx/bx.h>
+#include <bgfx/bgfx.h>
+#endif
+
 #include "tidbitsp.h"
 #include "misc/SbHash.h"
 #include "rendering/SoGL.h"
@@ -349,6 +354,9 @@ SoPrimitiveVertexCache::close(SoState * state)
 void
 SoPrimitiveVertexCache::renderTriangles(SoState * state, const int arrays) const
 {
+#if defined(COIN_USE_BGFX_RENDERER)
+
+#else
   int lastenabled = -1;
   const int n = this->getNumTriangleIndices();
   if (n == 0) return;
@@ -404,6 +412,7 @@ SoPrimitiveVertexCache::renderTriangles(SoState * state, const int arrays) const
     SoGLLazyElement::getInstance(state)->reset(state,
                                                SoLazyElement::DIFFUSE_MASK);
   }
+#endif
 }
 
 void
@@ -1084,7 +1093,7 @@ SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
     } else
 #endif
     {
-      //cc_glglue_glVertexAttribPointer()
+      //glVertexAttribP
     }
   }
 

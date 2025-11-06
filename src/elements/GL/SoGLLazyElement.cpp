@@ -468,6 +468,7 @@ SoGLLazyElement::init(SoState * stateptr)
   // a cache though.
   this->cachebitmask = 0;
 
+#if !defined(COIN_USE_BGFX_RENDERER)
 #ifdef GL_COMPAT
   if (sogl_compatibility_profile(this->state))
   {
@@ -487,6 +488,7 @@ SoGLLazyElement::init(SoState * stateptr)
     this->sendPackedDiffuse(0xccccccff);
 #ifdef GL_COMPAT
   }
+#endif
 #endif
 }
 
