@@ -34,6 +34,8 @@
 #include <config.h>
 #endif // HAVE_CONFIG_H
 
+#include "rendering/SoGL.h"
+
 #ifdef HAVE_VRML97
 
 /*!

@@ -146,24 +146,18 @@ SoCube::initClass(void)
 void
 SoCube::GLRender(SoGLRenderAction * action)
 {
-  SoState * state = action->getState();
-
   if (!this->shouldGLRender(action)) return;
 
-#if defined(COIN_USE_BGFX_RENDERER)
-  if (SoRenderer::isBGFX()) {
+  SoState * state = action->getState();
+
+  const SoShapeStyleElement * shapestyle = SoShapeStyleElement::get(state);
+  unsigned int shapestyleflags = shapestyle->getFlags();
+  if (shapestyleflags & SoShapeStyleElement::VERTEXARRAY) {
     return SoShape::GLRender(action);
   }
-#endif
 
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
-    if (!sogl_compatibility_profile(state)) {
-      const SoShapeStyleElement * shapestyle = SoShapeStyleElement::get(state);
-      shapestyle->setVertexArrayRendering(state, true);
-      return SoShape::GLRender(action);
-    }
-
     SoMaterialBindingElement::Binding binding =
       SoMaterialBindingElement::get(state);
 

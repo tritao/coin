@@ -101,6 +101,7 @@
 #include "coindefs.h" // COIN_OBSOLETED
 #include "tidbitsp.h"
 #include "nodes/SoSubNodeP.h"
+#include "rendering/SoGL.h"
 
 /*!
   \enum SoMarkerSet::MarkerType

@@ -44,7 +44,7 @@
 
 #include <Inventor/elements/SoGLLinePatternElement.h>
 #include "coindefs.h"
-
+#include "rendering/SoGL.h"
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -82,6 +82,9 @@ void
 SoGLLinePatternElement::init(SoState * state)
 {
   inherited::init(state);
+#if defined(COIN_GL_COMPATIBILITY)
+  this->hasGLCompatibilityProfile = sogl_compatibility_profile(state);
+#endif
 }
 
 /*!
@@ -130,7 +133,7 @@ void
 SoGLLinePatternElement::updategl()
 {
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
+  if (this->hasGLCompatibilityProfile) {
     //
     // FIXME: store flag to keep enable/disable state, pederb 990624
     //

@@ -623,9 +623,9 @@ namespace { namespace SoGL { namespace QuadMesh {
             // tb->send(?curridx?, cc, nc) was replaced by
             // glTexCoord for center vertex
 #if defined(COIN_GL_COMPATIBILITY)
-            if (sogl_compatibility_profile(state)) {
+            //if (sogl_compatibility_profile(state)) {
               glTexCoord4fv((const GLfloat*)&tc);
-            }
+            //}
 #else
             assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif

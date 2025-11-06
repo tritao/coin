@@ -136,19 +136,23 @@ if(COIN_USE_BGFX_RENDERER)
       set("${TARGET_OUT_VAR}" "${TARGET_NAME}" PARENT_SCOPE)
   endfunction()
 
-include_directories($<TARGET_PROPERTY:bx,INTERFACE_INCLUDE_DIRECTORIES>)
-include_directories($<TARGET_PROPERTY:bgfx,INTERFACE_INCLUDE_DIRECTORIES>)
+  include_directories($<TARGET_PROPERTY:bx,INTERFACE_INCLUDE_DIRECTORIES>)
+  include_directories($<TARGET_PROPERTY:bgfx,INTERFACE_INCLUDE_DIRECTORIES>)
 
-add_compile_definitions($<TARGET_PROPERTY:bx,INTERFACE_COMPILE_DEFINITIONS>)
-add_compile_definitions($<TARGET_PROPERTY:bgfx,INTERFACE_COMPILE_DEFINITIONS>)
+  add_compile_definitions($<TARGET_PROPERTY:bx,INTERFACE_COMPILE_DEFINITIONS>)
+  add_compile_definitions($<TARGET_PROPERTY:bgfx,INTERFACE_COMPILE_DEFINITIONS>)
 
-add_compile_definitions(COIN_USE_BGFX_RENDERER=1)
+  add_compile_definitions(COIN_USE_BGFX_RENDERER=1)
 
-include(${CMAKE_CURRENT_LIST_DIR}/../bgfx.cmake/cmake/bgfxToolUtils.cmake)
-add_shaders_directory(${CMAKE_CURRENT_LIST_DIR}/../data/shaders/bgfx SHADERS_TARGET_NAME)
+  include(${CMAKE_CURRENT_LIST_DIR}/../bgfx.cmake/cmake/bgfxToolUtils.cmake)
+  add_shaders_directory(${CMAKE_CURRENT_LIST_DIR}/../data/shaders/bgfx SHADERS_TARGET_NAME)
 endif()
 
 add_compile_definitions(COIN_USE_GL_RENDERER=1)
+
+if (COIN_GL_COMPATIBILITY)
+  add_compile_definitions(COIN_GL_COMPATIBILITY=1)
+endif()
 
 foreach(_subdir ${SUBDIRS})
   add_subdirectory(${_subdir})

@@ -114,7 +114,14 @@ SoGLSLShaderProgram::enable(const cc_glglue * g)
 
   if (this->isExecutable) {
     COIN_GLhandle programhandle = this->getProgramHandle(g, TRUE);
-    g->glUseProgramObjectARB(programhandle);
+#if defined(COIN_GL_COMPATIBILITY)
+    if (cc_glglue_glprofile_compat(g)) {
+      g->glUseProgramObjectARB(programhandle);
+    } else
+#endif
+    {
+      glUseProgram(programhandle);
+    }
 
     if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::enable")) {
       SoGLSLShaderObject::printInfoLog(g, programhandle, 0);
@@ -126,7 +133,14 @@ void
 SoGLSLShaderProgram::disable(const cc_glglue * g)
 {
   if (this->isExecutable) {
-    g->glUseProgramObjectARB(0);
+#if defined(COIN_GL_COMPATIBILITY)
+    if (cc_glglue_glprofile_compat(g)) {
+      g->glUseProgramObjectARB(0);
+    } else
+#endif
+    {
+      glUseProgram(0);
+    }
   }
 }
 

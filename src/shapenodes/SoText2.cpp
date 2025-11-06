@@ -141,6 +141,7 @@
 
 #include "nodes/SoSubNodeP.h"
 #include "caches/SoGlyphCache.h"
+#include "rendering/SoGL.h"
 
 // The "lean and mean" define is a workaround for a Cygwin bug: when
 // windows.h is included _after_ one of the X11 or GLX headers above
@@ -1007,10 +1008,10 @@ SoText2P::setRasterPos3f(GLfloat x, GLfloat y, GLfloat z)
   float offsety = y >= 0 ? 0 : y;
 
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
+  //if (sogl_compatibility_profile(state)) {
     glRasterPos3f(rpx,rpy,z);
     if (offvp) { glBitmap(0, 0, 0, 0,offsetx,offsety, NULL); }
-  }
+  //}
 #else
   assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif

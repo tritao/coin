@@ -42,6 +42,7 @@
 #include <Inventor/C/glue/gl.h>
 
 #include "misc/SbHash.h"
+#include "rendering/SoVertexLayout.h"
 
 class SoState;
 
@@ -54,9 +55,13 @@ class SoVBO {
   static void init(void);
 
 #if defined(COIN_USE_BGFX_RENDERER)
-  void setVertexLayout(const bgfx::VertexLayout& layout);
-  bgfx::VertexLayout& getVertexLayout();
+  // TODO: Remove this.
+  void setBgfxVertexLayout(const bgfx::VertexLayout& layout);
+  bgfx::VertexLayout& getBgfxVertexLayout();
 #endif
+
+  void setVertexLayout(const SoVertexLayout& layout);
+  SoVertexLayout& getVertexLayout();
 
   void setBufferData(const GLvoid * data, intptr_t size, SbUniqueId dataid = 0);
   void * allocBufferData(intptr_t size, SbUniqueId dataid = 0);
@@ -87,6 +92,7 @@ class SoVBO {
   intptr_t datasize;
   SbUniqueId dataid;
   SbBool didalloc;
+  SoVertexLayout vertexlayout;
 
   SbHash<uint32_t, GLuint> vbohash;
 

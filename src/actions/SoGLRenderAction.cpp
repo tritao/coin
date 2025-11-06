@@ -2207,7 +2207,7 @@ void
 SoGLRenderActionP::eyeLinearTexgen()
 {
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
+  if (sogl_compatibility_profile(action->getState())) {
     const float col1[] = { 1, 0, 0, 0 };
     const float col2[] = { 0, 1, 0, 0 };
     const float col3[] = { 0, 0, 1, 0 };

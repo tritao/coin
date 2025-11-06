@@ -202,6 +202,8 @@
 
 // *************************************************************************
 
+#include <data/shaders/base/Unlit_vertex.h>
+#include <data/shaders/base/Unlit_fragment.h>
 #include <data/shaders/images/Image.h>
 #include <data/shaders/lights/SpotLight.h>
 #include <data/shaders/lights/PointLight.h>
@@ -475,6 +477,8 @@ SoShader::setupBuiltinShaders(void)
 {
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
+    shader_builtin_dict->put(SbName("base/Unlit.vert").getString(), (char*) UNLIT_VERTEX_shadersource);
+    shader_builtin_dict->put(SbName("base/Unlit.frag").getString(), (char*) UNLIT_FRAGMENT_shadersource);
     shader_builtin_dict->put(SbName("images/Image").getString(), (char*) IMAGE_shadersource);
     shader_builtin_dict->put(SbName("lights/PointLight").getString(), (char*) POINTLIGHT_shadersource);
     shader_builtin_dict->put(SbName("lights/SpotLight").getString(), (char*) SPOTLIGHT_shadersource);

@@ -692,6 +692,10 @@ glglue_set_glVersion(cc_glglue * w)
   w->version.minor = 0;
   w->version.release = 0;
 
+#if defined(__EMSCRIPTEN__)
+  glGetIntegerv(GL_MAJOR_VERSION, (GLint *)&w->version.major);
+  glGetIntegerv(GL_MINOR_VERSION, (GLint *)&w->version.minor);
+#else
   (void)strncpy(buffer, (const char *)w->versionstr, 255);
   buffer[255] = '\0'; /* strncpy() will not null-terminate if strlen > 255 */
   dotptr = strchr(buffer, '.');
@@ -721,6 +725,7 @@ glglue_set_glVersion(cc_glglue * w)
       w->version.minor = atoi(start);
     }
   }
+#endif
 
   if (coin_glglue_debug()) {
     cc_debugerror_postinfo("glglue_set_glVersion",
@@ -1305,6 +1310,7 @@ glglue_resolve_symbols(cc_glglue * w)
   }
 #endif /* GL_VERSION_1_5 */
 
+#if !defined(__EMSCRIPTEN__)
 #if defined(GL_ARB_vertex_buffer_object)
   if ((w->glBindBuffer == NULL) && cc_glglue_glext_supported(w, "GL_ARB_vertex_buffer_object")) {
     w->glBindBuffer = (COIN_PFNGLBINDBUFFERPROC) PROC(w, glBindBufferARB);
@@ -1391,6 +1397,7 @@ glglue_resolve_symbols(cc_glglue * w)
       }
     }
   }
+#endif
 
   /* GL_NV_register_combiners */
   w->glCombinerParameterfvNV = NULL;
@@ -2299,9 +2306,13 @@ cc_glglue_instance(int contextid)
     */
     static int chk = -1;
     if (chk == -1) {
+#if defined(__EMSCRIPTEN__)
+      chk = 0;
+#else
       /* Note: don't change envvar name without updating the assert
          text below. */
       chk = coin_getenv("COIN_GL_NO_CURRENT_CONTEXT_CHECK") ? 0 : 1;
+#endif
     }
     if (chk) {
       const void * current_ctx = coin_gl_current_context();
@@ -2610,7 +2621,12 @@ cc_glglue_isdirect(const cc_glglue * w)
 */
 SbBool cc_glglue_glprofile_compat(const cc_glglue * glue)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  return false;
+#else
   // TODO: cache this.
+  // TODO: Even if the GL compatibility layer has been compiled in, we may
+  // want to disable it at runtime.
 
   unsigned int major, minor, release;
   cc_glglue_glversion(glue, &major, &minor, &release);
@@ -2651,7 +2667,8 @@ SbBool cc_glglue_glprofile_compat(const cc_glglue * glue)
         return TRUE;
       }
   }
-}
+#endif
+  }
 
 /*!
   Whether glPolygonOffset() is available or not: either we're on OpenGL

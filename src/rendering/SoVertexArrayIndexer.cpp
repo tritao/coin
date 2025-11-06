@@ -309,13 +309,16 @@ SoVertexArrayIndexer::render(SoState * state, const SbBool renderasvbo, const ui
 
 #if defined(COIN_USE_GL_RENDERER)
       if (SoRenderer::isOpenGL()) {
+#if defined(COIN_GL_COMPATIBILITY)
         if (cc_glglue_glprofile_compat(glue)) {
           cc_glglue_glDrawElements(glue,
                                   this->target,
                                   this->indexarray.getLength(),
                                   this->use_shorts ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, NULL);
           cc_glglue_glBindBuffer(glue, GL_ELEMENT_ARRAY_BUFFER, 0);
-        } else {
+        } else
+#endif
+        {
           glDrawElements(this->target,
                                   this->indexarray.getLength(),
                                   this->use_shorts ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, NULL);
@@ -327,13 +330,23 @@ SoVertexArrayIndexer::render(SoState * state, const SbBool renderasvbo, const ui
 #if defined(COIN_USE_GL_RENDERER)
         if (SoRenderer::isOpenGL()) {
           const GLint * idxptr = this->indexarray.getArrayPtr();
+#if defined(COIN_GL_COMPATIBILITY)
+        if (cc_glglue_glprofile_compat(glue)) {
           cc_glglue_glDrawElements(glue,
                                   this->target,
                                   this->indexarray.getLength(),
                                   GL_UNSIGNED_INT,
                                   idxptr);
+        } else
+#endif
+        {
+          glDrawElements(this->target,
+                         this->indexarray.getLength(),
+                         GL_UNSIGNED_INT,
+                         idxptr);
         }
 #endif
+      }
     }
     break;
 #if defined(COIN_USE_GL_RENDERER)

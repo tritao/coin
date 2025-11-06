@@ -1,5 +1,5 @@
-#ifndef COIN_SOGLLINEPATTERNELEMENT_H
-#define COIN_SOGLLINEPATTERNELEMENT_H
+#ifndef COIN_VAO_H
+#define COIN_VAO_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
@@ -33,33 +33,31 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#include "Inventor/C/basic.h"
-#include <Inventor/elements/SoLinePatternElement.h>
+#ifndef COIN_INTERNAL
+#error this is a private header file
+#endif /* !COIN_INTERNAL */
 
-class COIN_DLL_API SoGLLinePatternElement : public SoLinePatternElement {
-  typedef SoLinePatternElement inherited;
+#include <Inventor/system/renderer.h>
+#include <Inventor/system/gl.h>
+#include <Inventor/C/glue/gl.h>
 
-  SO_ELEMENT_HEADER(SoGLLinePatternElement);
-public:
-  static void initClass(void);
-protected:
-  virtual ~SoGLLinePatternElement();
+class SoState;
+class SoGLRenderAction;
 
-public:
-  virtual void init(SoState * state);
+struct SoVAO
+{
+  SoVAO();
+  ~SoVAO();
 
-  virtual void push(SoState * state);
-  virtual void pop(SoState * state,
-                   const SoElement * prevTopElement);
+  /// Binds the VAO.
+  void bind(uint32_t contextid);
 
-protected:
-  virtual void setElt(int32_t pattern);
+  /// Unbinds the VAO.
+  void unbind(uint32_t contextid);
 
 private:
-  void updategl();
-#if defined(COIN_GL_COMPATIBILITY)
-  SbBool hasGLCompatibilityProfile;
-#endif
+
+  GLuint id;
 };
 
-#endif // !COIN_SOGLLINEPATTERNELEMENT_H
+#endif // COIN_VAO_H

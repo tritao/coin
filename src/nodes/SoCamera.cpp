@@ -154,6 +154,7 @@
 
 #include "elements/GL/SoResetMatrixElement.h"
 #include "nodes/SoSubNodeP.h"
+#include "rendering/SoGL.h"
 
 /*!
   \enum SoCamera::ViewportMapping
@@ -1006,7 +1007,7 @@ SoCamera::drawCroppedFrame(SoGLRenderAction *action,
     SoGLMultiTextureEnabledElement::disableAll(state);
 
 #if defined(COIN_GL_COMPATIBILITY)
-    if (sogl_compatibility_profile(this->state)) {
+    if (sogl_compatibility_profile(action->getState())) {
       glPushAttrib(GL_LIGHTING_BIT|
                   GL_FOG_BIT|
                   GL_DEPTH_BUFFER_BIT|
@@ -1034,7 +1035,7 @@ SoCamera::drawCroppedFrame(SoGLRenderAction *action,
       short minpos = origin[0] - 1;
       short maxpos = origin[0] + size[0];
 #if defined(COIN_GL_COMPATIBILITY)
-      if (sogl_compatibility_profile(this->state)) {
+      if (sogl_compatibility_profile(action->getState())) {
         if (viewportmapping == SoCamera::CROP_VIEWPORT_LINE_FRAME) {
           glBegin(GL_LINES);
           glVertex2s(minpos, oldorigin[1]);
@@ -1065,7 +1066,7 @@ SoCamera::drawCroppedFrame(SoGLRenderAction *action,
       short minpos = origin[1] - 1;
       short maxpos = origin[1] + size[1];
 #if defined(COIN_GL_COMPATIBILITY)
-      if (sogl_compatibility_profile(this->state)) {
+      if (sogl_compatibility_profile(action->getState())) {
         if (viewportmapping == SoCamera::CROP_VIEWPORT_LINE_FRAME) {
           glBegin(GL_LINES);
           glVertex2s(oldorigin[0], minpos);
@@ -1094,7 +1095,7 @@ SoCamera::drawCroppedFrame(SoGLRenderAction *action,
     }
 
 #if defined(COIN_GL_COMPATIBILITY)
-    if (sogl_compatibility_profile(this->state)) {
+    if (sogl_compatibility_profile(action->getState())) {
       glPopMatrix();
       glPopAttrib();
     }

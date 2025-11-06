@@ -39,6 +39,7 @@
 
 */
 
+#include "rendering/SoGL.h"
 #include "rendering/SoVBO.h"
 
 #include <cstdio>
@@ -291,6 +292,21 @@ SoVBO::setBufferData(const GLvoid * data, intptr_t size, SbUniqueId dataid)
 #endif
 }
 
+void SoVBO::setVertexLayout(const SoVertexLayout& layout)
+{
+  this->vertexlayout = layout;
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    //assert(0 && "Not implemented yet");
+  }
+#endif
+}
+
+SoVertexLayout& SoVBO::getVertexLayout()
+{
+  return this->vertexlayout;
+}
+
 #if defined(COIN_USE_BGFX_RENDERER)
 void SoVBO::setVertexLayout(const bgfx::VertexLayout& layout)
 {
@@ -439,6 +455,13 @@ SoVBO::getVertexCountMaxLimit(void)
 SbBool
 SoVBO::shouldCreateVBO(SoState * state, const uint32_t contextid, const int numdata)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  return TRUE;
+#else
+  if (!sogl_compatibility_profile(state)) {
+    return TRUE;
+  }
+
   if (!vbo_enabled || !vbo_render_as_vertex_arrays) return FALSE;
   int minv = SoVBO::getVertexCountMinLimit();
   int maxv = SoVBO::getVertexCountMaxLimit();
@@ -447,7 +470,7 @@ SoVBO::shouldCreateVBO(SoState * state, const uint32_t contextid, const int numd
     (numdata <= maxv) &&
     SoVBO::isVBOFast(contextid) &&
     !(SoShapeStyleElement::get(state)->getFlags() & SoShapeStyleElement::SHADOWMAP);
-
+#endif
 }
 
 SbBool

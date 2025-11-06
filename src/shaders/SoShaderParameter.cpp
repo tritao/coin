@@ -701,7 +701,7 @@ SoShaderStateMatrixParameter::updateParameter(SoGLShaderObject *shader)
 {
   if (this->name.isDefault()) return;
 
-  printf("updating shader parameter: %s\n", this->name.getValue().getString());
+  //printf("updating shader parameter: %s\n", this->name.getValue().getString());
 
   this->ensureParameter(shader);
 

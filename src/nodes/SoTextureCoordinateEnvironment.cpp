@@ -223,7 +223,7 @@ void
 SoTextureCoordinateEnvironment::handleTexgen(void * /* data */)
 {
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
+  //if (sogl_compatibility_profile(state)) {
     #if 0 // from red book
       glTexGenfv(GL_S, GL_SPHERE_MAP, 0);
       glTexGenfv(GL_T, GL_SPHERE_MAP, 0);
@@ -244,7 +244,7 @@ SoTextureCoordinateEnvironment::handleTexgen(void * /* data */)
       plane[3] = 1.0f;
       glTexGenfv(GL_R, GL_OBJECT_PLANE, plane);
       glTexGenfv(GL_Q, GL_OBJECT_PLANE, plane);
-  }
+  //}
 #else
   assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif

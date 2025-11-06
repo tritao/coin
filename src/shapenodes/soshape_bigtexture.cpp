@@ -32,6 +32,7 @@
 
 #include "shapenodes/soshape_bigtexture.h"
 #include "coindefs.h"
+#include "rendering/SoGL.h"
 
 #include <cstdlib>
 

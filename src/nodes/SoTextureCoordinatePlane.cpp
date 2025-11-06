@@ -263,7 +263,7 @@ void
 SoTextureCoordinatePlane::handleTexgen(void *data)
 {
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
+  //if (sogl_compatibility_profile(state)) {
     SoTextureCoordinatePlane *thisp = (SoTextureCoordinatePlane*)data;
     glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
     glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
@@ -296,7 +296,7 @@ SoTextureCoordinatePlane::handleTexgen(void *data)
     plane[2] = 0.0f;
     plane[3] = 1.0f;
     glTexGenfv(GL_Q, GL_OBJECT_PLANE, plane);
-  }
+  //}
 #else
   assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif

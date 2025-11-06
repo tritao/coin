@@ -34,6 +34,8 @@
 #include <config.h>
 #endif // HAVE_CONFIG_H
 
+#include "rendering/SoGL.h"
+
 #ifdef HAVE_VRML97
 
 /*!
@@ -160,7 +162,7 @@ SoVRMLPointLight::GLRender(SoGLRenderAction * action)
   }
 
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
+  if (sogl_compatibility_profile(action->getState())) {
     GLenum light = (GLenum) (idx + GL_LIGHT0);
 
     SbVec3f att = this->attenuation.getValue();

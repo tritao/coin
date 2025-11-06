@@ -653,7 +653,7 @@ SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
     this->render(action, TRUE, clearwindow, clearzbuffer);
 
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
+  if (sogl_compatibility_profile(action->getState())) {
     // check if we have an accumulation buffer, and render additional passes
     GLint accumbits;
     glGetIntegerv(GL_ACCUM_RED_BITS, &accumbits);
@@ -860,7 +860,7 @@ SoRenderManager::renderScene( SoGLRenderAction * action,
 #if defined(COIN_USE_GL_RENDERER)
         if (SoRenderer::isOpenGL()) {
 #if defined(COIN_GL_COMPATIBILITY)
-          if (sogl_compatibility_profile(state)) {
+          if (sogl_compatibility_profile(action->getState())) {
             glClearIndex((GLfloat) PRIVATE(this)->backgroundindex);
           }
 #else
@@ -1236,11 +1236,11 @@ SoRenderManager::initStencilBufferForInterleavedStereo(void)
     // show the same artifact.
 
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
+  //if (sogl_compatibility_profile(state)) {
     glRasterPos2f(0, 0);
     glDrawPixels(newsize[0], newsize[1], GL_STENCIL_INDEX, GL_BITMAP,
                  PRIVATE(this)->stereostencilmask);
-  }
+  //}
 #else
   assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif

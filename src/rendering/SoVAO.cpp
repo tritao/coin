@@ -1,6 +1,3 @@
-#ifndef COIN_SOGLLINEPATTERNELEMENT_H
-#define COIN_SOGLLINEPATTERNELEMENT_H
-
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
  * All rights reserved.
@@ -33,33 +30,43 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#include "Inventor/C/basic.h"
-#include <Inventor/elements/SoLinePatternElement.h>
+/*!
+  \class SoVAO
+  \brief The SoVAO class is used to represent OpenGL VAOs.
 
-class COIN_DLL_API SoGLLinePatternElement : public SoLinePatternElement {
-  typedef SoLinePatternElement inherited;
+*/
 
-  SO_ELEMENT_HEADER(SoGLLinePatternElement);
-public:
-  static void initClass(void);
-protected:
-  virtual ~SoGLLinePatternElement();
+#include "rendering/SoGL.h"
+#include "rendering/SoVAO.h"
+#include "rendering/SoVBO.h"
+#include "glue/glp.h"
 
-public:
-  virtual void init(SoState * state);
+#include <cstdio>
+#include <cstdlib>
+#include <cassert>
 
-  virtual void push(SoState * state);
-  virtual void pop(SoState * state,
-                   const SoElement * prevTopElement);
+SoVAO::SoVAO()
+    : id(UINT32_MAX)
+{
+}
 
-protected:
-  virtual void setElt(int32_t pattern);
+SoVAO::~SoVAO()
+{
+  if (id != UINT32_MAX) {
+    glDeleteVertexArrays(1, &id);
+  }
+}
 
-private:
-  void updategl();
-#if defined(COIN_GL_COMPATIBILITY)
-  SbBool hasGLCompatibilityProfile;
-#endif
-};
+void SoVAO::bind(uint32_t contextid)
+{
+  if (id == UINT32_MAX) {
+    glGenVertexArrays(1, &id);
+  }
 
-#endif // !COIN_SOGLLINEPATTERNELEMENT_H
+  glBindVertexArray(id);
+}
+
+void SoVAO::unbind(uint32_t contextid)
+{
+  glBindVertexArray(0);
+}

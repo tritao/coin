@@ -109,6 +109,18 @@
 #include <Inventor/threads/SbMutex.h>
 #include <Inventor/threads/SbStorage.h>
 
+#include <Inventor/nodes/SoFragmentShader.h>
+#include <Inventor/nodes/SoShaderParameter.h>
+#include <Inventor/nodes/SoVertexShader.h>
+
+#if defined(COIN_USE_GL_RENDERER)
+#include "Inventor/elements/SoGLShaderProgramElement.h"
+#include "shaders/SoGLShaderObject.h"
+#include "shaders/SoGLShaderProgram.h"
+#include "shaders/SoGLSLShaderObject.h"
+#include "shaders/SoGLSLShaderProgram.h"
+#endif
+
 #if defined(COIN_USE_BGFX_RENDERER)
 #include "Inventor/elements/SoBGFXShaderProgramElement.h"
 #include "shaders/SoBGFXShaderObject.h"
@@ -124,6 +136,7 @@
 #include "nodes/SoSubNodeP.h"
 #include "rendering/SoGL.h"
 #include "glue/glp.h"
+#include "misc/SoShaderGenerator.h"
 #include "threads/threadsutilp.h"
 #include "tidbitsp.h"
 #include "rendering/SoVBO.h"
@@ -185,11 +198,11 @@ public:
     this->bumprender = NULL;
     this->rendercnt = 0;
     this->flags = 0;
-#if defined(COIN_USE_BGFX_RENDERER)
     this->shaderProgram = NULL;
-#endif
   }
-  ~SoShapeP() {
+  ~SoShapeP()
+  {
+    if (this->shaderProgram) { this->shaderProgram->unref(); }
     if (this->bboxcache) { this->bboxcache->unref(); }
     if (this->pvcache) { this->pvcache->unref(); }
     delete this->bumprender;
@@ -208,8 +221,10 @@ public:
   static double bboxcachetimelimit;
   SoBoundingBoxCache * bboxcache;
   SoPrimitiveVertexCache * pvcache;
-  soshape_bumprender * bumprender;
-#if defined(COIN_USE_BGFX_RENDERER)
+  soshape_bumprender* bumprender;
+#if defined(COIN_USE_GL_RENDERER)
+  SoShaderProgram * shaderProgram;
+#elif defined(COIN_USE_BGFX_RENDERER)
   SoBGFXShaderProgram * shaderProgram;
 #endif
   uint32_t flags : FLAG_BITS;
@@ -413,16 +428,39 @@ SoShape::getBoundingBox(SoGetBoundingBoxAction * action)
   }
 }
 
-// Doc in parent.
-void
-SoShape::GLRender(SoGLRenderAction * action)
+void SoShape::setupShaders(SoGLRenderAction * action)
 {
-  // if we get here, the shape do not have a render method and
-  // generatePrimitives should therefore be used to render the
-  // shape. This is probably painfully slow, so if you want speed,
-  // implement the GLRender() method.  pederb, 20000612
+#if defined(COIN_USE_GL_RENDERER)
+  if (!sogl_compatibility_profile(action->getState())) {
+    if (PRIVATE(this)->shaderProgram == NULL) {
+      auto shaderProgram = new SoShaderProgram;
+      shaderProgram->ref();
 
-  if (!this->shouldGLRender(action)) return;
+      auto vertexShader = new SoVertexShader();
+      vertexShader->sourceProgram = SoShader::getNamedScript(SbName("base/Unlit.vert"),
+                                                      SoShader::GLSL_SHADER);
+      vertexShader->sourceType= SoShaderObject::GLSL_PROGRAM;
+      shaderProgram->shaderObject.addNode(vertexShader);
+
+      auto mvpParam = new SoShaderStateMatrixParameter();
+      mvpParam->matrixType = SoShaderStateMatrixParameter::MODELVIEW_PROJECTION;
+      mvpParam->matrixTransform = SoShaderStateMatrixParameter::IDENTITY;
+      mvpParam->name = "u_modelViewProj";
+
+      vertexShader->parameter.addNode(mvpParam);
+
+      auto fragmentShader = new SoFragmentShader();
+      fragmentShader->sourceProgram = SoShader::getNamedScript(SbName("base/Unlit.frag"),
+                                                      SoShader::GLSL_SHADER);
+      fragmentShader->sourceType= SoShaderObject::GLSL_PROGRAM;
+      shaderProgram->shaderObject.addNode(fragmentShader);
+
+      PRIVATE(this)->shaderProgram = shaderProgram;
+    }
+
+    PRIVATE(this)->shaderProgram->GLRender(action);
+  }
+#endif
 
 #if defined(COIN_USE_BGFX_RENDERER)
   if (SoRenderer::isBGFX()) {
@@ -432,9 +470,26 @@ SoShape::GLRender(SoGLRenderAction * action)
     }
 
     SoBGFXShaderProgramElement::set(action->getState(), this, PRIVATE(this)->shaderProgram);
-    PRIVATE(this)->pvcache->render(action->getState());
-    return;
   }
+#endif
+}
+
+// Doc in parent.
+void
+SoShape::GLRender(SoGLRenderAction * action)
+{
+  // if we get here, the shape do not have a render method and
+  // generatePrimitives should therefore be used to render the
+  // shape. This is probably painfully slow, so if you want speed,
+  // implement the GLRender() method.  pederb, 20000612
+
+  setupShaders(action);
+
+  if (!this->shouldGLRender(action)) return;
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  PRIVATE(this)->pvcache->render(action->getState());
+  return;
 #endif
 
 #if defined(COIN_USE_GL_RENDERER)
@@ -595,16 +650,22 @@ SbBool
 SoShape::shouldGLRender(SoGLRenderAction * action)
 {
   SoState * state = action->getState();
+ 
+  const SoShapeStyleElement * shapestyle = SoShapeStyleElement::get(state);
+  unsigned int shapestyleflags = shapestyle->getFlags();
+
+  // Always use vertex buffer rendering mode in GL non-compatibility profile.
+  if (!sogl_compatibility_profile(state)) {
+    shapestyle->setVertexArrayRendering(state, TRUE);
+    shapestyleflags = shapestyle->getFlags();
+  }
 
 #if defined(COIN_USE_BGFX_RENDERER)
   if (SoRenderer::isBGFX()) {
     validatePVCache(action);
   }
 #endif
-
-  const SoShapeStyleElement * shapestyle = SoShapeStyleElement::get(state);
-  unsigned int shapestyleflags = shapestyle->getFlags();
-
+  
   if (shapestyleflags & SoShapeStyleElement::INVISIBLE)
     return FALSE;
 
@@ -666,11 +727,9 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
 #if defined(COIN_GL_COMPATIBILITY)
           if (sogl_compatibility_profile(state)) {
             glPushAttrib(GL_LIGHTING_BIT);
+            glDisable(GL_LIGHTING);
           }
-#else
-          //assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
-          glDisable(GL_LIGHTING);
           arrays &= SoPrimitiveVertexCache::NORMAL;
         }
         PRIVATE(this)->pvcache->renderLines(state, arrays);
@@ -681,8 +740,6 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
           if (sogl_compatibility_profile(state)) {
             glPopAttrib();
           }
-#else
-          //assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
         }
       }
@@ -766,14 +823,12 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
 #if defined(COIN_GL_COMPATIBILITY)
         if (sogl_compatibility_profile(state)) {
           glPushAttrib(GL_DEPTH_BUFFER_BIT);
+          glDisable(GL_LIGHTING);
+          glColor3f(1.0f, 1.0f, 1.0f);
         }
-#else
-        //assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
         glDepthFunc(GL_LEQUAL);
-        glDisable(GL_LIGHTING);
 
-        glColor3f(1.0f, 1.0f, 1.0f);
         PRIVATE(this)->setupShapeHints(this, state);
         const int numlights = lights.getLength();
         for (int i = 0; i < numlights; i++) {
@@ -845,8 +900,6 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
         if (sogl_compatibility_profile(state)) {
           glPopAttrib();
         }
-#else
-        //assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
         // we used two units in the bumpmap code
         SoGLMultiTextureImageElement::restore(state, 0);
@@ -879,6 +932,7 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
       SoMaterialBundle mb(action);
       mb.sendFirst();
       PRIVATE(this)->setupShapeHints(this, state);
+      this->setupShaders(action);
       PRIVATE(this)->pvcache->renderTriangles(state, arrays);
       if (PRIVATE(this)->pvcache->getNumLineIndices() ||
           PRIVATE(this)->pvcache->getNumPointIndices()) {
@@ -887,11 +941,9 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
 #if defined(COIN_GL_COMPATIBILITY)
         if (sogl_compatibility_profile(state)) {
           glPushAttrib(GL_LIGHTING_BIT);
-        }
-#else
-        //assert(0 && "Not implemented for non-compatibility GL renderer");
-#endif
           glDisable(GL_LIGHTING);
+        }
+#endif
           arrays &= SoPrimitiveVertexCache::NORMAL;
         }
         PRIVATE(this)->pvcache->renderLines(state, arrays);
@@ -902,8 +954,6 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
           if (sogl_compatibility_profile(state)) {
             glPopAttrib();
           }
-#else
-          //assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
         }
       }
@@ -1178,42 +1228,28 @@ SoShape::invokeTriangleCallbacks(SoAction * const action,
     default:
 #if defined(COIN_USE_GL_RENDERER)
       if (SoRenderer::isOpenGL()) {
+#if defined(COIN_GL_COMPATIBILITY)
         if (sogl_compatibility_profile(action->getState())) {
           glBegin(GL_TRIANGLES);
-#if defined(COIN_GL_COMPATIBILITY)
-          if (sogl_compatibility_profile(state)) {
-            glTexCoord4fv(v1->getTextureCoords().getValue());
-          }
-#else
-          //assert(0 && "Not implemented for non-compatibility GL renderer");
-#endif
+          glTexCoord4fv(v1->getTextureCoords().getValue());
           glNormal3fv(v1->getNormal().getValue());
           shapedata->currentbundle->send(v1->getMaterialIndex(), TRUE);
           glVertex3fv(v1->getPoint().getValue());
 
-#if defined(COIN_GL_COMPATIBILITY)
-          if (sogl_compatibility_profile(state)) {
-            glTexCoord4fv(v2->getTextureCoords().getValue());
-          }
-#else
-          //assert(0 && "Not implemented for non-compatibility GL renderer");
-#endif
+          glTexCoord4fv(v2->getTextureCoords().getValue());
           glNormal3fv(v2->getNormal().getValue());
           shapedata->currentbundle->send(v2->getMaterialIndex(), TRUE);
           glVertex3fv(v2->getPoint().getValue());
 
-#if defined(COIN_GL_COMPATIBILITY)
-          if (sogl_compatibility_profile(state)) {
-            glTexCoord4fv(v3->getTextureCoords().getValue());
-          }
-#else
-          //assert(0 && "Not implemented for non-compatibility GL renderer");
-#endif
+          glTexCoord4fv(v3->getTextureCoords().getValue());
           glNormal3fv(v3->getNormal().getValue());
           shapedata->currentbundle->send(v3->getMaterialIndex(), TRUE);
           glVertex3fv(v3->getPoint().getValue());
           glEnd();
         }
+#else
+        assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
       }
 #endif
 
@@ -1288,29 +1324,23 @@ SoShape::invokeLineSegmentCallbacks(SoAction * const action,
       PRIVATE(this)->pvcache->addLine(v1, v2);
       break;
     default:
-      glBegin(GL_LINES);
 #if defined(COIN_GL_COMPATIBILITY)
-      if (sogl_compatibility_profile(state)) {
+      if (sogl_compatibility_profile(action->getState())) {
+        glBegin(GL_LINES);
         glTexCoord4fv(v1->getTextureCoords().getValue());
-      }
-#else
-      //assert(0 && "Not implemented for non-compatibility GL renderer");
-#endif
-      glNormal3fv(v1->getNormal().getValue());
-      shapedata->currentbundle->send(v1->getMaterialIndex(), TRUE);
-      glVertex3fv(v1->getPoint().getValue());
+        glNormal3fv(v1->getNormal().getValue());
+        shapedata->currentbundle->send(v1->getMaterialIndex(), TRUE);
+        glVertex3fv(v1->getPoint().getValue());
 
-#if defined(COIN_GL_COMPATIBILITY)
-      if (sogl_compatibility_profile(state)) {
         glTexCoord4fv(v2->getTextureCoords().getValue());
+        glNormal3fv(v2->getNormal().getValue());
+        shapedata->currentbundle->send(v2->getMaterialIndex(), TRUE);
+        glVertex3fv(v2->getPoint().getValue());
+        glEnd();
       }
 #else
-      //assert(0 && "Not implemented for non-compatibility GL renderer");
+      assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
-      glNormal3fv(v2->getNormal().getValue());
-      shapedata->currentbundle->send(v2->getMaterialIndex(), TRUE);
-      glVertex3fv(v2->getPoint().getValue());
-      glEnd();
       break;
     }
   }
@@ -1357,16 +1387,16 @@ SoShape::invokePointCallbacks(SoAction * const action,
     default:
       glBegin(GL_POINTS);
 #if defined(COIN_GL_COMPATIBILITY)
-      if (sogl_compatibility_profile(state)) {
+      if (sogl_compatibility_profile(action->getState())) {
         glTexCoord4fv(v->getTextureCoords().getValue());
+        glNormal3fv(v->getNormal().getValue());
+        shapedata->currentbundle->send(v->getMaterialIndex(), TRUE);
+        glVertex3fv(v->getPoint().getValue());
+        glEnd();
       }
 #else
-      //assert(0 && "Not implemented for non-compatibility GL renderer");
+      assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
-      glNormal3fv(v->getNormal().getValue());
-      shapedata->currentbundle->send(v->getMaterialIndex(), TRUE);
-      glVertex3fv(v->getPoint().getValue());
-      glEnd();
       break;
     }
   }

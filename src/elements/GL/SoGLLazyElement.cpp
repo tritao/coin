@@ -290,7 +290,7 @@ SoGLLazyElement::sendTwosideLighting(const SbBool onoff) const
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, onoff ? GL_TRUE : GL_FALSE);
   }
 #else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+  //assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
 #endif
   this->glstate.twoside = (int32_t) onoff;
@@ -322,7 +322,7 @@ send_gl_material(SoState* state, GLenum pname, const SbColor & color)
     glMaterialfv(GL_FRONT_AND_BACK, pname, col);
   }
 #else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+  //assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
 #endif
 }
@@ -361,7 +361,7 @@ SoGLLazyElement::sendShininess(const float shine) const
     glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shine*128.0f);
   }
 #else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+  //assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
 #endif
   this->glstate.shininess = shine;
@@ -383,7 +383,7 @@ SoGLLazyElement::sendTransparency(const int stipplenum) const
     }
   }
 #else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+  //assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
 #endif
   this->glstate.stipplenum = stipplenum;
@@ -477,6 +477,7 @@ SoGLLazyElement::init(SoState * stateptr)
 
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
+#if defined(COIN_GL_COMPATIBILITY)
     if (sogl_compatibility_profile(this->state)) {
       glDisable(GL_POLYGON_STIPPLE);
     }
@@ -489,6 +490,7 @@ SoGLLazyElement::init(SoState * stateptr)
     else {
       this->sendPackedDiffuse(0xccccccff);
     }
+#endif
   }
 #endif
 }
@@ -580,24 +582,26 @@ SoGLLazyElement::sendDiffuseByIndex(const int index) const
 
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
+    if (this->colorindex) {
 #if defined(COIN_GL_COMPATIBILITY)
-    if (cc_glglue_glprofile_compat(glue)) {
-      if (this->colorindex) {
+      if (sogl_compatibility_profile(this->state)) {
         glIndexi((GLint)this->coinstate.colorindexarray[safeindex]);
-      }
-      else {
-        uint32_t col = this->packedpointer[safeindex] | this->transpmask;
-        // this test is really not necessary. SoMaterialBundle does the
-        // same test.  We also need to send the color here to work around
-        // an nVIDIA bug
-        // if (col != this->glstate.diffuse)
-        this->sendPackedDiffuse(col);
-      }
-    }
-#else
-    assert(0 && "Not implemented for non-compatibility GL renderer");
+      } else
 #endif
+      {
+        assert(0 && "Not implemented for non-compatibility GL renderer");
+      }
+    } else {
+      uint32_t col = this->packedpointer[safeindex] | this->transpmask;
+      // this test is really not necessary. SoMaterialBundle does the
+      // same test.  We also need to send the color here to work around
+      // an nVIDIA bug
+      // if (col != this->glstate.diffuse)
+      this->sendPackedDiffuse(col);
+    }
   }
+#else
+  assert(0 && "Not implemented");
 #endif
 }
 
@@ -654,7 +658,7 @@ SoGLLazyElement::send(const SoState * stateptr, uint32_t mask) const
 #if defined(COIN_USE_GL_RENDERER)
             if (SoRenderer::isOpenGL()) {
 #if defined(COIN_GL_COMPATIBILITY)
-              if (cc_glglue_glprofile_compat(glue)) {
+              if (sogl_compatibility_profile(this->state)) {
                 glIndexi((GLint)this->coinstate.colorindexarray[0]);
               }
 #else

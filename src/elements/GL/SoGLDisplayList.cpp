@@ -77,6 +77,7 @@ class SoGLDisplayListP {
   int openindex;
   SbBool mipmap;
   GLenum texturetarget;
+  SbBool hasGLCompatibilityProfile;
 };
 
 #define PRIVATE(obj) obj->pimpl
@@ -96,6 +97,7 @@ SoGLDisplayList::SoGLDisplayList(SoState * state, Type type, int allocnum,
   PRIVATE(this)->refcount = 0;
   PRIVATE(this)->mipmap = mipmaptexobj;
   PRIVATE(this)->texturetarget = 0;
+  PRIVATE(this)->hasGLCompatibilityProfile = sogl_compatibility_profile(state);
 
 #if COIN_DEBUG && 0 // debug
   SoDebugError::postInfo("SoGLDisplayList::SoGLDisplayList", "%p", this);
@@ -203,7 +205,7 @@ SoGLDisplayList::~SoGLDisplayList()
 #endif // debug
 
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
+  if (PRIVATE(this)->hasGLCompatibilityProfile) {
     if (PRIVATE(this)->type == DISPLAY_LIST) {
       glDeleteLists((GLuint) PRIVATE(this)->firstindex, PRIVATE(this)->numalloc);
     }

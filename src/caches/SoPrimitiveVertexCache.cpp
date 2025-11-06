@@ -72,6 +72,7 @@
 #include <Inventor/elements/SoMultiTextureEnabledElement.h>
 #include <Inventor/elements/SoGLVBOElement.h>
 #include <Inventor/lists/SbList.h>
+#include <Inventor/nodes/SoVertexAttribute.h>
 #include <Inventor/system/gl.h>
 #include <Inventor/system/renderer.h>
 #include <Inventor/SbPlane.h>
@@ -82,6 +83,7 @@
 #include "misc/SbHash.h"
 #include "rendering/SoGL.h"
 #include "rendering/SoVBO.h"
+#include "rendering/SoVAO.h"
 #include "rendering/SoVertexArrayIndexer.h"
 #include "SbBasicP.h"
 
@@ -101,6 +103,7 @@ public:
       triangleindexer(NULL),
       lineindexer(NULL),
       pointindexer(NULL),
+      vao(NULL),
       vertexvbo(NULL),
       normalvbo(NULL),
       texcoord0vbo(NULL),
@@ -125,6 +128,7 @@ public:
       delete[] multitexcoords;
     }
     delete[] deptharray;
+    delete vao;
   }
 
   class Vertex {
@@ -180,6 +184,8 @@ public:
   SoVertexArrayIndexer * lineindexer;
   SoVertexArrayIndexer * pointindexer;
 
+  SoVAO * vao;
+
   SoVBO * vertexvbo;
   SoVBO * normalvbo;
   SoVBO * texcoord0vbo;
@@ -209,13 +215,13 @@ public:
                      const SbBool texture, const SbBool * enabled,
                      const int lastenabled);
 
-  void enableVBOs(const cc_glglue * glue,
+  void enableVBOs(const SoState * state,
                   const uint32_t contextid,
                   const SbBool color, const SbBool normal,
                   const SbBool texture, const SbBool * enabled,
                   const int lastenabled);
 
-  void disableVBOs(const cc_glglue * glue,
+  void disableVBOs(const SoState * state,
                    const SbBool color, const SbBool normal,
                    const SbBool texture, const SbBool * enabled,
                    const int lastenabled);
@@ -276,6 +282,10 @@ SoPrimitiveVertexCache::SoPrimitiveVertexCache(SoState * state)
 
   // set up variables to test if we need to supply color per vertex
   PRIVATE(this)->colorpervertex = FALSE;
+
+  if (!sogl_compatibility_profile(state)) {
+    PRIVATE(this)->colorpervertex = TRUE;
+  }
 
   // just store diffuse color with index 0
   uint32_t col;
@@ -412,8 +422,8 @@ SoPrimitiveVertexCache::renderTriangles(SoState * state, const int arrays) const
       SoGLVBOElement::shouldCreateVBO(state, PRIVATE(this)->vertexlist.getLength());
 
     if (renderasvbo) {
-      if (!SoGLDriverDatabase::isSupported(glue, SO_GL_VBO_IN_DISPLAYLIST) ||
-          !sogl_compatibility_profile(state)) {
+      if (!sogl_compatibility_profile(state) ||
+          !SoGLDriverDatabase::isSupported(glue, SO_GL_VBO_IN_DISPLAYLIST)) {
         SoCacheElement::invalidate(state);
         SoGLCacheContextElement::shouldAutoCache(state,
                                                 SoGLCacheContextElement::DONT_AUTO_CACHE);
@@ -421,9 +431,9 @@ SoPrimitiveVertexCache::renderTriangles(SoState * state, const int arrays) const
 
       SoPrimitiveVertexCacheP * thisp = const_cast<SoPrimitiveVertexCacheP *>(&PRIVATE(this).get());
 
-      thisp->enableVBOs(glue, contextid, color, normal, texture, enabled, lastenabled);
+      thisp->enableVBOs(state, contextid, color, normal, texture, enabled, lastenabled);
       PRIVATE(this)->triangleindexer->render(state, TRUE, contextid);
-      thisp->disableVBOs(glue, color, normal, texture, enabled, lastenabled);
+      thisp->disableVBOs(state, color, normal, texture, enabled, lastenabled);
     }
     else if (SoGLDriverDatabase::isSupported(glue, SO_GL_VERTEX_ARRAY)) {
       SoPrimitiveVertexCacheP * thisp = const_cast<SoPrimitiveVertexCacheP *>(&PRIVATE(this).get());
@@ -432,6 +442,7 @@ SoPrimitiveVertexCache::renderTriangles(SoState * state, const int arrays) const
       thisp->disableArrays(glue, color, normal, texture, enabled, lastenabled);
     }
     else {
+#if defined(COIN_GL_COMPATIBILITY)
       // fall back to immediate mode rendering
       SoPrimitiveVertexCacheP * thisp = const_cast<SoPrimitiveVertexCacheP *>(&PRIVATE(this).get());
       glBegin(GL_TRIANGLES);
@@ -440,6 +451,9 @@ SoPrimitiveVertexCache::renderTriangles(SoState * state, const int arrays) const
                             this->getNumTriangleIndices(),
                             color, normal, texture, enabled, lastenabled);
       glEnd();
+#else
+      assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
     }
 
     // inform SoGLLazyElement that we might have changed the current color
@@ -468,7 +482,8 @@ SoPrimitiveVertexCache::renderLines(SoState * state, const int arrays) const
   const cc_glglue * glue = sogl_glue_instance(state);
   const uint32_t contextid = SoGLCacheContextElement::get(state);
 
-  if (SoGLDriverDatabase::isSupported(glue, SO_GL_VERTEX_ARRAY)) {
+  if (!sogl_compatibility_profile(state) ||
+      SoGLDriverDatabase::isSupported(glue, SO_GL_VERTEX_ARRAY)) {
     SoPrimitiveVertexCacheP * thisp = const_cast<SoPrimitiveVertexCacheP *>(&PRIVATE(this).get());
     thisp->enableArrays(glue, color, normal, texture, enabled, lastenabled);
     PRIVATE(this)->lineindexer->render(state, FALSE, contextid);
@@ -508,8 +523,7 @@ SoPrimitiveVertexCache::renderPoints(SoState * state, const int arrays) const
   const cc_glglue * glue = sogl_glue_instance(state);
   const uint32_t contextid = SoGLCacheContextElement::get(state);
 
-  const SbBool useBGFXRenderer = true;
-  if (useBGFXRenderer ||
+  if (SoRenderer::isBGFX() || !sogl_compatibility_profile(state) ||
       SoGLDriverDatabase::isSupported(glue, SO_GL_VERTEX_ARRAY)) {
     SoPrimitiveVertexCacheP * thisp = const_cast<SoPrimitiveVertexCacheP *>(&PRIVATE(this).get());
     thisp->enableArrays(glue, color, normal, texture, enabled, lastenabled);
@@ -994,12 +1008,6 @@ SoPrimitiveVertexCacheP::enableArrays(const cc_glglue * glue,
                                       const SbBool texture, const SbBool * enabled,
                                       const int lastenabled)
 {
-#if defined(COIN_USE_BGFX_RENDERER)
-  if (SoRenderer::isBGFX()) {
-    assert(0 && "Not supported for BGFX renderer");
-  }
-#endif
-
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
     int i;
@@ -1033,6 +1041,8 @@ SoPrimitiveVertexCacheP::enableArrays(const cc_glglue * glue,
                               reinterpret_cast<const GLvoid *>(this->vertexlist.getArrayPtr()));
     cc_glglue_glEnableClientState(glue, GL_VERTEX_ARRAY);
   }
+#else
+  assert(0 && "Not supported");
 #endif
 }
 
@@ -1043,12 +1053,6 @@ SoPrimitiveVertexCacheP::disableArrays(const cc_glglue * glue,
                                        const SbBool texture, const SbBool * enabled,
                                        const int lastenabled)
 {
-#if defined(COIN_USE_BGFX_RENDERER)
-  if (SoRenderer::isBGFX()) {
-    assert(0 && "Not supported for BGFX renderer");
-  }
-#endif
-
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
     int i;
@@ -1073,29 +1077,37 @@ SoPrimitiveVertexCacheP::disableArrays(const cc_glglue * glue,
     }
     cc_glglue_glDisableClientState(glue, GL_VERTEX_ARRAY);
   }
+#else
+  assert(0 && "Not supported");
 #endif
 }
 
 void
-SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
+SoPrimitiveVertexCacheP::enableVBOs(const SoState * state,
                                     uint32_t contextid,
                                     const SbBool color, const SbBool normal,
                                     const SbBool texture, const SbBool * enabled,
                                     const int lastenabled)
 {
-  const bool useGLRenderer = false;
+  const cc_glglue * glue = sogl_glue_instance(state);
+
+  if (!sogl_compatibility_profile(state)) {
+    if (this->vao == NULL) {
+      this->vao = new SoVAO;
+      this->vao->bind(contextid);
+    } else {
+      this->vao->bind(contextid);
+      return;
+    }
+  }
 
   int i;
   if (color) {
     if (this->rgbavbo == NULL) {
       this->rgbavbo = new SoVBO;
-#if defined(COIN_USE_BGFX_RENDERER)
-      if (SoRenderer::isBGFX()) {
-        bgfx::VertexLayout vertexlayout;
-        vertexlayout.begin().add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true).end();
-        this->rgbavbo->setVertexLayout(vertexlayout);
-      }
-#endif
+      SoVertexLayout layout;
+      layout.begin().add(SoAttrib::Color0, 4, SoAttribType::Uint8).end();
+      this->rgbavbo->setVertexLayout(layout);
       this->rgbavbo->setBufferData(this->rgbalist.getArrayPtr(),
                                    this->rgbalist.getLength() * sizeof(uint8_t));
     }
@@ -1106,7 +1118,7 @@ SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
         cc_glglue_glColorPointer(glue, 4, GL_UNSIGNED_BYTE, 0, NULL);
         cc_glglue_glEnableClientState(glue, GL_COLOR_ARRAY);
       } else {
-        assert(0 && "Not supported yet");
+        this->rgbavbo->getVertexLayout().bindAttributes(state);
       }
     }
 #endif
@@ -1114,13 +1126,9 @@ SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
   if (texture) {
     if (this->texcoord0vbo == NULL) {
       this->texcoord0vbo = new SoVBO;
-#if defined(COIN_USE_BGFX_RENDERER)
-      if (SoRenderer::isBGFX()) {
-        bgfx::VertexLayout vertexlayout;
-        vertexlayout.begin().add(bgfx::Attrib::TexCoord0, 4, bgfx::AttribType::Float).end();
-        this->texcoord0vbo->setVertexLayout(vertexlayout);
-      }
-#endif
+      SoVertexLayout layout;
+      layout.begin().add(SoAttrib::TexCoord0, 4, SoAttribType::Float).end();
+      this->texcoord0vbo->setVertexLayout(layout);
       this->texcoord0vbo->setBufferData(this->texcoordlist.getArrayPtr(),
                                         this->texcoordlist.getLength()*4*sizeof(float));
     }
@@ -1131,7 +1139,7 @@ SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
         cc_glglue_glTexCoordPointer(glue, 4, GL_FLOAT, 0, NULL);
         cc_glglue_glEnableClientState(glue, GL_TEXTURE_COORD_ARRAY);
       } else {
-        assert(0 && "Not supported yet");
+        this->texcoord0vbo->getVertexLayout().bindAttributes(state);
       }
     }
 #endif
@@ -1142,15 +1150,11 @@ SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
       }
       if (enabled[i]) {
         if (this->multitexvbo[i] == NULL) {
-          SoVBO * vbo = new SoVBO;
-#if defined(COIN_USE_BGFX_RENDERER)
-          if (SoRenderer::isBGFX()) {
-            bgfx::VertexLayout vertexlayout;
-            auto attrib = (bgfx::Attrib::Enum)((int)bgfx::Attrib::TexCoord0 + i);
-            vertexlayout.begin().add(attrib, 4, bgfx::AttribType::Float).end();
-            vbo->setVertexLayout(vertexlayout);
-          }
-#endif
+          SoVBO* vbo = new SoVBO;
+          SoVertexLayout layout;
+          auto attrib = (SoAttrib::Enum)((int)SoAttrib::TexCoord0 + i);
+          layout.begin().add(attrib, 4, SoAttribType::Float).end();
+          vbo->setVertexLayout(layout);
           vbo->setBufferData(this->multitexcoords[i].getArrayPtr(),
                              this->multitexcoords[i].getLength()*4*sizeof(float));
           this->multitexvbo[i] = vbo;
@@ -1163,7 +1167,7 @@ SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
               cc_glglue_glTexCoordPointer(glue, 4, GL_FLOAT, 0, NULL);
               cc_glglue_glEnableClientState(glue, GL_TEXTURE_COORD_ARRAY);
           } else {
-            assert(0 && "Not supported yet");
+            this->multitexvbo[i]->getVertexLayout().bindAttributes(state);
           }
       }
 #endif
@@ -1173,24 +1177,20 @@ SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
   if (normal) {
     if (this->normalvbo == NULL) {
       this->normalvbo = new SoVBO;
-#if defined(COIN_USE_BGFX_RENDERER)
-      if (SoRenderer::isBGFX()) {
-        bgfx::VertexLayout vertexlayout;
-        vertexlayout.begin().add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float).end();
-        this->normalvbo->setVertexLayout(vertexlayout);
-      }
-#endif
+      SoVertexLayout layout;
+      layout.begin().add(SoAttrib::Normal, 3, SoAttribType::Float).end();
+      this->normalvbo->setVertexLayout(layout);
       this->normalvbo->setBufferData(this->normallist.getArrayPtr(),
                                      this->normallist.getLength()*3*sizeof(float));
     }
-    this->normalvbo->bindBuffer(contextid);
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
       if (cc_glglue_glprofile_compat(glue)) {
+        this->normalvbo->bindBuffer(contextid);
         cc_glglue_glNormalPointer(glue, GL_FLOAT, 0, NULL);
         cc_glglue_glEnableClientState(glue, GL_NORMAL_ARRAY);
       } else {
-        assert(0 && "Not supported yet");
+        this->normalvbo->getVertexLayout().bindAttributes(state);
       }
     }
 #endif
@@ -1198,48 +1198,69 @@ SoPrimitiveVertexCacheP::enableVBOs(const cc_glglue * glue,
 
   if (this->vertexvbo == NULL) {
     this->vertexvbo = new SoVBO;
-#if defined(COIN_USE_BGFX_RENDERER)
-      if (SoRenderer::isBGFX()) {
-        bgfx::VertexLayout vertexlayout;
-        vertexlayout.begin().add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float).end();
-        this->vertexvbo->setVertexLayout(vertexlayout);
-      }
-#endif
+    SoVertexLayout layout;
+    layout.begin().add(SoAttrib::Position, 3, SoAttribType::Float).end();
+    this->vertexvbo->setVertexLayout(layout);
     this->vertexvbo->setBufferData(this->vertexlist.getArrayPtr(),
                                    this->vertexlist.getLength()*3*sizeof(float));
   }
   this->vertexvbo->bindBuffer(contextid);
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
+    const cc_glglue * glue = sogl_glue_instance(state);
     if (cc_glglue_glprofile_compat(glue)) {
       cc_glglue_glVertexPointer(glue, 3, GL_FLOAT, 0, NULL);
       cc_glglue_glEnableClientState(glue, GL_VERTEX_ARRAY);
+    } else {
+      this->vertexvbo->getVertexLayout().bindAttributes(state);
     }
   }
 #endif
 }
 
 void
-SoPrimitiveVertexCacheP::disableVBOs(const cc_glglue * glue,
+SoPrimitiveVertexCacheP::disableVBOs(const SoState * state,
                                      const SbBool color, const SbBool normal,
                                      const SbBool texture, const SbBool * enabled,
                                      const int lastenabled)
 {
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
+    const cc_glglue* glue = sogl_glue_instance(state);
+#if defined(COIN_GL_COMPATIBILITY)
     if (cc_glglue_glprofile_compat(glue)) {
       this->disableArrays(glue, color, normal, texture, enabled, lastenabled);
       cc_glglue_glBindBuffer(glue, GL_ARRAY_BUFFER, 0); // Reset VBO binding
-    } else {
-      glBindBuffer(GL_ARRAY_BUFFER, 0); // Reset VBO binding
+    }
+    else
+#endif
+    {
+      if (this->vao) {
+        this->vao->unbind(0);
+      } else {
+        int i;
+        if (color) {
+              this->rgbavbo->getVertexLayout().unbindAttributes(state);
+        }
+        if (texture) {
+          this->texcoord0vbo->getVertexLayout().unbindAttributes(state);
+          for (i = 1; i <= lastenabled; i++) {
+            if (enabled[i]) {
+              this->multitexvbo[i]->getVertexLayout().unbindAttributes(state);
+            }
+          }
+        }
+        if (normal) {
+          this->normalvbo->getVertexLayout().unbindAttributes(state);
+        }
+        this->vertexvbo->getVertexLayout().unbindAttributes(state);
+
+        glBindBuffer(GL_ARRAY_BUFFER, 0); // Reset VBO binding
+      }
     }
   }
-#endif
-
-#if defined(COIN_USE_BGFX_RENDERER)
-  if (SoRenderer::isBGFX()) {
-    //assert(0 && "Not implemented yet");
-  }
+#else
+  assert(0 && "Not supported");
 #endif
 }
 
@@ -1298,12 +1319,8 @@ SoPrimitiveVertexCacheP::renderImmediate(const cc_glglue * glue,
     assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
   }
-#endif
-
-#if defined(COIN_USE_BGFX_RENDERER)
-  if (SoRenderer::isBGFX()) {
-    assert(0 && "Not supported for BGFX renderer");
-  }
+#else
+  assert(0 && "Not supported");
 #endif
 }
 

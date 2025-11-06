@@ -78,6 +78,7 @@
 #include <Inventor/system/gl.h>
 
 #include "nodes/SoSubNodeP.h"
+#include "rendering/SoGL.h"
 
 // *************************************************************************
 
