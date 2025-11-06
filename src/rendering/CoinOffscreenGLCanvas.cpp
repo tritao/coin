@@ -331,7 +331,13 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
                                   unsigned int dstrowsize,
                                   unsigned int nrcomponents) const
 {
-  glPushAttrib(GL_ALL_ATTRIB_BITS);
+#if defined(COIN_GL_COMPATIBILITY)
+  if (sogl_compatibility_profile(state)) {
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+  }
+#else
+  assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
 
   // First reset all settings that can influence the result of a
   // glReadPixels() call, to make sure we get the actual contents of
@@ -429,7 +435,13 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
   }
   glFlush(); glFinish();
 
-  glPopAttrib();
+#if defined(COIN_GL_COMPATIBILITY)
+  if (sogl_compatibility_profile(state)) {
+    glPopAttrib();
+  }
+#else
+  assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
 }
 
 // *************************************************************************

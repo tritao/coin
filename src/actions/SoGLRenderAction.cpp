@@ -1114,12 +1114,14 @@ SoGLRenderAction::beginTraversal(SoNode * node)
     if (PRIVATE(this)->needglinit) {
       PRIVATE(this)->needglinit = FALSE;
 
+#if defined(COIN_GL_COMPATIBILITY)
       if (sogl_compatibility_profile(this->state)) {
         // we are always using GL_COLOR_MATERIAL in Coin
         glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);
         glEnable(GL_COLOR_MATERIAL);
         glEnable(GL_NORMALIZE);
       }
+#endif
 
       // initialize the depth function to the default Coin/Inventor
       // value.  SoGLDepthBufferElement doesn't check for this, it just
@@ -1870,6 +1872,10 @@ SoGLRenderActionP::renderMulti(SoNode * node)
   this->currentpass = 0;
   this->renderSingle(node);
   if (this->action->hasTerminated()) return;
+
+#if defined(COIN_USE_GL_RENDERER)
+  if (SoRenderer::isOpenGL()) {
+#if defined(COIN_GL_COMPATIBILITY)
   glAccum(GL_LOAD, fraction);
 
   for (int i = 1; i < this->numpasses; i++) {
@@ -1889,6 +1895,11 @@ SoGLRenderActionP::renderMulti(SoNode * node)
   }
   this->currentpass = storedpass;
   glAccum(GL_RETURN, 1.0f);
+#else
+  assert(0 && "Not implemented yet");
+#endif
+  }
+#endif
 }
 
 //
@@ -2195,22 +2206,26 @@ SoGLRenderActionP::texgenEnable(SbBool enable)
 void
 SoGLRenderActionP::eyeLinearTexgen()
 {
+#if defined(COIN_GL_COMPATIBILITY)
+  if (sogl_compatibility_profile(state)) {
+    const float col1[] = { 1, 0, 0, 0 };
+    const float col2[] = { 0, 1, 0, 0 };
+    const float col3[] = { 0, 0, 1, 0 };
+    const float col4[] = { 0, 0, 0, 1 };
 
-  const float col1[] = { 1, 0, 0, 0 };
-  const float col2[] = { 0, 1, 0, 0 };
-  const float col3[] = { 0, 0, 1, 0 };
-  const float col4[] = { 0, 0, 0, 1 };
+    glTexGenfv(GL_S,GL_EYE_PLANE, col1);
+    glTexGenfv(GL_T,GL_EYE_PLANE, col2);
+    glTexGenfv(GL_R,GL_EYE_PLANE, col3);
+    glTexGenfv(GL_Q,GL_EYE_PLANE, col4);
 
-  glTexGenfv(GL_S,GL_EYE_PLANE, col1);
-  glTexGenfv(GL_T,GL_EYE_PLANE, col2);
-  glTexGenfv(GL_R,GL_EYE_PLANE, col3);
-  glTexGenfv(GL_Q,GL_EYE_PLANE, col4);
-
-  glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-  glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-  glTexGeni(GL_R, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-  glTexGeni(GL_Q, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-
+    glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+    glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+    glTexGeni(GL_R, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+    glTexGeni(GL_Q, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+  }
+#else
+  assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
 }
 
 void

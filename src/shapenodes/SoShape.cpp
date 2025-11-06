@@ -663,7 +663,13 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
           PRIVATE(this)->pvcache->getNumPointIndices()) {
         const SoNormalElement * nelem = SoNormalElement::getInstance(state);
         if (nelem->getNum() == 0) {
-          glPushAttrib(GL_LIGHTING_BIT);
+#if defined(COIN_GL_COMPATIBILITY)
+          if (sogl_compatibility_profile(state)) {
+            glPushAttrib(GL_LIGHTING_BIT);
+          }
+#else
+          //assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
           glDisable(GL_LIGHTING);
           arrays &= SoPrimitiveVertexCache::NORMAL;
         }
@@ -671,7 +677,13 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
         PRIVATE(this)->pvcache->renderPoints(state, arrays);
 
         if (nelem->getNum() == 0) {
-          glPopAttrib();
+#if defined(COIN_GL_COMPATIBILITY)
+          if (sogl_compatibility_profile(state)) {
+            glPopAttrib();
+          }
+#else
+          //assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
         }
       }
       PRIVATE(this)->unlock();
@@ -751,7 +763,13 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
         }
         SoGLLazyElement::getInstance(state)->send(state, SoLazyElement::ALL_MASK);
 
-        glPushAttrib(GL_DEPTH_BUFFER_BIT);
+#if defined(COIN_GL_COMPATIBILITY)
+        if (sogl_compatibility_profile(state)) {
+          glPushAttrib(GL_DEPTH_BUFFER_BIT);
+        }
+#else
+        //assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
         glDepthFunc(GL_LEQUAL);
         glDisable(GL_LIGHTING);
 
@@ -823,7 +841,13 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
 
         PRIVATE(this)->unlock();
 
-        glPopAttrib();
+#if defined(COIN_GL_COMPATIBILITY)
+        if (sogl_compatibility_profile(state)) {
+          glPopAttrib();
+        }
+#else
+        //assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
         // we used two units in the bumpmap code
         SoGLMultiTextureImageElement::restore(state, 0);
         SoGLMultiTextureImageElement::restore(state, 1);
@@ -860,7 +884,13 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
           PRIVATE(this)->pvcache->getNumPointIndices()) {
         const SoNormalElement * nelem = SoNormalElement::getInstance(state);
         if (nelem->getNum() == 0) {
+#if defined(COIN_GL_COMPATIBILITY)
+        if (sogl_compatibility_profile(state)) {
           glPushAttrib(GL_LIGHTING_BIT);
+        }
+#else
+        //assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
           glDisable(GL_LIGHTING);
           arrays &= SoPrimitiveVertexCache::NORMAL;
         }
@@ -868,7 +898,13 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
         PRIVATE(this)->pvcache->renderPoints(state, arrays);
 
         if (nelem->getNum() == 0) {
-          glPopAttrib();
+#if defined(COIN_GL_COMPATIBILITY)
+          if (sogl_compatibility_profile(state)) {
+            glPopAttrib();
+          }
+#else
+          //assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
         }
       }
     }
@@ -1144,17 +1180,35 @@ SoShape::invokeTriangleCallbacks(SoAction * const action,
       if (SoRenderer::isOpenGL()) {
         if (sogl_compatibility_profile(action->getState())) {
           glBegin(GL_TRIANGLES);
-          glTexCoord4fv(v1->getTextureCoords().getValue());
+#if defined(COIN_GL_COMPATIBILITY)
+          if (sogl_compatibility_profile(state)) {
+            glTexCoord4fv(v1->getTextureCoords().getValue());
+          }
+#else
+          //assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
           glNormal3fv(v1->getNormal().getValue());
           shapedata->currentbundle->send(v1->getMaterialIndex(), TRUE);
           glVertex3fv(v1->getPoint().getValue());
 
-          glTexCoord4fv(v2->getTextureCoords().getValue());
+#if defined(COIN_GL_COMPATIBILITY)
+          if (sogl_compatibility_profile(state)) {
+            glTexCoord4fv(v2->getTextureCoords().getValue());
+          }
+#else
+          //assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
           glNormal3fv(v2->getNormal().getValue());
           shapedata->currentbundle->send(v2->getMaterialIndex(), TRUE);
           glVertex3fv(v2->getPoint().getValue());
 
-          glTexCoord4fv(v3->getTextureCoords().getValue());
+#if defined(COIN_GL_COMPATIBILITY)
+          if (sogl_compatibility_profile(state)) {
+            glTexCoord4fv(v3->getTextureCoords().getValue());
+          }
+#else
+          //assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
           glNormal3fv(v3->getNormal().getValue());
           shapedata->currentbundle->send(v3->getMaterialIndex(), TRUE);
           glVertex3fv(v3->getPoint().getValue());
@@ -1235,12 +1289,24 @@ SoShape::invokeLineSegmentCallbacks(SoAction * const action,
       break;
     default:
       glBegin(GL_LINES);
-      glTexCoord4fv(v1->getTextureCoords().getValue());
+#if defined(COIN_GL_COMPATIBILITY)
+      if (sogl_compatibility_profile(state)) {
+        glTexCoord4fv(v1->getTextureCoords().getValue());
+      }
+#else
+      //assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
       glNormal3fv(v1->getNormal().getValue());
       shapedata->currentbundle->send(v1->getMaterialIndex(), TRUE);
       glVertex3fv(v1->getPoint().getValue());
 
-      glTexCoord4fv(v2->getTextureCoords().getValue());
+#if defined(COIN_GL_COMPATIBILITY)
+      if (sogl_compatibility_profile(state)) {
+        glTexCoord4fv(v2->getTextureCoords().getValue());
+      }
+#else
+      //assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
       glNormal3fv(v2->getNormal().getValue());
       shapedata->currentbundle->send(v2->getMaterialIndex(), TRUE);
       glVertex3fv(v2->getPoint().getValue());
@@ -1290,7 +1356,13 @@ SoShape::invokePointCallbacks(SoAction * const action,
       break;
     default:
       glBegin(GL_POINTS);
-      glTexCoord4fv(v->getTextureCoords().getValue());
+#if defined(COIN_GL_COMPATIBILITY)
+      if (sogl_compatibility_profile(state)) {
+        glTexCoord4fv(v->getTextureCoords().getValue());
+      }
+#else
+      //assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
       glNormal3fv(v->getNormal().getValue());
       shapedata->currentbundle->send(v->getMaterialIndex(), TRUE);
       glVertex3fv(v->getPoint().getValue());

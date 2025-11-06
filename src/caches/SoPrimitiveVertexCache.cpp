@@ -1253,44 +1253,50 @@ SoPrimitiveVertexCacheP::renderImmediate(const cc_glglue * glue,
 {
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
-    const unsigned char * colorptr = NULL;
-    const SbVec3f * normalptr = NULL;
-    const SbVec3f * vertexptr = NULL;
-    const SbVec4f * texcoordptr = NULL;
+#if defined(COIN_GL_COMPATIBILITY)
+    if (cc_glglue_glprofile_compat(glue)) {
+      const unsigned char * colorptr = NULL;
+      const SbVec3f * normalptr = NULL;
+      const SbVec3f * vertexptr = NULL;
+      const SbVec4f * texcoordptr = NULL;
 
-    if (color) {
-      colorptr = this->rgbalist.getArrayPtr();
-    }
-    if (normal) {
-      normalptr = this->normallist.getArrayPtr();
-    }
-    if (texture) {
-      texcoordptr = this->texcoordlist.getArrayPtr();
-    }
-    vertexptr = this->vertexlist.getArrayPtr();
-
-    for (int i = 0; i < numindices; i++) {
-      const int idx = indices[i];
-      if (normal) {
-        glNormal3fv(reinterpret_cast<const GLfloat *>(&normalptr[idx]));
-      }
       if (color) {
-        glColor3ubv(reinterpret_cast<const GLubyte *>(&colorptr[idx*4]));
+        colorptr = this->rgbalist.getArrayPtr();
+      }
+      if (normal) {
+        normalptr = this->normallist.getArrayPtr();
       }
       if (texture) {
-        glTexCoord4fv(reinterpret_cast<const GLfloat *>(&texcoordptr[idx]));
+        texcoordptr = this->texcoordlist.getArrayPtr();
+      }
+      vertexptr = this->vertexlist.getArrayPtr();
 
-        for (int j = 1; j <= lastenabled; j++) {
-          if (enabled[j]) {
-            const SbVec4f * mt = this->multitexcoords[j].getArrayPtr();
-            cc_glglue_glMultiTexCoord4fv(glue,
-                                        GL_TEXTURE0 + j,
-                                        reinterpret_cast<const GLfloat *>(&mt[idx]));
+      for (int i = 0; i < numindices; i++) {
+        const int idx = indices[i];
+        if (normal) {
+          glNormal3fv(reinterpret_cast<const GLfloat *>(&normalptr[idx]));
+        }
+        if (color) {
+          glColor3ubv(reinterpret_cast<const GLubyte *>(&colorptr[idx*4]));
+        }
+        if (texture) {
+          glTexCoord4fv(reinterpret_cast<const GLfloat *>(&texcoordptr[idx]));
+
+          for (int j = 1; j <= lastenabled; j++) {
+            if (enabled[j]) {
+              const SbVec4f * mt = this->multitexcoords[j].getArrayPtr();
+              cc_glglue_glMultiTexCoord4fv(glue,
+                                          GL_TEXTURE0 + j,
+                                          reinterpret_cast<const GLfloat *>(&mt[idx]));
+            }
           }
-        }
-        }
-      glVertex3fv(reinterpret_cast<const GLfloat *>(&vertexptr[idx]));
+          }
+        glVertex3fv(reinterpret_cast<const GLfloat *>(&vertexptr[idx]));
+      }
     }
+#else
+    assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
   }
 #endif
 

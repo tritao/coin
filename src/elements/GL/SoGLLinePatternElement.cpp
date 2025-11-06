@@ -129,16 +129,22 @@ SoGLLinePatternElement::setElt(int32_t pattern)
 void
 SoGLLinePatternElement::updategl()
 {
-  //
-  // FIXME: store flag to keep enable/disable state, pederb 990624
-  //
-  if ((this->data & 0xffff) == (int32_t) CONTINUOUS) {
-    glDisable(GL_LINE_STIPPLE);
+#if defined(COIN_GL_COMPATIBILITY)
+  if (sogl_compatibility_profile(state)) {
+    //
+    // FIXME: store flag to keep enable/disable state, pederb 990624
+    //
+    if ((this->data & 0xffff) == (int32_t) CONTINUOUS) {
+      glDisable(GL_LINE_STIPPLE);
+    }
+    else {
+      // Enable line stipple before setting the pattern. This is
+      // needed to work around a bug in the nVidia 2.1.1 drivers.
+      glEnable(GL_LINE_STIPPLE);
+      glLineStipple((GLint) (this->data >> 16), (GLushort) (this->data & 0xffff));
+    }
   }
-  else {
-    // Enable line stipple before setting the pattern. This is
-    // needed to work around a bug in the nVidia 2.1.1 drivers.
-    glEnable(GL_LINE_STIPPLE);
-    glLineStipple((GLint) (this->data >> 16), (GLushort) (this->data & 0xffff));
-  }
+#else
+  assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
 }

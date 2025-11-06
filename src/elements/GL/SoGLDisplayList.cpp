@@ -173,7 +173,13 @@ SoGLDisplayList::SoGLDisplayList(SoState * state, Type type, int allocnum,
   }
 
   if (PRIVATE(this)->type == DISPLAY_LIST) {
-    PRIVATE(this)->firstindex = (unsigned int) glGenLists(allocnum);
+#if defined(COIN_GL_COMPATIBILITY)
+    if (sogl_compatibility_profile(state)) {
+      PRIVATE(this)->firstindex = (unsigned int) glGenLists(allocnum);
+    }
+#else
+    assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
     if (PRIVATE(this)->firstindex == 0) {
       SoDebugError::post("SoGLDisplayList::SoGLDisplayList",
                          "Could not reserve %d displaylist%s. "
@@ -196,21 +202,28 @@ SoGLDisplayList::~SoGLDisplayList()
   SoDebugError::postInfo("SoGLDisplayList::~SoGLDisplayList", "%p", this);
 #endif // debug
 
-  if (PRIVATE(this)->type == DISPLAY_LIST) {
-    glDeleteLists((GLuint) PRIVATE(this)->firstindex, PRIVATE(this)->numalloc);
-  }
-  else {
-    assert(PRIVATE(this)->type == TEXTURE_OBJECT);
+#if defined(COIN_GL_COMPATIBILITY)
+  if (sogl_compatibility_profile(state)) {
+    if (PRIVATE(this)->type == DISPLAY_LIST) {
+      glDeleteLists((GLuint) PRIVATE(this)->firstindex, PRIVATE(this)->numalloc);
+    }
+    else {
+      assert(PRIVATE(this)->type == TEXTURE_OBJECT);
 
-    const cc_glglue * glw = cc_glglue_instance(PRIVATE(this)->context);
-    assert(cc_glglue_has_texture_objects(glw));
+      const cc_glglue * glw = cc_glglue_instance(PRIVATE(this)->context);
+      assert(cc_glglue_has_texture_objects(glw));
 
-    // Use temporary variable in case GLUint != unsigned int.
-    GLuint tmpindex = (GLuint) PRIVATE(this)->firstindex;
-    // It is only possible to create one texture object at a time, so
-    // there's only one index to delete.
-    cc_glglue_glDeleteTextures(glw, 1, &tmpindex);
+      // Use temporary variable in case GLUint != unsigned int.
+      GLuint tmpindex = (GLuint) PRIVATE(this)->firstindex;
+      // It is only possible to create one texture object at a time, so
+      // there's only one index to delete.
+      cc_glglue_glDeleteTextures(glw, 1, &tmpindex);
+    }
   }
+#else
+  assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
+
   delete PRIVATE(this);
 }
 
@@ -245,10 +258,16 @@ SoGLDisplayList::open(SoState * state, int index)
 {
   if (PRIVATE(this)->type == DISPLAY_LIST) {
     PRIVATE(this)->openindex = index;
-    // using GL_COMPILE here instead of GL_COMPILE_AND_EXECUTE will
-    // lead to much higher performance on nVidia cards, and doesn't
-    // hurt performance for other vendors.
-    glNewList((GLuint) (PRIVATE(this)->firstindex+PRIVATE(this)->openindex), GL_COMPILE);
+#if defined(COIN_GL_COMPATIBILITY)
+    if (sogl_compatibility_profile(state)) {
+      // using GL_COMPILE here instead of GL_COMPILE_AND_EXECUTE will
+      // lead to much higher performance on nVidia cards, and doesn't
+      // hurt performance for other vendors.
+      glNewList((GLuint) (PRIVATE(this)->firstindex+PRIVATE(this)->openindex), GL_COMPILE);  
+    }
+#else
+    assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
   }
   else {
     assert(PRIVATE(this)->type == TEXTURE_OBJECT);
@@ -264,15 +283,21 @@ void
 SoGLDisplayList::close(SoState * COIN_UNUSED_ARG(state))
 {
   if (PRIVATE(this)->type == DISPLAY_LIST) {
-    glEndList();
-    GLenum err = sogl_glerror_debugging() ? glGetError() : GL_NO_ERROR;
-    if (err == GL_OUT_OF_MEMORY) {
-      SoDebugError::post("SoGLDisplayList::close",
-                         "Not enough memory resources available on system "
-                         "to store full display list. Expect flaws in "
-                         "rendering.");
+#if defined(COIN_GL_COMPATIBILITY)
+    if (sogl_compatibility_profile(state)) {
+      glEndList();
+      GLenum err = sogl_glerror_debugging() ? glGetError() : GL_NO_ERROR;
+      if (err == GL_OUT_OF_MEMORY) {
+        SoDebugError::post("SoGLDisplayList::close",
+                          "Not enough memory resources available on system "
+                          "to store full display list. Expect flaws in "
+                          "rendering.");
+      }
+      glCallList((GLuint) (PRIVATE(this)->firstindex + PRIVATE(this)->openindex));
     }
-    glCallList((GLuint) (PRIVATE(this)->firstindex + PRIVATE(this)->openindex));
+#else
+    assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
   }
   else {
     const cc_glglue * glw = cc_glglue_instance(PRIVATE(this)->context);
@@ -294,7 +319,13 @@ void
 SoGLDisplayList::call(SoState * state, int index)
 {
   if (PRIVATE(this)->type == DISPLAY_LIST) {
-    glCallList((GLuint) (PRIVATE(this)->firstindex + index));
+#if defined(COIN_GL_COMPATIBILITY)
+    if (sogl_compatibility_profile(state)) {
+      glCallList((GLuint) (PRIVATE(this)->firstindex + index));
+    }
+#else
+    assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
   }
   else {
     assert(PRIVATE(this)->type == TEXTURE_OBJECT);

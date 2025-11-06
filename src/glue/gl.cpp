@@ -2439,7 +2439,10 @@ cc_glglue_instance(int contextid)
         cc_glglue_glversion_matches_at_least(gi, 4, 3, 0)) {
       glEnable(GL_DEBUG_OUTPUT);
       glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+
+#if !defined(__EMSCRIPTEN__)
       glDebugMessageCallback(coin_gldebug_report, nullptr);
+#endif
     }
 #endif
 

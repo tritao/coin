@@ -121,6 +121,11 @@ if (COIN_BUILD_BGFX)
   add_definitions(-DCOIN_USE_BGFX_RENDERER=1)
 endif (COIN_BUILD_BGFX)
 
+option(COIN_GL_COMPATIBILITY "If enabled the GL compatibility code is enabled" ON)
+if (EMSCRIPTEN)
+  set(COIN_GL_COMPATIBILITY OFF)
+endif()
+
 check_include_file_cxx(thread HAVE_STD_THREAD)
 cmake_dependent_option(COIN_DEBUG_CHECK_THREAD "Enable thread check in several central Coin functions." OFF "HAVE_STD_THREAD" OFF)
 

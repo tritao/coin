@@ -652,6 +652,8 @@ SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
     action->setCurPass(0, numpasses);
     this->render(action, TRUE, clearwindow, clearzbuffer);
 
+#if defined(COIN_GL_COMPATIBILITY)
+  if (sogl_compatibility_profile(state)) {
     // check if we have an accumulation buffer, and render additional passes
     GLint accumbits;
     glGetIntegerv(GL_ACCUM_RED_BITS, &accumbits);
@@ -666,6 +668,9 @@ SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
       }
       glAccum(GL_RETURN, 1.0f);
     }
+  }
+#endif
+
     action->setCurPass(0, 1);
     action->setNumPasses(numpasses);
   }
@@ -854,7 +859,13 @@ SoRenderManager::renderScene( SoGLRenderAction * action,
 
 #if defined(COIN_USE_GL_RENDERER)
         if (SoRenderer::isOpenGL()) {
-          glClearIndex((GLfloat) PRIVATE(this)->backgroundindex);
+#if defined(COIN_GL_COMPATIBILITY)
+          if (sogl_compatibility_profile(state)) {
+            glClearIndex((GLfloat) PRIVATE(this)->backgroundindex);
+          }
+#else
+          assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
         }
 #endif
       }
@@ -1224,9 +1235,15 @@ SoRenderManager::initStencilBufferForInterleavedStereo(void)
     // XFree86 v4.1.0.1). Should test on other systems to see if they
     // show the same artifact.
 
+#if defined(COIN_GL_COMPATIBILITY)
+  if (sogl_compatibility_profile(state)) {
     glRasterPos2f(0, 0);
     glDrawPixels(newsize[0], newsize[1], GL_STENCIL_INDEX, GL_BITMAP,
                  PRIVATE(this)->stereostencilmask);
+  }
+#else
+  assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
 
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
