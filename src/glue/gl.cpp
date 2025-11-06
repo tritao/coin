@@ -2257,6 +2257,12 @@ static void APIENTRY coin_gldebug_report(GLenum source, GLenum type, GLuint id,
 const cc_glglue *
 cc_glglue_instance(int contextid)
 {
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+  assert(0 && "OpenGL state cannot be acessed in BGFX renderer mode");
+  return 0;
+}
+#endif
   SbBool found;
   void * ptr;
   GLint gltmp;

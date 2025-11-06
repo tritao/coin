@@ -121,6 +121,12 @@
 #include "shaders/SoGLSLShaderProgram.h"
 #endif
 
+#if defined(COIN_USE_BGFX_RENDERER)
+#include "Inventor/elements/SoBGFXShaderProgramElement.h"
+#include "shaders/SoBGFXShaderObject.h"
+#include "shaders/SoBGFXShaderProgram.h"
+#endif
+
 #ifdef HAVE_VRML97
 #include <Inventor/VRMLnodes/SoVRMLIndexedFaceSet.h>
 #include <Inventor/VRMLnodes/SoVRMLExtrusion.h>
@@ -218,6 +224,8 @@ public:
   soshape_bumprender* bumprender;
 #if defined(COIN_USE_GL_RENDERER)
   SoShaderProgram * shaderProgram;
+#elif defined(COIN_USE_BGFX_RENDERER)
+  SoBGFXShaderProgram * shaderProgram;
 #endif
   uint32_t flags : FLAG_BITS;
   // stores the number of frames rendered with no node changes
@@ -324,6 +332,11 @@ soshape_construct_staticdata(void * closure)
   data->primdata = new soshape_primdata();
   data->trianglesort = new soshape_trianglesort();
   data->rendermode = NORMAL;
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    data->rendermode = PVCACHE;
+  }
+#endif
 }
 
 static void
@@ -448,6 +461,17 @@ void SoShape::setupShaders(SoGLRenderAction * action)
     PRIVATE(this)->shaderProgram->GLRender(action);
   }
 #endif
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    // Setup the shaders if needed
+    if (PRIVATE(this)->shaderProgram == NULL) {
+      PRIVATE(this)->shaderProgram = SoBGFXShaderProgram::create("vs_vp", "fs_vp");
+    }
+
+    SoBGFXShaderProgramElement::set(action->getState(), this, PRIVATE(this)->shaderProgram);
+  }
+#endif
 }
 
 // Doc in parent.
@@ -463,6 +487,10 @@ SoShape::GLRender(SoGLRenderAction * action)
 
   if (!this->shouldGLRender(action)) return;
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  PRIVATE(this)->pvcache->render(action->getState());
+  return;
+#endif
 
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
@@ -632,6 +660,12 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
     shapestyleflags = shapestyle->getFlags();
   }
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    validatePVCache(action);
+  }
+#endif
+
   if (shapestyleflags & SoShapeStyleElement::INVISIBLE)
     return FALSE;
 
@@ -663,7 +697,11 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
 
   // test if we should sort triangles before rendering
   if (transparent && (shapestyleflags & SoShapeStyleElement::TRANSP_SORTED_TRIANGLES)) {
+#if defined(COIN_USE_BGFX_RENDERER)
+    if (SoRenderer::isBGFX()) {
+      assert(0 && "Not implemented yet");
     }
+#endif
 
 #if defined(COIN_USE_GL_RENDERER)
     if (SoRenderer::isOpenGL()) {
@@ -709,8 +747,14 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
       return FALSE; // tell shape _not_ to render
     }
 #endif
+  }
 
   if (shapestyleflags & SoShapeStyleElement::BIGIMAGE) {
+#if defined(COIN_USE_BGFX_RENDERER)
+    if (SoRenderer::isBGFX()) {
+      assert(0 && "Not implemented yet");
+    }
+#endif
 
 #if defined(COIN_USE_GL_RENDERER)
     if (SoRenderer::isOpenGL()) {
@@ -1206,6 +1250,14 @@ SoShape::invokeTriangleCallbacks(SoAction * const action,
 #else
         assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
+      }
+#endif
+
+#if defined(COIN_USE_BGFX_RENDERER)
+      if (SoRenderer::isBGFX()) {
+        SoDebugError::post("SoShape::invokeTriangleCallbacks",
+        "Immediate mode rendering is not available, use primitive vertex cache mode."
+        );
       }
 #endif
       break;

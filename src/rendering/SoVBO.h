@@ -54,6 +54,12 @@ class SoVBO {
 
   static void init(void);
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  // TODO: Remove this.
+  void setBgfxVertexLayout(const bgfx::VertexLayout& layout);
+  bgfx::VertexLayout& getBgfxVertexLayout();
+#endif
+
   void setVertexLayout(const SoVertexLayout& layout);
   SoVertexLayout& getVertexLayout();
 
@@ -89,6 +95,13 @@ class SoVBO {
   SoVertexLayout vertexlayout;
 
   SbHash<uint32_t, GLuint> vbohash;
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  bgfx::IndexBufferHandle ibhandle;
+  bgfx::VertexBufferHandle vbhandle;
+  bgfx::VertexLayout layout;
+  const bgfx::Memory * memory;
+#endif
 };
 
 #endif // COIN_VERTEXARRAYINDEXER_H

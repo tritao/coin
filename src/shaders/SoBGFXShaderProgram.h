@@ -1,5 +1,5 @@
-#ifndef COIN_SYSTEM_RENDERER_H
-#define COIN_SYSTEM_RENDERER_H
+#ifndef COIN_SOBGFXSHADERPROGRAM_H
+#define COIN_SOBGFXSHADERPROGRAM_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
@@ -33,25 +33,62 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#if defined(COIN_USE_BGFX_RENDERER)
-#include <bx/bx.h>
-#include <bx/math.h>
-#include <bgfx/bgfx.h>
-#include <bgfx/embedded_shader.h>
+#ifndef COIN_INTERNAL
+#error this is a private header file
 #endif
 
-class SoRenderer {
-public:
-  enum Enum {
-    GL,
-    GLES,
-    BGFX
-  };
+// *************************************************************************
 
-  static SoRenderer::Enum get();
-  static void set(SoRenderer::Enum renderer);
-  static bool isOpenGL();
-  static bool isBGFX();
+#include <Inventor/SbString.h>
+#include <Inventor/nodes/SoShaderProgram.h>
+#include <Inventor/lists/SbList.h>
+#include <Inventor/system/renderer.h>
+
+class SoBGFXShaderObject;
+class SoState;
+class SbName;
+
+// *************************************************************************
+
+class SoBGFXShaderProgram
+{
+public:
+  SoBGFXShaderProgram(void);
+  ~SoBGFXShaderProgram();
+
+
+  static SoBGFXShaderProgram * create(bgfx::ShaderHandle vertex, bgfx::ShaderHandle fragment);
+  static SoBGFXShaderProgram * create(bgfx::ShaderHandle compute);
+  static SoBGFXShaderProgram * create(const SbName& vertex, const SbName& fragment);
+
+  void setEnableCallback(SoShaderProgramEnableCB * cb,
+                         void * closure);
+
+  void updateCoinParameter(SoState * state, const SbName & name, const int value);
+  void addProgramParameter(int name, int value);
+
+  bgfx::ProgramHandle getProgramHandle() const;
+
+protected:
+
+  void setVertexShader(bgfx::ShaderHandle shader);
+  void setFragmentShader(bgfx::ShaderHandle shader);
+  void setComputeShader(bgfx::ShaderHandle shader);
+  void setProgramHandle(bgfx::ProgramHandle program);
+
+  bgfx::ShaderHandle vertexShader;
+  bgfx::ShaderHandle fragmentShader;
+  bgfx::ShaderHandle computeShader;
+
+  bgfx::ProgramHandle programHandle;
+
+private:
+
+  static void context_destruction_cb(uint32_t cachecontext, void * userdata);
+  static void really_delete_object(void * closure, uint32_t contextid);
+
+  SoShaderProgramEnableCB * enablecb;
+  void * enablecbclosure;
 };
 
-#endif /* ! COIN_SYSTEM_RENDERER_H */
+#endif /* ! COIN_SOBGFXSHADERPROGRAM_H */

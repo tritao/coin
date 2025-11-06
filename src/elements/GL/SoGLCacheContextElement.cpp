@@ -441,6 +441,12 @@ SoGLCacheContextElement::isDirectRendering(SoState * state) const
 {
   SbBool isdirect;
   if (this->rendering == RENDERING_UNSET) {
+#if defined(COIN_USE_BGFX_RENDERER)
+    if (SoRenderer::isBGFX()) {
+      isdirect = 1;
+    }
+#endif
+
 #if defined(COIN_USE_GL_RENDERER)
     if (SoRenderer::isOpenGL()) {
       const cc_glglue * w = sogl_glue_instance(state);

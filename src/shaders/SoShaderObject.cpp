@@ -123,8 +123,16 @@
 #include <Inventor/SoInput.h>
 #include <Inventor/lists/SbStringList.h>
 
+#if defined(COIN_USE_BGFX_RENDERER)
+#include <Inventor/elements/SoBGFXShaderProgramElement.h>
+#include "shaders/SoBGFXShaderProgram.h"
+#endif
+
 #include "nodes/SoSubNodeP.h"
 #include "misc/SbHash.h"
+#if defined(COIN_USE_BGFX_RENDERER)
+#include "shaders/SoBGFXShaderObject.h"
+#endif
 #include "shaders/SoGLARBShaderObject.h"
 #include "shaders/SoGLCgShaderObject.h"
 #include "shaders/SoGLSLShaderObject.h"
@@ -395,6 +403,11 @@ SoShaderObjectP::GLRender(SoGLRenderAction * action)
   if (!isactive) return;
 
   SoState * state = action->getState();
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+  }
+#endif
 
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {

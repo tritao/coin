@@ -1,5 +1,5 @@
-#ifndef COIN_SOSHADER_H
-#define COIN_SOSHADER_H
+#ifndef COIN_SOBGFXSHADEROBJECT_H
+#define COIN_SOBGFXSHADEROBJECT_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
@@ -40,29 +40,66 @@
 // *************************************************************************
 
 #include <Inventor/system/renderer.h>
+#include <Inventor/SbString.h>
+#include "SoShader.h"
 
-class SbName;
-
-class SoShader
-{
-public:
-  static void init(void);
-
-  enum Type {
-    ARB_SHADER,
-    CG_SHADER,
-    GLSL_SHADER,
-    BGFX_SHADER,
-  };
-
-  static const char * getNamedScript(const SbName & name, const Type type);
-  static void setupBuiltinShaders(void);
-
-#if defined(COIN_USE_BGFX_RENDERER)
-  static bool getBGFXEmbeddedShader(const SbName & name, bgfx::EmbeddedShader & shader);
-#endif
-};
+class SoBGFXShaderParameter;
+class SoShaderParameter;
+class SoState;
 
 // *************************************************************************
 
-#endif /* ! COIN_SOSHADER_H */
+class SoBGFXShaderObject
+{
+public:
+  SoBGFXShaderObject(const uint32_t cachecontext);
+  virtual ~SoBGFXShaderObject() { }
+
+  //const cc_glglue * GLContext(void) const;
+  uint32_t getCacheContext(void) const;
+
+  virtual SbBool isLoaded(void) const;
+  virtual void load(const bgfx::EmbeddedShader& shader);
+  virtual void unload(void);
+  virtual SoShader::Type shaderType(void) const;
+  //virtual SoBGFXShaderParameter* getNewParameter(void) const = 0;
+  virtual void updateCoinParameter(SoState * state, const SbName & name,
+                                   SoShaderParameter * param, const int val);
+
+  uint32_t getShaderObjectId(void) const;
+
+  static bool create(const bgfx::EmbeddedShader& shader, bgfx::ShaderHandle& handle);
+
+public:
+
+  enum ShaderType {
+    VERTEX,
+    FRAGMENT,
+    GEOMETRY
+  };
+
+  void setShaderType(const ShaderType type);
+  ShaderType getShaderType(void) const;
+
+  void setIsActive(SbBool flag);
+  SbBool isActive(void) const;
+
+  void setParametersDirty(SbBool flag);
+  SbBool getParametersDirty(void) const;
+
+#if defined(SOURCE_HINT)
+  SbString sourceHint; // either the file name or the first line of source code
+#endif
+
+protected:
+  uint32_t cachecontext;
+
+private:
+  ShaderType shadertype;
+  SbBool isActiveFlag ;
+  SbBool paramsdirty;
+  uint32_t id;
+  bgfx::ShaderHandle handle;
+};
+
+#endif /* ! COIN_SOBGFXSHADEROBJECT_H */

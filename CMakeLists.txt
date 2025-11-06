@@ -94,6 +94,7 @@ cmake_dependent_option(COIN_BUILD_DOCUMENTATION_CHM "Build compressed HTML help 
 option(COIN_THREADSAFE "Enable thread safe render traversals." OFF)
 option(HAVE_GL_RENDERER "Enable OpenGL rendering support." ON)
 option(HAVE_GL_MODERN_RENDERER "Enable modern OpenGL rendering support." ON)
+option(HAVE_BGFX_RENDERER "Enable BGFX rendering support." ON)
 option(HAVE_VRML97 "Enable VRML97 support." ON)
 cmake_dependent_option(COIN_HAVE_JAVASCRIPT "Enable JavaScript capabilities for VRML97." ON "HAVE_VRML97" OFF)
 option(HAVE_NODEKITS "Enable NodeKit support." ON)
@@ -124,6 +125,14 @@ cmake_dependent_option(COIN_BUILD_MAC_AGL "Build for AGL on Mac OS X when ON. De
 
 option(COIN_BUILD_GLX "Build for GLX on Linux when ON. Default is ON." ON)
 option(COIN_BUILD_EGL "Build for EGL on Linux when ON. Default is ON." ON)
+option(COIN_USE_BGFX_RENDERER "If enabled the BGFX renderer is used" ON)
+
+if (COIN_BUILD_BGFX)
+  set(BGFX_BUILD_EXAMPLES OFF)
+  set(BGFX_BUILD_TOOLS ON)
+  add_subdirectory(bgfx.cmake)
+  add_definitions(-DCOIN_USE_BGFX_RENDERER=1)
+endif (COIN_BUILD_BGFX)
 
 option(COIN_GL_COMPATIBILITY "If enabled the GL compatibility code is enabled" ON)
 check_include_file_cxx(thread HAVE_STD_THREAD)
@@ -494,6 +503,8 @@ if(NOT SIMAGE_RUNTIME_LINKING)
     list(APPEND COIN_TARGET_LINK_LIBRARIES simage::simage)
   endif()
 endif()
+
+#list(APPEND COIN_TARGET_LINK_LIBRARIES bgfx::bgfx)
 
 message(STATUS "${COIN_TARGET_INCLUDE_DIRECTORIES}")
 message(STATUS "${COIN_TARGET_LINK_LIBRARIES}")
@@ -917,6 +928,11 @@ if(COIN_RENDERER_GL)
   set(FEAT_HAVE_GL_RENDERER 1)
 else()
   set(FEAT_HAVE_GL_RENDERER 0)
+endif()
+if(COIN_RENDERER_BGFX)
+  set(FEAT_HAVE_BGFX_RENDERER 1)
+else()
+  set(FEAT_HAVE_BGFX_RENDERER 0)
 endif()
 
 set(COIN_USE_GL_RENDERER=1)

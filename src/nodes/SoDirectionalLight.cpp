@@ -158,6 +158,12 @@ SoDirectionalLight::GLRender(SoGLRenderAction * action)
 {
   if (!this->on.getValue()) return;
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+
+  }
+#endif
+
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
     SoState * state = action->getState();

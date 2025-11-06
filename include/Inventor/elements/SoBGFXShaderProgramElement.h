@@ -1,5 +1,5 @@
-#ifndef COIN_SYSTEM_RENDERER_H
-#define COIN_SYSTEM_RENDERER_H
+#ifndef  COIN_SOBGFXSHADERPROGRAMELEMENT_H
+#define  COIN_SOBGFXSHADERPROGRAMELEMENT_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
@@ -33,25 +33,33 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#if defined(COIN_USE_BGFX_RENDERER)
-#include <bx/bx.h>
-#include <bx/math.h>
-#include <bgfx/bgfx.h>
-#include <bgfx/embedded_shader.h>
-#endif
+#include <Inventor/elements/SoReplacedElement.h>
+#include <Inventor/lists/SbList.h>
 
-class SoRenderer {
+class SoBGFXShaderProgram;
+
+// *************************************************************************
+
+class COIN_DLL_API SoBGFXShaderProgramElement : public SoReplacedElement {
+  typedef SoReplacedElement inherited;
+  SO_ELEMENT_HEADER(SoBGFXShaderProgramElement);
+
 public:
-  enum Enum {
-    GL,
-    GLES,
-    BGFX
-  };
+  virtual void init(SoState * state);
 
-  static SoRenderer::Enum get();
-  static void set(SoRenderer::Enum renderer);
-  static bool isOpenGL();
-  static bool isBGFX();
+  static void set(SoState *const state, SoNode *const node,
+                          SoBGFXShaderProgram * program);
+  static SoBGFXShaderProgram * get(SoState * state);
+
+  virtual SbBool matches(const SoElement * element) const;
+  virtual SoElement * copyMatchInfo() const;
+
+SoINTERNAL public:
+  static void initClass(void);
+  SoBGFXShaderProgram *shaderProgram;
+
+private:
+  virtual ~SoBGFXShaderProgramElement();
 };
 
-#endif /* ! COIN_SYSTEM_RENDERER_H */
+#endif /* ! COIN_SOBGFXSHADERPROGRAMELEMENT_H */

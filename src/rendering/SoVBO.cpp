@@ -233,6 +233,17 @@ SoVBO::allocBufferData(intptr_t size, SbUniqueId dataid)
   this->data = (const GLvoid*) ptr;
   this->datasize = size;
   this->dataid = dataid;
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    this->memory = bgfx::makeRef(data, size);
+    if (target == GL_ELEMENT_ARRAY_BUFFER)
+      this->ibhandle = bgfx::createIndexBuffer(this->memory);
+    else
+      this->vbhandle = bgfx::createVertexBuffer(this->memory, this->layout);
+  }
+#endif
+
   return (void*) this->data;
 }
 
@@ -269,17 +280,44 @@ SoVBO::setBufferData(const GLvoid * data, intptr_t size, SbUniqueId dataid)
   this->datasize = size;
   this->dataid = dataid;
   this->didalloc = FALSE;
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    this->memory = bgfx::makeRef(data, size);
+    if (target == GL_ELEMENT_ARRAY_BUFFER)
+      this->ibhandle = bgfx::createIndexBuffer(this->memory);
+    else
+      this->vbhandle = bgfx::createVertexBuffer(this->memory, this->layout);
+  }
+#endif
 }
 
 void SoVBO::setVertexLayout(const SoVertexLayout& layout)
 {
   this->vertexlayout = layout;
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    //assert(0 && "Not implemented yet");
+  }
+#endif
 }
 
 SoVertexLayout& SoVBO::getVertexLayout()
 {
   return this->vertexlayout;
 }
+
+#if defined(COIN_USE_BGFX_RENDERER)
+void SoVBO::setVertexLayout(const bgfx::VertexLayout& layout)
+{
+  this->layout = layout;
+}
+
+bgfx::VertexLayout& SoVBO::getVertexLayout()
+{
+  return this->layout;
+}
+#endif
 
 /*!
   Returns the buffer data id.
@@ -314,6 +352,15 @@ SoVBO::bindBuffer(uint32_t contextid, uint8_t stream)
     // assert(0 && "no data in buffer");
     return;
   }
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    if (target == GL_ELEMENT_ARRAY_BUFFER)
+      bgfx::setIndexBuffer(this->ibhandle);
+    else
+      bgfx::setVertexBuffer(stream, this->vbhandle);
+  }
+#endif
 
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {

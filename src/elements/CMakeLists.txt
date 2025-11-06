@@ -85,6 +85,10 @@ set(COIN_ELEMENTS_FILES
 	SoVertexAttributeElement.cpp
 )
 
+if (COIN_BUILD_BGFX)
+	list(APPEND COIN_ELEMENTS_FILES SoBGFXViewIdElement.cpp)
+endif()
+
 # Files excluded from public API documentation, included in complete documentation.
 set(COIN_ELEMENTS_INTERNAL_FILES
 	SoTextureScalePolicyElement.h

@@ -45,6 +45,9 @@ class SoGLShaderObject;
 class SoGLShaderProgram;
 class SoState;
 
+class SoBGFXShaderObject;
+class SoBGFXShaderProgram;
+
 // *************************************************************************
 
 class COIN_DLL_API SoShaderObject : public SoNode {
@@ -56,7 +59,8 @@ public:
     ARB_PROGRAM,
     CG_PROGRAM,
     GLSL_PROGRAM,
-    FILENAME
+    FILENAME,
+    BGFX
   };
 
   SoSFBool isActive;

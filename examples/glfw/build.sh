@@ -16,6 +16,15 @@ g++ -O0 -ggdb glfw.cpp \
     -lCoin -lGL -lGLU -lglut -lglfw -lX11 \
     -o bin/glfw
 
+### Uncomment for BGFX
+
+# g++ -O0 -ggdb glfw.cpp \
+#    -DBX_CONFIG_DEBUG=1 -DCOIN_USE_BGFX_RENDERER=1 \
+#    -I$COIN_PATH/bgfx.cmake/bx/include -I$COIN_PATH/bgfx.cmake/bgfx/include \
+#    -L$COIN_BUILD_PATH/bgfx.cmake/cmake/bgfx/ -lbgfx -lX11 \
+#    -L$COIN_BUILD_PATH/bgfx.cmake/cmake/bimg/ -lbimg \
+#    -L$COIN_BUILD_PATH/bgfx.cmake/cmake/bx/ -lbx \
+
 ###
 
 export LD_LIBRARY_PATH=$COIN_BUILD_PATH/lib:"$LD_LIBRARY_PATH"

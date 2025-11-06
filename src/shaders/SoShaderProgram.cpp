@@ -217,6 +217,10 @@
 #include "nodes/SoSubNodeP.h"
 #include "shaders/SoGLShaderProgram.h"
 
+#if defined(COIN_USE_BGFX_RENDERER)
+#include <Inventor/elements/SoBGFXShaderProgramElement.h>
+#endif
+
 // *************************************************************************
 
 class SoShaderProgramP
@@ -259,6 +263,12 @@ SoShaderProgram::initClass(void)
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
     SO_ENABLE(SoGLRenderAction, SoGLShaderProgramElement);
+  }
+#endif
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    SO_ENABLE(SoGLRenderAction, SoBGFXShaderProgramElement);
   }
 #endif
 }

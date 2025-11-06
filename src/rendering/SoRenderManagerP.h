@@ -44,6 +44,7 @@
 #endif // COIN_THREADSAFE
 
 #include <Inventor/system/gl.h>
+#include <Inventor/system/renderer.h>
 #include <Inventor/SbColor4f.h>
 #include <Inventor/SoRenderManager.h>
 #include <Inventor/SbViewportRegion.h>
@@ -121,6 +122,10 @@ public:
   SoOneShotSensor * redrawshot;
 
   SbPList * superimpositions;
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  bgfx::ViewId mainviewid;
+#endif
 
   void invokePreRenderCallbacks(void);
   void invokePostRenderCallbacks(void);

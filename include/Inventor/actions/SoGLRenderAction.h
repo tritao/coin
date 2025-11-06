@@ -118,6 +118,11 @@ public:
   void setRenderingIsRemote(SbBool isremote);
   SbBool getRenderingIsRemote(void) const;
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  void setViewId(bgfx::ViewId viewid);
+  bgfx::ViewId getViewId() const;
+#endif
+
   virtual void invalidateState(void);
 
   void addPreRenderCallback(SoGLPreRenderCB * func, void * userdata);

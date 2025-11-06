@@ -300,6 +300,10 @@
 #include <Inventor/elements/SoTextureCombineElement.h>
 #include <Inventor/elements/SoCacheHintElement.h>
 
+#if defined(COIN_USE_BGFX_RENDERER)
+#include <Inventor/elements/SoBGFXViewIdElement.h>
+#endif
+
 #include <Inventor/elements/SoCullElement.h> // internal element
 #include <Inventor/elements/SoGLLazyElement.h> // internal element
 #include <Inventor/misc/SoState.h>
@@ -580,6 +584,12 @@ SoElement::initElements(void)
   }
 #endif
   SoVertexAttributeBindingElement::initClass();
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    SoBGFXViewIdElement::initClass();
+  }
+#endif
 }
 
 // Note: the following documentation for initClass() will also be

@@ -1,6 +1,3 @@
-#ifndef COIN_SYSTEM_RENDERER_H
-#define COIN_SYSTEM_RENDERER_H
-
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
  * All rights reserved.
@@ -33,25 +30,77 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#if defined(COIN_USE_BGFX_RENDERER)
-#include <bx/bx.h>
-#include <bx/math.h>
-#include <bgfx/bgfx.h>
-#include <bgfx/embedded_shader.h>
-#endif
+/*!
+  \class SoBGFXViewIdElement Inventor/elements/SoBGFXViewIdElement.h
+  \brief The SoBGFXViewIdElement class is yet to be documented.
 
-class SoRenderer {
-public:
-  enum Enum {
-    GL,
-    GLES,
-    BGFX
-  };
+  \ingroup coin_elements
 
-  static SoRenderer::Enum get();
-  static void set(SoRenderer::Enum renderer);
-  static bool isOpenGL();
-  static bool isBGFX();
-};
+  FIXME: write doc.
+*/
 
-#endif /* ! COIN_SYSTEM_RENDERER_H */
+#include <Inventor/elements/SoBGFXViewIdElement.h>
+#include <cassert>
+
+// *************************************************************************
+
+SO_ELEMENT_SOURCE(SoBGFXViewIdElement);
+
+// *************************************************************************
+
+/*!
+  \copydetails SoElement::initClass(void)
+*/
+
+void
+SoBGFXViewIdElement::initClass(void)
+{
+  SO_ELEMENT_INIT_CLASS(SoBGFXViewIdElement, inherited);
+}
+
+/*!
+  Destructor.
+*/
+
+SoBGFXViewIdElement::~SoBGFXViewIdElement()
+{
+  //this->viewId = NULL;
+}
+
+void
+SoBGFXViewIdElement::init(SoState *state)
+{
+  inherited::init(state);
+}
+
+void
+SoBGFXViewIdElement::set(SoState* const state, SoNode *const node, bgfx::ViewId id)
+{
+  SoBGFXViewIdElement* element =
+    (SoBGFXViewIdElement*)inherited::getElement(state,classStackIndex, node);
+  element->viewId = id;
+}
+
+bgfx::ViewId
+SoBGFXViewIdElement::get(SoState *state)
+{
+  const SoElement *element = getConstElement(state, classStackIndex);
+  assert(element);
+  return ((const SoBGFXViewIdElement *)element)->viewId;
+}
+
+SbBool
+SoBGFXViewIdElement::matches(const SoElement * element) const
+{
+  SoBGFXViewIdElement * elem = (SoBGFXViewIdElement*) element;
+  return (this->viewId == elem->viewId);
+}
+
+SoElement *
+SoBGFXViewIdElement::copyMatchInfo(void) const
+{
+  SoBGFXViewIdElement * elem = 
+    (SoBGFXViewIdElement*) inherited::copyMatchInfo();
+  elem->viewId = this->viewId;
+  return elem;
+}

@@ -376,6 +376,14 @@ SoPrimitiveVertexCache::close(SoState * state)
 void
 SoPrimitiveVertexCache::render(SoState * state) const
 {
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    int arrays = SoPrimitiveVertexCache::NORMAL|SoPrimitiveVertexCache::COLOR;
+    renderTriangles(state, arrays);
+    renderLines(state, arrays);
+    renderPoints(state, arrays);
+  }
+#endif
 }
 
 void
@@ -393,6 +401,16 @@ SoPrimitiveVertexCache::renderTriangles(SoState * state, const int arrays) const
     enabled = SoMultiTextureEnabledElement::getEnabledUnits(state, lastenabled);
   }
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    SoPrimitiveVertexCacheP * thisp = const_cast<SoPrimitiveVertexCacheP *>(&PRIVATE(this).get());
+    uint32_t contextid = 0;
+    thisp->enableVBOs(NULL, contextid, color, normal, texture, enabled, lastenabled);
+    PRIVATE(this)->triangleindexer->render(state, TRUE, contextid);
+    thisp->disableVBOs(NULL, color, normal, texture, enabled, lastenabled);
+    //assert(0 && "Not implemented yet");
+  }
+#endif
 
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
@@ -505,7 +523,7 @@ SoPrimitiveVertexCache::renderPoints(SoState * state, const int arrays) const
   const cc_glglue * glue = sogl_glue_instance(state);
   const uint32_t contextid = SoGLCacheContextElement::get(state);
 
-  if (!sogl_compatibility_profile(state) ||
+  if (SoRenderer::isBGFX() || !sogl_compatibility_profile(state) ||
       SoGLDriverDatabase::isSupported(glue, SO_GL_VERTEX_ARRAY)) {
     SoPrimitiveVertexCacheP * thisp = const_cast<SoPrimitiveVertexCacheP *>(&PRIVATE(this).get());
     thisp->enableArrays(glue, color, normal, texture, enabled, lastenabled);

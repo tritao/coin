@@ -403,6 +403,12 @@ SoImage::GLRender(SoGLRenderAction * action)
 {
   SoState *state = action->getState();
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    assert(0 && "Not implemented yet");
+  }
+#endif
+
 #if defined(COIN_USE_GL_RENDERER)
   if (SoRenderer::isOpenGL()) {
     if (sogl_compatibility_profile(state)) {

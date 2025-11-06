@@ -48,3 +48,8 @@ bool SoRenderer::isOpenGL()
 {
     return renderer == SoRenderer::GL || renderer == SoRenderer::GLES;
 }
+
+bool SoRenderer::isBGFX()
+{
+    return renderer == SoRenderer::BGFX;
+}

@@ -73,6 +73,13 @@
     } \
   } WHILE_0
 
+#define SO_ENABLE_BGFX(action, element) \
+  do { \
+    if (SoRenderer::isBGFX()) { \
+      SO_ENABLE(action, element); \
+    } \
+  } WHILE_0
+
 class SoEnabledElementsList;
 class SoNode;
 class SoPath;

@@ -389,6 +389,14 @@ SoCamera::initClass(void)
 
   SO_ENABLE_GL(SoGLRenderAction, SoGLProjectionMatrixElement);
   SO_ENABLE_GL(SoGLRenderAction, SoGLViewingMatrixElement);
+
+  #if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    SO_ENABLE(SoGLRenderAction, SoProjectionMatrixElement);
+    SO_ENABLE(SoGLRenderAction, SoViewingMatrixElement);
+  }
+#endif
+
   SO_ENABLE(SoGetBoundingBoxAction, SoFocalDistanceElement);
   SO_ENABLE(SoGetBoundingBoxAction, SoProjectionMatrixElement);
   SO_ENABLE(SoGetBoundingBoxAction, SoViewVolumeElement);
@@ -723,6 +731,20 @@ SoCamera::GLRender(SoGLRenderAction * action)
     m.setTranslate(jittervec);
     proj.multRight(m);
   }
+
+#if 0
+  float viewMtx[16];
+  const bx::Vec3 _at(0, 0, -5);
+  const bx::Vec3 _eye(0, 0, 1);
+  const bx::Vec3 _up(0, 1 ,0);
+  bx::mtxLookAt(viewMtx, _eye, _at, _up);
+
+  float projMtx[16];
+  bx::mtxProj(projMtx, 90, 1.0f, 0.01f, 100.0f, bgfx::getCaps()->homogeneousDepth);
+
+  bgfx::setViewTransform(viewId, viewMtx, projMtx);
+#endif
+
   SoProjectionMatrixElement::set(state, this, proj);
   SoViewingMatrixElement::set(state, this, affine);
   SoFocalDistanceElement::set(state, this, this->focalDistance.getValue());
@@ -1077,6 +1099,11 @@ SoCamera::drawCroppedFrame(SoGLRenderAction *action,
   }
 #endif
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    assert(0 && "Not implemented yet");
+  }
+#endif
   state->pop();
 }
 

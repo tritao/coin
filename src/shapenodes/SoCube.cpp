@@ -90,6 +90,10 @@
 #include "misc/SoGenerate.h"
 #include "misc/SoPick.h"
 
+#if defined(COIN_USE_BGFX_RENDERER)
+#include "shaders/SoBGFXShaderProgram.h"
+#include "Inventor/elements/SoBGFXViewIdElement.h"
+#endif
 
 /*!
   \var SoSFFloat SoCube::width

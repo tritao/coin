@@ -117,6 +117,10 @@
 #include <Inventor/annex/Profiler/elements/SoProfilerElement.h>
 #include <Inventor/annex/Profiler/SoProfiler.h>
 
+#if defined(COIN_USE_BGFX_RENDERER)
+#include <Inventor/elements/SoBGFXViewIdElement.h>
+#endif
+
 #include "coindefs.h"
 #include "tidbitsp.h"
 #include "SbBasicP.h"
@@ -563,6 +567,10 @@ public:
   SoGLRenderAction::TransparentDelayedObjectRenderType transpdelayedrendertype;
   SbBool renderingtranspbackfaces;
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  bgfx::ViewId viewid;
+#endif
+
   boost::scoped_ptr<SoGetBoundingBoxAction> bboxaction;
   SbVec2f updateorigin, updatesize;
   SbBool needglinit;
@@ -654,6 +662,12 @@ SoGLRenderAction::initClass(void)
   SO_ENABLE(SoGLRenderAction, SoWindowElement);
   SO_ENABLE_GL(SoGLRenderAction, SoGLViewportRegionElement);
   SO_ENABLE_GL(SoGLRenderAction, SoGLCacheContextElement);
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    SO_ENABLE(SoGLRenderAction, SoBGFXViewIdElement);
+  }
+#endif
 
   const char * env = coin_getenv("COIN_GLBBOX");
   if (env) {
@@ -758,6 +772,14 @@ SoGLRenderAction::setViewportRegion(const SbViewportRegion & newregion)
   PRIVATE(this)->bboxaction->setViewportRegion(newregion);
   // The SoViewportRegionElement is not set here, as it is always
   // initialized before redraw in beginTraversal().
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    short int winw, winh;
+    newregion.getWindowSize().getValue(winw, winh);
+    bgfx::reset(winw, winh, BGFX_RESET_VSYNC);
+  }
+#endif
 }
 
 /*!
@@ -1459,6 +1481,18 @@ SoGLRenderAction::getRenderingIsRemote(void) const
   return !isdirect;
 }
 
+#if defined(COIN_USE_BGFX_RENDERER)
+void SoGLRenderAction::setViewId(bgfx::ViewId viewid)
+{
+  PRIVATE(this)->viewid = viewid;
+}
+
+bgfx::ViewId SoGLRenderAction::getViewId() const
+{
+  return PRIVATE(this)->viewid;
+}
+#endif
+
 /*!
   Adds a path to the list of paths to render after the current pass.
  */
@@ -1698,6 +1732,11 @@ SoGLRenderActionP::isDirectRendering(const SoState * state) const
     isdirect = cc_glglue_isdirect(w);
   }
 #endif
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    isdirect = 1;
+  }
+#endif
   }
   else {
     isdirect = this->rendering == RENDERING_SET_DIRECT;
@@ -1776,6 +1815,12 @@ SoGLRenderActionP::render(SoNode * node)
     } else {
       this->renderSingle(node);
     }
+  }
+#endif
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    this->renderSingle(node);
   }
 #endif
 
@@ -1865,6 +1910,12 @@ SoGLRenderActionP::renderSingle(SoNode * node)
   }
 #endif
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (SoRenderer::isBGFX()) {
+    SoBGFXViewIdElement::set(state, node, this->viewid);
+  }
+#endif
+
   assert(this->delayedpathrender == FALSE);
   assert(this->transparencyrender == FALSE);
 
@@ -1902,6 +1953,8 @@ SoGLRenderActionP::renderSingle(SoNode * node)
       this->transparencytype = SoGLRenderAction::SORTED_OBJECT_BLEND;
       render(node); // Render again using the fallback transparency type.
     }
+#else
+    assert(0 && "SoGLRenderAction::SORTED_LAYERS_BLEND not yet implemented for BGFX renderer");
 #endif
     return;
   }

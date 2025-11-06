@@ -23,6 +23,14 @@ set(COIN_SHADERS_FILES
 	SoVertexShader.cpp
 )
 
+if(COIN_BUILD_BGFX)
+	list(APPEND COIN_SHADERS_FILES
+		SoBGFXShaderObject.cpp
+		SoBGFXShaderProgram.cpp
+		SoBGFXShaderProgramElement.cpp
+	)
+endif()
+
 # Files excluded from public API documentation, included in complete documentation.
 set(COIN_SHADERS_INTERNAL_FILES
 	SoGLARBShaderParameter.h
@@ -51,6 +59,14 @@ set(COIN_SHADERS_INTERNAL_FILES
 	SoGLShaderProgram.cpp
 	SoGLShaderProgramElement.cpp
 )
+
+if(COIN_BUILD_BGFX)
+	list(APPEND COIN_SHADERS_INTERNAL_FILES
+		SoBGFXShaderObject.h
+		SoBGFXShaderProgram.h
+		SoBGFXShaderProgramElement.cpp
+	)
+endif()
 
 # build library
 if(COIN_BUILD_SINGLE_LIB)
