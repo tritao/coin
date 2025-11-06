@@ -2607,6 +2607,8 @@ cc_glglue_isdirect(const cc_glglue * w)
 */
 SbBool cc_glglue_glprofile_compat(const cc_glglue * glue)
 {
+  return false;
+
   // TODO: cache this.
 
   unsigned int major, minor, release;

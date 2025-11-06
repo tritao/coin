@@ -399,6 +399,18 @@ SoShape::getBoundingBox(SoGetBoundingBoxAction * action)
 void
 SoShape::GLRender(SoGLRenderAction * action)
 {
+/*
+  soshape_staticdata * shapedata = soshape_get_staticdata();
+  if (shapedata->rendermode == NORMAL && !sogl_compatibility_profile(action->getState())) {
+    shapedata->rendermode = PVCACHE;
+
+    // lock since pvcache is shared among all threads
+    PRIVATE(this)->lock();
+    this->validatePVCache(action);
+    PRIVATE(this)->unlock();
+  }
+ */
+
   // if we get here, the shape do not have a render method and
   // generatePrimitives should therefore be used to render the
   // shape. This is probably painfully slow, so if you want speed,
@@ -1073,22 +1085,31 @@ SoShape::invokeTriangleCallbacks(SoAction * const action,
       }
       break;
     default:
-      glBegin(GL_TRIANGLES);
-      glTexCoord4fv(v1->getTextureCoords().getValue());
-      glNormal3fv(v1->getNormal().getValue());
-      shapedata->currentbundle->send(v1->getMaterialIndex(), TRUE);
-      glVertex3fv(v1->getPoint().getValue());
+#ifdef GL_COMPAT
+      if (sogl_compatibility_profile(action->getState())) {
+        glBegin(GL_TRIANGLES);
+        glTexCoord4fv(v1->getTextureCoords().getValue());
+        glNormal3fv(v1->getNormal().getValue());
+        shapedata->currentbundle->send(v1->getMaterialIndex(), TRUE);
+        glVertex3fv(v1->getPoint().getValue());
 
-      glTexCoord4fv(v2->getTextureCoords().getValue());
-      glNormal3fv(v2->getNormal().getValue());
-      shapedata->currentbundle->send(v2->getMaterialIndex(), TRUE);
-      glVertex3fv(v2->getPoint().getValue());
+        glTexCoord4fv(v2->getTextureCoords().getValue());
+        glNormal3fv(v2->getNormal().getValue());
+        shapedata->currentbundle->send(v2->getMaterialIndex(), TRUE);
+        glVertex3fv(v2->getPoint().getValue());
 
-      glTexCoord4fv(v3->getTextureCoords().getValue());
-      glNormal3fv(v3->getNormal().getValue());
-      shapedata->currentbundle->send(v3->getMaterialIndex(), TRUE);
-      glVertex3fv(v3->getPoint().getValue());
-      glEnd();
+        glTexCoord4fv(v3->getTextureCoords().getValue());
+        glNormal3fv(v3->getNormal().getValue());
+        shapedata->currentbundle->send(v3->getMaterialIndex(), TRUE);
+        glVertex3fv(v3->getPoint().getValue());
+        glEnd();
+      } else
+#endif
+      {
+        SoDebugError::post("SoShape::invokeTriangleCallbacks",
+        "Immediate mode rendering is not available, use primitive vertex cache mode."
+        );
+      }
       break;
     }
   }
