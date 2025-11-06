@@ -2445,7 +2445,7 @@ cc_glglue_instance(int contextid)
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &gltmp);
     gi->max_texture_size = gltmp;
 
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (cc_glglue_glprofile_compat(gi))
   {
     glGetIntegerv(GL_MAX_LIGHTS, &gltmp);
@@ -2455,11 +2455,11 @@ cc_glglue_instance(int contextid)
 #endif
       // Let's assume a max of 8 lights for core profiles.
     gi->max_lights = 8;
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   }
 #endif
 
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
     if (cc_glglue_glprofile_compat(gi))
     {
       GLfloat vals[2];
@@ -2482,7 +2482,7 @@ cc_glglue_instance(int contextid)
     }
 #endif
 
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
     if (cc_glglue_glprofile_compat(gi))
     {
       GLfloat vals[2];
@@ -2612,8 +2612,6 @@ cc_glglue_isdirect(const cc_glglue * w)
 */
 SbBool cc_glglue_glprofile_compat(const cc_glglue * glue)
 {
-  return false;
-
   // TODO: cache this.
 
   unsigned int major, minor, release;
@@ -5180,7 +5178,7 @@ GLint coin_glglue_get_internal_texture_format(const cc_glglue * glw,
                                               SbBool compress)
 {
   GLenum format;
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (cc_glglue_glprofile_compat(glw)) {
     if (compress) {
       switch (numcomponents) {
@@ -5263,7 +5261,7 @@ GLint coin_glglue_get_internal_texture_format(const cc_glglue * glw,
 GLenum coin_glglue_get_texture_format(const cc_glglue * COIN_UNUSED_ARG(glw), int numcomponents)
 {
     GLenum format;
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (cc_glglue_glprofile_compat(glw)) {
     switch (numcomponents) {
     case 1:

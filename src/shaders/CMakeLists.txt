@@ -2,6 +2,9 @@
 set(COIN_SHADERS_FILES
 	SoFragmentShader.cpp
 	SoGeometryShader.cpp
+	SoBGFXShaderObject.cpp
+	SoBGFXShaderProgram.cpp
+	SoBGFXShaderProgramElement.cpp
 	SoGLARBShaderParameter.cpp
 	SoGLARBShaderObject.cpp
 	SoGLARBShaderProgram.cpp
@@ -15,6 +18,7 @@ set(COIN_SHADERS_FILES
 	SoGLShaderParameter.cpp
 	SoGLShaderProgram.cpp
 	SoGLShaderProgramElement.cpp
+	SoGLShaderProgramElement.cpp
 	SoShaderObject.cpp
 	SoShaderParameter.cpp
 	SoShaderProgram.cpp
@@ -24,6 +28,9 @@ set(COIN_SHADERS_FILES
 
 # Files excluded from public API documentation, included in complete documentation.
 set(COIN_SHADERS_INTERNAL_FILES
+	SoBGFXShaderObject.h
+	SoBGFXShaderProgram.h
+	SoBGFXShaderProgramElement.cpp
 	SoGLARBShaderParameter.h
 	SoGLARBShaderParameter.cpp
 	SoGLARBShaderObject.h

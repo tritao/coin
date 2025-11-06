@@ -31,96 +31,82 @@
 \**************************************************************************/
 
 /*!
-  \class SoGLProjectionMatrixElement Inventor/elements/SoGLProjectionMatrixElement.h
-  \brief The SoGLProjectionMatrixElement class is yet to be documented.
+  \class SoBGFXShaderProgramElement Inventor/elements/SoBGFXShaderProgramElement.h
+  \brief The SoBGFXShaderProgramElement class is yet to be documented.
 
   \ingroup coin_elements
 
   FIXME: write doc.
 */
 
-#include <Inventor/elements/SoGLProjectionMatrixElement.h>
-#include "coindefs.h"
-
-
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif // HAVE_CONFIG_H
-
-#include "rendering/SoGL.h"
-#include <Inventor/system/gl.h>
+#include <Inventor/elements/SoBGFXShaderProgramElement.h>
 
 #include <cassert>
 
-SO_ELEMENT_SOURCE(SoGLProjectionMatrixElement);
+//#include <Inventor/elements/SoGLCacheContextElement.h>
+#include "SoBGFXShaderProgram.h"
+
+// *************************************************************************
+
+SO_ELEMENT_SOURCE(SoBGFXShaderProgramElement);
+
+// *************************************************************************
 
 /*!
   \copydetails SoElement::initClass(void)
 */
 
 void
-SoGLProjectionMatrixElement::initClass(void)
+SoBGFXShaderProgramElement::initClass(void)
 {
-  SO_ELEMENT_INIT_CLASS(SoGLProjectionMatrixElement, inherited);
+  SO_ELEMENT_INIT_CLASS(SoBGFXShaderProgramElement, inherited);
 }
 
 /*!
   Destructor.
 */
 
-SoGLProjectionMatrixElement::~SoGLProjectionMatrixElement(void)
+SoBGFXShaderProgramElement::~SoBGFXShaderProgramElement()
 {
+  this->shaderProgram = NULL;
 }
 
-// doc in parent
 void
-SoGLProjectionMatrixElement::init(SoState * stateptr)
+SoBGFXShaderProgramElement::init(SoState *state)
 {
-  inherited::init(stateptr);
-  this->state = stateptr;
+  inherited::init(state);
+  this->shaderProgram = NULL;
 }
 
-// doc in parent
 void
-SoGLProjectionMatrixElement::push(SoState * stateptr)
+SoBGFXShaderProgramElement::set(SoState* const state, SoNode *const node,
+                              SoBGFXShaderProgram* program)
 {
-  inherited::push(stateptr);
-  this->state = stateptr;
+  SoBGFXShaderProgramElement* element =
+    (SoBGFXShaderProgramElement*)inherited::getElement(state,classStackIndex, node);
+  element->shaderProgram = program;
 }
 
-//! FIXME: write doc.
-
-void
-SoGLProjectionMatrixElement::pop(SoState * COIN_UNUSED_ARG(state),
-                                 const SoElement * prevTopElement)
+SoBGFXShaderProgram *
+SoBGFXShaderProgramElement::get(SoState *state)
 {
-  this->capture(state);
-  this->updategl();
+  const SoElement *element = getConstElement(state, classStackIndex);
+  assert(element);
+  return ((const SoBGFXShaderProgramElement *)element)->shaderProgram;
 }
 
-//! FIXME: write doc.
-
-void
-SoGLProjectionMatrixElement::setElt(const SbMatrix & matrix)
+SbBool
+SoBGFXShaderProgramElement::matches(const SoElement * element) const
 {
-  inherited::setElt(matrix);
-  this->updategl();
+  SoBGFXShaderProgramElement * elem = (SoBGFXShaderProgramElement*) element;
+  return (this->shaderProgram == elem->shaderProgram);
 }
 
-//! FIXME: write doc.
-
-void
-SoGLProjectionMatrixElement::updategl(void)
+SoElement *
+SoBGFXShaderProgramElement::copyMatchInfo(void) const
 {
-#if 0 // debug
-  SoDebugError::postInfo("SoGLProjectionMatrixElement::updategl", "");
-#endif // debug
-#ifdef COIN_USE_GL_RENDERER
-  if (sogl_compatibility_profile(state))
-  {
-    glMatrixMode(GL_PROJECTION);
-    glLoadMatrixf((float*)this->projectionMatrix);
-    glMatrixMode(GL_MODELVIEW);
-  }
-#endif
+  SoBGFXShaderProgramElement * elem = 
+    (SoBGFXShaderProgramElement*) inherited::copyMatchInfo();
+  elem->shaderProgram = this->shaderProgram;
+  return elem;
 }

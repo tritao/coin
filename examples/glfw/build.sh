@@ -21,5 +21,4 @@ g++ -ggdb glfw_bgfx.cpp \
     -lGL -lGLU -lglut -lglfw -lCoin \
     -o glfw_bgfx
 
-
 #export LD_LIBRARY_PATH=/home/joao/dev/coin/bld/lib:"$LD_LIBRARY_PATH"

@@ -67,6 +67,7 @@
 */
 
 #include <Inventor/nodes/SoCube.h>
+#include "Inventor/SbVec2f.h"
 #include "coindefs.h"
 
 #include <Inventor/SbPlane.h>
@@ -80,7 +81,9 @@
 #include <Inventor/elements/SoGLMultiTextureEnabledElement.h>
 #include <Inventor/elements/SoMaterialBindingElement.h>
 #include <Inventor/elements/SoMultiTextureCoordinateElement.h>
+#include <Inventor/elements/SoShapeStyleElement.h>
 #include <Inventor/misc/SoState.h>
+#include <Inventor/system/renderer.h>
 
 #include "nodes/SoSubNodeP.h"
 #include "rendering/SoGL.h"
@@ -133,12 +136,28 @@ SoCube::initClass(void)
   SO_NODE_INTERNAL_INIT_CLASS(SoCube, SO_FROM_INVENTOR_1|SoNode::VRML1);
 }
 
+
 // Doc in parent.
 void
 SoCube::GLRender(SoGLRenderAction * action)
 {
-  if (!this->shouldGLRender(action)) return;
   SoState * state = action->getState();
+
+#if defined(COIN_USE_BGFX_RENDERER)
+
+  return SoShape::GLRender(action);
+
+#elif defined(COIN_USE_GL_RENDERER)
+  #if 0
+    if (!sogl_compatibility_profile(state))
+    {
+      const SoShapeStyleElement * shapestyle = SoShapeStyleElement::get(state);
+      shapestyle->setVertexArrayRendering(state, true);
+      return SoShape::GLRender(action);
+    }
+  #endif
+
+  if (!this->shouldGLRender(action)) return;
 
   SoMaterialBindingElement::Binding binding =
     SoMaterialBindingElement::get(state);
@@ -185,6 +204,7 @@ SoCube::GLRender(SoGLRenderAction * action)
                    depth.getValue(),
                    &mb,
                    flags, state);
+#endif
 }
 
 // Doc in parent.

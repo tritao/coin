@@ -401,7 +401,7 @@ SoImage::computeBBox(SoAction * action,
 void
 SoImage::GLRender(SoGLRenderAction * action)
 {
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   SoState *state = action->getState();
   if (sogl_compatibility_profile(state))
   {

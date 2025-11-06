@@ -8,6 +8,7 @@ set(COIN_ELEMENTS_FILES
 	SoAnnoText3FontSizeHintElement.cpp
 	SoAnnoText3RenderPrintElement.cpp
 	SoBBoxModelMatrixElement.cpp
+	SoBGFXViewIdElement.cpp
 	SoBumpMapElement.cpp
 	SoBumpMapCoordinateElement.cpp
 	SoBumpMapMatrixElement.cpp

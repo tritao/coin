@@ -232,6 +232,15 @@ SoVBO::allocBufferData(intptr_t size, SbUniqueId dataid)
   this->data = (const GLvoid*) ptr;
   this->datasize = size;
   this->dataid = dataid;
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  this->memory = bgfx::makeRef(data, size);
+  if (target == GL_ELEMENT_ARRAY_BUFFER)
+    this->ibhandle = bgfx::createIndexBuffer(this->memory);
+  else
+    this->vbhandle = bgfx::createVertexBuffer(this->memory, this->layout);
+#endif
+
   return (void*) this->data;
 }
 
@@ -268,6 +277,24 @@ SoVBO::setBufferData(const GLvoid * data, intptr_t size, SbUniqueId dataid)
   this->datasize = size;
   this->dataid = dataid;
   this->didalloc = FALSE;
+
+#if defined(COIN_USE_BGFX_RENDERER)
+  this->memory = bgfx::makeRef(data, size);
+  if (target == GL_ELEMENT_ARRAY_BUFFER)
+    this->ibhandle = bgfx::createIndexBuffer(this->memory);
+  else
+    this->vbhandle = bgfx::createVertexBuffer(this->memory, this->layout);
+#endif
+}
+
+void SoVBO::setVertexLayout(const bgfx::VertexLayout& layout)
+{
+  this->layout = layout;
+}
+
+bgfx::VertexLayout& SoVBO::getVertexLayout()
+{
+  return this->layout;
 }
 
 /*!
@@ -296,7 +323,7 @@ SoVBO::getBufferData(const GLvoid *& data, intptr_t & size)
   Binds the buffer for the context \a contextid.
 */
 void
-SoVBO::bindBuffer(uint32_t contextid)
+SoVBO::bindBuffer(uint32_t contextid, uint8_t stream)
 {
   if ((this->data == NULL) ||
       (this->datasize == 0)) {
@@ -304,6 +331,12 @@ SoVBO::bindBuffer(uint32_t contextid)
     return;
   }
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  if (target == GL_ELEMENT_ARRAY_BUFFER)
+    bgfx::setIndexBuffer(this->ibhandle);
+  else
+    bgfx::setVertexBuffer(stream, this->vbhandle);
+#elif defined(COIN_USE_GL_RENDERER)
   const cc_glglue * glue = cc_glglue_instance((int) contextid);
 
   GLuint buffer;
@@ -321,6 +354,7 @@ SoVBO::bindBuffer(uint32_t contextid)
     // buffer already exists, bind it
     cc_glglue_glBindBuffer(glue, this->target, buffer);
   }
+#endif
 
 #if COIN_DEBUG
   if (vbo_debug) {

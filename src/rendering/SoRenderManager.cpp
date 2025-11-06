@@ -65,6 +65,7 @@
 #include <vector>
 
 #include <Inventor/system/gl.h>
+#include <Inventor/system/renderer.h>
 #include <Inventor/nodes/SoInfo.h>
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
@@ -85,8 +86,9 @@
 #include <Inventor/SoDB.h>
 
 #if defined(COIN_USE_BGFX_RENDERER)
-#include <bx/bx.h>
-#include <bgfx/bgfx.h>
+#include <Inventor/elements/SoBGFXShaderProgramElement.h>
+#include "shaders/SoBGFXShaderObject.h"
+#include "shaders/SoBGFXShaderProgram.h"
 #endif
 
 #include "coindefs.h"
@@ -743,7 +745,7 @@ SoRenderManager::actuallyRender(SoGLRenderAction * action,
 
   if (initmatrices) {
 #if !defined(COIN_USE_BGFX_RENDERER)
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
     if (sogl_compatibility_profile(action->getState()))
     {
       glMatrixMode(GL_PROJECTION);

@@ -105,8 +105,15 @@
 #include <Inventor/nodes/SoVertexProperty.h>
 #include <Inventor/nodes/SoVertexShape.h>
 #include <Inventor/system/gl.h>
+#include <Inventor/system/renderer.h>
 #include <Inventor/threads/SbMutex.h>
 #include <Inventor/threads/SbStorage.h>
+
+#if defined(COIN_USE_BGFX_RENDERER)
+#include "Inventor/elements/SoBGFXShaderProgramElement.h"
+#include "shaders/SoBGFXShaderObject.h"
+#include "shaders/SoBGFXShaderProgram.h"
+#endif
 
 #ifdef HAVE_VRML97
 #include <Inventor/VRMLnodes/SoVRMLIndexedFaceSet.h>
@@ -178,6 +185,9 @@ public:
     this->bumprender = NULL;
     this->rendercnt = 0;
     this->flags = 0;
+#if defined(COIN_USE_BGFX_RENDERER)
+    this->shaderProgram = NULL;
+#endif
   }
   ~SoShapeP() {
     if (this->bboxcache) { this->bboxcache->unref(); }
@@ -199,6 +209,9 @@ public:
   SoBoundingBoxCache * bboxcache;
   SoPrimitiveVertexCache * pvcache;
   soshape_bumprender * bumprender;
+#if defined(COIN_USE_BGFX_RENDERER)
+  SoBGFXShaderProgram * shaderProgram;
+#endif
   uint32_t flags : FLAG_BITS;
   // stores the number of frames rendered with no node changes
   uint32_t rendercnt : RENDERCNT_BITS;
@@ -303,7 +316,11 @@ soshape_construct_staticdata(void * closure)
   data->bigtexturecontext = new SbList <uint32_t>;
   data->primdata = new soshape_primdata();
   data->trianglesort = new soshape_trianglesort();
+#if defined(COIN_USE_BGFX_RENDERER)
+  data->rendermode = PVCACHE;
+#else
   data->rendermode = NORMAL;
+#endif
 }
 
 static void
@@ -399,18 +416,6 @@ SoShape::getBoundingBox(SoGetBoundingBoxAction * action)
 void
 SoShape::GLRender(SoGLRenderAction * action)
 {
-/*
-  soshape_staticdata * shapedata = soshape_get_staticdata();
-  if (shapedata->rendermode == NORMAL && !sogl_compatibility_profile(action->getState())) {
-    shapedata->rendermode = PVCACHE;
-
-    // lock since pvcache is shared among all threads
-    PRIVATE(this)->lock();
-    this->validatePVCache(action);
-    PRIVATE(this)->unlock();
-  }
- */
-
   // if we get here, the shape do not have a render method and
   // generatePrimitives should therefore be used to render the
   // shape. This is probably painfully slow, so if you want speed,
@@ -418,6 +423,18 @@ SoShape::GLRender(SoGLRenderAction * action)
 
   if (!this->shouldGLRender(action)) return;
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  {
+    // Setup the shaders if needed
+    if (PRIVATE(this)->shaderProgram == NULL) {
+      PRIVATE(this)->shaderProgram = SoBGFXShaderProgram::create("vs_basic", "fs_basic");
+    }
+
+    SoBGFXShaderProgramElement::set(action->getState(), this, PRIVATE(this)->shaderProgram);
+    PRIVATE(this)->pvcache->render(action->getState());
+    return;
+  }
+#elif defined(COIN_USE_GL_RENDERER)
   // test for SoVertexShape node and push data onto the state before
   // calling generatePrimitives(). This is needed for SoMaterialBundle
   // to work correctly.
@@ -436,6 +453,7 @@ SoShape::GLRender(SoGLRenderAction * action)
   this->generatePrimitives(action);
 
   if (vp) action->getState()->pop();
+#endif
 }
 
 // Doc in parent.
@@ -573,6 +591,10 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
 {
   SoState * state = action->getState();
 
+#if defined(COIN_USE_BGFX_RENDERER)
+  validatePVCache(action);
+#endif
+
   const SoShapeStyleElement * shapestyle = SoShapeStyleElement::get(state);
   unsigned int shapestyleflags = shapestyle->getFlags();
 
@@ -607,6 +629,9 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
 
   // test if we should sort triangles before rendering
   if (transparent && (shapestyleflags & SoShapeStyleElement::TRANSP_SORTED_TRIANGLES)) {
+#if defined(COIN_USE_BGFX_RENDERER)
+    assert(0 && "Not implemented yet");
+#else
     // lock since pvcache is shared among all threads
     PRIVATE(this)->lock();
     this->validatePVCache(action);
@@ -639,9 +664,13 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
     }
     PRIVATE(this)->unlock();
     return FALSE; // tell shape _not_ to render
+#endif
   }
 
   if (shapestyleflags & SoShapeStyleElement::BIGIMAGE) {
+#if defined(COIN_USE_BGFX_RENDERER)
+    assert(0 && "Not implemented yet");
+#else
     SoGLMultiTextureImageElement::Model model;
     SbColor blendcolor;
     SoGLImage * glimage = SoGLMultiTextureImageElement::get(state, 0, model, blendcolor);
@@ -681,6 +710,7 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
 
       return FALSE;
     }
+#endif
   }
 
 
@@ -793,6 +823,7 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
     this->validatePVCache(action);
     PRIVATE(this)->unlock();
 
+#if defined(COIN_USE_GL_RENDERER)
     SoGLCacheContextElement::shouldAutoCache(state,
                                              SoGLCacheContextElement::DONT_AUTO_CACHE);
     int arrays = SoPrimitiveVertexCache::NORMAL|SoPrimitiveVertexCache::COLOR;
@@ -819,6 +850,7 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
         glPopAttrib();
       }
     }
+#endif
     // we have rendered, return FALSE
     return FALSE;
   }
@@ -1086,7 +1118,7 @@ SoShape::invokeTriangleCallbacks(SoAction * const action,
       }
       break;
     default:
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
       if (sogl_compatibility_profile(action->getState())) {
         glBegin(GL_TRIANGLES);
         glTexCoord4fv(v1->getTextureCoords().getValue());
@@ -1408,6 +1440,7 @@ SoShape::GLRenderBoundingBox(SoGLRenderAction * action)
     SoGLShapeHintsElement::forceSend(action->getState(), TRUE, FALSE, FALSE);
   }
 
+  // TODO: GLES
   glPushMatrix();
   glTranslatef(center[0], center[1], center[2]);
   sogl_render_cube(size[0], size[1], size[2], &mb,
@@ -1799,7 +1832,9 @@ SoShape::validatePVCache(SoGLRenderAction * action)
     SoCacheElement::set(state, PRIVATE(this)->pvcache);
     shapedata->rendermode = PVCACHE;
     this->generatePrimitives(action);
+#if !defined(COIN_USE_BGFX_RENDERER)
     shapedata->rendermode = NORMAL;
+#endif
     // needed for out old bumpmap handling
     if (PRIVATE(this)->bumprender) PRIVATE(this)->bumprender->calcTangentSpace(PRIVATE(this)->pvcache);
     // this _must_ be called after creating the pvcache
@@ -1813,6 +1848,7 @@ SoShape::validatePVCache(SoGLRenderAction * action)
     PRIVATE(this)->testSetupShapeHints(this);
   }
 }
+
 
 
 #undef PRIVATE

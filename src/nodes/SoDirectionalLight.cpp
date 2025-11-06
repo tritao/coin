@@ -180,7 +180,7 @@ SoDirectionalLight::GLRender(SoGLRenderAction * action)
   
   SbColor4f lightcolor(0.0f, 0.0f, 0.0f, 1.0f);
   // disable ambient contribution from this light source
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(state))
   {
     glLightfv(light, GL_AMBIENT, lightcolor.getValue());
@@ -190,7 +190,7 @@ SoDirectionalLight::GLRender(SoGLRenderAction * action)
   lightcolor.setRGB(this->color.getValue());
   lightcolor *= this->intensity.getValue();
 
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(state))
   {
     glLightfv(light, GL_DIFFUSE, lightcolor.getValue());
@@ -209,7 +209,7 @@ SoDirectionalLight::GLRender(SoGLRenderAction * action)
 
   // directional when w = 0.0
   SbVec4f dirvec(dir[0], dir[1], dir[2], 0.0f);
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
   if (sogl_compatibility_profile(state))
   {
     glLightfv(light, GL_POSITION, dirvec.getValue());

@@ -111,7 +111,7 @@ SoGLLightIdElement::pop(SoState * state,
   int prevdata = ((SoGLLightIdElement*)prevTopElement)->data;
   // disable used light sources
   while (idx <= prevdata) {
-#if GL_COMPAT
+#if COIN_USE_GL_RENDERER
     if (sogl_compatibility_profile(state))
     {
       glDisable((GLenum)((int32_t)GL_LIGHT0 + idx));
@@ -163,7 +163,7 @@ SoGLLightIdElement::increment(SoState * const state,
 #endif
       return -1;
     }
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
     if (sogl_compatibility_profile(state))
     {
       glEnable((GLenum)((int32_t)GL_LIGHT0 + element->data));

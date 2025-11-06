@@ -181,7 +181,7 @@ SoGLSLShaderProgram::ensureLinking(const cc_glglue * g)
 
     }
 
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
     if (cc_glglue_glprofile_compat(g)) {
       g->glLinkProgramARB(programHandle);
 
@@ -250,7 +250,7 @@ SoGLSLShaderProgram::getProgramHandle(const cc_glglue * g, const SbBool create)
 {
   COIN_GLhandle handle = 0;
   if (!this->programHandles.get(g->contextid, handle) && create) {
-#ifdef GL_COMPAT
+#ifdef COIN_USE_GL_RENDERER
     if (cc_glglue_glprofile_compat(g)) {
       handle = g->glCreateProgramObjectARB();
     } else
