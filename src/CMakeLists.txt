@@ -368,21 +368,14 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${COIN_TARGET_INCLUDE_DIRECTO
 
 if (COIN_BUILD_SHARED_LIBS)
   target_link_libraries(${PROJECT_NAME} PRIVATE ${COIN_TARGET_LINK_LIBRARIES})
+  if(COIN_USE_GL_RENDERER)
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${COIN_TARGET_LINK_LIBRARIES_GL})
+  endif()
 else()
   target_link_libraries(${PROJECT_NAME} INTERFACE ${COIN_TARGET_LINK_LIBRARIES})
-endif()
-
-if(COIN_GL_COMPATIBILITY)
-  target_compile_definitions(${PROJECT_NAME} INTERFACE COIN_GL_COMPATIBILITY=1)
-endif()
-
-if(COIN_USE_GL_RENDERER)
-  target_compile_definitions(${PROJECT_NAME} INTERFACE COIN_USE_GL_RENDERER=1)
-  target_link_libraries(${PROJECT_NAME} INTERFACE ${COIN_TARGET_LINK_LIBRARIES_GL})
-endif()
-
-if(COIN_USE_BGFX_RENDERER)
-  target_compile_definitions(${PROJECT_NAME} INTERFACE COIN_USE_BGFX_RENDERER=1)
+  if(COIN_USE_GL_RENDERER)
+    target_link_libraries(${PROJECT_NAME} INTERFACE ${COIN_TARGET_LINK_LIBRARIES_GL})
+  endif()
 endif()
 
 if(NOT COIN_BUILD_MAC_FRAMEWORK)

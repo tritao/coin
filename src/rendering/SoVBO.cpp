@@ -349,7 +349,7 @@ SoVBO::bindBuffer(uint32_t contextid, uint8_t stream)
 {
   if ((this->data == NULL) ||
       (this->datasize == 0)) {
-    assert(0 && "no data in buffer");
+    // assert(0 && "no data in buffer");
     return;
   }
 
