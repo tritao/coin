@@ -242,6 +242,7 @@ SoShader::init(void)
   if (SoGLShaderProgramElement::getClassTypeId() == SoType::badType())
     SoGLShaderProgramElement::initClass();
 
+
   // --- initialization of shader nodes --------------------------------
   if (SoShaderProgram::getClassTypeId() == SoType::badType())
     SoShaderProgram::initClass();

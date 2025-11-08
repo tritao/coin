@@ -66,7 +66,6 @@
                           element::getClassStackIndex()); \
   } WHILE_0
 
-
 class SoEnabledElementsList;
 class SoNode;
 class SoPath;

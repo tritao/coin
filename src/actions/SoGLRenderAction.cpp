@@ -1072,6 +1072,7 @@ SoGLRenderAction::beginTraversal(SoNode * node)
   if (COIN_GLBBOX) {
     PRIVATE(this)->bboxaction->apply(node);
   }
+
   int err_before_init = GL_NO_ERROR;
 
   if (sogl_glerror_debugging()) {

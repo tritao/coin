@@ -413,6 +413,7 @@ SoElement::initElements(void)
   SoLineWidthElement::initClass();
   SoGLLineWidthElement::initClass();
   SoPointSizeElement::initClass();
+  SoDevicePixelRatioElement::initClass();
   SoGLPointSizeElement::initClass();
   SoTextureQualityElement::initClass();
   SoGLRenderPassElement::initClass();
@@ -425,12 +426,14 @@ SoElement::initElements(void)
   SoCoordinateElement::initClass();
   SoGLCoordinateElement::initClass();
   SoGLColorIndexElement::initClass();
+
   SoEnvironmentElement::initClass();
   SoGLEnvironmentElement::initClass();
   SoFontNameElement::initClass();
   SoLightAttenuationElement::initClass();
   SoNormalElement::initClass();
   SoGLNormalElement::initClass();
+
   SoPolygonOffsetElement::initClass();
   SoGLPolygonOffsetElement::initClass();
   SoProjectionMatrixElement::initClass();
@@ -445,7 +448,6 @@ SoElement::initElements(void)
   SoViewportRegionElement::initClass();
   SoGLViewportRegionElement::initClass();
   SoWindowElement::initClass();
-
   SoTransparencyElement::initClass();
   SoAmbientColorElement::initClass();
   SoDiffuseColorElement::initClass();
@@ -488,7 +490,6 @@ SoElement::initElements(void)
   SoCacheHintElement::initClass();
 
   SoGLVBOElement::initClass();
-
   SoDepthBufferElement::initClass();
   SoGLDepthBufferElement::initClass();
 
