@@ -1,0 +1,18 @@
+id: viewport_small_bg
+scene: ../scenes/cube.iv
+
+camera:
+  type: perspective
+  position: [3, 3, 3]
+  target: [0, 0, 0]
+  up: [0, 1, 0]
+  fov_deg: 50
+  near: 0.1
+  far: 10.0
+
+viewport:
+  width: 256
+  height: 256
+  background: [0.05, 0.08, 0.12, 1.0]
+
+baseline: ../baselines/gl/viewport_small_bg.png
