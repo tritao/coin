@@ -20,7 +20,9 @@ jobs:
 
   ubuntu-build:
     name: Ubuntu CI (Legacy renderer ${{ matrix.renderer_state }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    env:
+      LIBGL_ALWAYS_SOFTWARE: 1
     strategy:
       fail-fast: false
       matrix:
@@ -39,7 +41,9 @@ jobs:
       - name: Configure
         run: |
           sudo apt-get -y update
-          sudo apt-get -y install freeglut3-dev libglfw3-dev libgl1-mesa-dri xvfb
+          sudo apt-get -y install \
+            freeglut3-dev libyaml-cpp-dev libglfw3-dev \
+            libgl1-mesa-dri mesa-utils xvfb ninja-build
           cmake -S . -B cmake_build_dir -G "Unix Makefiles" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=cmake_install_dir \
@@ -65,12 +69,38 @@ jobs:
         if: matrix.renderer_state == 'disabled'
         run: xvfb-run -a ctest -C Release -L 'gl-core|egl' --output-on-failure
         working-directory: cmake_build_dir
+      - name: Configure visual tests
+        if: matrix.renderer_state == 'enabled'
+        run: |
+          cmake -S . -B cmake_build_dir_rt -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCOIN_BUILD_TESTS=OFF \
+            -DCOIN_BUILD_EXAMPLES=OFF \
+            -DCOIN_BUILD_LEGACY_GL_RENDERER=ON \
+            -DCOIN_BUILD_VISUAL_TESTS=ON
+      - name: Build visual tests
+        if: matrix.renderer_state == 'enabled'
+        run: cmake --build cmake_build_dir_rt --config Release -- -j4
+      - name: Run visual contracts
+        if: matrix.renderer_state == 'enabled'
+        run: ctest --test-dir cmake_build_dir_rt -L visual-contract --output-on-failure -VV
+      - name: Run visual rendering
+        if: matrix.renderer_state == 'enabled'
+        run: xvfb-run -a ctest --test-dir cmake_build_dir_rt -L visual-render --output-on-failure -VV
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: cmake_install_dir/
         if: always()
+      - name: Upload visual artifacts
+        uses: actions/upload-artifact@v7
+        if: always() && matrix.renderer_state == 'enabled'
+        with:
+          name: Ubuntu-VisualTest-Artifacts
+          path: |
+            cmake_build_dir_rt/render_artifacts/
+            cmake_build_dir_rt/Testing/
 
   windows-build:
     name: Windows CI (Legacy renderer ${{ matrix.renderer_state }})

@@ -1,0 +1,13 @@
+id: camera_ortho_basic
+scene: ../scenes/cube.iv
+
+camera:
+  type: orthographic
+  position: [3, 3, 3]
+  target: [0, 0, 0]
+  up: [0, 1, 0]
+  height: 4
+  near: 0.1
+  far: 10.0
+
+baseline: ../baselines/gl/camera_ortho_basic.png

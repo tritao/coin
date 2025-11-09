@@ -91,6 +91,7 @@ include(CoinCMakeUtilities)
 
 option(COIN_BUILD_SHARED_LIBS "Build shared library when ON (default), static when OFF." ON)
 option(COIN_BUILD_TESTS "Build unit tests when ON (default), skips them when OFF." ON)
+option(COIN_BUILD_VISUAL_TESTS "Enable visual regression test tooling and CLI helpers." OFF)
 option(COIN_BUILD_DOCUMENTATION "Build and install API documentation (requires Doxygen)." OFF)
 option(COIN_BUILD_AWESOME_DOCUMENTATION "Build and install API documentation in new modern style (requires Doxygen)." OFF)
 option(COIN_BUILD_EXAMPLES "Build examples when ON (default), skips them when OFF." OFF)
@@ -161,6 +162,11 @@ option(COIN_BUILD_LEGACY_GL_RENDERER
   "Build Coin's legacy fixed-function OpenGL renderer."
   ON)
 
+if(COIN_BUILD_VISUAL_TESTS AND NOT COIN_BUILD_LEGACY_GL_RENDERER)
+  message(FATAL_ERROR
+    "COIN_BUILD_VISUAL_TESTS requires COIN_BUILD_LEGACY_GL_RENDERER=ON")
+endif()
+
 # Make the renderer selection explicit for every Coin translation unit and
 # generated public header.  This keeps core-only declarations and definitions
 # in sync even when the build uses separate object-library targets.
@@ -176,6 +182,7 @@ cmake_dependent_option(COIN_DEBUG_CHECK_THREAD "Enable thread check in several c
 report_prepare(
   COIN_BUILD_SHARED_LIBS
   COIN_BUILD_TESTS
+  COIN_BUILD_VISUAL_TESTS
   COIN_BUILD_DOCUMENTATION
   COIN_BUILD_INTERNAL_DOCUMENTATION
   COIN_BUILD_DOCUMENTATION_MAN
@@ -1026,6 +1033,51 @@ endif()
 if(COIN_BUILD_TESTS)
   enable_testing()
   add_subdirectory(testsuite)
+endif()
+
+if(COIN_BUILD_VISUAL_TESTS)
+  enable_testing()
+  find_package(yaml-cpp REQUIRED)
+  add_subdirectory(thirdparty)
+  add_subdirectory(tools)
+  add_test(NAME visual_smoke COMMAND CoinVisualTests snapshot --help)
+  set_tests_properties(visual_smoke PROPERTIES LABELS "visual-contract")
+  add_test(
+    NAME visual_gl
+    COMMAND CoinVisualTests run
+      --artifacts-dir ${CMAKE_BINARY_DIR}/render_artifacts
+  )
+  set_tests_properties(visual_gl PROPERTIES
+    LABELS "visual-render;visual-legacy;requires-legacygl")
+  add_test(
+    NAME visual_compare_contract
+    COMMAND ${CMAKE_COMMAND}
+      -DCOIN_VISUAL_TESTS_EXECUTABLE=$<TARGET_FILE:CoinVisualTests>
+      -DCOIN_VISUAL_TEST_EXPECTED=${PROJECT_SOURCE_DIR}/testsuite/render/baselines/gl/cube_basic.png
+      -DCOIN_VISUAL_TEST_SAME_SIZE=${PROJECT_SOURCE_DIR}/testsuite/render/baselines/gl/camera_persp_basic.png
+      -DCOIN_VISUAL_TEST_DIFFERENT_SIZE=${PROJECT_SOURCE_DIR}/testsuite/render/baselines/gl/viewport_small_bg.png
+      -DCOIN_VISUAL_TEST_WORK_DIR=${CMAKE_BINARY_DIR}/render_contract/compare
+      -P ${PROJECT_SOURCE_DIR}/tools/CoinVisualTests/tests/compare_contract.cmake
+  )
+  set_tests_properties(visual_compare_contract PROPERTIES LABELS "visual-contract")
+  add_test(
+    NAME visual_baseline_update_failure
+    COMMAND ${CMAKE_COMMAND}
+      -DCOIN_VISUAL_TESTS_EXECUTABLE=$<TARGET_FILE:CoinVisualTests>
+      -DCOIN_VISUAL_TEST_SCENE=${PROJECT_SOURCE_DIR}/testsuite/render/scenes/cube.iv
+      -DCOIN_VISUAL_TEST_WORK_DIR=${CMAKE_BINARY_DIR}/render_contract/baseline
+      -P ${PROJECT_SOURCE_DIR}/tools/CoinVisualTests/tests/baseline_update_failure.cmake
+  )
+  set_tests_properties(visual_baseline_update_failure PROPERTIES LABELS "visual-contract")
+  add_test(
+    NAME visual_only_contract
+    COMMAND ${CMAKE_COMMAND}
+      -DCOIN_VISUAL_TESTS_EXECUTABLE=$<TARGET_FILE:CoinVisualTests>
+      -DCOIN_VISUAL_TEST_SPEC_DIR=${PROJECT_SOURCE_DIR}/testsuite/render/specs
+      -DCOIN_VISUAL_TEST_WORK_DIR=${CMAKE_BINARY_DIR}/visual_contract/only
+      -P ${PROJECT_SOURCE_DIR}/tools/CoinVisualTests/tests/only_contract.cmake
+  )
+  set_tests_properties(visual_only_contract PROPERTIES LABELS "visual-contract")
 endif()
 
 # add_feature_info(ThreadSafe COIN_THREADSAFE "Thread safe render traversals.")
