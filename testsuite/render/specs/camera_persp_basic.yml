@@ -1,0 +1,13 @@
+id: camera_persp_basic
+scene: ../scenes/cube.iv
+
+camera:
+  type: perspective
+  position: [3, 3, 3]
+  target: [0, 0, 0]
+  up: [0, 1, 0]
+  fov_deg: 45
+  near: 0.1
+  far: 10.0
+
+baseline: ../baselines/gl/camera_persp_basic.png
