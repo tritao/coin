@@ -1,0 +1,7 @@
+id: cube_basic
+scene: ../scenes/cube.iv
+
+viewport:
+  background: [0.5, 0.5, 0.5, 1.0]
+
+baseline: ../baselines/gl/cube_basic.png

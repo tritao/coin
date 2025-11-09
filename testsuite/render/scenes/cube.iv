@@ -1,0 +1,15 @@
+#Inventor V2.1 ascii
+
+Separator {
+  PerspectiveCamera {
+    position 0 0 5
+    heightAngle 0.785398
+    nearDistance 0.1
+    farDistance 10
+  }
+  DirectionalLight {
+    direction -0.5 -1 -0.5
+  }
+  Material { diffuseColor 0.2 0.5 0.9 }
+  Cube { }
+}
