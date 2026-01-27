@@ -352,31 +352,11 @@
   SoTransparencyType nodes in the scene graph; all objects are drawn using
   SoGLRenderAction::SORTED_LAYERS_BLEND.
 
-  There are currently two separate code paths for this mode. Both
-  paths are heavily based on OpenGL extensions. The first method is
-  based on extensions which are only available on NVIDIA chipsets
-  (GeForce3 and above, except GeForce4 MX). These extensions are \c
-  GL_NV_texture_shader, \c GL_NV_texture_rectangle or \c
-  GL_EXT_texture_rectangle, \c GL_NV_register_combiners, \c
-  GL_ARB_shadow and \c GL_ARB_depth_texture.  Please note that this
-  transparency type occupy all four texture units on the NVIDIA card
-  for all the rendering passes, except the first. Textured surfaces
-  will therefore only be textured if they are not occluded by another
-  transparent surface.
-
-  The second method utilizes the \c GL_ARB_fragment_program
-  extension. This extension is currently supported by the GeForceFX
-  family and the Radeon 9500 and above. This technique is faster than
-  the pure NVIDIA method. The fragment program method will
-  automatically be chosen if possible.
+  This mode utilizes the \c GL_ARB_fragment_program extension.
   Please note that one should beware not to place the near-plane too
   close to the camera due to the lack of floating point precision
   control in fragment programs. Doing so may lead to loss of precision
   around the edges and 'jaggedness' of the transparent geometry.
-
-  Setting the environment variable COIN_SORTED_LAYERS_USE_NVIDIA_RC to
-  '1' will force the use of former code path instead of the latter,
-  even if it is available.
 
   A rendering context with >= 24 bits depth buffer and 8 bits alpha
   channel must be the current rendering context for this blending mode
@@ -579,7 +559,6 @@ public:
   SoNode * cachedprofilingsg;
 
   GLuint depthtextureid;
-  GLuint hilotextureid;
   boost::scoped_array<GLuint> rgbatextureids;
   GLuint sortedlayersblendprogramid;
   unsigned short viewportheight;
@@ -587,7 +566,6 @@ public:
   SbBool sortedlayersblendinitialized;
   SbMatrix sortedlayersblendprojectionmatrix;
   int sortedlayersblendcounter;
-  SbBool usenvidiaregistercombiners;
 
   SoGLRenderAction::SortedObjectOrderStrategy sortedobjectstrategy;
   SoGLSortedObjectOrderCB * sortedobjectcb;
@@ -599,10 +577,6 @@ public:
   void renderOneBlendLayer(const SoState * state, SbBool shadow, SbBool update_ztex, SoNode * node);
   void texgenEnable(SbBool enable);
   void eyeLinearTexgen();
-
-  // NVIDIA specific methods for sorted layers blend
-  void setupRegisterCombinersNV();
-  void renderSortedLayersNV(const SoState * state);
 
   // ARB_fragment_program specific methods for sorted layers blend
   void setupFragmentProgram();
@@ -729,7 +703,6 @@ SoGLRenderAction::SoGLRenderAction(const SbViewportRegion & viewportregion)
   PRIVATE(this)->viewportwidth = 0;
   PRIVATE(this)->sortedlayersblendinitialized = FALSE;
   PRIVATE(this)->sortedlayersblendcounter = 0;
-  PRIVATE(this)->usenvidiaregistercombiners = FALSE;
   PRIVATE(this)->cachedprofilingsg = NULL;
   PRIVATE(this)->transpobjdepthwrite = FALSE;
   PRIVATE(this)->transpdelayedrendertype = ONE_PASS;
@@ -1206,7 +1179,6 @@ SbBool
 SoGLRenderAction::handleTransparency(SbBool istransparent)
 {
   SoState * thestate = this->getState();
-  const cc_glglue *glue = sogl_glue_instance(thestate);
 
   SoGLRenderAction::TransparencyType transptype =
     static_cast<SoGLRenderAction::TransparencyType>(
@@ -1222,14 +1194,8 @@ SoGLRenderAction::handleTransparency(SbBool istransparent)
     PRIVATE(this)->sortedlayersblendprojectionmatrix =
       SoProjectionMatrixElement::get(thestate);
 
-    if (!SoMultiTextureEnabledElement::get(thestate, 0)) {
-      if (glue->has_arb_fragment_program && !PRIVATE(this)->usenvidiaregistercombiners) {
-        PRIVATE(this)->setupFragmentProgram();
-      }
-      else {
-        PRIVATE(this)->setupRegisterCombinersNV();
-      }
-    }
+    if (!SoMultiTextureEnabledElement::get(thestate, 0))
+      PRIVATE(this)->setupFragmentProgram();
 
     // Must always return FALSE as everything must be rendered to the
     // RGBA layers (which are blended together at the end of each
@@ -2051,8 +2017,8 @@ SoGLRenderActionP::doSortedLayersBlendRendering(const SoState * state, SoNode * 
   glDisable(GL_BLEND);
 
   // The 'sortedlayersblendcounter' must be global so that it can be
-  // reached by 'setupNVRegisterCombiners()' at all times during the
-  // scene graph traversals.
+  // reached by the setup helper at all times during the scene graph
+  // traversals.
   for(this->sortedlayersblendcounter=0;
       this->sortedlayersblendcounter < this->sortedlayersblendpasses;
       this->sortedlayersblendcounter++) {
@@ -2068,10 +2034,7 @@ SoGLRenderActionP::doSortedLayersBlendRendering(const SoState * state, SoNode * 
   }
 
   // Blend together the acquired RGBA layers
-  if (glue->has_arb_fragment_program && !this->usenvidiaregistercombiners)
-    renderSortedLayersFP(state);
-  else
-    renderSortedLayersNV(state);
+  renderSortedLayersFP(state);
 
 }
 
@@ -2121,15 +2084,10 @@ SoGLRenderActionP::renderOneBlendLayer(const SoState * state,
 
   const cc_glglue * glue = sogl_glue_instance(state);
 
-  // Setup clearcolor alpha value to 1.0f when blending using NVIDIA
-  // extensions. Must do this every time to make sure the alpha-value
-  // stays correct.
+  // Setup clearcolor alpha value for the fragment program blending path.
   GLfloat clearcolor[4];
   glGetFloatv(GL_COLOR_CLEAR_VALUE, clearcolor);
-  if (glue->has_arb_fragment_program && !this->usenvidiaregistercombiners)
-    glClearColor(clearcolor[0], clearcolor[1], clearcolor[2], 0.0f);
-  else
-    glClearColor(clearcolor[0], clearcolor[1], clearcolor[2], 1.0f);
+  glClearColor(clearcolor[0], clearcolor[1], clearcolor[2], 0.0f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 
@@ -2144,43 +2102,23 @@ SoGLRenderActionP::renderOneBlendLayer(const SoState * state,
   // Do the rendering
   this->action->beginTraversal(node);
 
-  if(peel) {
-    if (glue->has_arb_fragment_program && !this->usenvidiaregistercombiners) {
-      // Fragment program cleanup
-      glDisable(GL_FRAGMENT_PROGRAM_ARB);
-      glDisable(GL_TEXTURE_RECTANGLE_ARB);
-      glDisable(GL_ALPHA_TEST);
+  if (peel) {
+    // Fragment program cleanup
+    glDisable(GL_FRAGMENT_PROGRAM_ARB);
+    glDisable(GL_TEXTURE_RECTANGLE_ARB);
+    glDisable(GL_ALPHA_TEST);
 
-      cc_glglue_glActiveTexture(glue, GL_TEXTURE3);
-      glDisable(GL_TEXTURE_RECTANGLE_ARB);
-      this->texgenEnable(FALSE);
+    cc_glglue_glActiveTexture(glue, GL_TEXTURE3);
+    glDisable(GL_TEXTURE_RECTANGLE_ARB);
+    this->texgenEnable(FALSE);
 
-      glMatrixMode(GL_TEXTURE);
-      glLoadIdentity();
-      glMatrixMode(GL_MODELVIEW);
-      cc_glglue_glActiveTexture(glue, GL_TEXTURE0);
-      glDisable(GL_TEXTURE_RECTANGLE_ARB);
-      glDisable(GL_ALPHA_TEST);
-
-    }
-    else {
-      // Regular NViDIA register combiner cleanup
-      cc_glglue_glActiveTexture(glue, GL_TEXTURE3);
-      glDisable(GL_TEXTURE_RECTANGLE_ARB);
-      this->texgenEnable(FALSE);
-
-      glMatrixMode(GL_TEXTURE);
-      glLoadIdentity();
-      glMatrixMode(GL_MODELVIEW);
-      cc_glglue_glActiveTexture(glue, GL_TEXTURE0);
-      glDisable(GL_REGISTER_COMBINERS_NV);
-      glDisable(GL_ALPHA_TEST);
-
-    }
+    glMatrixMode(GL_TEXTURE);
+    glLoadIdentity();
+    glMatrixMode(GL_MODELVIEW);
+    cc_glglue_glActiveTexture(glue, GL_TEXTURE0);
+    glDisable(GL_TEXTURE_RECTANGLE_ARB);
+    glDisable(GL_ALPHA_TEST);
   }
-
-  if (!glue->has_arb_fragment_program || this->usenvidiaregistercombiners)
-    glDisable(GL_TEXTURE_SHADER_NV);
 
   // FIXME: It might be a smart thing to use PBuffers for the RGBA
   // layers instead of copying from the framebuffer. The copying seems
@@ -2217,14 +2155,10 @@ SoGLRenderActionP::initSortedLayersBlendRendering(const SoState * state)
   if (envcoin && (atoi(envcoin) > 0))
     this->sortedlayersblendpasses = atoi(envcoin);
 
-  const char * envusenvidiarc = coin_getenv("COIN_SORTED_LAYERS_USE_NVIDIA_RC");
-  if (envusenvidiarc && (atoi(envusenvidiarc) > 0))
-    this->usenvidiaregistercombiners = TRUE;
-
   this->rgbatextureids.reset(new GLuint[this->sortedlayersblendpasses]);
 
   const cc_glglue * glue = sogl_glue_instance(state);
-  if (glue->has_arb_fragment_program && !this->usenvidiaregistercombiners) {
+  if (glue->has_arb_fragment_program) {
 
     // Initialize fragment program
     //
@@ -2270,8 +2204,8 @@ SoGLRenderActionP::setupFragmentProgram()
   glMatrixMode(GL_MODELVIEW);
   cc_glglue_glActiveTexture(glue, GL_TEXTURE3);
 
-  glBindTexture(GL_TEXTURE_RECTANGLE_NV, this->depthtextureid);
-  glEnable(GL_TEXTURE_RECTANGLE_NV);
+  glBindTexture(GL_TEXTURE_RECTANGLE_ARB, this->depthtextureid);
+  glEnable(GL_TEXTURE_RECTANGLE_ARB);
 
   glPushMatrix();
   glLoadIdentity();
@@ -2297,149 +2231,6 @@ SoGLRenderActionP::setupFragmentProgram()
 
 
 void
-SoGLRenderActionP::setupRegisterCombinersNV()
-{
-
-  //
-  // Setting up the texture units to handle the sorted layers blending
-  //
-  const cc_glglue * glue = sogl_glue_instance(this->action->getState());
-  glEnable(GL_TEXTURE_SHADER_NV);
-
-  // UNIT #0
-  cc_glglue_glActiveTexture(glue, GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, this->hilotextureid);
-  glTexEnvi(GL_TEXTURE_SHADER_NV, GL_SHADER_OPERATION_NV, GL_TEXTURE_2D);
-
-  // UNIT #1
-  cc_glglue_glActiveTexture(glue, GL_TEXTURE1);
-  glTexEnvi(GL_TEXTURE_SHADER_NV, GL_SHADER_OPERATION_NV, GL_DOT_PRODUCT_NV);
-  glTexEnvi(GL_TEXTURE_SHADER_NV, GL_PREVIOUS_TEXTURE_INPUT_NV, GL_TEXTURE0);
-  glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_NONE);
-
-  glMatrixMode(GL_MODELVIEW);
-  glPushMatrix();
-  glLoadIdentity();
-  this->eyeLinearTexgen();
-  this->texgenEnable(TRUE);
-  glPopMatrix();
-
-  glMatrixMode(GL_TEXTURE);
-  glLoadIdentity();
-  glTranslatef(0.0f, 0.0f, 0.5f);
-  glScalef(0.0f, 0.0f, 0.5f);
-  glMultMatrixf(static_cast<float *>(this->sortedlayersblendprojectionmatrix));
-  glMatrixMode(GL_MODELVIEW);
-
-  // UNIT #2
-  cc_glglue_glActiveTexture(glue, GL_TEXTURE2);
-  glTexEnvi(GL_TEXTURE_SHADER_NV, GL_SHADER_OPERATION_NV, GL_DOT_PRODUCT_DEPTH_REPLACE_NV);
-  glTexEnvi(GL_TEXTURE_SHADER_NV, GL_PREVIOUS_TEXTURE_INPUT_NV, GL_TEXTURE0);
-  glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_NONE);
-
-  glPushMatrix();
-  glLoadIdentity();
-  this->eyeLinearTexgen();
-  this->texgenEnable(TRUE);
-  glPopMatrix();
-
-  glMatrixMode(GL_TEXTURE);
-  GLdouble m[16];
-  m[0   + 0] = 0; m[0   + 1] = 0; m[0   + 2] = 0; m[0   + 3] = 0;
-  m[1*4 + 0] = 0; m[1*4 + 1] = 0; m[1*4 + 2] = 0; m[1*4 + 3] = 0;
-  m[2*4 + 0] = 0; m[2*4 + 1] = 0; m[2*4 + 2] = 0; m[2*4 + 3] = 0;
-  m[3*4 + 0] = 0; m[3*4 + 1] = 0; m[3*4 + 2] = 1; m[3*4 + 3] = 0;
-  glLoadMatrixd(m);
-  glMultMatrixf(static_cast<float *>(this->sortedlayersblendprojectionmatrix));
-  glMatrixMode(GL_MODELVIEW);
-
-  // UNIT #0
-  cc_glglue_glActiveTexture(glue, GL_TEXTURE0);
-
-  if (this->sortedlayersblendcounter > 0) { // Is this not the first pass?
-
-    cc_glglue_glActiveTexture(glue, GL_TEXTURE3);
-    glTexEnvi(GL_TEXTURE_SHADER_NV, GL_SHADER_OPERATION_NV, GL_TEXTURE_RECTANGLE_NV);
-    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_NONE);
-
-    glPushMatrix();
-    glLoadIdentity();
-    this->eyeLinearTexgen();
-    glPopMatrix();
-    this->texgenEnable(TRUE);
-
-    glMatrixMode(GL_TEXTURE);
-    glLoadIdentity();
-    glScalef(this->viewportwidth, this->viewportheight, 1);
-    glTranslatef(.5,.5,.5);
-    glScalef(.5,.5,.5);
-    glMultMatrixf(static_cast<float *>(this->sortedlayersblendprojectionmatrix));
-    glMatrixMode(GL_MODELVIEW);
-
-    glBindTexture(GL_TEXTURE_RECTANGLE_NV, this->depthtextureid);
-    glEnable(GL_TEXTURE_RECTANGLE_NV);
-
-    // UNIT #0
-    cc_glglue_glActiveTexture(glue, GL_TEXTURE0);
-
-    //
-    // Register combiners 1.0 script:
-    //  !!RC1.0
-    //  {
-    //    rgb { spare0 = unsigned_invert(tex3) * col0.a; }
-    //  }
-    //  out.rgb = col0;
-    //  out.a = spare0.b;
-    //
-    glue->glCombinerParameteriNV(GL_NUM_GENERAL_COMBINERS_NV, 1);
-    glue->glCombinerInputNV(GL_COMBINER0_NV, GL_RGB, GL_VARIABLE_A_NV, GL_TEXTURE3,
-                            GL_UNSIGNED_INVERT_NV, GL_RGB);
-    glue->glCombinerInputNV(GL_COMBINER0_NV, GL_RGB, GL_VARIABLE_B_NV,
-                            GL_PRIMARY_COLOR_NV, GL_SIGNED_IDENTITY_NV, GL_ALPHA);
-    glue->glCombinerInputNV(GL_COMBINER0_NV, GL_RGB, GL_VARIABLE_C_NV, GL_ZERO,
-                            GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-    glue->glCombinerInputNV(GL_COMBINER0_NV, GL_RGB, GL_VARIABLE_D_NV, GL_ZERO,
-                            GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-    glue->glCombinerOutputNV(GL_COMBINER0_NV, GL_RGB, GL_SPARE0_NV, GL_DISCARD_NV,
-                             GL_DISCARD_NV, GL_ZERO, GL_ZERO, GL_FALSE, GL_FALSE, GL_FALSE);
-    glue->glCombinerInputNV(GL_COMBINER0_NV, GL_ALPHA, GL_VARIABLE_A_NV, GL_ZERO,
-                            GL_UNSIGNED_IDENTITY_NV, GL_BLUE);
-    glue->glCombinerInputNV(GL_COMBINER0_NV, GL_ALPHA, GL_VARIABLE_B_NV, GL_ZERO,
-                            GL_UNSIGNED_IDENTITY_NV, GL_BLUE);
-    glue->glCombinerInputNV(GL_COMBINER0_NV, GL_ALPHA, GL_VARIABLE_C_NV, GL_ZERO,
-                            GL_UNSIGNED_IDENTITY_NV, GL_BLUE);
-    glue->glCombinerInputNV(GL_COMBINER0_NV, GL_ALPHA, GL_VARIABLE_D_NV, GL_ZERO,
-                            GL_UNSIGNED_IDENTITY_NV, GL_BLUE);
-    glue->glCombinerOutputNV(GL_COMBINER0_NV, GL_ALPHA, GL_DISCARD_NV, GL_DISCARD_NV,
-                             GL_DISCARD_NV, GL_ZERO, GL_ZERO, GL_FALSE, GL_FALSE, GL_FALSE);
-
-    glue->glCombinerParameteriNV(GL_COLOR_SUM_CLAMP_NV, 0);
-    glue->glFinalCombinerInputNV(GL_VARIABLE_A_NV, GL_ZERO,
-                                 GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-    glue->glFinalCombinerInputNV(GL_VARIABLE_B_NV, GL_ZERO,
-                                 GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-    glue->glFinalCombinerInputNV(GL_VARIABLE_C_NV, GL_ZERO,
-                                 GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-    glue->glFinalCombinerInputNV(GL_VARIABLE_D_NV, GL_PRIMARY_COLOR_NV,
-                                 GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-    glue->glFinalCombinerInputNV(GL_VARIABLE_E_NV, GL_ZERO,
-                                 GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-    glue->glFinalCombinerInputNV(GL_VARIABLE_F_NV, GL_ZERO,
-                                 GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-    glue->glFinalCombinerInputNV(GL_VARIABLE_G_NV, GL_SPARE0_NV,
-                                 GL_UNSIGNED_IDENTITY_NV, GL_BLUE);
-
-    glEnable(GL_REGISTER_COMBINERS_NV);
-
-    glAlphaFunc(GL_GREATER, 0);
-    glEnable(GL_ALPHA_TEST);
-
-  }
-
-  glMatrixMode(GL_MODELVIEW);
-}
-
-void
 SoGLRenderActionP::setupSortedLayersBlendTextures(const SoState * state)
 {
 
@@ -2450,9 +2241,6 @@ SoGLRenderActionP::setupSortedLayersBlendTextures(const SoState * state)
   if (((canvassize[1] != this->viewportheight) ||
        (canvassize[0] != this->viewportwidth)) ||
       !this->sortedlayersblendinitialized) {
-
-    const cc_glglue * glue = sogl_glue_instance(state);
-
 
     if (this->sortedlayersblendinitialized) {
       // Remove the old textures to make room for new ones if size has changed.
@@ -2474,30 +2262,8 @@ SoGLRenderActionP::setupSortedLayersBlendTextures(const SoState * state)
     glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    if (glue->has_arb_fragment_program && !this->usenvidiaregistercombiners) {
-      // Not disabled as default by NVIDIA when using fragment programs (according to spec.)
-      glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_COMPARE_MODE, GL_NONE);
-    }
-    else {
-      glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_R_TO_TEXTURE);
-      glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-    }
-
-    // The "register combiner"-way if explicitly chosen or FP is unavailable
-    if(this->usenvidiaregistercombiners) {
-      // HILO texture setup
-      GLushort HILOtexture[] = {0, 0};
-      // FIXME: the texture id must be bound to the current rendering
-      // context, and deallocated when it is destructed. 20040718 mortene.
-      glGenTextures(1, &this->hilotextureid);
-      glBindTexture(GL_TEXTURE_2D, this->hilotextureid);
-      glTexImage2D(GL_TEXTURE_2D, 0, GL_HILO_NV, 1, 1, 0, GL_HILO_NV,
-                   GL_UNSIGNED_SHORT, &HILOtexture);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    }
+    // Not disabled as default by NVIDIA when using fragment programs (according to spec.)
+    glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_COMPARE_MODE, GL_NONE);
 
 
     // RGBA layers setup
@@ -2577,104 +2343,6 @@ SoGLRenderActionP::renderSortedLayersFP(const SoState * state)
 
   if (lighting)
     glEnable(GL_LIGHTING);
-
-}
-
-void
-SoGLRenderActionP::renderSortedLayersNV(const SoState * state)
-{
-
-  const cc_glglue * glue = sogl_glue_instance(state);
-
-  glMatrixMode(GL_PROJECTION);
-  glLoadIdentity();
-  glOrtho(0, this->viewportwidth, 0, this->viewportheight, -1, 1);
-  glMatrixMode(GL_MODELVIEW);
-  glLoadIdentity();
-
-  glDisable(GL_DEPTH_TEST);
-  glClear(GL_COLOR_BUFFER_BIT);
-
-
-  // Must make sure that the GL_CULL_FACE state is preserved if the scene
-  // contains both solid and non-solid shapes.
-  SbBool cullface = glIsEnabled(GL_CULL_FACE);
-  glDisable(GL_CULL_FACE);
-
-  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  glEnable(GL_BLEND);
-
-  cc_glglue_glActiveTexture(glue, GL_TEXTURE0);
-
-  //
-  //  Register combiners 1.0 script:
-  //   !!RC1.0
-  //   rgb.out = tex0;
-  //   rgb.a = tex0;
-  //
-  glue->glCombinerParameteriNV(GL_NUM_GENERAL_COMBINERS_NV, 1);
-  glue->glCombinerInputNV(GL_COMBINER0_NV, GL_RGB, GL_VARIABLE_A_NV, GL_ZERO,
-                          GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-  glue->glCombinerInputNV(GL_COMBINER0_NV, GL_RGB, GL_VARIABLE_B_NV, GL_ZERO,
-                          GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-  glue->glCombinerInputNV(GL_COMBINER0_NV, GL_RGB, GL_VARIABLE_C_NV, GL_ZERO,
-                          GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-  glue->glCombinerInputNV(GL_COMBINER0_NV, GL_RGB, GL_VARIABLE_D_NV, GL_ZERO,
-                          GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-  glue->glCombinerOutputNV(GL_COMBINER0_NV, GL_RGB, GL_DISCARD_NV, GL_DISCARD_NV,
-                           GL_DISCARD_NV, GL_ZERO, GL_ZERO, GL_FALSE, GL_FALSE, GL_FALSE);
-  glue->glCombinerInputNV(GL_COMBINER0_NV, GL_ALPHA, GL_VARIABLE_A_NV, GL_ZERO,
-                          GL_UNSIGNED_IDENTITY_NV, GL_ALPHA);
-  glue->glCombinerInputNV(GL_COMBINER0_NV, GL_ALPHA, GL_VARIABLE_B_NV, GL_ZERO,
-                          GL_UNSIGNED_IDENTITY_NV, GL_ALPHA);
-  glue->glCombinerInputNV(GL_COMBINER0_NV, GL_ALPHA, GL_VARIABLE_C_NV, GL_ZERO,
-                          GL_UNSIGNED_IDENTITY_NV, GL_ALPHA);
-  glue->glCombinerInputNV(GL_COMBINER0_NV, GL_ALPHA, GL_VARIABLE_D_NV, GL_ZERO,
-                          GL_UNSIGNED_IDENTITY_NV, GL_ALPHA);
-  glue->glCombinerOutputNV(GL_COMBINER0_NV, GL_ALPHA, GL_DISCARD_NV, GL_DISCARD_NV,
-                           GL_DISCARD_NV, GL_ZERO, GL_ZERO, GL_FALSE, GL_FALSE, GL_FALSE);
-
-  glue->glCombinerParameteriNV(GL_COLOR_SUM_CLAMP_NV, 0);
-  glue->glFinalCombinerInputNV(GL_VARIABLE_A_NV, GL_ZERO,
-                               GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-  glue->glFinalCombinerInputNV(GL_VARIABLE_B_NV, GL_ZERO,
-                               GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-  glue->glFinalCombinerInputNV(GL_VARIABLE_C_NV, GL_ZERO,
-                               GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-  glue->glFinalCombinerInputNV(GL_VARIABLE_D_NV, GL_TEXTURE0,
-                               GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-  glue->glFinalCombinerInputNV(GL_VARIABLE_E_NV, GL_ZERO,
-                               GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-  glue->glFinalCombinerInputNV(GL_VARIABLE_F_NV, GL_ZERO,
-                               GL_UNSIGNED_IDENTITY_NV, GL_RGB);
-  glue->glFinalCombinerInputNV(GL_VARIABLE_G_NV, GL_TEXTURE0,
-                               GL_UNSIGNED_IDENTITY_NV, GL_ALPHA);
-
-  glEnable(GL_REGISTER_COMBINERS_NV);
-  glEnable(GL_TEXTURE_RECTANGLE_ARB);
-
-  for(int i=this->sortedlayersblendpasses-1;i>=0;--i) {
-    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, this->rgbatextureids[i]);
-    glBegin(GL_QUADS);
-    glTexCoord2f(0, 0);
-    glVertex2f(0, 0);
-    glTexCoord2f(0, this->viewportheight);
-    glVertex2f(0, this->viewportheight);
-    glTexCoord2f(this->viewportwidth, this->viewportheight);
-    glVertex2f(this->viewportwidth, this->viewportheight);
-    glTexCoord2f(this->viewportwidth, 0);
-    glVertex2f(this->viewportwidth, 0);
-    glEnd();
-  }
-
-  glDisable(GL_REGISTER_COMBINERS_NV);
-  glDisable(GL_TEXTURE_RECTANGLE_ARB);
-
-  glDisable(GL_BLEND);
-  glEnable(GL_DEPTH_TEST);
-
-  if (cullface)
-    glEnable(GL_CULL_FACE);
 
 }
 

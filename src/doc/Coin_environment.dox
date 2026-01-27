@@ -292,7 +292,6 @@
   \li \ref COIN_SEPARATE_DIFFUSE_TRANSPARENCY_OVERRIDE
   \li \ref COIN_SOINPUT_SEARCH_GLOBAL_DICT
   \li \ref COIN_SOOFFSCREENRENDERER_ALLOW_RESOURCEHOG
-  \li \ref COIN_SORTED_LAYERS_USE_NVIDIA_RC
   \li \ref COIN_VBO_MAX_LIMIT
   \li \ref COIN_VBO_MIN_LIMIT
   \li \ref COIN_VERTEX_ARRAYS
@@ -468,14 +467,13 @@ EnvironmentVariable COIN_RANDOMIZE_RENDER_CACHING;
 EnvironmentVariable COIN_REDUCE_LINEAR_NURBS_STEPS;
 EnvironmentVariable COIN_SEPARATE_DIFFUSE_TRANSPARENCY_OVERRIDE;
 EnvironmentVariable COIN_SIMAGE_LIBNAME;
-EnvironmentVariable COIN_SMART_CACHING;
-EnvironmentVariable COIN_SOINPUT_SEARCH_GLOBAL_DICT;
-EnvironmentVariable COIN_SOOFFSCREENRENDERER_ALLOW_RESOURCEHOG;
-EnvironmentVariable COIN_SORTED_LAYERS_USE_NVIDIA_RC;
-EnvironmentVariable COIN_SOUND_BUFFER_LENGTH;
-EnvironmentVariable COIN_SOUND_DISABLE;
-EnvironmentVariable COIN_SOUND_DRIVER_NAME;
-EnvironmentVariable COIN_SOUND_ENABLE;
+  EnvironmentVariable COIN_SMART_CACHING;
+  EnvironmentVariable COIN_SOINPUT_SEARCH_GLOBAL_DICT;
+  EnvironmentVariable COIN_SOOFFSCREENRENDERER_ALLOW_RESOURCEHOG;
+  EnvironmentVariable COIN_SOUND_BUFFER_LENGTH;
+  EnvironmentVariable COIN_SOUND_DISABLE;
+  EnvironmentVariable COIN_SOUND_DRIVER_NAME;
+  EnvironmentVariable COIN_SOUND_ENABLE;
 EnvironmentVariable COIN_SOUND_INTRO_PAUSE;
 EnvironmentVariable COIN_SOUND_NUM_BUFFERS;
 EnvironmentVariable COIN_SOUND_THREAD_SLEEP_TIME;
@@ -919,22 +917,6 @@ EnvironmentVariable WINDIR;
   When set to "1", the global dictionary is searched after the current
   file dictionary when resolving USE keywords. This makes it possible
   to reference nodes in other files.
-
-  \ingroup coin_envvars
-*/
-
-/*!
-  \var EnvironmentVariable COIN_SORTED_LAYERS_USE_NVIDIA_RC
-
-  Can be used to enable the usage of extensions for rendering SORTED_LAYERS_BLEND
-  transparency which are only available on NVIDIA chipsets (GeForce3 and above,
-  except GeForce4 MX).
-  These extensions are \c GL_NV_texture_shader, \c GL_NV_texture_rectangle or
-  \c GL_EXT_texture_rectangle, \c GL_NV_register_combiners, \c GL_ARB_shadow
-  and \c GL_ARB_depth_texture. If this environment variable is set to "1" these
-  extensions are used, otherwise the \c GL_ARB_fragment_program extension
-  is used that is currently supported by the GeForceFX family and the
-  Radeon 9500 and above.
 
   \ingroup coin_envvars
 */
@@ -1857,4 +1839,3 @@ EnvironmentVariable WINDIR;
   \%WINDIR\%/Fonts is always searched for fonts on Windows.
   \ingroup coin_envvars
 */
-

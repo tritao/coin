@@ -1919,18 +1919,7 @@ glglue_resolve_symbols(cc_glglue * w)
     w->can_do_bumpmapping = TRUE;
   }
 
-  /* FIXME: We should be able to support more than one way to do order
-     independent transparency (eg. by using fragment
-     programming). This would demand a different combinations of
-     extensions (and thus; a different codepath in
-     SoGLRenderAction). (20031124 handegar) */
-  w->can_do_sortedlayersblend =
-    (w->has_nv_register_combiners &&
-     w->has_ext_texture_rectangle &&
-     w->has_nv_texture_shader &&
-     w->has_depth_texture &&
-     w->has_shadow) ||
-    w->has_arb_fragment_program;
+  w->can_do_sortedlayersblend = w->has_arb_fragment_program;
   
   if (cc_glglue_glext_supported(w, "GL_ARB_framebuffer_object") ||
       cc_glglue_glversion_matches_at_least(w, 3, 0, 0)) {
