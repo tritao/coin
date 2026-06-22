@@ -231,6 +231,12 @@ if(WIN32)
     set_property(SOURCE scxml/eval-minimum-tab.cpp APPEND PROPERTY COMPILE_FLAGS /wd4065)
     set_property(SOURCE soscxml/eval-coin-tab.cpp APPEND PROPERTY COMPILE_FLAGS /wd4065)
   endif()
+  set_target_properties(${PROJECT_NAME} PROPERTIES
+    RELEASE_POSTFIX        "${COIN_RELEASE_POSTFIX}"
+    MINSIZEREL_POSTFIX     "${COIN_RELEASE_POSTFIX}"
+    RELWITHDEBINFO_POSTFIX "${COIN_RELEASE_POSTFIX}"
+    DEBUG_POSTFIX          "${COIN_DEBUG_POSTFIX}"
+  )
 elseif(APPLE)
   if(COIN_BUILD_MAC_FRAMEWORK)
     # Set the framework target properties just to make sure the relevant links inside the framework 
