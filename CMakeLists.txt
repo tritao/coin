@@ -57,6 +57,12 @@ message( STATUS "Setting C++ standard: '${CMAKE_CXX_STANDARD}', which is the min
 # when Coin is embedded in projects that build with C++20 or newer.
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
+# Coin's Win32 code still relies on narrow Win32 API types in several places.
+# Keep this workaround local until those call sites use explicit A/W APIs.
+if(MSVC)
+  add_compile_options(/UUNICODE /U_UNICODE)
+endif()
+
 # ############################################################################
 # Include necessary submodules
 # ############################################################################
