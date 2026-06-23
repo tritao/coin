@@ -53,6 +53,10 @@ endif()
 set( CMAKE_CXX_STANDARD 11 CACHE STRING "C++ standard used for the build" )
 message( STATUS "Setting C++ standard: '${CMAKE_CXX_STANDARD}', which is the minimum needed to compile Coin.")
 
+# Coin does not use C++20 modules. Disable CMake's module dependency scanning
+# when Coin is embedded in projects that build with C++20 or newer.
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 # ############################################################################
 # Include necessary submodules
 # ############################################################################
