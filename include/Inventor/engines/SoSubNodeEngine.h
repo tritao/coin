@@ -41,7 +41,7 @@
 protected: \
   static const SoEngineOutputData ** getOutputDataPtr(void); \
 public: \
-  virtual const SoEngineOutputData * getOutputData(void) const; \
+  virtual const SoEngineOutputData * getOutputData(void) const override; \
 private: \
   static void atexit_cleanupnodeengine(void); \
   static SoEngineOutputData * outputdata; \

@@ -64,17 +64,17 @@ private: \
 public: \
   static void * createInstance(void); \
   static SoType getClassTypeId(void); \
-  virtual SoType getTypeId(void) const; \
+  virtual SoType getTypeId(void) const override; \
  \
-  virtual void copyFrom(const SoField & field); \
+  virtual void copyFrom(const SoField & field) override; \
   const _class_ & operator=(const _class_ & field); \
-  virtual SbBool isSame(const SoField & field) const
+  virtual SbBool isSame(const SoField & field) const override
 
 
 #define PRIVATE_SFIELD_IO_HEADER() \
 private: \
-  virtual SbBool readValue(SoInput * in); \
-  virtual void writeValue(SoOutput * out) const
+  virtual SbBool readValue(SoInput * in) override; \
+  virtual void writeValue(SoOutput * out) const override
 
 
 #define SO_SFIELD_VALUE_HEADER(_class_, _valtype_, _valref_) \
