@@ -1625,7 +1625,8 @@ int
 coin_isinf(double value)
 {
 #ifdef HAVE_ISINF
-  return isinf(value);
+  if (std::isinf(value)) { return std::signbit(value) ? -1 : 1; }
+  return 0;
 #elif defined(HAVE_FPCLASS)
   if (fpclass(value) == FP_NINF) { return -1; }
   if (fpclass(value) == FP_PINF) { return +1; }
@@ -1653,7 +1654,7 @@ int
 coin_isnan(double value)
 {
 #ifdef HAVE_ISNAN
-  return isnan(value);
+  return std::isnan(value) ? 1 : 0;
 #elif defined(HAVE__ISNAN)
   return _isnan(value);
 #elif defined(HAVE_FPCLASS)
