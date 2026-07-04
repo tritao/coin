@@ -88,6 +88,7 @@
 #include "SoProfileCoordinateElement.cpp"
 #include "SoProfileElement.cpp"
 #include "SoProjectionMatrixElement.cpp"
+#include "SoRenderPlacementElement.cpp"
 #include "SoReplacedElement.cpp"
 #include "SoShapeHintsElement.cpp"
 #include "SoShapeStyleElement.cpp"

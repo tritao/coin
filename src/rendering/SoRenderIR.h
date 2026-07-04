@@ -147,6 +147,12 @@ struct SoRasterState {
   uint8_t fillMode = 0;         // 0=filled, 1=lines (wireframe), 2=points
   uint8_t cullMode = 0;
   SbBool  scissorEnabled = FALSE;
+  SbBool  clearDepth = FALSE;
+  SbBool  viewportEnabled = FALSE;
+  int     viewportX = 0;
+  int     viewportY = 0;
+  int     viewportWidth = 0;
+  int     viewportHeight = 0;
   float   lineWidth = 1.0f;
   float   pointSize = 1.0f;
   uint16_t linePattern = 0xFFFF; // GL line stipple pattern (0xFFFF = solid)

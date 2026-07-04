@@ -17,12 +17,14 @@
 #include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoProjectionMatrixElement.h>
 #include <Inventor/elements/SoShapeHintsElement.h>
+#include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/elements/SoMultiTextureEnabledElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/nodes/SoShape.h>
 
+#include "elements/SoRenderPlacementElement.h"
 #include "rendering/SoVBO.h"
 
 #include <algorithm>
@@ -550,6 +552,30 @@ fillRenderStateFromState(SoState * state, SoRenderState & rs)
   rs.raster.linePattern = static_cast<uint16_t>(SoLinePatternElement::get(mutableState));
   rs.raster.linePatternScale = static_cast<int16_t>(SoLinePatternElement::getScaleFactor(mutableState));
 
+  int viewportX = 0;
+  int viewportY = 0;
+  int viewportWidth = 0;
+  int viewportHeight = 0;
+  if (SoRenderPlacementElement::getViewport(mutableState,
+                                            viewportX, viewportY,
+                                            viewportWidth, viewportHeight)) {
+    rs.raster.viewportEnabled = viewportWidth > 0 && viewportHeight > 0;
+    rs.raster.viewportX = viewportX;
+    rs.raster.viewportY = viewportY;
+    rs.raster.viewportWidth = viewportWidth;
+    rs.raster.viewportHeight = viewportHeight;
+  } else {
+    const SbViewportRegion & viewport = SoViewportRegionElement::get(mutableState);
+    const SbVec2s & viewportOrigin = viewport.getViewportOriginPixels();
+    const SbVec2s & viewportSize = viewport.getViewportSizePixels();
+    rs.raster.viewportEnabled = viewportSize[0] > 0 && viewportSize[1] > 0;
+    rs.raster.viewportX = viewportOrigin[0];
+    rs.raster.viewportY = viewportOrigin[1];
+    rs.raster.viewportWidth = viewportSize[0];
+    rs.raster.viewportHeight = viewportSize[1];
+  }
+  rs.raster.clearDepth = SoRenderPlacementElement::getClearDepth(mutableState);
+
   float offsetfactor = 0.0f;
   float offsetunits = 0.0f;
   SoPolygonOffsetElement::Style offsetstyle = SoPolygonOffsetElement::FILLED;
@@ -698,11 +724,17 @@ appendCacheDrawCommands(const SoPrimitiveVertexCache * cache,
   cmd.viewMatrix = SoViewingMatrixElement::get(state);
   cmd.projMatrix = SoProjectionMatrixElement::get(state);
 
+  SoRenderPassType defaultPass;
   if (!cmd.state.depth.enabled) {
-    cmd.pass = SO_RENDERPASS_OVERLAY;
+    defaultPass = SO_RENDERPASS_OVERLAY;
   } else {
     const bool transparent = SoRenderIR::isMaterialTransparent(cmd.material);
-    cmd.pass = transparent ? SO_RENDERPASS_TRANSPARENT : SO_RENDERPASS_OPAQUE;
+    defaultPass = transparent ? SO_RENDERPASS_TRANSPARENT : SO_RENDERPASS_OPAQUE;
+  }
+  cmd.pass = defaultPass;
+  if (SoRenderPlacementElement::getLayer(state) ==
+      SoRenderPlacementElement::FOREGROUND) {
+    cmd.pass = SO_RENDERPASS_OVERLAY;
   }
   cmd.lightingHandle = 0;
   cmd.pipelineKey = cmd.shaderProgram ? reinterpret_cast<uint64_t>(cmd.shaderProgram) : 0;

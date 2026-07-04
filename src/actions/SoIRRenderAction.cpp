@@ -58,6 +58,7 @@
 #include <Inventor/nodes/SoShape.h>
 
 #include "actions/SoSubActionP.h"
+#include "elements/SoRenderPlacementElement.h"
 
 #include <cassert>
 
@@ -83,6 +84,9 @@ SoIRRenderAction::initClass(void)
   }
   if (SoCacheElement::getClassTypeId() == SoType::badType()) {
     SoCacheElement::initClass();
+  }
+  if (SoRenderPlacementElement::getClassTypeId() == SoType::badType()) {
+    SoRenderPlacementElement::initClass();
   }
 
   SO_ACTION_ADD_METHOD_INTERNAL(SoNode, SoIRRenderAction::renderNode);
@@ -139,6 +143,7 @@ SoIRRenderAction::initClass(void)
   SO_ENABLE(SoIRRenderAction, SoDecimationTypeElement);
   SO_ENABLE(SoIRRenderAction, SoTextureOverrideElement);
   SO_ENABLE(SoIRRenderAction, SoWindowElement);
+  SO_ENABLE(SoIRRenderAction, SoRenderPlacementElement);
 }
 
 SoIRRenderAction::SoIRRenderAction(const SbViewportRegion & vp)

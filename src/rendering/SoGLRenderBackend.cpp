@@ -80,6 +80,82 @@ coin_render_ir_trace_enabled()
   return enabled;
 }
 
+static SbVec2s
+coin_command_viewport_size(const SoRenderCommand & cmd,
+                           const SoRenderParams & params)
+{
+  if (cmd.pass == SO_RENDERPASS_OVERLAY &&
+      cmd.state.raster.viewportEnabled &&
+      cmd.state.raster.viewportWidth > 0 &&
+      cmd.state.raster.viewportHeight > 0) {
+    return SbVec2s(static_cast<short>(cmd.state.raster.viewportWidth),
+                   static_cast<short>(cmd.state.raster.viewportHeight));
+  }
+  return params.viewport.getViewportSizePixels();
+}
+
+static void
+coin_apply_default_viewport(const SoRenderParams & params)
+{
+  const SbVec2s & origin = params.viewport.getViewportOriginPixels();
+  const SbVec2s & size = params.viewport.getViewportSizePixels();
+  glViewport(origin[0], origin[1], size[0], size[1]);
+}
+
+static void
+coin_apply_command_viewport(const SoRenderCommand & cmd,
+                            const SoRenderParams & params)
+{
+  if (cmd.pass == SO_RENDERPASS_OVERLAY &&
+      cmd.state.raster.viewportEnabled &&
+      cmd.state.raster.viewportWidth > 0 &&
+      cmd.state.raster.viewportHeight > 0) {
+    glViewport(cmd.state.raster.viewportX,
+               cmd.state.raster.viewportY,
+               cmd.state.raster.viewportWidth,
+               cmd.state.raster.viewportHeight);
+    return;
+  }
+
+  coin_apply_default_viewport(params);
+}
+
+static void
+coin_clear_overlay_depth(const SoRenderCommand & cmd,
+                         const SoRenderParams & params)
+{
+  if (!cmd.state.raster.clearDepth) {
+    return;
+  }
+
+  if (!(cmd.state.raster.viewportEnabled &&
+        cmd.state.raster.viewportWidth > 0 &&
+        cmd.state.raster.viewportHeight > 0)) {
+    glClear(GL_DEPTH_BUFFER_BIT);
+    return;
+  }
+
+  const GLboolean scissorEnabled = glIsEnabled(GL_SCISSOR_TEST);
+  GLint scissorBox[4] = {0, 0, 0, 0};
+  glGetIntegerv(GL_SCISSOR_BOX, scissorBox);
+
+  glEnable(GL_SCISSOR_TEST);
+  glScissor(cmd.state.raster.viewportX,
+            cmd.state.raster.viewportY,
+            cmd.state.raster.viewportWidth,
+            cmd.state.raster.viewportHeight);
+  glClear(GL_DEPTH_BUFFER_BIT);
+
+  glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
+  if (scissorEnabled) {
+    glEnable(GL_SCISSOR_TEST);
+  }
+  else {
+    glDisable(GL_SCISSOR_TEST);
+  }
+  coin_apply_default_viewport(params);
+}
+
 static GLuint
 coin_compile_shader(GLenum type, const char * source)
 {
@@ -576,6 +652,8 @@ SoGLRenderBackend::drawCommand(const SoRenderCommand & cmd,
   const CachedGPUCommand & entry = gpuCache[it->second];
   if (entry.vao == 0) return;
 
+  coin_apply_command_viewport(cmd, params);
+
   // Per-command model matrix; view/proj from params (auto-clipped) for
   // main scene, or per-command for overlay/background (different camera).
   SbMat modelMat;
@@ -675,7 +753,7 @@ SoGLRenderBackend::drawCommand(const SoRenderCommand & cmd,
       glUniform1f(this->lineUUseVertexColorLocation, hasVC ? 1.0f : 0.0f);
       glUniform4f(this->lineUColorLocation,
                   diffuse[0], diffuse[1], diffuse[2], diffuse[3]);
-      SbVec2s vpSz = params.viewport.getViewportSizePixels();
+      SbVec2s vpSz = coin_command_viewport_size(cmd, params);
       glUniform2f(this->lineUVpSizeLocation,
                   static_cast<float>(vpSz[0]),
                   static_cast<float>(vpSz[1]));
@@ -718,7 +796,7 @@ SoGLRenderBackend::drawCommand(const SoRenderCommand & cmd,
     SbVec3f ndc0, ndc1;
     mvp.multVecMatrix(SbVec3f(0, 0, 0), ndc0);
     mvp.multVecMatrix(SbVec3f(1, 0, 0), ndc1);
-    SbVec2s vpSz = params.viewport.getViewportSizePixels();
+    SbVec2s vpSz = coin_command_viewport_size(cmd, params);
     float pixPerUnit = (ndc1 - ndc0).length() * vpSz[0] * 0.5f;
     float objectPeriod = (pixPerUnit > 0.001f) ? pixelPeriod / pixPerUnit : 1.0f;
 
@@ -763,7 +841,7 @@ SoGLRenderBackend::drawCommand(const SoRenderCommand & cmd,
       glUniform2f(this->uTexSizeLocation,
                   static_cast<float>(cmd.material.texture.width),
                   static_cast<float>(cmd.material.texture.height));
-      SbVec2s vpSz = params.viewport.getViewportSizePixels();
+      SbVec2s vpSz = coin_command_viewport_size(cmd, params);
       glUniform2f(this->uVpSizeLocation,
                   static_cast<float>(vpSz[0]),
                   static_cast<float>(vpSz[1]));
@@ -877,6 +955,7 @@ SoGLRenderBackend::beginFrame(const SoDrawList & drawlist,
   glDepthMask(GL_TRUE);
 
   glUseProgram(this->shaderProgram);
+  coin_apply_default_viewport(params);
 
   // Upload view and projection matrices (once per frame)
   SbMat viewMat, projMat;
@@ -1033,7 +1112,7 @@ SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
 
   // 3D overlays (NaviCube): clear depth, enable depth test for self-occlusion
   if (!overlay3D.empty()) {
-    glClear(GL_DEPTH_BUFFER_BIT);
+    coin_clear_overlay_depth(drawlist.getCommand(overlay3D.front()), params);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
     glDepthMask(GL_TRUE);
@@ -1042,6 +1121,7 @@ SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
     for (int ci : overlay3D) {
       drawCommand(drawlist.getCommand(ci), viewMat, projMat, params);
     }
+    coin_apply_default_viewport(params);
   }
 
   // 2D overlays (annotations): depth disabled, render on top of everything
@@ -1053,6 +1133,7 @@ SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
     for (int ci : overlay2D) {
       drawCommand(drawlist.getCommand(ci), viewMat, projMat, params);
     }
+    coin_apply_default_viewport(params);
   }
 
   // Restore default state
