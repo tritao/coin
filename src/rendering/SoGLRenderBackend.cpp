@@ -1160,17 +1160,20 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
 
   // Helper: draw a sub-range or whole command for selection overlay
   auto drawElementRange = [&params](const SoRenderCommand & cmd, int elemIdx, GLenum prim) {
-    if (cmd.geometry.indexCount > 0 && cmd.geometry.indices) {
-      if (elemIdx >= 0 && elemIdx < static_cast<int>(cmd.pick.faceStart.size())) {
-        int offset = cmd.pick.faceStart[elemIdx];
-        int cnt = cmd.pick.faceCount[elemIdx];
+    if (elemIdx >= 0 && elemIdx < static_cast<int>(cmd.pick.faceStart.size())) {
+      int offset = cmd.pick.faceStart[elemIdx];
+      int cnt = cmd.pick.faceCount[elemIdx];
+      if (cmd.geometry.indexCount > 0 && cmd.geometry.indices) {
         glDrawElements(prim, cnt, GL_UNSIGNED_INT,
                        reinterpret_cast<const void *>(
                          static_cast<uintptr_t>(offset * sizeof(uint32_t))));
       }
       else {
-        glDrawElements(prim, cmd.geometry.indexCount, GL_UNSIGNED_INT, nullptr);
+        glDrawArrays(prim, offset, cnt);
       }
+    }
+    else if (cmd.geometry.indexCount > 0 && cmd.geometry.indices) {
+      glDrawElements(prim, cmd.geometry.indexCount, GL_UNSIGNED_INT, nullptr);
     }
     else {
       if (elemIdx >= 0 && elemIdx < static_cast<int>(cmd.geometry.vertexCount)) {
