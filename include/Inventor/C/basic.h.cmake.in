@@ -216,6 +216,10 @@ typedef uint32_t SbUniqueId;
 #define COIN_BETA_VERSION @COIN_BETA_VERSION@
 #define COIN_VERSION "@COIN_VERSION@"
 
+/* Modern renderer capability advertised for client applications. */
+#define COIN_HAVE_RENDER_BACKEND @COIN_HAVE_RENDER_BACKEND@
+#define COIN_RENDER_BACKEND_API_VERSION @COIN_RENDER_BACKEND_API_VERSION@
+
 /* This define is set by the configure script if singleprecision math
    functions are available from the C library API headers. */
 /* #undef HAVE_SINGLEPRECISION_MATH */
