@@ -103,6 +103,7 @@
 
 #include "coindefs.h" // COIN_OBSOLETED
 #include "tidbitsp.h"
+#include "elements/SoRenderPlacementElement.h"
 #include "nodes/SoSubNodeP.h"
 #include "rendering/SoGL.h"
 
@@ -1431,6 +1432,10 @@ SoMarkerSet::render(SoIRRenderAction * action)
     cmd.material.flags |= SO_MAT_HAS_TEXTURE | SO_MAT_IS_BILLBOARD;
 
     cmd.pass = SO_RENDERPASS_OPAQUE;
+    if (SoRenderPlacementElement::getLayer(state) ==
+        SoRenderPlacementElement::FOREGROUND) {
+      cmd.pass = SO_RENDERPASS_OVERLAY;
+    }
     cmd.lightingHandle = 0;
     cmd.pipelineKey = 0;
     cmd.sortKey = 0;

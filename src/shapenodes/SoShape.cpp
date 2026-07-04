@@ -138,6 +138,7 @@
 #include "misc/SoShaderGenerator.h"
 #include "threads/threadsutilp.h"
 #include "tidbitsp.h"
+#include "elements/SoRenderPlacementElement.h"
 #include "rendering/SoVBO.h"
 #include "rendering/SoRenderIR.h"
 #include "coindefs.h" // COIN_OBSOLETED()
@@ -330,6 +331,10 @@ public:
         SO_RENDERPASS_TRANSPARENT : SO_RENDERPASS_OPAQUE;
     }
     cmd.pass = defaultPass;
+    if (SoRenderPlacementElement::getLayer(state) ==
+        SoRenderPlacementElement::FOREGROUND) {
+      cmd.pass = SO_RENDERPASS_OVERLAY;
+    }
     cmd.lightingHandle = 0;
     cmd.pipelineKey = 0;
     cmd.sortKey = SoIRComputeSortKey(cmd,
