@@ -35,6 +35,9 @@ void glDeleteVertexArrays(GLsizei n, const GLuint * arrays);
 #include <data/shaders/backend/BackendWideLineFragment.h>
 #include <data/shaders/backend/BackendWideLineGeometry.h>
 #include <data/shaders/backend/BackendWideLineVertex.h>
+#include <data/shaders/backend/BackendWidePointFragment.h>
+#include <data/shaders/backend/BackendWidePointGeometry.h>
+#include <data/shaders/backend/BackendWidePointVertex.h>
 
 #include "rendering/SoVertexLayout.h"
 #include "shaders/SoGLShaderProgram.h"
@@ -56,8 +59,10 @@ static constexpr float SELECTION_ALPHA = 0.5f;
 // Texture alpha discard threshold (shader-side)
 static constexpr float ALPHA_DISCARD_THRESHOLD = 0.3f;
 
-// Minimum point size for highlight overlay (ensures visibility)
-static constexpr float MIN_HIGHLIGHT_POINT_SIZE = 20.0f;
+// Minimum point size for point highlight/selection overlays. Keep this
+// slightly larger than the default point style so selected vertices stay
+// legible without inflating normal point rendering.
+static constexpr float MIN_SELECTION_POINT_SIZE = 6.0f;
 
 // Cache GC: entries unused for this many frames are destroyed
 static constexpr int CACHE_UNUSED_FRAME_THRESHOLD = 3;
@@ -321,6 +326,10 @@ SoGLRenderBackend::shutdown()
   if (this->lineShaderProgram) {
     glDeleteProgram(this->lineShaderProgram);
     this->lineShaderProgram = 0;
+  }
+  if (this->pointShaderProgram) {
+    glDeleteProgram(this->pointShaderProgram);
+    this->pointShaderProgram = 0;
   }
   this->setInitialized(FALSE);
   this->emitLog("shutdown");
@@ -741,12 +750,25 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
 
   float dpr = params.devicePixelRatio;
   if (dpr < 1.0f) dpr = 1.0f;
+  bool usePointShader = false;
   if (prim == GL_POINTS || fillMode == 2) {
     float ps = cmd.state.raster.pointSize;
     if (ps < 1.0f) ps = cmd.state.raster.lineWidth;
-    glPointSize(std::max(ps, 1.0f) * dpr);
-    // Point circle discard via gl_PointCoord in shader (mode 1.5)
-    glUniform1f(this->uRenderModeLocation, 1.5f);
+    float pointSize = std::max(ps, 1.0f) * dpr;
+    if (prim == GL_POINTS && this->pointShaderProgram) {
+      usePointShader = true;
+      this->bindPointShader(cmd,
+                            viewMat,
+                            projMat,
+                            diffuse,
+                            entry.colorVBO != 0,
+                            true,
+                            pointSize,
+                            coin_command_viewport_size(cmd, params));
+    } else {
+      glPointSize(pointSize);
+      glUniform1f(this->uRenderModeLocation, 1.0f);
+    }
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   }
@@ -821,9 +843,10 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
     float pixPerUnit = (ndc1 - ndc0).length() * vpSz[0] * 0.5f;
     float objectPeriod = (pixPerUnit > 0.001f) ? pixelPeriod / pixPerUnit : 1.0f;
 
-    glUniform1f(this->uStipplePeriodLocation, objectPeriod);
     if (useLineShader) {
       glUniform1f(this->lineUStipplePeriodLocation, objectPeriod);
+    } else {
+      glUniform1f(this->uStipplePeriodLocation, objectPeriod);
     }
   }
 
@@ -909,7 +932,11 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
     glDisable(GL_POLYGON_OFFSET_FILL);
   }
   if (useStipple) {
-    glUniform1f(this->uStipplePeriodLocation, 0.0f);
+    if (useLineShader) {
+      glUniform1f(this->lineUStipplePeriodLocation, 0.0f);
+    } else {
+      glUniform1f(this->uStipplePeriodLocation, 0.0f);
+    }
   }
   if (fillMode != 0 && (prim == GL_TRIANGLES || prim == GL_TRIANGLE_STRIP)) {
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -918,6 +945,9 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
     glEnable(GL_DEPTH_TEST);
   }
   if (prim == GL_POINTS || fillMode == 2) {
+    if (usePointShader) {
+      glUseProgram(this->shaderProgram);
+    }
     glDisable(GL_BLEND);
     glPointSize(1.0f);
   }
@@ -930,6 +960,40 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   if (cmd.state.raster.cullMode != 0) {
     glDisable(GL_CULL_FACE);
   }
+}
+
+void
+SoGLRenderBackend::bindPointShader(const SoRenderCommand & cmd,
+                                   const SbMat & viewMat,
+                                   const SbMat & projMat,
+                                   const SbVec4f & color,
+                                   bool useVertexColor,
+                                   bool roundPoints,
+                                   float pointSize,
+                                   const SbVec2s & viewportSize)
+{
+  glUseProgram(this->pointShaderProgram);
+
+  SbMat modelMat;
+  cmd.modelMatrix.getValue(modelMat);
+  glUniformMatrix4fv(this->pointUModelLocation, 1, GL_FALSE, &modelMat[0][0]);
+  if (cmd.pass == SO_RENDERPASS_OVERLAY) {
+    SbMat cmdViewMat, cmdProjMat;
+    cmd.viewMatrix.getValue(cmdViewMat);
+    cmd.projMatrix.getValue(cmdProjMat);
+    glUniformMatrix4fv(this->pointUViewLocation, 1, GL_FALSE, &cmdViewMat[0][0]);
+    glUniformMatrix4fv(this->pointUProjLocation, 1, GL_FALSE, &cmdProjMat[0][0]);
+  } else {
+    glUniformMatrix4fv(this->pointUViewLocation, 1, GL_FALSE, &viewMat[0][0]);
+    glUniformMatrix4fv(this->pointUProjLocation, 1, GL_FALSE, &projMat[0][0]);
+  }
+  glUniform4f(this->pointUColorLocation, color[0], color[1], color[2], color[3]);
+  glUniform1f(this->pointUUseVertexColorLocation, useVertexColor ? 1.0f : 0.0f);
+  glUniform1f(this->pointURoundPointsLocation, roundPoints ? 1.0f : 0.0f);
+  glUniform1f(this->pointUPointSizeLocation, std::max(pointSize, 1.0f));
+  glUniform2f(this->pointUVpSizeLocation,
+              static_cast<float>(viewportSize[0]),
+              static_cast<float>(viewportSize[1]));
 }
 
 // -----------------------------------------------------------------------
@@ -1234,41 +1298,47 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   glUniform1f(this->uRenderModeLocation, 1.0f);
 
-  // Helper: draw a sub-range or whole command for selection overlay
-  auto drawElementRange = [&params](const SoRenderCommand & cmd, int elemIdx, GLenum prim) {
-    if (elemIdx >= 0 && elemIdx < static_cast<int>(cmd.pick.faceStart.size())) {
-      int offset = cmd.pick.faceStart[elemIdx];
-      int cnt = cmd.pick.faceCount[elemIdx];
-      if (cmd.geometry.indexCount > 0 && cmd.geometry.indices) {
-        glDrawElements(prim, cnt, GL_UNSIGNED_INT,
-                       reinterpret_cast<const void *>(
-                         static_cast<uintptr_t>(offset * sizeof(uint32_t))));
-      }
-      else {
-        glDrawArrays(prim, offset, cnt);
-      }
-    }
-    else if (cmd.geometry.indexCount > 0 && cmd.geometry.indices) {
+  auto drawWholeCommand = [](const SoRenderCommand & cmd, GLenum prim) {
+    if (cmd.geometry.indexCount > 0 && cmd.geometry.indices) {
       glDrawElements(prim, cmd.geometry.indexCount, GL_UNSIGNED_INT, nullptr);
     }
     else {
-      if (elemIdx >= 0 && elemIdx < static_cast<int>(cmd.geometry.vertexCount)) {
-        float ps = cmd.state.raster.pointSize;
-        if (ps < 1.0f) ps = cmd.state.raster.lineWidth;
-        glPointSize(std::max(ps, MIN_HIGHLIGHT_POINT_SIZE) * params.devicePixelRatio);
-        glDrawArrays(prim, elemIdx, 1);
-      }
-      else {
-        glDrawArrays(prim, 0, cmd.geometry.vertexCount);
+      glDrawArrays(prim, 0, cmd.geometry.vertexCount);
+    }
+  };
+
+  auto drawRange = [](const SoRenderCommand & cmd,
+                      const SoRenderElementRange & range,
+                      GLenum prim) {
+    if (range.drawCount <= 0) return;
+    if (cmd.geometry.indexCount > 0 && cmd.geometry.indices) {
+      glDrawElements(prim, range.drawCount, GL_UNSIGNED_INT,
+                     reinterpret_cast<const void *>(
+                       static_cast<uintptr_t>(range.drawStart * sizeof(uint32_t))));
+    }
+    else {
+      glDrawArrays(prim, range.drawStart, range.drawCount);
+    }
+  };
+
+  auto drawElementRanges = [&drawRange](const SoRenderCommand & cmd,
+                                        int elementIndex,
+                                        GLenum prim) {
+    bool drew = false;
+    for (const SoRenderElementRange & range : cmd.pick.elementRanges) {
+      if (range.elementIndex == elementIndex) {
+        drawRange(cmd, range, prim);
+        drew = true;
       }
     }
+    return drew;
   };
 
   for (int i = 0; i < count; ++i) {
     const SoRenderCommand & cmd = drawlist.getCommand(i);
     int hlElem = cmd.selection.highlightElement;
-    bool hasHighlight = (hlElem != -1);
-    bool hasSelection = !cmd.selection.selectedElements.empty();
+    bool hasHighlight = cmd.selection.highlightWholeObject || (hlElem != -1);
+    bool hasSelection = cmd.selection.selectWholeObject || !cmd.selection.selectedElements.empty();
     if (!hasHighlight && !hasSelection) continue;
 
     if (!cmd.geometry.positions) continue;
@@ -1284,14 +1354,28 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
     glUniformMatrix4fv(this->uProjLocation, 1, GL_FALSE, &projMat[0][0]);
 
     GLenum prim = topologyToGL(cmd.geometry.topology);
+    bool pointShaderActive = false;
 
     if (prim == GL_POINTS) {
-      // Point circle discard via gl_PointCoord in shader (mode 1.5)
-      glUniform1f(this->uRenderModeLocation, 1.5f);
+      float pointSize = cmd.state.raster.pointSize;
+      if (pointSize < 1.0f) pointSize = cmd.state.raster.lineWidth;
+      pointSize = std::max(pointSize, MIN_SELECTION_POINT_SIZE) * params.devicePixelRatio;
+      if (this->pointShaderProgram) {
+        pointShaderActive = true;
+        this->bindPointShader(cmd,
+                              viewMat,
+                              projMat,
+                              SbVec4f(1.0f, 1.0f, 1.0f, 1.0f),
+                              false,
+                              false,
+                              pointSize,
+                              coin_command_viewport_size(cmd, params));
+      } else {
+        glPointSize(pointSize);
+        glUniform1f(this->uRenderModeLocation, 1.0f);
+      }
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-      // Use GL_ALWAYS so point highlights render on top of billboard markers
-      glDepthFunc(GL_ALWAYS);
     }
     if (prim == GL_LINES || prim == GL_LINE_STRIP) {
       // Render edge highlight at same width as original edge, opaque,
@@ -1320,27 +1404,27 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
     // Helper: set color on whichever shader is active (main or line).
     // For edges, use opaque color (replaces the edge, not overlays).
     bool isEdge = (prim == GL_LINES || prim == GL_LINE_STRIP);
+    bool isPoint = (prim == GL_POINTS);
     bool lineShaderActive = isEdge && this->lineShaderProgram;
     auto setSelColor = [&](float r, float g, float b, float a) {
-      float alpha = isEdge ? 1.0f : a;  // opaque for edges
+      float alpha = (isEdge || isPoint) ? 1.0f : a;  // opaque for edges/points
       if (lineShaderActive) {
         glUniform4f(this->lineUColorLocation, r, g, b, alpha);
+      } else if (pointShaderActive) {
+        glUniform4f(this->pointUColorLocation, r, g, b, alpha);
+      } else {
+        glUniform4f(this->uColorLocation, r, g, b, alpha);
       }
-      glUniform4f(this->uColorLocation, r, g, b, alpha);
     };
 
     if (hasSelection) {
       const SbVec4f & sc = cmd.selection.selectionColor;
       setSelColor(sc[0], sc[1], sc[2], SELECTION_ALPHA);
 
-      // Render wireframe bounding box only for whole-body selection (element -2,
-      // from tree-view selection). Per-face click selection uses the normal
-      // face highlight path below.
-      bool isWholeBody = false;
-      for (int elem : cmd.selection.selectedElements) {
-        if (elem == -2) { isWholeBody = true; break; }
-      }
-      if (isWholeBody && prim == GL_TRIANGLES
+      // Render wireframe bounding box only for whole-object selection from
+      // tree-view selection. Per-element click selection uses the normal
+      // element range overlay path below.
+      if (cmd.selection.selectWholeObject && prim == GL_TRIANGLES
           && cmd.geometry.positions && cmd.geometry.vertexCount >= 3) {
         // Compute AABB from vertex positions
         GLsizei stride = static_cast<GLsizei>(
@@ -1393,8 +1477,11 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
         glBindVertexArray(entry.vao);
       }
       else {
+        if (cmd.selection.selectWholeObject) {
+          drawWholeCommand(cmd, prim);
+        }
         for (int elem : cmd.selection.selectedElements) {
-          drawElementRange(cmd, elem, prim);
+          drawElementRanges(cmd, elem, prim);
         }
       }
     }
@@ -1402,10 +1489,23 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
     if (hasHighlight) {
       const SbVec4f & hc = cmd.selection.highlightColor;
       setSelColor(hc[0], hc[1], hc[2], HIGHLIGHT_ALPHA);
-      drawElementRange(cmd, hlElem, prim);
+      if (prim == GL_POINTS) {
+        // Match the legacy point overlay path: committed selection respects
+        // depth, while the live highlight renders on top.
+        glDepthFunc(GL_ALWAYS);
+      }
+      if (cmd.selection.highlightWholeObject) {
+        drawWholeCommand(cmd, prim);
+      }
+      else {
+        drawElementRanges(cmd, hlElem, prim);
+      }
     }
 
     if (prim == GL_POINTS) {
+      if (pointShaderActive) {
+        glUseProgram(this->shaderProgram);
+      }
       glUniform1f(this->uRenderModeLocation, 1.0f);  // restore to flat
       glDepthFunc(GL_LEQUAL);
     }
@@ -1666,6 +1766,43 @@ SoGLRenderBackend::createShaders()
   glDeleteShader(lvs);
   glDeleteShader(lgs);
   glDeleteShader(lfs);
+
+  // Point shader — geometry shader expands points into screen-space quads
+  // for stable marker sizing and circular vertex overlays.
+  static const char * pointVertSource = BACKENDWIDEPOINTVERTEX_shadersource;
+  static const char * pointGeomSource = BACKENDWIDEPOINTGEOMETRY_shadersource;
+  static const char * pointFragSource = BACKENDWIDEPOINTFRAGMENT_shadersource;
+
+  GLuint pvs = coin_compile_shader(GL_VERTEX_SHADER, pointVertSource);
+  GLuint pgs = coin_compile_shader(GL_GEOMETRY_SHADER, pointGeomSource);
+  GLuint pfs = coin_compile_shader(GL_FRAGMENT_SHADER, pointFragSource);
+  if (pvs && pgs && pfs) {
+    GLuint pprog = glCreateProgram();
+    glAttachShader(pprog, pvs);
+    glAttachShader(pprog, pgs);
+    glAttachShader(pprog, pfs);
+    glBindAttribLocation(pprog, 0, "a_position");
+    glBindAttribLocation(pprog, 2, "a_color");
+    glLinkProgram(pprog);
+    GLint linkOk = GL_FALSE;
+    glGetProgramiv(pprog, GL_LINK_STATUS, &linkOk);
+    if (linkOk) {
+      this->pointShaderProgram = pprog;
+      this->pointUViewLocation = glGetUniformLocation(pprog, "u_view");
+      this->pointUProjLocation = glGetUniformLocation(pprog, "u_proj");
+      this->pointUModelLocation = glGetUniformLocation(pprog, "u_model");
+      this->pointUColorLocation = glGetUniformLocation(pprog, "u_color");
+      this->pointUPointSizeLocation = glGetUniformLocation(pprog, "u_pointSize");
+      this->pointURoundPointsLocation = glGetUniformLocation(pprog, "u_roundPoints");
+      this->pointUVpSizeLocation = glGetUniformLocation(pprog, "u_vpSize");
+      this->pointUUseVertexColorLocation = glGetUniformLocation(pprog, "u_useVertexColor");
+    } else {
+      glDeleteProgram(pprog);
+    }
+  }
+  glDeleteShader(pvs);
+  glDeleteShader(pgs);
+  glDeleteShader(pfs);
 
   return TRUE;
 }

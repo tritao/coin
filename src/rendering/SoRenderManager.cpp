@@ -258,6 +258,26 @@
   Variable adjustment of the near plane relative to the camera.
 */
 
+/*!
+  \enum SoRenderManager::RenderLayer
+
+  Identifies explicit scene roots traversed outside the main scene graph.
+*/
+
+/*!
+  \var SoRenderManager::RenderLayer SoRenderManager::RENDER_LAYER_BACKGROUND
+
+  Traverse this root before the main scene. Typical uses include
+  backgrounds and other content that should render underneath the main scene.
+*/
+
+/*!
+  \var SoRenderManager::RenderLayer SoRenderManager::RENDER_LAYER_FOREGROUND
+
+  Traverse this root after the main scene. Typical uses include overlay-style
+  content that should render on top of the main scene.
+*/
+
 #define PRIVATE(p) (p->pimpl)
 #define PUBLIC(p) (p->publ)
 
@@ -2053,7 +2073,8 @@ SoRenderManager::getGpuPickElement(uint32_t lutIndex) const
   if (!action || lutIndex == 0) return -1;
   const auto & lut = action->getDrawList().getPickLUT();
   if (lutIndex > lut.size()) return -1;
-  return lut[lutIndex - 1].elementIndex;
+  const SoPickLUTEntry & entry = lut[lutIndex - 1];
+  return entry.elementIndex;
 }
 
 int
@@ -2103,6 +2124,7 @@ SoRenderManager::assemblePickedPoint(int screenX, int screenY, int pickRadius) c
   const auto & lut = action->getDrawList().getPickLUT();
   const SoPickLUTEntry & entry = lut[lutIndex - 1];
   int cmdIdx = entry.commandIndex;
+  int elementIndex = entry.elementIndex;
   SbVec3f objPoint = worldPoint;
   if (cmdIdx >= 0 && cmdIdx < action->getDrawList().getNumCommands()) {
     SbMatrix modelInv = action->getDrawList().getCommand(cmdIdx).modelMatrix.inverse();
@@ -2117,19 +2139,20 @@ SoRenderManager::assemblePickedPoint(int screenX, int screenY, int pickRadius) c
   switch (entry.elementType) {
   case SO_PICK_FACE: {
     SoFaceDetail * fd = new SoFaceDetail;
-    fd->setPartIndex(entry.elementIndex);
+    fd->setFaceIndex(elementIndex);
+    fd->setPartIndex(elementIndex);
     detail = fd;
     break;
   }
   case SO_PICK_EDGE: {
     SoLineDetail * ld = new SoLineDetail;
-    ld->setLineIndex(entry.elementIndex);
+    ld->setLineIndex(elementIndex);
     detail = ld;
     break;
   }
   case SO_PICK_VERTEX: {
     SoPointDetail * pd = new SoPointDetail;
-    pd->setCoordinateIndex(entry.elementIndex);
+    pd->setCoordinateIndex(elementIndex);
     detail = pd;
     break;
   }
@@ -2169,6 +2192,7 @@ SoRenderManager::setDrawListHighlight(uint32_t lutIndex, const SbColor4f & color
   // Clear previous highlight on all commands
   for (int i = 0; i < numCmds; i++) {
     SoRenderCommand & cmd = drawlist.getCommand(i);
+    cmd.selection.highlightWholeObject = false;
     if (cmd.selection.highlightElement != -1) {
       cmd.selection.highlightElement = -1;
     }
@@ -2184,7 +2208,9 @@ SoRenderManager::setDrawListHighlight(uint32_t lutIndex, const SbColor4f & color
   if (cmdIdx < 0 || cmdIdx >= numCmds) return false;
 
   SoRenderCommand & cmd = drawlist.getCommand(cmdIdx);
-  cmd.selection.highlightElement = entry.elementIndex;
+  cmd.selection.highlightWholeObject = (entry.elementType == SO_PICK_WHOLE_BODY);
+  cmd.selection.highlightElement =
+    (entry.elementType == SO_PICK_WHOLE_BODY) ? -1 : entry.elementIndex;
   cmd.selection.highlightColor.setValue(color[0], color[1], color[2], color[3]);
   return true;
 }
@@ -2208,6 +2234,7 @@ SoRenderManager::setDrawListSelection(uint32_t lutIndex, const SbColor4f & color
     // Clear all existing selection
     for (int i = 0; i < numCmds; i++) {
       SoRenderCommand & cmd = drawlist.getCommand(i);
+      cmd.selection.selectWholeObject = false;
       if (!cmd.selection.selectedElements.empty()) {
         cmd.selection.selectedElements.clear();
       }
@@ -2223,7 +2250,13 @@ SoRenderManager::setDrawListSelection(uint32_t lutIndex, const SbColor4f & color
 
   SoRenderCommand & cmd = drawlist.getCommand(cmdIdx);
   cmd.selection.selectionColor.setValue(color[0], color[1], color[2], color[3]);
-  cmd.selection.selectedElements.push_back(entry.elementIndex);
+  if (entry.elementType == SO_PICK_WHOLE_BODY) {
+    cmd.selection.selectedElements.clear();
+    cmd.selection.selectWholeObject = true;
+  }
+  else {
+    cmd.selection.selectedElements.push_back(entry.elementIndex);
+  }
   return true;
 }
 
@@ -2239,7 +2272,9 @@ SoRenderManager::setDrawListSelectionByIdentity(const char * identityPrefix,
 
   if (!append) {
     for (int i = 0; i < numCmds; i++) {
-      drawlist.getCommand(i).selection.selectedElements.clear();
+      SoRenderCommand & cmd = drawlist.getCommand(i);
+      cmd.selection.selectWholeObject = false;
+      cmd.selection.selectedElements.clear();
     }
   }
 
@@ -2249,8 +2284,8 @@ SoRenderManager::setDrawListSelectionByIdentity(const char * identityPrefix,
     SoRenderCommand & cmd = drawlist.getCommand(i);
     if (cmd.pick.pickIdentity.compare(0, prefixLen, identityPrefix) == 0) {
       cmd.selection.selectionColor.setValue(color[0], color[1], color[2], color[3]);
-      // Select whole body (-2) for this command
-      cmd.selection.selectedElements.push_back(-2);
+      cmd.selection.selectedElements.clear();
+      cmd.selection.selectWholeObject = true;
       found = true;
     }
   }
@@ -2266,6 +2301,7 @@ SoRenderManager::clearDrawListSelection()
   int numCmds = drawlist.getNumCommands();
   for (int i = 0; i < numCmds; i++) {
     SoRenderCommand & cmd = drawlist.getCommand(i);
+    cmd.selection.selectWholeObject = false;
     if (!cmd.selection.selectedElements.empty()) {
       cmd.selection.selectedElements.clear();
     }
@@ -2574,23 +2610,3 @@ SoRenderManager::removePostRenderCallback(SoRenderManagerRenderCB * cb, void * d
 
 #undef PRIVATE
 #undef PUBLIC
-/*!
-  \enum SoRenderManager::RenderLayer
-
-  Identifies explicit scene roots traversed outside the main scene graph.
-*/
-
-/*!
-  \var SoRenderManager::RenderLayer SoRenderManager::RENDER_LAYER_BACKGROUND
-
-  Traverse this root before the main scene. Typical uses include
-  backgrounds and other content that should render underneath the main scene.
-*/
-
-/*!
-  \var SoRenderManager::RenderLayer SoRenderManager::RENDER_LAYER_FOREGROUND
-
-  Traverse this root after the main scene. Typical uses include overlay-style
-  content that should render on top of the main scene.
-*/
-

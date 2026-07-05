@@ -248,6 +248,31 @@ struct SoLightingData {
 };
 
 /*!
+  \enum SoPickElementType
+  \brief Element types for pick identification.
+*/
+enum SoPickElementType : uint8_t {
+  SO_PICK_FACE = 0,
+  SO_PICK_EDGE = 1,
+  SO_PICK_VERTEX = 2,
+  SO_PICK_WHOLE_BODY = 3
+};
+
+/*!
+  \struct SoRenderElementRange
+  \brief Maps one logical subelement to a draw subrange within a command.
+
+  The range is expressed in the command's native draw domain:
+  vertex offsets/counts for array draws, or index offsets/counts for indexed draws.
+*/
+struct SoRenderElementRange {
+  SoPickElementType  elementType = SO_PICK_WHOLE_BODY;
+  int                elementIndex = -1;  //!< Public 0-based element index
+  int                drawStart = 0;      //!< Vertex or index start offset
+  int                drawCount = 0;      //!< Number of vertices or indices
+};
+
+/*!
   \struct SoPickData
   \brief Per-command pick identification data for GPU ID buffer picking.
 
@@ -261,10 +286,9 @@ struct SoPickData {
   uint32_t    pickLutCount = 0;  //!< Number of LUT entries (faces + edges + vertices)
   std::string pickIdentity;      //!< Application pick identity (opaque to Coin)
 
-  //! Per-face element ranges for BRep shapes.
-  //! faceStart[i] = index offset in EBO, faceCount[i] = element count.
-  std::vector<int> faceStart;
-  std::vector<int> faceCount;
+  //! Logical subelement coverage for this command.
+  //! Empty means the command is only pickable/selectable as a whole object.
+  std::vector<SoRenderElementRange> elementRanges;
 };
 
 /*!
@@ -275,9 +299,11 @@ struct SoPickData {
   preselection highlighting and click selection at interactive rates.
 */
 struct SoSelectionData {
-  int         highlightElement = -1;  //!< -1=none, -2=whole body, >=0=face index
+  bool        highlightWholeObject = false;  //!< Highlight the full command/object
+  int         highlightElement = -1;         //!< -1=none, >=0=public element index
   SbVec4f     highlightColor;
-  std::vector<int> selectedElements;  //!< empty=none, {-1}=all, else element IDs
+  bool        selectWholeObject = false;     //!< Select the full command/object
+  std::vector<int> selectedElements;         //!< Public element IDs
   SbVec4f     selectionColor;
 };
 
@@ -357,28 +383,17 @@ private:
 };
 
 /*!
-  \enum SoPickElementType
-  \brief Element types for pick identification.
-*/
-enum SoPickElementType : uint8_t {
-  SO_PICK_FACE = 0,
-  SO_PICK_EDGE = 1,
-  SO_PICK_VERTEX = 2,
-  SO_PICK_WHOLE_BODY = 3
-};
-
-/*!
   \struct SoPickLUTEntry
   \brief Maps a sequential render ID to a specific element of a draw command.
 */
 struct SoPickLUTEntry {
   int                commandIndex;  //!< Index into SoDrawList
   SoPickElementType  elementType;
-  int                elementIndex;  //!< Face/edge/vertex index (0-based)
+  int                elementIndex;  //!< Public face/edge/vertex index (0-based)
 
   // Draw parameters for the ID buffer pass
-  int                eboOffset;     //!< Index offset in EBO (for per-face draws)
-  int                eboCount;      //!< Element count (for per-face draws)
+  int                drawStart;     //!< Vertex or index start offset
+  int                drawCount;     //!< Vertex or index count
 };
 
 /*!

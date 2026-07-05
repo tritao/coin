@@ -93,6 +93,14 @@ private:
   bool createShaders();
   void uploadLighting(const SoLightingData & lighting);
   void applyLighting(const SoDrawList & drawlist, const SoRenderCommand & cmd);
+  void bindPointShader(const SoRenderCommand & cmd,
+                       const SbMat & viewMat,
+                       const SbMat & projMat,
+                       const SbVec4f & color,
+                       bool useVertexColor,
+                       bool roundPoints,
+                       float pointSize,
+                       const SbVec2s & viewportSize);
 
   /// Draw a single cached command — sets per-command GL state, draws, restores.
   void drawCommand(const SoDrawList & drawlist,
@@ -136,6 +144,8 @@ private:
   GLuint shaderProgram = 0;
   // Line shader program (with geometry shader for screen-space width)
   GLuint lineShaderProgram = 0;
+  // Point shader program (with geometry shader for screen-space billboards)
+  GLuint pointShaderProgram = 0;
   GLint  lineUViewLocation = -1;
   GLint  lineUProjLocation = -1;
   GLint  lineUModelLocation = -1;
@@ -146,6 +156,14 @@ private:
   GLint  lineUStipplePeriodLocation = -1;
   GLint  lineUEmissiveColorLocation = -1;
   GLint  lineUUseVertexColorLocation = -1;
+  GLint  pointUViewLocation = -1;
+  GLint  pointUProjLocation = -1;
+  GLint  pointUModelLocation = -1;
+  GLint  pointUColorLocation = -1;
+  GLint  pointUPointSizeLocation = -1;
+  GLint  pointURoundPointsLocation = -1;
+  GLint  pointUVpSizeLocation = -1;
+  GLint  pointUUseVertexColorLocation = -1;
   GLint  uViewLocation = -1;
   GLint  uProjLocation = -1;
   GLint  uModelLocation = -1;

@@ -9,6 +9,9 @@ BUILT_SOURCES = \
 	BackendWideLineVertex.h \
 	BackendWideLineGeometry.h \
 	BackendWideLineFragment.h \
+	BackendWidePointVertex.h \
+	BackendWidePointGeometry.h \
+	BackendWidePointFragment.h \
 	BackendIdPickVertex.h \
 	BackendIdPickFragment.h \
 	BackendIdPickLineGeometry.h \
@@ -30,6 +33,9 @@ dist_shadersbackenddata_DATA = \
 	BackendWideLineVertex.glsl \
 	BackendWideLineGeometry.glsl \
 	BackendWideLineFragment.glsl \
+	BackendWidePointVertex.glsl \
+	BackendWidePointGeometry.glsl \
+	BackendWidePointFragment.glsl \
 	BackendIdPickVertex.glsl \
 	BackendIdPickFragment.glsl \
 	BackendIdPickLineGeometry.glsl \
@@ -55,6 +61,15 @@ BackendWideLineGeometry.h: $(srcdir)/BackendWideLineGeometry.glsl glsl2h.sh
 
 BackendWideLineFragment.h: $(srcdir)/BackendWideLineFragment.glsl glsl2h.sh
 	if ./glsl2h.sh $(srcdir)/BackendWideLineFragment.glsl > $@; then :; else rm -f $@; exit 1; fi
+
+BackendWidePointVertex.h: $(srcdir)/BackendWidePointVertex.glsl glsl2h.sh
+	if ./glsl2h.sh $(srcdir)/BackendWidePointVertex.glsl > $@; then :; else rm -f $@; exit 1; fi
+
+BackendWidePointGeometry.h: $(srcdir)/BackendWidePointGeometry.glsl glsl2h.sh
+	if ./glsl2h.sh $(srcdir)/BackendWidePointGeometry.glsl > $@; then :; else rm -f $@; exit 1; fi
+
+BackendWidePointFragment.h: $(srcdir)/BackendWidePointFragment.glsl glsl2h.sh
+	if ./glsl2h.sh $(srcdir)/BackendWidePointFragment.glsl > $@; then :; else rm -f $@; exit 1; fi
 
 BackendIdPickVertex.h: $(srcdir)/BackendIdPickVertex.glsl glsl2h.sh
 	if ./glsl2h.sh $(srcdir)/BackendIdPickVertex.glsl > $@; then :; else rm -f $@; exit 1; fi

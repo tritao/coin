@@ -73,6 +73,7 @@
 #include <Inventor/caches/SoPrimitiveVertexCache.h>
 #include <Inventor/details/SoFaceDetail.h>
 #include <Inventor/details/SoLineDetail.h>
+#include <Inventor/details/SoPointDetail.h>
 #include <Inventor/elements/SoBumpMapElement.h>
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/elements/SoComplexityElement.h>
@@ -162,6 +163,63 @@ struct IRVertex {
   int     materialIdx; // -1 = use uniform color
 };
 
+struct PrimitiveElementInfo {
+  SoPickElementType type = SO_PICK_WHOLE_BODY;
+  int index = -1;
+};
+
+static bool
+resolvePrimitiveElementInfo(const SoPrimitiveVertex * vertex,
+                            SoPrimitiveTopology topology,
+                            PrimitiveElementInfo & info)
+{
+  if (!vertex) return false;
+
+  const SoDetail * detail = vertex->getDetail();
+  if (!detail) return false;
+
+  switch (topology) {
+    case SO_TOPOLOGY_TRIANGLES:
+    case SO_TOPOLOGY_TRIANGLE_STRIP:
+      if (detail->isOfType(SoFaceDetail::getClassTypeId())) {
+        const SoFaceDetail * face = static_cast<const SoFaceDetail *>(detail);
+        int faceIndex = face->getFaceIndex();
+        if (faceIndex < 0) faceIndex = face->getPartIndex();
+        if (faceIndex < 0) return false;
+        info.type = SO_PICK_FACE;
+        info.index = faceIndex;
+        return true;
+      }
+      break;
+    case SO_TOPOLOGY_LINES:
+    case SO_TOPOLOGY_LINE_STRIP:
+      if (detail->isOfType(SoLineDetail::getClassTypeId())) {
+        const SoLineDetail * line = static_cast<const SoLineDetail *>(detail);
+        int lineIndex = line->getLineIndex();
+        if (lineIndex < 0) lineIndex = line->getPartIndex();
+        if (lineIndex < 0) return false;
+        info.type = SO_PICK_EDGE;
+        info.index = lineIndex;
+        return true;
+      }
+      break;
+    case SO_TOPOLOGY_POINTS:
+      if (detail->isOfType(SoPointDetail::getClassTypeId())) {
+        const SoPointDetail * point = static_cast<const SoPointDetail *>(detail);
+        const int pointIndex = point->getCoordinateIndex();
+        if (pointIndex < 0) return false;
+        info.type = SO_PICK_VERTEX;
+        info.index = pointIndex;
+        return true;
+      }
+      break;
+    case SO_TOPOLOGY_COUNT:
+      break;
+  }
+
+  return false;
+}
+
 class SoIRPrimitiveAssembler : public SoIRRenderAction::PrimitiveCollector {
 public:
   SoIRPrimitiveAssembler(SoIRRenderAction * action,
@@ -179,36 +237,77 @@ public:
   {
     if (!this->ensureTopology(SO_TOPOLOGY_TRIANGLES)) return;
     this->captureTexture();
+    const int drawStart = static_cast<int>(this->vertices.size());
+    PrimitiveElementInfo info;
+    const bool haveInfo =
+      resolvePrimitiveElementInfo(v1, SO_TOPOLOGY_TRIANGLES, info) ||
+      resolvePrimitiveElementInfo(v2, SO_TOPOLOGY_TRIANGLES, info) ||
+      resolvePrimitiveElementInfo(v3, SO_TOPOLOGY_TRIANGLES, info);
     this->appendVertex(v1);
     this->appendVertex(v2);
     this->appendVertex(v3);
+    if (haveInfo) {
+      this->appendTriangleRange(info, drawStart);
+    }
   }
 
   void onLine(const SoPrimitiveVertex * v1,
               const SoPrimitiveVertex * v2) override
   {
     if (!this->ensureTopology(SO_TOPOLOGY_LINE_STRIP)) return;
+    PrimitiveElementInfo info;
+    const bool haveInfo =
+      resolvePrimitiveElementInfo(v1, SO_TOPOLOGY_LINE_STRIP, info) ||
+      resolvePrimitiveElementInfo(v2, SO_TOPOLOGY_LINE_STRIP, info);
+
     // Build connected line strips. When consecutive line segments share
     // an endpoint (v1 == last vertex), extend the current strip.
     // On discontinuity, flush the current strip and start a new one.
-    if (this->vertices.empty()) {
-      this->appendVertex(v1);
-    } else {
+    if (!this->vertices.empty()) {
       const SbVec3f & last = this->vertices.back().position;
       const SbVec3f & p1 = v1->getPoint();
-      if (last != p1) {
-        // Discontinuity: flush current strip as a separate command
+      const bool sameStrip = (last == p1);
+      const bool sameElement =
+        haveInfo &&
+        this->activeLineRangeIndex >= 0 &&
+        this->elementRanges[this->activeLineRangeIndex].elementType == info.type &&
+        this->elementRanges[this->activeLineRangeIndex].elementIndex == info.index;
+      const bool mustFlush =
+        !sameStrip ||
+        (this->activeLineRangeIndex >= 0 && !sameElement) ||
+        (this->activeLineRangeIndex < 0 && haveInfo);
+      if (mustFlush) {
         this->flushLineStrip();
-        this->appendVertex(v1);
       }
     }
+
+    if (this->vertices.empty()) {
+      this->appendVertex(v1);
+      this->appendVertex(v2);
+      if (haveInfo) {
+        this->beginLineRange(info);
+      } else {
+        this->activeLineRangeIndex = -1;
+      }
+      return;
+    }
+
     this->appendVertex(v2);
+    if (haveInfo && this->activeLineRangeIndex >= 0) {
+      this->elementRanges[this->activeLineRangeIndex].drawCount += 1;
+    }
   }
 
   void onPoint(const SoPrimitiveVertex * v) override
   {
     if (!this->ensureTopology(SO_TOPOLOGY_POINTS)) return;
+    const int drawStart = static_cast<int>(this->vertices.size());
+    PrimitiveElementInfo info;
+    const bool haveInfo = resolvePrimitiveElementInfo(v, SO_TOPOLOGY_POINTS, info);
     this->appendVertex(v);
+    if (haveInfo) {
+      this->appendPointRange(info, drawStart);
+    }
   }
 
   /// Flush accumulated line strip vertices as a separate draw command.
@@ -216,18 +315,19 @@ public:
   void flushLineStrip()
   {
     if (this->vertices.size() < 2) {
-      this->vertices.clear();
+      this->clearAccumulatedGeometry();
       return;
     }
     // Temporarily save and emit current vertices as a command
     this->emitCommand();
-    this->vertices.clear();
+    this->clearAccumulatedGeometry();
   }
 
   void finalize()
   {
     if (this->vertices.empty()) return;
     this->emitCommand();
+    this->clearAccumulatedGeometry();
   }
 
   void emitCommand()
@@ -342,11 +442,60 @@ public:
                                      static_cast<uint32_t>(cmd.pass),
                                      0);
     cmd.userData = this->shape;
+    cmd.pick.elementRanges = this->elementRanges;
 
     this->action->getMutableDrawList().addCommand(cmd);
   }
 
 private:
+  void clearAccumulatedGeometry()
+  {
+    this->vertices.clear();
+    this->elementRanges.clear();
+    this->activeLineRangeIndex = -1;
+  }
+
+  void appendTriangleRange(const PrimitiveElementInfo & info, int drawStart)
+  {
+    if (!this->elementRanges.empty()) {
+      SoRenderElementRange & last = this->elementRanges.back();
+      if (last.elementType == info.type &&
+          last.elementIndex == info.index &&
+          last.drawStart + last.drawCount == drawStart) {
+        last.drawCount += 3;
+        return;
+      }
+    }
+
+    SoRenderElementRange range;
+    range.elementType = info.type;
+    range.elementIndex = info.index;
+    range.drawStart = drawStart;
+    range.drawCount = 3;
+    this->elementRanges.push_back(range);
+  }
+
+  void beginLineRange(const PrimitiveElementInfo & info)
+  {
+    SoRenderElementRange range;
+    range.elementType = info.type;
+    range.elementIndex = info.index;
+    range.drawStart = 0;
+    range.drawCount = 2;
+    this->elementRanges.push_back(range);
+    this->activeLineRangeIndex = static_cast<int>(this->elementRanges.size()) - 1;
+  }
+
+  void appendPointRange(const PrimitiveElementInfo & info, int drawStart)
+  {
+    SoRenderElementRange range;
+    range.elementType = info.type;
+    range.elementIndex = info.index;
+    range.drawStart = drawStart;
+    range.drawCount = 1;
+    this->elementRanges.push_back(range);
+  }
+
   void appendVertex(const SoPrimitiveVertex * v)
   {
     IRVertex vertex;
@@ -423,6 +572,8 @@ private:
   int texHeight = 0;
   int texNC = 0;
   std::vector<IRVertex> vertices;
+  std::vector<SoRenderElementRange> elementRanges;
+  int activeLineRangeIndex = -1;
 };
 
 } // anonymous namespace

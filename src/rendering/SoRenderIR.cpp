@@ -332,68 +332,29 @@ SoDrawList::buildPickLUT()
     SoRenderCommand & cmd = this->getCommand(ci);
     cmd.pick.pickLutBase = static_cast<uint32_t>(pickLUT.size());
 
-    if (!cmd.pick.faceStart.empty() &&
-        (cmd.geometry.topology == SO_TOPOLOGY_TRIANGLES ||
-         cmd.geometry.topology == SO_TOPOLOGY_TRIANGLE_STRIP)) {
-      // BRep face shape with per-face ranges
-      int numFaces = static_cast<int>(cmd.pick.faceStart.size());
-      for (int f = 0; f < numFaces; f++) {
+    if (!cmd.pick.elementRanges.empty()) {
+      for (const SoRenderElementRange & range : cmd.pick.elementRanges) {
         SoPickLUTEntry le;
         le.commandIndex = ci;
-        le.elementType = SO_PICK_FACE;
-        le.elementIndex = f;
-        le.eboOffset = cmd.pick.faceStart[f];
-        le.eboCount = cmd.pick.faceCount[f];
+        le.elementType = range.elementType;
+        le.elementIndex = range.elementIndex;
+        le.drawStart = range.drawStart;
+        le.drawCount = range.drawCount;
         pickLUT.push_back(le);
       }
     }
-    else if (!cmd.pick.faceStart.empty() &&
-             (cmd.geometry.topology == SO_TOPOLOGY_LINES ||
-              cmd.geometry.topology == SO_TOPOLOGY_LINE_STRIP)) {
-      // BRep edge shape with per-edge ranges
-      int numEdges = static_cast<int>(cmd.pick.faceStart.size());
-      for (int e = 0; e < numEdges; e++) {
-        SoPickLUTEntry le;
-        le.commandIndex = ci;
-        le.elementType = SO_PICK_EDGE;
-        le.elementIndex = e;
-        le.eboOffset = cmd.pick.faceStart[e];
-        le.eboCount = cmd.pick.faceCount[e];
-        pickLUT.push_back(le);
-      }
-    }
-    else if (cmd.geometry.topology == SO_TOPOLOGY_TRIANGLES ||
-             cmd.geometry.topology == SO_TOPOLOGY_TRIANGLE_STRIP) {
-      // Triangle mesh without face ranges: whole body
+    else {
       SoPickLUTEntry le;
       le.commandIndex = ci;
       le.elementType = SO_PICK_WHOLE_BODY;
       le.elementIndex = 0;
-      le.eboOffset = 0;
-      le.eboCount = 0;
-      pickLUT.push_back(le);
-    }
-    else if (cmd.geometry.topology == SO_TOPOLOGY_LINES ||
-             cmd.geometry.topology == SO_TOPOLOGY_LINE_STRIP) {
-      // Whole edge set (no per-edge ranges)
-      SoPickLUTEntry le;
-      le.commandIndex = ci;
-      le.elementType = SO_PICK_EDGE;
-      le.elementIndex = 0;
-      le.eboOffset = 0;
-      le.eboCount = 0;
-      pickLUT.push_back(le);
-    }
-    else if (cmd.geometry.topology == SO_TOPOLOGY_POINTS) {
-      // Per-vertex entries: each vertex gets its own LUT entry
-      int numVerts = static_cast<int>(cmd.geometry.vertexCount);
-      for (int v = 0; v < numVerts; v++) {
-        SoPickLUTEntry le;
-        le.commandIndex = ci;
-        le.elementType = SO_PICK_VERTEX;
-        le.elementIndex = v;
-        le.eboOffset = v;
-        le.eboCount = 1;
+      le.drawStart = 0;
+      le.drawCount = 0;
+      if (cmd.geometry.topology == SO_TOPOLOGY_POINTS &&
+          cmd.geometry.vertexCount == 0) {
+        // Nothing to pick.
+      }
+      else {
         pickLUT.push_back(le);
       }
     }

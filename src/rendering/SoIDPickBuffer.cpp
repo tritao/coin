@@ -109,6 +109,45 @@ static GLuint linkProgram(GLuint vs, GLuint fs)
   return prog;
 }
 
+namespace {
+
+struct SoScopedIdPassState {
+  GLint viewport[4] = {0, 0, 0, 0};
+  GLfloat lineWidth = 1.0f;
+  GLfloat pointSize = 1.0f;
+  GLint program = 0;
+  GLint vao = 0;
+  GLint arrayBuffer = 0;
+  GLint elementArrayBuffer = 0;
+
+  SoScopedIdPassState()
+  {
+    glGetIntegerv(GL_VIEWPORT, this->viewport);
+    glGetFloatv(GL_LINE_WIDTH, &this->lineWidth);
+    glGetFloatv(GL_POINT_SIZE, &this->pointSize);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &this->program);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &this->vao);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &this->arrayBuffer);
+    glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &this->elementArrayBuffer);
+  }
+
+  ~SoScopedIdPassState()
+  {
+    glBindVertexArray(static_cast<GLuint>(this->vao));
+    glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(this->arrayBuffer));
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(this->elementArrayBuffer));
+    glLineWidth(this->lineWidth);
+    glPointSize(this->pointSize);
+    glViewport(this->viewport[0], this->viewport[1], this->viewport[2], this->viewport[3]);
+    glUseProgram(static_cast<GLuint>(this->program));
+  }
+
+  SoScopedIdPassState(const SoScopedIdPassState &) = delete;
+  SoScopedIdPassState & operator=(const SoScopedIdPassState &) = delete;
+};
+
+}  // namespace
+
 // -----------------------------------------------------------------------
 // Constructor / Destructor
 // -----------------------------------------------------------------------
@@ -276,10 +315,10 @@ SoIDPickBuffer::buildIdColorVBOs(const SoDrawList & drawlist, uint32_t /*context
       else if (le->elementType == SO_PICK_VERTEX) typeCode = 2;
       encodeIdWithType(lutId, typeCode, rgba);
 
-      if (le->eboCount > 0 && cmd.geometry.indices) {
+      if (le->drawCount > 0 && cmd.geometry.indices) {
         // Per-face/edge: color vertices referenced by this element's index range
-        int start = le->eboOffset;
-        int end = std::min(start + le->eboCount,
+        int start = le->drawStart;
+        int end = std::min(start + le->drawCount,
                            static_cast<int>(cmd.geometry.indexCount));
         for (int idx = start; idx < end; idx++) {
           uint32_t vi = cmd.geometry.indices[idx];
@@ -291,10 +330,11 @@ SoIDPickBuffer::buildIdColorVBOs(const SoDrawList & drawlist, uint32_t /*context
           }
         }
       }
-      else if (le->eboCount == 1 && !cmd.geometry.indices) {
-        // Per-vertex (non-indexed): color single vertex at eboOffset
-        int vi = le->eboOffset;
-        if (vi >= 0 && vi < numVerts) {
+      else if (le->drawCount > 0 && !cmd.geometry.indices) {
+        // Non-indexed draws use direct vertex subranges.
+        int start = le->drawStart;
+        int end = std::min(start + le->drawCount, numVerts);
+        for (int vi = start; vi < end; vi++) {
           colors[vi * 4 + 0] = rgba[0];
           colors[vi * 4 + 1] = rgba[1];
           colors[vi * 4 + 2] = rgba[2];
@@ -395,16 +435,7 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
                              const SoIDPassVBOInfo * vboCache, int vboCacheCount)
 {
   ZoneScopedN("IDPickBuffer::renderIdPass");
-
-  // Save GL state that we modify
-  GLint prevViewport[4];
-  glGetIntegerv(GL_VIEWPORT, prevViewport);
-  GLfloat prevLineWidth;
-  glGetFloatv(GL_LINE_WIDTH, &prevLineWidth);
-  GLfloat prevPointSize;
-  glGetFloatv(GL_POINT_SIZE, &prevPointSize);
-  GLint prevProgram;
-  glGetIntegerv(GL_CURRENT_PROGRAM, &prevProgram);
+  SoScopedIdPassState savedState;
 
   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
   glViewport(0, 0, fbWidth, fbHeight);
@@ -590,12 +621,6 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
 
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-
-  // Restore GL state
-  glLineWidth(prevLineWidth);
-  glPointSize(prevPointSize);
-  glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
-  glUseProgram(prevProgram);
 }
 
 // -----------------------------------------------------------------------
@@ -722,9 +747,9 @@ SoIDPickBuffer::computeIntersection(uint32_t lutIndex, const SoDrawList & drawli
 
   // For faces: intersect triangles in the element's EBO range
   if (entry.elementType == SO_PICK_FACE && cmd.geometry.indices &&
-      entry.eboCount >= 3) {
-    int start = entry.eboOffset;
-    int end = std::min(start + entry.eboCount, static_cast<int>(cmd.geometry.indexCount));
+      entry.drawCount >= 3) {
+    int start = entry.drawStart;
+    int end = std::min(start + entry.drawCount, static_cast<int>(cmd.geometry.indexCount));
 
     float bestT = 1e30f;
     bool hit = false;
@@ -776,10 +801,10 @@ SoIDPickBuffer::computeIntersection(uint32_t lutIndex, const SoDrawList & drawli
       && cmd.geometry.positions) {
     // Use the first vertex of the element as the intersection point
     uint32_t vertIdx = 0;
-    if (cmd.geometry.indices && entry.eboOffset < static_cast<int>(cmd.geometry.indexCount)) {
-      vertIdx = cmd.geometry.indices[entry.eboOffset];
-    } else if (entry.eboOffset >= 0) {
-      vertIdx = static_cast<uint32_t>(entry.eboOffset);
+    if (cmd.geometry.indices && entry.drawStart < static_cast<int>(cmd.geometry.indexCount)) {
+      vertIdx = cmd.geometry.indices[entry.drawStart];
+    } else if (entry.drawStart >= 0) {
+      vertIdx = static_cast<uint32_t>(entry.drawStart);
     }
     const float * p = reinterpret_cast<const float *>(
       reinterpret_cast<const char *>(cmd.geometry.positions) + vertIdx * stride);
