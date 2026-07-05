@@ -15,17 +15,26 @@ macro(strfy _input _postfix)
   configure_file(strfytemplate.cmake.in "${_path}/${_basename}.h")
 endmacro()
 
-file(GLOB_RECURSE COIN_SHADER_GLSL RELATIVE ${PROJECT_SOURCE_DIR} *.glsl)
+file(GLOB_RECURSE COIN_SHADER_GLSL CONFIGURE_DEPENDS RELATIVE ${PROJECT_SOURCE_DIR} *.glsl)
+# `strfy()` reads source files during CMake configure time, so track them
+# explicitly to rerun CMake when an embedded shader source changes.
+set(_coin_shader_glsl_deps)
 foreach(_input_file ${COIN_SHADER_GLSL})
+  list(APPEND _coin_shader_glsl_deps "${PROJECT_SOURCE_DIR}/${_input_file}")
   strfy(${_input_file} "_shadersource")
 endforeach()
-file(GLOB_RECURSE COIN_SHADER_INVENTOR RELATIVE ${PROJECT_SOURCE_DIR} *.iv)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_coin_shader_glsl_deps})
+
+file(GLOB_RECURSE COIN_SHADER_INVENTOR CONFIGURE_DEPENDS RELATIVE ${PROJECT_SOURCE_DIR} *.iv)
+set(_coin_shader_inventor_deps)
 foreach(_input_file ${COIN_SHADER_INVENTOR})
+  list(APPEND _coin_shader_inventor_deps "${PROJECT_SOURCE_DIR}/${_input_file}")
   strfy(${_input_file} "_draggergeometry")
 endforeach()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_coin_shader_inventor_deps})
 
-file(GLOB_RECURSE COMMON_SCXML ${CMAKE_CURRENT_SOURCE_DIR}/[cep]*.xml)
-file(GLOB_RECURSE COMMON_DRAGGERDEFAULTS ${CMAKE_CURRENT_SOURCE_DIR}/*.iv)
-file(GLOB_RECURSE COMMON_SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/*.glsl)
+file(GLOB_RECURSE COMMON_SCXML CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/[cep]*.xml)
+file(GLOB_RECURSE COMMON_DRAGGERDEFAULTS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.iv)
+file(GLOB_RECURSE COMMON_SHADERS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/*.glsl)
 
 set(COMMON_RESOURCES ${COMMON_SCXML} ${COMMON_DRAGGERDEFAULTS} ${COMMON_SHADERS} PARENT_SCOPE)
