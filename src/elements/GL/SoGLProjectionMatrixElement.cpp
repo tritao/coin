@@ -47,6 +47,7 @@
 #include <config.h>
 #endif // HAVE_CONFIG_H
 
+#include "rendering/SoGL.h"
 #include <Inventor/system/gl.h>
 
 #include <cassert>
@@ -69,6 +70,22 @@ SoGLProjectionMatrixElement::initClass(void)
 
 SoGLProjectionMatrixElement::~SoGLProjectionMatrixElement(void)
 {
+}
+
+// doc in parent
+void
+SoGLProjectionMatrixElement::init(SoState * stateptr)
+{
+  inherited::init(stateptr);
+  this->state = stateptr;
+}
+
+// doc in parent
+void
+SoGLProjectionMatrixElement::push(SoState * stateptr)
+{
+  inherited::push(stateptr);
+  this->state = stateptr;
 }
 
 //! FIXME: write doc.
@@ -98,7 +115,9 @@ SoGLProjectionMatrixElement::updategl(void)
 #if 0 // debug
   SoDebugError::postInfo("SoGLProjectionMatrixElement::updategl", "");
 #endif // debug
-  glMatrixMode(GL_PROJECTION);
-  glLoadMatrixf((float*)this->projectionMatrix);
-  glMatrixMode(GL_MODELVIEW);
+  if (sogl_compatibility_profile(state)) {
+    glMatrixMode(GL_PROJECTION);
+    glLoadMatrixf((float*)this->projectionMatrix);
+    glMatrixMode(GL_MODELVIEW);
+  }
 }
