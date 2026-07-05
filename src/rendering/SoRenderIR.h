@@ -5,6 +5,7 @@
 
 #include <Inventor/SbBasic.h>
 #include <Inventor/SbMatrix.h>
+#include <Inventor/SbVec3f.h>
 #include <Inventor/SbVec4f.h>
 #include <Inventor/misc/SoState.h>
 
@@ -61,6 +62,14 @@ struct SoGeometryDesc {
   uint32_t            vertexStride = 0;
   uint32_t            texcoordStride = 0;
 
+  /*!
+    \struct SoGeometryDesc::CacheHandle
+    \brief Backend-owned cache objects associated with a geometry upload.
+
+    Coin treats these pointers as opaque cache slots. The backend may populate
+    them after uploading geometry so later frames can reuse the same GPU
+    resources without reinterpreting the raw arrays.
+  */
   struct CacheHandle {
     uint32_t contextId = 0;
     SoVBO * vertexVbo = nullptr;
@@ -84,12 +93,13 @@ static constexpr uint32_t SO_PARAM_CLEAR_DEPTH  = 4u;  //!< Clear depth buffer b
 static constexpr uint32_t SO_PARAM_SKIP_ID      = 8u;  //!< Skip ID buffer rendering entirely
 
 /*!
-  \struct SoMaterialData
-  \brief Snapshot of the logical Inventor material state for one draw call.
+  \struct SoTextureData
+  \brief Embedded texture payload carried directly by a render command.
 
-  Texture pointers are backend-defined handles; IR does not own the memory.
+  This is used for commands that provide their own image data, such as SoImage.
+  The memory is owned by the producer of the draw list and must remain valid
+  until the backend finishes consuming the frame.
 */
-/*! Embedded texture data for commands that carry their own image (SoImage). */
 struct SoTextureData {
   const unsigned char * pixels = nullptr;
   int width = 0;
@@ -97,6 +107,12 @@ struct SoTextureData {
   int numComponents = 0; // 1=L, 2=LA, 3=RGB, 4=RGBA
 };
 
+/*!
+  \struct SoMaterialData
+  \brief Snapshot of the logical Inventor material state for one draw call.
+
+  Texture pointers are backend-defined handles; the IR does not own the memory.
+*/
 struct SoMaterialData {
   SbVec4f  diffuse = {0.8f, 0.8f, 0.8f, 1.0f};
   SbVec4f  ambient = {0.2f, 0.2f, 0.2f, 1.0f};
@@ -186,8 +202,50 @@ enum SoRenderPassType : uint8_t {
   SO_RENDERPASS_COUNT
 };
 
+/*!
+  \typedef SoLightingHandle
+  \brief Stable 1-based handle into the draw list's deduplicated lighting table.
+*/
 typedef uint32_t SoLightingHandle;
+
+/*!
+  \typedef SoPipelineKey
+  \brief Backend-defined key used to cache compiled pipeline state.
+*/
 typedef uint64_t SoPipelineKey;
+
+/*!
+  \enum SoLightType
+  \brief Light kinds captured in render-backend lighting setups.
+*/
+enum SoLightType : uint8_t {
+  SO_LIGHT_DIRECTIONAL = 0,
+  SO_LIGHT_POINT,
+  SO_LIGHT_SPOT
+};
+
+/*!
+  \struct SoLightData
+  \brief View-space light description used by the render backend.
+*/
+struct SoLightData {
+  SoLightType type = SO_LIGHT_DIRECTIONAL;
+  SbVec3f     color = SbVec3f(1.0f, 1.0f, 1.0f);
+  SbVec3f     direction = SbVec3f(0.0f, 0.0f, 1.0f);
+  SbVec3f     position = SbVec3f(0.0f, 0.0f, 1.0f);
+  SbVec3f     attenuation = SbVec3f(0.0f, 0.0f, 1.0f);
+  float       spotCutoffCos = -1.0f;
+  float       spotExponent = 0.0f;
+};
+
+/*!
+  \struct SoLightingData
+  \brief Shared lighting setup referenced by render commands.
+*/
+struct SoLightingData {
+  SbVec3f ambient = SbVec3f(0.2f, 0.2f, 0.2f);
+  std::vector<SoLightData> lights;
+};
 
 /*!
   \struct SoPickData
@@ -273,6 +331,13 @@ public:
 
   //! Save current allocation state. Subsequent rewindTo() restores to
   //! this point, allowing re-allocation at the same addresses.
+  /*!
+    \struct SoIRBuffer::SavePoint
+    \brief Snapshot of the allocator cursors for deterministic rewind.
+
+    SavePoint is cheap to copy and records enough state for rewindTo() to
+    restore all chunk cursors and the total allocated byte count.
+  */
   struct SavePoint {
     std::vector<size_t> chunkCursors;
     size_t totalAllocated = 0;
@@ -337,6 +402,13 @@ public:
   SoRenderCommand & getCommand(int i);
   const SoRenderCommand & getCommand(int i) const;
 
+  //! Add or reuse a lighting setup and return its stable 1-based handle.
+  SoLightingHandle addLightingSetup(const SoLightingData & lighting);
+
+  //! Resolve a lighting handle previously returned by addLightingSetup().
+  //! Returns NULL for handle 0 or an invalid handle.
+  const SoLightingData * getLighting(SoLightingHandle handle) const;
+
   SoRenderCommand * begin();
   SoRenderCommand * end();
   const SoRenderCommand * begin() const;
@@ -369,24 +441,39 @@ public:
 
 private:
   SbList<SoRenderCommand> commands;
+  std::vector<SoLightingData> lightingSetups;
   std::vector<SoPickLUTEntry> pickLUT;
   std::vector<int> sortedOrder;
   uint32_t generation = 0;
   uint64_t pickLUTGeneration = 0;
 };
 
-/*! Utility helpers declared in SoRenderIR.cpp */
+/*!
+  \brief Compute the coarse/fine sort key used by SoDrawList::buildSortedOrder().
+*/
 uint64_t SoIRComputeSortKey(const SoRenderCommand & cmd,
                             uint32_t passOrderBits,
                             uint32_t depthBucket);
 
+//! Dump a compact summary of the draw list to Coin's debug output.
 void SoIRDumpSummary(const SoDrawList & drawlist);
+//! Dump the first \a count render commands to Coin's debug output.
 void SoIRDumpFirstN(const SoDrawList & drawlist, int count);
 
+/*!
+  \namespace SoRenderIR
+  \brief Helper functions for converting Coin state and caches into render IR.
+*/
 namespace SoRenderIR {
+//! Fill a material snapshot from the current Inventor traversal state.
 void fillMaterialFromState(SoState * state, SoMaterialData & material);
+//! Fill render-state fields from the current Inventor traversal state.
 void fillRenderStateFromState(SoState * state, SoRenderState & renderState);
+//! Extract the current lighting setup, append/deduplicate it, and return its handle.
+SoLightingHandle fillLightingFromState(SoState * state, SoDrawList & drawlist);
+//! Return whether the material should be treated as translucent.
 bool isMaterialTransparent(const SoMaterialData & material);
+//! Append draw commands from a primitive vertex cache when direct rendering is possible.
 SbBool appendCacheDrawCommands(const SoPrimitiveVertexCache * cache,
                                SoIRRenderAction * action,
                                SoShape * shape);

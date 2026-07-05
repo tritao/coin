@@ -91,9 +91,12 @@ private:
   void logFrameStats(const SoDrawList & drawlist,
                      const SoRenderParams & params) const;
   bool createShaders();
+  void uploadLighting(const SoLightingData & lighting);
+  void applyLighting(const SoDrawList & drawlist, const SoRenderCommand & cmd);
 
   /// Draw a single cached command — sets per-command GL state, draws, restores.
-  void drawCommand(const SoRenderCommand & cmd,
+  void drawCommand(const SoDrawList & drawlist,
+                   const SoRenderCommand & cmd,
                    const SbMat & viewMat,
                    const SbMat & projMat,
                    const SoRenderParams & params);
@@ -158,6 +161,14 @@ private:
   GLint  uStipplePeriodLocation = -1;
   GLint  uMetalnessLocation = -1;
   GLint  uRoughnessLocation = -1;
+  GLint  uAmbientLightLocation = -1;
+  GLint  uLightCountLocation = -1;
+  GLint  uLightTypeLocation = -1;
+  GLint  uLightColorLocation = -1;
+  GLint  uLightDirectionLocation = -1;
+  GLint  uLightPositionLocation = -1;
+  GLint  uLightAttenuationLocation = -1;
+  GLint  uLightSpotParamsLocation = -1;
   GLint posLoc = -1;
   GLint normLoc = -1;
   GLint colorLoc = -1;

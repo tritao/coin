@@ -68,6 +68,25 @@ static constexpr int MAX_VERTEX_COUNT = 10000000;
 // Default pick line width / point size when no pick buffer exists
 static constexpr float DEFAULT_PICK_SIZE = 7.0f;
 
+// Maximum number of scene lights uploaded to the unified shader.
+static constexpr int MAX_SHADER_LIGHTS = 8;
+
+static const SoLightingData &
+coin_fallback_lighting()
+{
+  static const SoLightingData lighting = []() {
+    SoLightingData fallback;
+    fallback.ambient.setValue(0.2f, 0.2f, 0.2f);
+    SoLightData headlight;
+    headlight.type = SO_LIGHT_DIRECTIONAL;
+    headlight.color.setValue(1.0f, 1.0f, 1.0f);
+    headlight.direction.setValue(0.0f, 0.0f, 1.0f);
+    fallback.lights.push_back(headlight);
+    return fallback;
+  }();
+  return lighting;
+}
+
 static SbBool
 coin_render_ir_trace_enabled()
 {
@@ -638,7 +657,8 @@ SoGLRenderBackend::getCachedCommand(int cmdIndex) const
 // -----------------------------------------------------------------------
 
 void
-SoGLRenderBackend::drawCommand(const SoRenderCommand & cmd,
+SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
+                               const SoRenderCommand & cmd,
                                const SbMat & viewMat,
                                const SbMat & projMat,
                                const SoRenderParams & params)
@@ -676,6 +696,7 @@ SoGLRenderBackend::drawCommand(const SoRenderCommand & cmd,
   const SbVec4f & diffuse = cmd.material.diffuse;
   glUniform4f(this->uColorLocation,
               diffuse[0], diffuse[1], diffuse[2], diffuse[3]);
+  this->applyLighting(drawlist, cmd);
 
   GLenum prim = topologyToGL(cmd.geometry.topology);
 
@@ -969,12 +990,67 @@ SoGLRenderBackend::beginFrame(const SoDrawList & drawlist,
   glUniform1f(this->uStipplePeriodLocation, 0.0f);
   glUniform1f(this->uMetalnessLocation, 0.0f);
   glUniform1f(this->uRoughnessLocation, 0.5f);
+  this->uploadLighting(coin_fallback_lighting());
 
   // Viewport size for line stipple derivatives and billboard sizing
   SbVec2s vpSz = params.viewport.getViewportSizePixels();
   glUniform2f(this->uVpSizeLocation,
               static_cast<float>(vpSz[0]),
               static_cast<float>(vpSz[1]));
+}
+
+void
+SoGLRenderBackend::uploadLighting(const SoLightingData & lighting)
+{
+  const SbVec3f & ambient = lighting.ambient;
+  glUniform3f(this->uAmbientLightLocation, ambient[0], ambient[1], ambient[2]);
+
+  GLint lightTypes[MAX_SHADER_LIGHTS] = {0};
+  GLfloat lightColors[MAX_SHADER_LIGHTS * 3] = {0.0f};
+  GLfloat lightDirections[MAX_SHADER_LIGHTS * 3] = {0.0f};
+  GLfloat lightPositions[MAX_SHADER_LIGHTS * 3] = {0.0f};
+  GLfloat lightAttenuations[MAX_SHADER_LIGHTS * 3] = {0.0f};
+  GLfloat lightSpotParams[MAX_SHADER_LIGHTS * 2] = {0.0f};
+
+  const int lightCount =
+    std::min<int>(static_cast<int>(lighting.lights.size()), MAX_SHADER_LIGHTS);
+  for (int i = 0; i < lightCount; ++i) {
+    const SoLightData & light = lighting.lights[static_cast<size_t>(i)];
+    lightTypes[i] = static_cast<GLint>(light.type);
+    lightColors[i * 3 + 0] = light.color[0];
+    lightColors[i * 3 + 1] = light.color[1];
+    lightColors[i * 3 + 2] = light.color[2];
+    lightDirections[i * 3 + 0] = light.direction[0];
+    lightDirections[i * 3 + 1] = light.direction[1];
+    lightDirections[i * 3 + 2] = light.direction[2];
+    lightPositions[i * 3 + 0] = light.position[0];
+    lightPositions[i * 3 + 1] = light.position[1];
+    lightPositions[i * 3 + 2] = light.position[2];
+    lightAttenuations[i * 3 + 0] = light.attenuation[0];
+    lightAttenuations[i * 3 + 1] = light.attenuation[1];
+    lightAttenuations[i * 3 + 2] = light.attenuation[2];
+    lightSpotParams[i * 2 + 0] = light.spotCutoffCos;
+    lightSpotParams[i * 2 + 1] = light.spotExponent;
+  }
+
+  glUniform1i(this->uLightCountLocation, lightCount);
+  glUniform1iv(this->uLightTypeLocation, MAX_SHADER_LIGHTS, lightTypes);
+  glUniform3fv(this->uLightColorLocation, MAX_SHADER_LIGHTS, lightColors);
+  glUniform3fv(this->uLightDirectionLocation, MAX_SHADER_LIGHTS, lightDirections);
+  glUniform3fv(this->uLightPositionLocation, MAX_SHADER_LIGHTS, lightPositions);
+  glUniform3fv(this->uLightAttenuationLocation, MAX_SHADER_LIGHTS, lightAttenuations);
+  glUniform2fv(this->uLightSpotParamsLocation, MAX_SHADER_LIGHTS, lightSpotParams);
+}
+
+void
+SoGLRenderBackend::applyLighting(const SoDrawList & drawlist,
+                                 const SoRenderCommand & cmd)
+{
+  const SoLightingData * lighting = drawlist.getLighting(cmd.lightingHandle);
+  if (!lighting) {
+    lighting = &coin_fallback_lighting();
+  }
+  this->uploadLighting(*lighting);
 }
 
 void
@@ -1025,7 +1101,7 @@ SoGLRenderBackend::renderBackgroundPass(const SoDrawList & drawlist,
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_BLEND);
   for (int i = 0; i < bgCount && i < count; ++i) {
-    drawCommand(drawlist.getCommand(i), viewMat, projMat, params);
+    drawCommand(drawlist, drawlist.getCommand(i), viewMat, projMat, params);
   }
 
   // Restore default state; clear depth so main scene renders on top
@@ -1052,7 +1128,7 @@ SoGLRenderBackend::renderOpaquePass(const SoDrawList & drawlist,
     if (ci < bgCount) continue;
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
     if (cmd.pass != SO_RENDERPASS_OPAQUE) continue;
-    drawCommand(cmd, viewMat, projMat, params);
+    drawCommand(drawlist, cmd, viewMat, projMat, params);
   }
 }
 
@@ -1075,7 +1151,7 @@ SoGLRenderBackend::renderTransparentPass(const SoDrawList & drawlist,
     if (ci < bgCount) continue;
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
     if (cmd.pass != SO_RENDERPASS_TRANSPARENT) continue;
-    drawCommand(cmd, viewMat, projMat, params);
+    drawCommand(drawlist, cmd, viewMat, projMat, params);
   }
 
   // Restore default state
@@ -1119,7 +1195,7 @@ SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     for (int ci : overlay3D) {
-      drawCommand(drawlist.getCommand(ci), viewMat, projMat, params);
+      drawCommand(drawlist, drawlist.getCommand(ci), viewMat, projMat, params);
     }
     coin_apply_default_viewport(params);
   }
@@ -1131,7 +1207,7 @@ SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     for (int ci : overlay2D) {
-      drawCommand(drawlist.getCommand(ci), viewMat, projMat, params);
+      drawCommand(drawlist, drawlist.getCommand(ci), viewMat, projMat, params);
     }
     coin_apply_default_viewport(params);
   }
@@ -1540,6 +1616,14 @@ SoGLRenderBackend::createShaders()
   this->uStipplePeriodLocation = glGetUniformLocation(this->shaderProgram, "u_stipplePeriod");
   this->uMetalnessLocation = glGetUniformLocation(this->shaderProgram, "u_metalness");
   this->uRoughnessLocation = glGetUniformLocation(this->shaderProgram, "u_roughness");
+  this->uAmbientLightLocation = glGetUniformLocation(this->shaderProgram, "u_ambientLight");
+  this->uLightCountLocation = glGetUniformLocation(this->shaderProgram, "u_lightCount");
+  this->uLightTypeLocation = glGetUniformLocation(this->shaderProgram, "u_lightType[0]");
+  this->uLightColorLocation = glGetUniformLocation(this->shaderProgram, "u_lightColor[0]");
+  this->uLightDirectionLocation = glGetUniformLocation(this->shaderProgram, "u_lightDirection[0]");
+  this->uLightPositionLocation = glGetUniformLocation(this->shaderProgram, "u_lightPosition[0]");
+  this->uLightAttenuationLocation = glGetUniformLocation(this->shaderProgram, "u_lightAttenuation[0]");
+  this->uLightSpotParamsLocation = glGetUniformLocation(this->shaderProgram, "u_lightSpotParams[0]");
   this->texcoordLoc = glGetAttribLocation(this->shaderProgram, "a_texcoord");
   this->lineDistLoc = glGetAttribLocation(this->shaderProgram, "a_lineDistance");
 

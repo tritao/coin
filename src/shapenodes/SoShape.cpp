@@ -335,7 +335,8 @@ public:
         SoRenderPlacementElement::FOREGROUND) {
       cmd.pass = SO_RENDERPASS_OVERLAY;
     }
-    cmd.lightingHandle = 0;
+    cmd.lightingHandle = SoRenderIR::fillLightingFromState(
+      state, this->action->getMutableDrawList());
     cmd.pipelineKey = 0;
     cmd.sortKey = SoIRComputeSortKey(cmd,
                                      static_cast<uint32_t>(cmd.pass),

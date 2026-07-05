@@ -7,9 +7,12 @@
 #include <Inventor/caches/SoPrimitiveVertexCache.h>
 #include <Inventor/elements/SoDepthBufferElement.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
+#include <Inventor/elements/SoEnvironmentElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
 #include <Inventor/elements/SoGLShaderProgramElement.h>
 #include <Inventor/elements/SoLazyElement.h>
+#include <Inventor/elements/SoLightAttenuationElement.h>
+#include <Inventor/elements/SoLightElement.h>
 #include <Inventor/elements/SoLightModelElement.h>
 #include <Inventor/elements/SoLinePatternElement.h>
 #include <Inventor/elements/SoLineWidthElement.h>
@@ -22,15 +25,50 @@
 #include <Inventor/elements/SoMultiTextureEnabledElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
 #include <Inventor/errors/SoDebugError.h>
+#include <Inventor/nodes/SoDirectionalLight.h>
+#include <Inventor/nodes/SoLight.h>
+#include <Inventor/nodes/SoPointLight.h>
 #include <Inventor/nodes/SoShape.h>
+#include <Inventor/nodes/SoSpotLight.h>
 
 #include "elements/SoRenderPlacementElement.h"
 #include "rendering/SoVBO.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <climits>
 #include <inttypes.h>
+
+namespace {
+
+bool
+lightingEqual(const SoLightData & lhs, const SoLightData & rhs)
+{
+  return lhs.type == rhs.type &&
+         lhs.color == rhs.color &&
+         lhs.direction == rhs.direction &&
+         lhs.position == rhs.position &&
+         lhs.attenuation == rhs.attenuation &&
+         lhs.spotCutoffCos == rhs.spotCutoffCos &&
+         lhs.spotExponent == rhs.spotExponent;
+}
+
+bool
+lightingEqual(const SoLightingData & lhs, const SoLightingData & rhs)
+{
+  if (lhs.ambient != rhs.ambient || lhs.lights.size() != rhs.lights.size()) {
+    return false;
+  }
+  for (size_t i = 0; i < lhs.lights.size(); ++i) {
+    if (!lightingEqual(lhs.lights[i], rhs.lights[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
+} // namespace
 
 SoIRBuffer::SoIRBuffer()
 {
@@ -127,6 +165,7 @@ void
 SoDrawList::clear()
 {
   this->commands.truncate(0);
+  this->lightingSetups.clear();
   this->pickLUT.clear();
   this->sortedOrder.clear();
   this->generation++;
@@ -179,6 +218,31 @@ const SoRenderCommand &
 SoDrawList::getCommand(int i) const
 {
   return *(this->commands.getArrayPtr() + i);
+}
+
+SoLightingHandle
+SoDrawList::addLightingSetup(const SoLightingData & lighting)
+{
+  for (size_t i = 0; i < this->lightingSetups.size(); ++i) {
+    if (lightingEqual(this->lightingSetups[i], lighting)) {
+      return static_cast<SoLightingHandle>(i + 1);
+    }
+  }
+  this->lightingSetups.push_back(lighting);
+  return static_cast<SoLightingHandle>(this->lightingSetups.size());
+}
+
+const SoLightingData *
+SoDrawList::getLighting(SoLightingHandle handle) const
+{
+  if (handle == 0) {
+    return nullptr;
+  }
+  const size_t index = static_cast<size_t>(handle - 1);
+  if (index >= this->lightingSetups.size()) {
+    return nullptr;
+  }
+  return &this->lightingSetups[index];
 }
 
 SoRenderCommand *
@@ -593,6 +657,78 @@ fillRenderStateFromState(SoState * state, SoRenderState & rs)
   rs.translucentKey = 0;
 }
 
+SoLightingHandle
+fillLightingFromState(SoState * state, SoDrawList & drawlist)
+{
+  SoLightingData lighting;
+
+  const SbColor & ambientColor = SoEnvironmentElement::getAmbientColor(state);
+  const float ambientIntensity = SoEnvironmentElement::getAmbientIntensity(state);
+  lighting.ambient.setValue(ambientColor[0] * ambientIntensity,
+                            ambientColor[1] * ambientIntensity,
+                            ambientColor[2] * ambientIntensity);
+
+  const SbVec3f & attenuation = SoLightAttenuationElement::get(state);
+  const SoNodeList & lights = SoLightElement::getLights(state);
+  const int numLights = lights.getLength();
+  lighting.lights.reserve(numLights);
+
+  for (int i = 0; i < numLights; ++i) {
+    SoLight * light = static_cast<SoLight *>(lights[i]);
+    if (!light || !light->on.getValue()) {
+      continue;
+    }
+
+    const SbColor lightColor = light->color.getValue();
+    SoLightData lightData;
+    lightData.color.setValue(lightColor[0] * light->intensity.getValue(),
+                             lightColor[1] * light->intensity.getValue(),
+                             lightColor[2] * light->intensity.getValue());
+
+    const SbMatrix & lightMatrix = SoLightElement::getMatrix(state, i);
+
+    if (light->isOfType(SoDirectionalLight::getClassTypeId())) {
+      SoDirectionalLight * directional = static_cast<SoDirectionalLight *>(light);
+      lightData.type = SO_LIGHT_DIRECTIONAL;
+      lightMatrix.multDirMatrix(-(directional->direction.getValue()), lightData.direction);
+      if (lightData.direction.normalize() == 0.0f) {
+        lightData.direction.setValue(0.0f, 0.0f, 1.0f);
+      }
+    }
+    else if (light->isOfType(SoPointLight::getClassTypeId())) {
+      SoPointLight * point = static_cast<SoPointLight *>(light);
+      lightData.type = SO_LIGHT_POINT;
+      lightData.attenuation = attenuation;
+      lightMatrix.multVecMatrix(point->location.getValue(), lightData.position);
+    }
+    else if (light->isOfType(SoSpotLight::getClassTypeId())) {
+      SoSpotLight * spot = static_cast<SoSpotLight *>(light);
+      lightData.type = SO_LIGHT_SPOT;
+      lightData.attenuation = attenuation;
+      lightMatrix.multVecMatrix(spot->location.getValue(), lightData.position);
+      lightMatrix.multDirMatrix(spot->direction.getValue(), lightData.direction);
+      if (lightData.direction.normalize() == 0.0f) {
+        lightData.direction.setValue(0.0f, 0.0f, -1.0f);
+      }
+      float cutoff = spot->cutOffAngle.getValue();
+      if (cutoff < 0.0f) cutoff = 0.0f;
+      if (cutoff > float(M_PI) * 0.5f) cutoff = float(M_PI) * 0.5f;
+      lightData.spotCutoffCos = std::cos(cutoff);
+      float dropoff = spot->dropOffRate.getValue();
+      if (dropoff < 0.0f) dropoff = 0.0f;
+      if (dropoff > 1.0f) dropoff = 1.0f;
+      lightData.spotExponent = dropoff * 128.0f;
+    }
+    else {
+      continue;
+    }
+
+    lighting.lights.push_back(lightData);
+  }
+
+  return drawlist.addLightingSetup(lighting);
+}
+
 bool
 isMaterialTransparent(const SoMaterialData & material)
 {
@@ -736,7 +872,8 @@ appendCacheDrawCommands(const SoPrimitiveVertexCache * cache,
       SoRenderPlacementElement::FOREGROUND) {
     cmd.pass = SO_RENDERPASS_OVERLAY;
   }
-  cmd.lightingHandle = 0;
+  cmd.lightingHandle = SoRenderIR::fillLightingFromState(state,
+                                                         action->getMutableDrawList());
   cmd.pipelineKey = cmd.shaderProgram ? reinterpret_cast<uint64_t>(cmd.shaderProgram) : 0;
   cmd.sortKey = SoIRComputeSortKey(cmd,
                                    static_cast<uint32_t>(cmd.pass),

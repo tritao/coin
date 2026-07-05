@@ -9,6 +9,9 @@
 #include <Inventor/elements/SoDrawStyleElement.h>
 #include <Inventor/elements/SoLineWidthElement.h>
 #include <Inventor/elements/SoLazyElement.h>
+#include <Inventor/elements/SoEnvironmentElement.h>
+#include <Inventor/elements/SoLightAttenuationElement.h>
+#include <Inventor/elements/SoLightElement.h>
 #include <Inventor/elements/SoLightModelElement.h>
 #include <Inventor/elements/SoMaterialBindingElement.h>
 #include <Inventor/elements/SoNormalBindingElement.h>
@@ -108,6 +111,9 @@ SoIRRenderAction::initClass(void)
   SO_ENABLE(SoIRRenderAction, SoPolygonOffsetElement);
   SO_ENABLE(SoIRRenderAction, SoShapeStyleElement);
   SO_ENABLE(SoIRRenderAction, SoLightModelElement);
+  SO_ENABLE(SoIRRenderAction, SoLightElement);
+  SO_ENABLE(SoIRRenderAction, SoEnvironmentElement);
+  SO_ENABLE(SoIRRenderAction, SoLightAttenuationElement);
   SO_ENABLE(SoIRRenderAction, SoMaterialBindingElement);
   SO_ENABLE(SoIRRenderAction, SoNormalBindingElement);
   SO_ENABLE(SoIRRenderAction, SoGLShaderProgramElement);
