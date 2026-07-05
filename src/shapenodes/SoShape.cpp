@@ -771,17 +771,17 @@ SoShape::GLRender(SoGLRenderAction * action)
 void
 SoShape::render(SoIRRenderAction * action)
 {
+  this->renderGeneratedPrimitives(action, FALSE);
+}
+
+void
+SoShape::renderGeneratedPrimitives(SoIRRenderAction * action,
+                                   SbBool billboard)
+{
   // Fallback: collect primitives via generatePrimitives() and emit a
   // single draw command. BRep shapes have dedicated render() overrides
   // and never reach this code.
-  // SoImage nodes need billboard mode (screen-space pixel sizing).
-  // Other textured shapes (SoTexture2 on geometry) use world-space rendering.
-  static SoType imageType = SoType::badType();
-  if (imageType == SoType::badType()) {
-    imageType = SoType::fromName("SoImage");
-  }
-  SbBool isBillboard = (this->getTypeId() == imageType) ? TRUE : FALSE;
-  SoIRPrimitiveAssembler assembler(action, this, isBillboard);
+  SoIRPrimitiveAssembler assembler(action, this, billboard);
   action->pushPrimitiveCollector(&assembler);
   this->generatePrimitives(action);
   action->popPrimitiveCollector(&assembler);

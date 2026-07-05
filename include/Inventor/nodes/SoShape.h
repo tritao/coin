@@ -88,6 +88,8 @@ protected:
   float getComplexityValue(SoAction * action);
   virtual void generatePrimitives(SoAction * action) =  0;
   virtual SbBool shouldGLRender(SoGLRenderAction * action);
+  void renderGeneratedPrimitives(SoIRRenderAction * action,
+                                 SbBool billboard = FALSE);
   void beginSolidShape(SoGLRenderAction * action);
   void endSolidShape(SoGLRenderAction * action);
   void GLRenderBoundingBox(SoGLRenderAction * action);

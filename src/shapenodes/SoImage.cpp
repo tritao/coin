@@ -673,6 +673,12 @@ SoImage::GLRenderCompat(SoGLRenderAction * action)
                                            SoGLCacheContextElement::DONT_AUTO_CACHE);
 }
 
+void
+SoImage::render(SoIRRenderAction * action)
+{
+  this->renderGeneratedPrimitives(action, TRUE);
+}
+
 // doc from parent
 void
 SoImage::rayPick(SoRayPickAction * action)
