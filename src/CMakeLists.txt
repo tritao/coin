@@ -18,6 +18,17 @@ configure_file(setup.h.cmake.in setup.h)
 
 add_compile_options(-DHAVE_CONFIG_H -DCOIN_INTERNAL -DCOIN_DEBUG=$<CONFIG:Debug>)
 
+# Tracy profiling support (symbols resolve from host app at load time)
+if (COIN_USE_TRACY)
+  add_definitions(-DTRACY_ENABLE -DCOIN_USE_TRACY)
+  if (COIN_TRACY_INCLUDE_DIR)
+    include_directories(${COIN_TRACY_INCLUDE_DIR})
+  endif()
+  if (APPLE)
+    add_link_options(-undefined dynamic_lookup)
+  endif()
+endif()
+
 include_directories(BEFORE
   "${PROJECT_BINARY_DIR}/include"
   "${PROJECT_SOURCE_DIR}/include"
@@ -51,6 +62,9 @@ foreach(_subdir ${SUBDIRS})
   add_subdirectory(${_subdir})
 endforeach()
 add_subdirectory(doc)
+
+include_directories(BEFORE SYSTEM ${PROJECT_SOURCE_DIR}/src/glad/include)
+add_subdirectory(glad)
 
 # Adding source groups for IDE's (Visual Studio, XCode, Qt Creator, etc.)
 source_group("Header Files\\Inventor"                            REGULAR_EXPRESSION ".*/include/Inventor/.*[.]h")
@@ -367,6 +381,16 @@ if(COIN_INSTALL)
 # ############################################################################
 # Install headers
 # ############################################################################
+
+  # Sync SoModernIR.h: single source of truth is src/rendering/SoModernIR.h.
+  # Copy to include/ so the installed header always matches the internal one,
+  # preventing heap corruption from struct layout drift.
+  add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      ${PROJECT_SOURCE_DIR}/src/rendering/SoModernIR.h
+      ${PROJECT_SOURCE_DIR}/include/Inventor/rendering/SoModernIR.h
+    COMMENT "Syncing SoModernIR.h public header from src/"
+  )
 
   install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/Inventor/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/Inventor COMPONENT development FILES_MATCHING PATTERN "*.h")
   install(DIRECTORY ${CMAKE_BINARY_DIR}/include/Inventor/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/Inventor COMPONENT development FILES_MATCHING PATTERN "*.h")
