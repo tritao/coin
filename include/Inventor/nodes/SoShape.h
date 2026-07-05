@@ -48,7 +48,7 @@ class SoCoordinateElement;
 class SbVec2f;
 class SoMaterialBundle;
 class SoBoundingBoxCache;
-class SoModernRenderAction;
+class SoIRRenderAction;
 
 class COIN_DLL_API SoShape : public SoNode {
   typedef SoNode inherited;
@@ -69,7 +69,7 @@ public:
 
   virtual void getBoundingBox(SoGetBoundingBoxAction * action);
   virtual void GLRender(SoGLRenderAction * action);
-  virtual void render(SoModernRenderAction * action);
+  virtual void render(SoIRRenderAction * action);
   virtual void rayPick(SoRayPickAction * action);
   virtual void callback(SoCallbackAction * action);
   virtual void computeBBox(SoAction * action, SbBox3f & box,

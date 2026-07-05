@@ -1,17 +1,23 @@
-// src/rendering/SoModernIR.cpp
+// src/rendering/SoRenderIR.cpp
 
-#include "rendering/SoModernIR.h"
+#include "rendering/SoRenderIR.h"
 #include "CoinTracyConfig.h"
 
-#include <Inventor/actions/SoModernRenderAction.h>
+#include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/caches/SoPrimitiveVertexCache.h>
 #include <Inventor/elements/SoDepthBufferElement.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
 #include <Inventor/elements/SoGLShaderProgramElement.h>
 #include <Inventor/elements/SoLazyElement.h>
+#include <Inventor/elements/SoLightModelElement.h>
+#include <Inventor/elements/SoLinePatternElement.h>
 #include <Inventor/elements/SoLineWidthElement.h>
+#include <Inventor/elements/SoPointSizeElement.h>
 #include <Inventor/elements/SoModelMatrixElement.h>
+#include <Inventor/elements/SoProjectionMatrixElement.h>
+#include <Inventor/elements/SoShapeHintsElement.h>
+#include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/elements/SoMultiTextureEnabledElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
 #include <Inventor/errors/SoDebugError.h>
@@ -40,6 +46,31 @@ SoIRBuffer::clear()
     chunk->cursor = 0;
   }
   this->totalAllocated = 0;
+}
+
+SoIRBuffer::SavePoint
+SoIRBuffer::save() const
+{
+  SavePoint sp;
+  sp.totalAllocated = this->totalAllocated;
+  sp.chunkCursors.reserve(this->chunks.size());
+  for (const auto & chunk : this->chunks) {
+    sp.chunkCursors.push_back(chunk->cursor);
+  }
+  return sp;
+}
+
+void
+SoIRBuffer::rewindTo(const SavePoint & sp)
+{
+  this->totalAllocated = sp.totalAllocated;
+  for (size_t i = 0; i < sp.chunkCursors.size() && i < this->chunks.size(); ++i) {
+    this->chunks[i]->cursor = sp.chunkCursors[i];
+  }
+  // Reset any chunks beyond the save point
+  for (size_t i = sp.chunkCursors.size(); i < this->chunks.size(); ++i) {
+    this->chunks[i]->cursor = 0;
+  }
 }
 
 void
@@ -96,6 +127,18 @@ SoDrawList::clear()
   this->commands.truncate(0);
   this->pickLUT.clear();
   this->sortedOrder.clear();
+  this->generation++;
+}
+
+void
+SoDrawList::truncate(int count)
+{
+  if (count < this->commands.getLength()) {
+    this->commands.truncate(count);
+    // Pick LUT and sorted order are rebuilt after traversal, no need to
+    // truncate them here — they'll be fully rebuilt by buildPickLUT()
+    // and buildSortedOrder().
+  }
 }
 
 void
@@ -401,7 +444,7 @@ SoIRDumpFirstN(const SoDrawList & drawlist, int count)
   }
 }
 
-namespace SoModernIR {
+namespace SoRenderIR {
 
 void
 fillMaterialFromState(SoState * state, SoMaterialData & material)
@@ -413,19 +456,45 @@ fillMaterialFromState(SoState * state, SoMaterialData & material)
   const SbColor & emissive = SoLazyElement::getEmissive(mutableState);
   const float transparency = SoLazyElement::getTransparency(mutableState, 0);
 
-  material.diffuse.setValue(diffuse[0], diffuse[1], diffuse[2],
-                            1.0f - transparency);
+  // When light model is BASE_COLOR, use emissive as the display color
+  // and flag for flat (unlit) rendering. This handles materials that only
+  // set emissiveColor (e.g. rotation center sphere, annotations).
+  // When emissive is set and diffuse is near-default (0.8,0.8,0.8),
+  // use emissive as the diffuse color. This handles materials that only
+  // set emissiveColor (e.g. rotation center sphere) — the intent is to
+  // display the emissive color, not the default gray.
+  // TODO: revisit with proper emissive shader handling.
+  bool hasEmissive = (emissive[0] > 0.01f || emissive[1] > 0.01f || emissive[2] > 0.01f);
+  bool isDefaultDiffuse = (diffuse[0] > 0.79f && diffuse[0] < 0.81f
+                        && diffuse[1] > 0.79f && diffuse[1] < 0.81f
+                        && diffuse[2] > 0.79f && diffuse[2] < 0.81f);
+  if (hasEmissive && isDefaultDiffuse) {
+    material.diffuse.setValue(emissive[0], emissive[1], emissive[2],
+                              1.0f - transparency);
+  } else {
+    material.diffuse.setValue(diffuse[0], diffuse[1], diffuse[2],
+                              1.0f - transparency);
+  }
+
+  // Flag BASE_COLOR light model for flat (unlit) rendering
+  int lightModel = SoLightModelElement::get(mutableState);
+  if (lightModel == SoLightModelElement::BASE_COLOR) {
+    material.featureFlags |= SO_FEAT_BASE_COLOR;
+  }
   material.ambient.setValue(ambient[0], ambient[1], ambient[2], 1.0f);
   material.specular.setValue(specular[0], specular[1], specular[2], 1.0f);
   material.emissive.setValue(emissive[0], emissive[1], emissive[2], 1.0f);
   material.shininess = SoLazyElement::getShininess(mutableState);
   material.opacity = 1.0f - transparency;
 
+  material.metalness = 0.0f;   // dielectric (Blinn-Phong equivalent)
+  material.roughness = 0.5f;   // moderate roughness
+
   material.diffuseTexture = NULL;
   material.normalTexture = NULL;
   material.emissiveTexture = NULL;
   material.flags = 0;
-  material.featureFlags = 0;
+  // Note: featureFlags is set above (BASE_COLOR flag) — don't reset it here
 }
 
 void
@@ -464,9 +533,22 @@ fillRenderStateFromState(SoState * state, SoRenderState & rs)
     break;
   }
   rs.raster.fillMode = fillmode;
-  rs.raster.cullMode = 0;
+
+  // Backface culling from SoShapeHintsElement:
+  // vertexOrdering == COUNTERCLOCKWISE + shapeType == SOLID → cull back faces
+  {
+    SoShapeHintsElement::VertexOrdering vo;
+    SoShapeHintsElement::ShapeType st;
+    SoShapeHintsElement::FaceType ft;
+    SoShapeHintsElement::get(mutableState, vo, st, ft);
+    rs.raster.cullMode = (vo == SoShapeHintsElement::COUNTERCLOCKWISE
+                       && st == SoShapeHintsElement::SOLID) ? 1 : 0;
+  }
   rs.raster.scissorEnabled = FALSE;
   rs.raster.lineWidth = SoLineWidthElement::get(mutableState);
+  rs.raster.pointSize = SoPointSizeElement::get(mutableState);
+  rs.raster.linePattern = static_cast<uint16_t>(SoLinePatternElement::get(mutableState));
+  rs.raster.linePatternScale = static_cast<int16_t>(SoLinePatternElement::getScaleFactor(mutableState));
 
   float offsetfactor = 0.0f;
   float offsetunits = 0.0f;
@@ -493,7 +575,7 @@ isMaterialTransparent(const SoMaterialData & material)
 
 SbBool
 appendCacheDrawCommands(const SoPrimitiveVertexCache * cache,
-                        SoModernRenderAction * action,
+                        SoIRRenderAction * action,
                         SoShape * shape)
 {
   if (!cache || !action || !shape) return FALSE;
@@ -521,7 +603,7 @@ appendCacheDrawCommands(const SoPrimitiveVertexCache * cache,
   }
 
   SoRenderCommand cmd;
-  std::memset(&cmd, 0, sizeof(SoRenderCommand));
+  cmd = {};
   cmd.geometry.topology = SO_TOPOLOGY_TRIANGLES;
   cmd.geometry.vertexCount = static_cast<uint32_t>(numverts);
   cmd.geometry.normalCount = static_cast<uint32_t>(numverts);
@@ -610,12 +692,18 @@ appendCacheDrawCommands(const SoPrimitiveVertexCache * cache,
     cmd.geometry.indices = indices;
   }
 
-  SoModernIR::fillMaterialFromState(state, cmd.material);
-  SoModernIR::fillRenderStateFromState(state, cmd.state);
+  SoRenderIR::fillMaterialFromState(state, cmd.material);
+  SoRenderIR::fillRenderStateFromState(state, cmd.state);
   cmd.modelMatrix = SoModelMatrixElement::get(state);
+  cmd.viewMatrix = SoViewingMatrixElement::get(state);
+  cmd.projMatrix = SoProjectionMatrixElement::get(state);
 
-  const bool transparent = SoModernIR::isMaterialTransparent(cmd.material);
-  cmd.pass = transparent ? SO_RENDERPASS_TRANSPARENT : SO_RENDERPASS_OPAQUE;
+  if (!cmd.state.depth.enabled) {
+    cmd.pass = SO_RENDERPASS_OVERLAY;
+  } else {
+    const bool transparent = SoRenderIR::isMaterialTransparent(cmd.material);
+    cmd.pass = transparent ? SO_RENDERPASS_TRANSPARENT : SO_RENDERPASS_OPAQUE;
+  }
   cmd.lightingHandle = 0;
   cmd.pipelineKey = cmd.shaderProgram ? reinterpret_cast<uint64_t>(cmd.shaderProgram) : 0;
   cmd.sortKey = SoIRComputeSortKey(cmd,
@@ -627,4 +715,4 @@ appendCacheDrawCommands(const SoPrimitiveVertexCache * cache,
   return TRUE;
 }
 
-} // namespace SoModernIR
+} // namespace SoRenderIR

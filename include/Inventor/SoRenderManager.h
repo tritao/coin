@@ -113,6 +113,18 @@ public:
     VARIABLE_NEAR_PLANE
   };
 
+  /// Scene roots traversed before or after the main scene by renderers
+  /// that support explicit render layer roots.
+  enum RenderLayer {
+    RENDER_LAYER_BACKGROUND,
+    RENDER_LAYER_FOREGROUND
+  };
+
+  enum RendererMode {
+    RENDERER_LEGACY_GL,
+    RENDERER_RENDER_BACKEND
+  };
+
   SoRenderManager(void);
   virtual ~SoRenderManager();
 
@@ -161,6 +173,8 @@ public:
 
   void scheduleRedraw(void);
   void setWindowSize(const SbVec2s & newsize);
+  void setDevicePixelRatio(float dpr);
+  float getDevicePixelRatio(void) const;
   const SbVec2s & getWindowSize(void) const;
   void setSize(const SbVec2s & newsize);
   const SbVec2s & getSize(void) const;
@@ -183,14 +197,25 @@ public:
   void getAntialiasing(SbBool & smoothing, int & numPasses) const;
   void setGLRenderAction(SoGLRenderAction * const action);
   SoGLRenderAction * getGLRenderAction(void) const;
-  void setModernRenderEnabled(SbBool enable);
-  SbBool isModernRenderEnabled(void) const;
+  void setRendererMode(RendererMode mode);
+  RendererMode getRendererMode(void) const;
 
-  /// Access the modern render backend (NULL if not initialized).
+  /// Access the render backend (NULL if not initialized).
   /// Used for GPU picking via backend->pick().
-  class SoRenderBackend * getModernBackend(void) const;
+  class SoRenderBackend * getRenderBackend(void) const;
 
-  /// GPU pick at pixel coordinates using the modern backend's ID buffer.
+  /// Access the IR render action (NULL if not created yet).
+  class SoIRRenderAction * getIRRenderAction(void) const;
+
+  /// Set a scene root for an explicit render layer.
+  /// The background layer is traversed before the main scene, and the
+  /// foreground layer is traversed after the main scene.
+  void setRenderLayerRoot(RenderLayer layer, SoNode * root);
+
+  /// Return the scene root assigned to an explicit render layer, or NULL.
+  SoNode * getRenderLayerRoot(RenderLayer layer) const;
+
+  /// GPU pick at pixel coordinates using the render backend's ID buffer.
   /// Returns the pick LUT index (1-based) or 0 for no hit.
   /// Coordinates are in OpenGL convention (origin at bottom-left).
   uint32_t gpuPick(int x, int y, int pickRadius = 5) const;
@@ -228,7 +253,7 @@ public:
   void setGpuPickPointSize(float size);
   float getGpuPickPointSize() const;
 
-  /// Force the modern renderer to re-traverse the scene graph on the next frame.
+  /// Force the render-backend path to re-traverse the scene graph on the next frame.
   void invalidateDrawList();
 
   /// Directly set preselection highlight on a draw list command by pick LUT index.
@@ -247,6 +272,12 @@ public:
   bool setDrawListSelection(uint32_t lutIndex, const SbColor4f & color,
                             SbBool append = TRUE);
 
+  /// Select all commands whose pickIdentity starts with the given prefix.
+  /// Used for tree-view selection (whole object, no GPU pick).
+  bool setDrawListSelectionByIdentity(const char * identityPrefix,
+                                      const SbColor4f & color,
+                                      SbBool append = TRUE);
+
   /// Clear all selection state in the draw list.
   void clearDrawListSelection();
 
@@ -254,6 +285,10 @@ public:
   /// When interactive, the backend skips the ID pick buffer to save GPU time.
   void setInteractive(SbBool interactive);
   SbBool isInteractive() const;
+
+  /// Signal that the camera is being modified (e.g. zoom scroll).
+  /// Consumed by the deferred sensor callback to avoid full scene rebuild.
+  void notifyCameraChange(void);
 
   void setAudioRenderAction(SoAudioRenderAction * const action);
   SoAudioRenderAction * getAudioRenderAction(void) const;
@@ -287,7 +322,7 @@ protected:
                     SbBool initmatrices,
                     SbBool clearwindow,
                     SbBool clearzbuffer);
-  void renderModern(const SbBool clearwindow,
+  void renderWithBackend(const SbBool clearwindow,
                     const SbBool clearzbuffer);
 
   void renderStereo(SoGLRenderAction * action,

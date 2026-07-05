@@ -72,7 +72,7 @@ public:
   const SoPickedPointList & getPickedPointList(void);
 
   /// Set the render manager for GPU-accelerated picking.
-  /// When set and the modern renderer is active, getPickedPoint()
+  /// When set and the render backend is active, getPickedPoint()
   /// uses the ID buffer instead of SoRayPickAction traversal.
   void setRenderManager(SoRenderManager * manager);
 

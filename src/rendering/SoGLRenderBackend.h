@@ -1,7 +1,7 @@
-// src/rendering/SoModernGLBackend.h
+// src/rendering/SoGLRenderBackend.h
 
-#ifndef COIN_SOMODERNGLBACKEND_H
-#define COIN_SOMODERNGLBACKEND_H
+#ifndef COIN_SOGLRENDERBACKEND_H
+#define COIN_SOGLRENDERBACKEND_H
 
 #include "rendering/SoRenderBackend.h"
 #include "rendering/SoIDPickBuffer.h"
@@ -17,13 +17,18 @@
 struct CachedGPUCommand {
   GLuint posVBO = 0;
   GLuint normVBO = 0;
+  GLuint colorVBO = 0;
+  GLuint texcoordVBO = 0;
+  GLuint lineDistVBO = 0;  // cumulative object-space distance for line stipple
+  GLuint textureId = 0;  // GL texture for embedded textures (SoImage)
   GLuint idxVBO = 0;
-  GLuint vao = 0;       // visual pass VAO (pos + norm + idx)
+  GLuint vao = 0;       // visual pass VAO (pos + norm + color + idx)
   GLuint idVAO = 0;     // ID pass VAO (pos + idColor + idx)
 
   // Cache invalidation keys (CPU pointer addresses + counts)
   const float *    posKey = nullptr;
   const float *    normKey = nullptr;
+  const float *    colorKey = nullptr;
   const uint32_t * idxKey = nullptr;
   uint32_t vertexCount = 0;
   uint32_t indexCount = 0;
@@ -36,15 +41,18 @@ struct CachedGPUCommand {
 
   bool isGeometryValid(const float * pos, const float * norm,
                        const uint32_t * idx, uint32_t vCount,
-                       uint32_t iCount, uint32_t vStride) const {
-    return posVBO != 0 && pos == posKey && norm == normKey
+                       uint32_t iCount, uint32_t vStride,
+                       uint32_t gen) const {
+    return posVBO != 0 && gen == cacheGeneration
+        && pos == posKey && norm == normKey
         && idx == idxKey && vCount == vertexCount
         && iCount == indexCount && vStride == vertexStride;
   }
+  uint32_t cacheGeneration = 0;
 };
 
 /*!
-  \class SoModernGLBackend
+  \class SoGLRenderBackend
   \brief OpenGL backend that renders IR draw lists with GPU picking.
 
   Implements the SoRenderBackend interface with real GPU rendering:
@@ -52,10 +60,10 @@ struct CachedGPUCommand {
   - GPU ID buffer picking via SoIDPickBuffer (O(1) per pick)
   - Pick LUT integration for per-face element identification
 */
-class SoModernGLBackend : public SoRenderBackend {
+class SoGLRenderBackend : public SoRenderBackend {
 public:
-  SoModernGLBackend();
-  ~SoModernGLBackend() override;
+  SoGLRenderBackend();
+  ~SoGLRenderBackend() override;
 
   const char * getName() const override;
 
@@ -84,6 +92,35 @@ private:
                      const SoRenderParams & params) const;
   bool createShaders();
 
+  /// Draw a single cached command — sets per-command GL state, draws, restores.
+  void drawCommand(const SoRenderCommand & cmd,
+                   const SbMat & viewMat,
+                   const SbMat & projMat,
+                   const SoRenderParams & params);
+
+  // --- Render pass methods ---
+  void beginFrame(const SoDrawList & drawlist, const SoRenderParams & params);
+  void updateGeometryCache(const SoDrawList & drawlist);
+  void renderBackgroundPass(const SoDrawList & drawlist,
+                            const SbMat & viewMat, const SbMat & projMat,
+                            const SoRenderParams & params);
+  void renderOpaquePass(const SoDrawList & drawlist,
+                        const SbMat & viewMat, const SbMat & projMat,
+                        const SoRenderParams & params);
+  void renderTransparentPass(const SoDrawList & drawlist,
+                             const SbMat & viewMat, const SbMat & projMat,
+                             const SoRenderParams & params);
+  void renderOverlayPass(const SoDrawList & drawlist,
+                         const SbMat & viewMat, const SbMat & projMat,
+                         const SoRenderParams & params);
+  void renderSelectionPass(const SoDrawList & drawlist,
+                           const SbMat & viewMat, const SbMat & projMat,
+                           const SoRenderParams & params);
+  void endFrame();
+  void renderIDBufferPass(const SoDrawList & drawlist,
+                          const SbMat & viewMat, const SbMat & projMat,
+                          const SoRenderParams & params);
+
   CachedGPUCommand & getOrCreateCache(const float * posPtr, const uint32_t * idxPtr);
   void uploadGeometry(CachedGPUCommand & entry, const SoRenderCommand & cmd);
   void setupVisualVAO(CachedGPUCommand & entry, const SoRenderCommand & cmd);
@@ -91,16 +128,41 @@ private:
   void destroyCacheEntry(CachedGPUCommand & entry);
 
   SoRenderBackendInitParams storedparams;
+
+  // Unified shader program (lit + flat + billboard + textured)
   GLuint shaderProgram = 0;
+  // Line shader program (with geometry shader for screen-space width)
+  GLuint lineShaderProgram = 0;
+  GLint  lineUViewLocation = -1;
+  GLint  lineUProjLocation = -1;
+  GLint  lineUModelLocation = -1;
+  GLint  lineUColorLocation = -1;
+  GLint  lineULineWidthLocation = -1;
+  GLint  lineUVpSizeLocation = -1;
+  GLint  lineURenderModeLocation = -1;
+  GLint  lineUStipplePeriodLocation = -1;
+  GLint  lineUEmissiveColorLocation = -1;
+  GLint  lineUUseVertexColorLocation = -1;
   GLint  uViewLocation = -1;
   GLint  uProjLocation = -1;
   GLint  uModelLocation = -1;
   GLint  uColorLocation = -1;
-  GLint  uEmissiveLocation = -1;
-
-  // Cached attribute locations
+  GLint  uRenderModeLocation = -1;
+  GLint  uEmissiveColorLocation = -1;
+  GLint  uUseVertexColorLocation = -1;
+  GLint  uTextureLocation = -1;
+  GLint  uTexModColorLocation = -1;
+  GLint  uQuadCenterLocation = -1;
+  GLint  uTexSizeLocation = -1;
+  GLint  uVpSizeLocation = -1;
+  GLint  uStipplePeriodLocation = -1;
+  GLint  uMetalnessLocation = -1;
+  GLint  uRoughnessLocation = -1;
   GLint posLoc = -1;
   GLint normLoc = -1;
+  GLint colorLoc = -1;
+  GLint texcoordLoc = -1;
+  GLint lineDistLoc = -1;
 
   // Per-command GPU cache, keyed by (positions ptr, indices ptr) pair.
   // Two commands may share the same coordinate data but have different
@@ -132,4 +194,4 @@ private:
   bool matricesInitialized = false;
 };
 
-#endif // COIN_SOMODERNGLBACKEND_H
+#endif // COIN_SOGLRENDERBACKEND_H

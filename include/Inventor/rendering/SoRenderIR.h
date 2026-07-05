@@ -1,7 +1,7 @@
-// src/rendering/SoModernIR.h
+// src/rendering/SoRenderIR.h
 
-#ifndef COIN_SOMODERNIR_H
-#define COIN_SOMODERNIR_H
+#ifndef COIN_SORENDERIR_H
+#define COIN_SORENDERIR_H
 
 #include <Inventor/SbBasic.h>
 #include <Inventor/SbMatrix.h>
@@ -22,7 +22,7 @@ class SoVBO;
 class SoVAO;
 class SoVertexLayout;
 class SoPrimitiveVertexCache;
-class SoModernRenderAction;
+class SoIRRenderAction;
 class SoShape;
 
 /*!
@@ -42,33 +42,46 @@ enum SoPrimitiveTopology : uint8_t {
   \struct SoGeometryDesc
   \brief Describes vertex/index data for a single draw call.
 
-  All pointers remain owned by the producer (typically SoModernRenderAction).
+  All pointers remain owned by the producer (typically SoIRRenderAction).
   They must stay valid until the backend’s render() call completes. Backends
   are free to copy the data into GPU buffers if needed.
 */
 struct SoGeometryDesc {
-  SoPrimitiveTopology topology;
-  uint32_t            vertexCount;
-  uint32_t            normalCount;   //!< Number of normals (may be < vertexCount for BRep shapes).
-  uint32_t            indexCount;
+  SoPrimitiveTopology topology = SO_TOPOLOGY_TRIANGLES;
+  uint32_t            vertexCount = 0;
+  uint32_t            normalCount = 0;
+  uint32_t            indexCount = 0;
 
-  const float *       positions;
-  const float *       normals;
-  const float *       texcoords;
-  const float *       colors;
-  const uint32_t *    indices;
+  const float *       positions = nullptr;
+  const float *       normals = nullptr;
+  const float *       texcoords = nullptr;
+  const float *       colors = nullptr;
+  const uint32_t *    indices = nullptr;
 
-  uint32_t            vertexStride;   //!< Bytes between vertices in the positions/normals arrays.
-  uint32_t            texcoordStride; //!< Bytes between texture coordinates; 0 = tightly packed.
+  uint32_t            vertexStride = 0;
+  uint32_t            texcoordStride = 0;
 
   struct CacheHandle {
-    uint32_t contextId;
-    SoVBO * vertexVbo;
-    SoVBO * indexVbo;
-    SoVAO * vao;
-    const SoVertexLayout * vertexLayout;
-  } cache;
+    uint32_t contextId = 0;
+    SoVBO * vertexVbo = nullptr;
+    SoVBO * indexVbo = nullptr;
+    SoVAO * vao = nullptr;
+    const SoVertexLayout * vertexLayout = nullptr;
+  } cache = {};
 };
+
+// --- Material flags (SoMaterialData::flags) ---
+static constexpr uint32_t SO_MAT_HAS_TEXTURE = 0x1;  //!< Command carries embedded texture data
+static constexpr uint32_t SO_MAT_IS_BILLBOARD = 0x2;  //!< Screen-space billboard sizing
+
+// --- Feature flags (SoMaterialData::featureFlags) ---
+static constexpr uint32_t SO_FEAT_BASE_COLOR = 0x1;   //!< Flat/unlit rendering (BASE_COLOR light model)
+
+// --- Render param flags (SoRenderParams::flags) ---
+static constexpr uint32_t SO_PARAM_CLEAR_WINDOW = 1u;
+static constexpr uint32_t SO_PARAM_INTERACTIVE  = 2u;  //!< Camera orbiting/panning — skip ID buffer
+static constexpr uint32_t SO_PARAM_CLEAR_DEPTH  = 4u;  //!< Clear depth buffer before rendering
+static constexpr uint32_t SO_PARAM_SKIP_ID      = 8u;  //!< Skip ID buffer rendering entirely
 
 /*!
   \struct SoMaterialData
@@ -76,20 +89,33 @@ struct SoGeometryDesc {
 
   Texture pointers are backend-defined handles; IR does not own the memory.
 */
+/*! Embedded texture data for commands that carry their own image (SoImage). */
+struct SoTextureData {
+  const unsigned char * pixels = nullptr;
+  int width = 0;
+  int height = 0;
+  int numComponents = 0; // 1=L, 2=LA, 3=RGB, 4=RGBA
+};
+
 struct SoMaterialData {
-  SbVec4f  diffuse;
-  SbVec4f  ambient;
-  SbVec4f  specular;
-  SbVec4f  emissive;
-  float    shininess;
-  float    opacity;
+  SbVec4f  diffuse = {0.8f, 0.8f, 0.8f, 1.0f};
+  SbVec4f  ambient = {0.2f, 0.2f, 0.2f, 1.0f};
+  SbVec4f  specular = {0.0f, 0.0f, 0.0f, 1.0f};
+  SbVec4f  emissive = {0.0f, 0.0f, 0.0f, 1.0f};
+  float    shininess = 0.2f;
+  float    opacity = 1.0f;
 
-  void *   diffuseTexture;
-  void *   normalTexture;
-  void *   emissiveTexture;
+  SoTextureData texture;  //!< Embedded texture (from SoImage, SoTexture2)
 
-  uint32_t flags;        //!< Material feature bits (vertex colors, two-sided, etc.)
-  uint32_t featureFlags; //!< Mirrors shader feature selection; reserved for future use.
+  void *   diffuseTexture = nullptr;
+  void *   normalTexture = nullptr;
+  void *   emissiveTexture = nullptr;
+
+  float    metalness = 0.0f;
+  float    roughness = 0.5f;
+
+  uint32_t flags = 0;
+  uint32_t featureFlags = 0;
 };
 
 /*!
@@ -97,9 +123,9 @@ struct SoMaterialData {
   \brief Depth-test configuration for a draw call.
 */
 struct SoDepthState {
-  SbBool  enabled;
-  SbBool  writeEnabled;
-  uint8_t func; //!< Comparison function (GL-style enum value).
+  SbBool  enabled = TRUE;
+  SbBool  writeEnabled = TRUE;
+  uint8_t func = 0; //!< Comparison function (GL-style enum value).
 };
 
 /*!
@@ -107,10 +133,10 @@ struct SoDepthState {
   \brief Blending configuration (GL-style enums encoded as uint8_t).
 */
 struct SoBlendState {
-  SbBool  enabled;
-  uint8_t srcFactor;
-  uint8_t dstFactor;
-  uint8_t op;
+  SbBool  enabled = FALSE;
+  uint8_t srcFactor = 0;
+  uint8_t dstFactor = 0;
+  uint8_t op = 0;
 };
 
 /*!
@@ -118,12 +144,15 @@ struct SoBlendState {
   \brief Rasterizer properties (fill mode, culling, polygon offset).
 */
 struct SoRasterState {
-  uint8_t fillMode;
-  uint8_t cullMode;
-  SbBool  scissorEnabled;
-  float   lineWidth;
-  float   polygonOffsetFactor;
-  float   polygonOffsetUnits;
+  uint8_t fillMode = 0;         // 0=filled, 1=lines (wireframe), 2=points
+  uint8_t cullMode = 0;
+  SbBool  scissorEnabled = FALSE;
+  float   lineWidth = 1.0f;
+  float   pointSize = 1.0f;
+  uint16_t linePattern = 0xFFFF; // GL line stipple pattern (0xFFFF = solid)
+  int16_t  linePatternScale = 1; // GL line stipple repeat factor
+  float   polygonOffsetFactor = 0.0f;
+  float   polygonOffsetUnits = 0.0f;
 };
 
 /*!
@@ -134,8 +163,8 @@ struct SoRenderState {
   SoDepthState depth;
   SoBlendState blend;
   SoRasterState raster;
-  uint32_t opaqueKey;
-  uint32_t translucentKey;
+  uint32_t opaqueKey = 0;
+  uint32_t translucentKey = 0;
 };
 
 /*!
@@ -158,7 +187,7 @@ typedef uint64_t SoPipelineKey;
   \struct SoPickData
   \brief Per-command pick identification data for GPU ID buffer picking.
 
-  Populated during SoModernRenderAction traversal. The pick LUT maps
+  Populated during SoIRRenderAction traversal. The pick LUT maps
   sequential IDs to (commandIndex, elementType, elementIndex) tuples.
   The pickIdentity string carries application-level naming context
   (e.g., "docName\tobjName\tsubPrefix" in FreeCAD).
@@ -197,18 +226,20 @@ struct SoRenderCommand {
   SoMaterialData   material;
   SoRenderState    state;
 
-  SbMatrix         modelMatrix;
+  SbMatrix         modelMatrix;  // default-constructed to identity
+  SbMatrix         viewMatrix;
+  SbMatrix         projMatrix;
 
-  SoRenderPassType pass;
-  SoLightingHandle lightingHandle;
-  SoPipelineKey    pipelineKey;
-  SoGLShaderProgram * shaderProgram;
+  SoRenderPassType pass = SO_RENDERPASS_OPAQUE;
+  SoLightingHandle lightingHandle = 0;
+  SoPipelineKey    pipelineKey = 0;
+  SoGLShaderProgram * shaderProgram = nullptr;
 
   SoPickData       pick;       //!< GPU pick identification
   SoSelectionData  selection;  //!< Mutable highlight/selection state
 
-  uint64_t         sortKey;
-  void *           userData;
+  uint64_t         sortKey = 0;
+  void *           userData = nullptr;
 };
 
 /*!
@@ -233,6 +264,15 @@ public:
   }
 
   size_t size() const { return this->totalAllocated; }
+
+  //! Save current allocation state. Subsequent rewindTo() restores to
+  //! this point, allowing re-allocation at the same addresses.
+  struct SavePoint {
+    std::vector<size_t> chunkCursors;
+    size_t totalAllocated = 0;
+  };
+  SavePoint save() const;
+  void rewindTo(const SavePoint & sp);
 
 private:
   static constexpr size_t MIN_CHUNK_SIZE = 1024 * 1024; // 1 MB
@@ -281,10 +321,13 @@ public:
   void clear();
   void reserve(int count);
 
+  uint32_t getGeneration() const { return generation; }
+
   void addCommand(const SoRenderCommand & cmd);
   SoRenderCommand & emplaceCommand();
 
   int getNumCommands() const;
+  void truncate(int count);  //!< Remove commands beyond index count (for partial rebuild)
   SoRenderCommand & getCommand(int i);
   const SoRenderCommand & getCommand(int i) const;
 
@@ -322,10 +365,11 @@ private:
   SbList<SoRenderCommand> commands;
   std::vector<SoPickLUTEntry> pickLUT;
   std::vector<int> sortedOrder;
+  uint32_t generation = 0;
   uint64_t pickLUTGeneration = 0;
 };
 
-/*! Utility helpers declared in SoModernIR.cpp */
+/*! Utility helpers declared in SoRenderIR.cpp */
 uint64_t SoIRComputeSortKey(const SoRenderCommand & cmd,
                             uint32_t passOrderBits,
                             uint32_t depthBucket);
@@ -333,13 +377,13 @@ uint64_t SoIRComputeSortKey(const SoRenderCommand & cmd,
 void SoIRDumpSummary(const SoDrawList & drawlist);
 void SoIRDumpFirstN(const SoDrawList & drawlist, int count);
 
-namespace SoModernIR {
+namespace SoRenderIR {
 void fillMaterialFromState(SoState * state, SoMaterialData & material);
 void fillRenderStateFromState(SoState * state, SoRenderState & renderState);
 bool isMaterialTransparent(const SoMaterialData & material);
 SbBool appendCacheDrawCommands(const SoPrimitiveVertexCache * cache,
-                               SoModernRenderAction * action,
+                               SoIRRenderAction * action,
                                SoShape * shape);
 }
 
-#endif // COIN_SOMODERNIR_H
+#endif // COIN_SORENDERIR_H

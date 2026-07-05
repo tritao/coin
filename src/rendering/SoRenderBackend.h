@@ -12,7 +12,7 @@
 
 #include <cstdint>
 
-#include "rendering/SoModernIR.h"
+#include "rendering/SoRenderIR.h"
 
 class SoDrawList;
 
@@ -139,9 +139,16 @@ struct SoRenderParams {
   */
   uint32_t           flags;
   /*!
-    \brief Reserved for future expansion – keeps struct 16-byte aligned.
+    \brief Number of commands at the start of the draw list that are
+    background (e.g. gradient). The backend renders these first, then
+    clears the depth buffer before rendering the main scene.
   */
-  uint32_t           reserved;
+  int                bgCommandCount;
+  /*!
+    \brief Device pixel ratio for HiDPI scaling (e.g. 2.0 on Retina).
+    Line widths and point sizes are scaled by this factor.
+  */
+  float              devicePixelRatio;
 };
 
 /*!
@@ -189,8 +196,8 @@ struct SoRenderBackendInitParams {
   \brief Abstract GPU backend interface consumed by SoRenderManager.
   
   The base class defines the lifecycle contract (initialize / render /
-  shutdown) for any GPU implementation that wants to consume the modern
-  draw list (SoDrawList). It also provides helper utilities for logging,
+  shutdown) for any GPU implementation that wants to consume the render
+  backend draw list (SoDrawList). It also provides helper utilities for logging,
   initialization tracking and debug-time validation so each backend does
   not have to reimplement the same boilerplate.
 */

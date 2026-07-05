@@ -11,6 +11,7 @@ macro(strfy _input _postfix)
   STRING(REGEX REPLACE "\\\\" "\\\\\\\\" f1 "${f0}")
   STRING(REGEX REPLACE "\"" "\\\\\"" f2 "${f1}")
   STRING(REGEX REPLACE "\r?\n" "\\\\n\"\n  \"" COIN_STR_SOURCE_CODE "${f2}")
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${_path}")
   configure_file(strfytemplate.cmake.in "${_path}/${_basename}.h")
 endmacro()
 

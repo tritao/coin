@@ -8,8 +8,8 @@ set(COIN_RENDERING_FILES
 	SoGLNurbs.cpp
 	SoRenderer.cpp
 	SoRenderBackend.cpp
-	SoModernIR.cpp
-	SoModernGLBackend.cpp
+	SoRenderIR.cpp
+	SoGLRenderBackend.cpp
 	SoIDPickBuffer.cpp
 	SoRenderManager.cpp
 	SoRenderManagerP.cpp
@@ -30,9 +30,9 @@ set(COIN_RENDERING_INTERNAL_FILES
 	SoGL.cpp
 	SoGLNurbs.h
 	SoGLNurbs.cpp
-	SoModernIR.h
+	SoRenderIR.h
 	SoRenderBackend.h
-	SoModernGLBackend.h
+	SoGLRenderBackend.h
 	SoIDPickBuffer.h
 	SoIDPickBuffer.cpp
 	SoRenderManagerP.h

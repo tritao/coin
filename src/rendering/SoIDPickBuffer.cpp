@@ -5,7 +5,7 @@
 #endif
 
 #include "rendering/SoIDPickBuffer.h"
-#include "rendering/SoModernIR.h"
+#include "rendering/SoRenderIR.h"
 #include "rendering/SoVAO.h"
 #include "CoinTracyConfig.h"
 
@@ -15,11 +15,13 @@
 #include <Inventor/SbMatrix.h>
 #include <Inventor/system/gl.h>
 
-// macOS legacy GL headers provide VAO functions with APPLE suffix
+// macOS: declare standard VAO functions (see SoGLRenderBackend.cpp comment)
 #if defined(__APPLE__) && !defined(glGenVertexArrays)
-#define glGenVertexArrays    glGenVertexArraysAPPLE
-#define glBindVertexArray    glBindVertexArrayAPPLE
-#define glDeleteVertexArrays glDeleteVertexArraysAPPLE
+extern "C" {
+void glGenVertexArrays(GLsizei n, GLuint * arrays);
+void glBindVertexArray(GLuint array);
+void glDeleteVertexArrays(GLsizei n, const GLuint * arrays);
+}
 #endif
 
 #include <Inventor/C/glue/gl.h>
@@ -28,32 +30,10 @@
 #include <cstring>
 #include <unordered_map>
 
-// -----------------------------------------------------------------------
-// ID Shader sources (GLSL 1.20 for maximum compatibility)
-// -----------------------------------------------------------------------
-
-static const char * idVertexShader = R"(
-#version 120
-attribute vec3 aPos;
-attribute vec3 aNormal;
-attribute vec4 aIdColor;
-varying vec4 vIdColor;
-uniform mat4 uView;
-uniform mat4 uProj;
-uniform mat4 uModel;
-void main() {
-    gl_Position = uProj * uView * uModel * vec4(aPos, 1.0);
-    vIdColor = aIdColor;
-}
-)";
-
-static const char * idFragmentShader = R"(
-#version 120
-varying vec4 vIdColor;
-void main() {
-    gl_FragColor = vIdColor;
-}
-)";
+#include <data/shaders/backend/BackendIdPickFragment.h>
+#include <data/shaders/backend/BackendIdPickLineFragment.h>
+#include <data/shaders/backend/BackendIdPickLineGeometry.h>
+#include <data/shaders/backend/BackendIdPickVertex.h>
 
 // -----------------------------------------------------------------------
 // Encode / Decode
@@ -161,9 +141,9 @@ SoIDPickBuffer::initialize()
 {
   if (shaderInitialized) return TRUE;
 
-  GLuint vs = compileShader(GL_VERTEX_SHADER, idVertexShader);
+  GLuint vs = compileShader(GL_VERTEX_SHADER, BACKENDIDPICKVERTEX_shadersource);
   if (!vs) return FALSE;
-  GLuint fs = compileShader(GL_FRAGMENT_SHADER, idFragmentShader);
+  GLuint fs = compileShader(GL_FRAGMENT_SHADER, BACKENDIDPICKFRAGMENT_shadersource);
   if (!fs) { glDeleteShader(vs); return FALSE; }
 
   shaderProgram = linkProgram(vs, fs);
@@ -176,6 +156,38 @@ SoIDPickBuffer::initialize()
   uIdModel = glGetUniformLocation(shaderProgram, "uModel");
   cachedPosLoc = glGetAttribLocation(shaderProgram, "aPos");
   cachedIdColorLoc = glGetAttribLocation(shaderProgram, "aIdColor");
+
+  // Line shader for wide ID edges on Core Profile (glLineWidth clamped to 1)
+#ifndef GL_GEOMETRY_SHADER
+#define GL_GEOMETRY_SHADER 0x8DD9
+#endif
+  GLuint lvs2 = compileShader(GL_VERTEX_SHADER, BACKENDIDPICKVERTEX_shadersource);
+  GLuint lgs2 = compileShader(GL_GEOMETRY_SHADER, BACKENDIDPICKLINEGEOMETRY_shadersource);
+  GLuint lfs2 = compileShader(GL_FRAGMENT_SHADER, BACKENDIDPICKLINEFRAGMENT_shadersource);
+  if (lvs2 && lgs2 && lfs2) {
+    GLuint lprog = glCreateProgram();
+    glAttachShader(lprog, lvs2);
+    glAttachShader(lprog, lgs2);
+    glAttachShader(lprog, lfs2);
+    glBindAttribLocation(lprog, 0, "aPos");
+    glBindAttribLocation(lprog, 2, "aIdColor");
+    glLinkProgram(lprog);
+    GLint linkOk = GL_FALSE;
+    glGetProgramiv(lprog, GL_LINK_STATUS, &linkOk);
+    if (linkOk) {
+      lineShaderProgram = lprog;
+      lineUView = glGetUniformLocation(lprog, "uView");
+      lineUProj = glGetUniformLocation(lprog, "uProj");
+      lineUModel = glGetUniformLocation(lprog, "uModel");
+      lineUVpSize = glGetUniformLocation(lprog, "uVpSize");
+      lineULineWidth = glGetUniformLocation(lprog, "uLineWidth");
+    } else {
+      glDeleteProgram(lprog);
+    }
+  }
+  glDeleteShader(lvs2);
+  glDeleteShader(lgs2);
+  glDeleteShader(lfs2);
 
   shaderInitialized = TRUE;
   return TRUE;
@@ -423,12 +435,15 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
     idVAOs.resize(numCmds, 0);
     idVAOColorKey.resize(numCmds, 0);
     idVAOPosKey.resize(numCmds, 0);
+    idVAOIdxKey.resize(numCmds, 0);
   }
 
   // Helper: draw one command using cached VBOs + ID VAO when available
   auto drawIdCmd = [&](const SoRenderCommand & cmd, int ci, GLenum prim) {
     if (ci >= static_cast<int>(idColorVBOs.size()) || idColorVBOs[ci] == 0) return;
     if (!cmd.geometry.positions || cmd.geometry.vertexCount == 0) return;
+    // Skip textured commands (SoImage) — not pickable
+    if (cmd.material.flags & SO_MAT_HAS_TEXTURE) return;
 
     SbMat modelMat;
     cmd.modelMatrix.getValue(modelMat);
@@ -440,8 +455,10 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
       // Check if ID VAO needs (re)building
       uint32_t curPosVBO = vboCache[ci].posVBO;
       uint32_t curColorVBO = idColorVBOs[ci];
+      uint32_t curIdxVBO = vboCache[ci].idxVBO;
       if (idVAOs[ci] == 0 || idVAOColorKey[ci] != curColorVBO
-          || idVAOPosKey[ci] != curPosVBO) {
+          || idVAOPosKey[ci] != curPosVBO
+          || idVAOIdxKey[ci] != curIdxVBO) {
         // Build/rebuild the ID VAO
         if (idVAOs[ci] == 0) glGenVertexArrays(1, &idVAOs[ci]);
         glBindVertexArray(idVAOs[ci]);
@@ -466,11 +483,12 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
         idVAOColorKey[ci] = curColorVBO;
         idVAOPosKey[ci] = curPosVBO;
+        idVAOIdxKey[ci] = curIdxVBO;
       }
 
       // Fast path: bind VAO + draw (3 GL calls)
       glBindVertexArray(idVAOs[ci]);
-      if (cmd.geometry.indexCount > 0) {
+      if (cmd.geometry.indexCount > 0 && vboCache[ci].idxVBO != 0) {
         glDrawElements(prim, cmd.geometry.indexCount, GL_UNSIGNED_INT, NULL);
       }
       else {
@@ -512,8 +530,10 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
   // Pass 1: Triangles — normal depth test, standard rendering
   for (int ci = 0; ci < numCmds; ci++) {
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
+    if (cmd.pass == SO_RENDERPASS_OVERLAY) continue;  // not pickable
     if (cmd.geometry.topology != SO_TOPOLOGY_TRIANGLES &&
         cmd.geometry.topology != SO_TOPOLOGY_TRIANGLE_STRIP) continue;
+    if (cmd.material.flags & SO_MAT_HAS_TEXTURE) continue;  // skip textured (SoImage)
     drawIdCmd(cmd, ci, GL_TRIANGLES);
   }
 
@@ -522,12 +542,31 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
   // face depth buffer stays intact for the vertex pass.
   glDepthFunc(GL_LEQUAL);
   glDepthMask(GL_FALSE);
+  // Use line geometry shader for wide ID edges on Core Profile
+  bool useLineShader = (lineShaderProgram != 0 && pickLineWidth > 1.0f);
+  if (useLineShader) {
+    glUseProgram(lineShaderProgram);
+    glUniformMatrix4fv(lineUView, 1, GL_FALSE, viewMatrix);
+    glUniformMatrix4fv(lineUProj, 1, GL_FALSE, projMatrix);
+    glUniform2f(lineUVpSize, static_cast<float>(fbWidth), static_cast<float>(fbHeight));
+    glUniform1f(lineULineWidth, pickLineWidth);
+  }
   for (int ci = 0; ci < numCmds; ci++) {
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
+    if (cmd.pass == SO_RENDERPASS_OVERLAY) continue;
     if (cmd.geometry.topology != SO_TOPOLOGY_LINES &&
         cmd.geometry.topology != SO_TOPOLOGY_LINE_STRIP) continue;
+    if (cmd.material.flags & SO_MAT_HAS_TEXTURE) continue;
+    if (useLineShader) {
+      SbMat modelMat;
+      cmd.modelMatrix.getValue(modelMat);
+      glUniformMatrix4fv(lineUModel, 1, GL_FALSE, &modelMat[0][0]);
+    }
     glLineWidth(std::max(cmd.state.raster.lineWidth, pickLineWidth));
     drawIdCmd(cmd, ci, GL_LINES);
+  }
+  if (useLineShader) {
+    glUseProgram(shaderProgram);
   }
   glDepthMask(GL_TRUE);
   glDepthFunc(GL_LESS);
@@ -538,8 +577,12 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
   glDepthMask(GL_FALSE);
   for (int ci = 0; ci < numCmds; ci++) {
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
+    if (cmd.pass == SO_RENDERPASS_OVERLAY) continue;
     if (cmd.geometry.topology != SO_TOPOLOGY_POINTS) continue;
-    glPointSize(std::max(cmd.state.raster.lineWidth, pickPointSize));
+    if (cmd.material.flags & SO_MAT_HAS_TEXTURE) continue;
+    float ps = cmd.state.raster.pointSize;
+    if (ps < 1.0f) ps = cmd.state.raster.lineWidth;
+    glPointSize(std::max(ps, pickPointSize));
     drawIdCmd(cmd, ci, GL_POINTS);
   }
   glDepthMask(GL_TRUE);

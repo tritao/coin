@@ -5,7 +5,7 @@
 
 #include <Inventor/SbBasic.h>
 
-#include "rendering/SoModernIR.h"
+#include "rendering/SoRenderIR.h"
 
 #include <cstdint>
 #include <vector>
@@ -151,10 +151,19 @@ private:
   std::vector<uint32_t> idVAOs;
   std::vector<uint32_t> idVAOColorKey;  // idColorVBO bound when VAO was built
   std::vector<uint32_t> idVAOPosKey;    // posVBO bound when VAO was built
+  std::vector<uint32_t> idVAOIdxKey;    // idxVBO bound when VAO was built
 
   // Cached attribute locations for the ID shader
   int cachedPosLoc = -1;
   int cachedIdColorLoc = -1;
+
+  // Line shader program (geometry shader for wide ID lines on Core Profile)
+  uint32_t lineShaderProgram = 0;
+  int lineUView = -1;
+  int lineUProj = -1;
+  int lineUModel = -1;
+  int lineUVpSize = -1;
+  int lineULineWidth = -1;
 
   // Pick dimensions
   float pickLineWidth = 7.0f;
