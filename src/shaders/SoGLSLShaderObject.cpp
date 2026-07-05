@@ -31,11 +31,13 @@
 \**************************************************************************/
 
 #include "shaders/SoGLSLShaderObject.h"
+#include <Inventor/C/tidbits.h>
 #include "Inventor/C/glue/gl.h"
 #include "coindefs.h"
 
 #include <Inventor/system/gl.h>
 #include <cassert>
+#include <cstring>
 #include <cstdio>
 #include <Inventor/errors/SoDebugError.h>
 
@@ -51,6 +53,54 @@
 #include "shaders/SoGLSLShaderParameter.h"
 
 static int32_t soglshaderobject_idcounter = 1;
+
+static const char *
+soglshaderobject_stage_name(SoGLShaderObject::ShaderType type)
+{
+  switch (type) {
+  case SoGLShaderObject::VERTEX:
+    return "vertex shader";
+  case SoGLShaderObject::FRAGMENT:
+    return "fragment shader";
+  case SoGLShaderObject::GEOMETRY:
+    return "geometry shader";
+  default:
+    return "shader";
+  }
+}
+
+static SbBool
+soglshaderobject_use_line_directives(void)
+{
+  // Keep line directives opt-in. Driver support has historically been uneven.
+  const char * env = coin_getenv("COIN_GLSL_LINE_DIRECTIVES");
+  return env != NULL && env[0] != '\0' &&
+         !(env[0] == '0' && env[1] == '\0');
+}
+
+static SbString
+soglshaderobject_prepare_source(const char * srcStr)
+{
+  if (srcStr == NULL) return SbString("");
+  if (!soglshaderobject_use_line_directives()) return SbString(srcStr);
+
+  const char * body = srcStr;
+  SbString prepared;
+
+  if (std::strncmp(srcStr, "#version", 8) == 0) {
+    while (*body != '\0' && *body != '\n') {
+      ++body;
+    }
+    if (*body == '\n') {
+      ++body;
+    }
+    prepared = SbString(srcStr, 0, int(body - srcStr) - 1);
+  }
+
+  prepared += "#line 1\n";
+  prepared += body;
+  return prepared;
+}
 
 // *************************************************************************
 
@@ -122,7 +172,10 @@ SoGLSLShaderObject::load(const char* srcStr)
   if (this->shaderHandle == 0) return;
   this->programid = soglshaderobject_idcounter++;
 
-  glShaderSource(this->shaderHandle, 1, (const COIN_GLchar **)&srcStr, NULL);
+  const SbString preparedSource = soglshaderobject_prepare_source(srcStr);
+  const COIN_GLchar * preparedSourcePtr =
+    (const COIN_GLchar *) preparedSource.getString();
+  glShaderSource(this->shaderHandle, 1, &preparedSourcePtr, NULL);
   glCompileShader(this->shaderHandle);
 
   if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::load()")) {
@@ -131,8 +184,11 @@ SoGLSLShaderObject::load(const char* srcStr)
   }
 
   glGetShaderiv(this->shaderHandle, GL_COMPILE_STATUS, &flag);
-  SoGLSLShaderObject::printInfoLog(this->GLContext(), this->shaderHandle,
-                                   this->getShaderType());
+  SoGLSLShaderObject::printInfoLog(this->GLContext(),
+                                   this->shaderHandle,
+                                   this->getShaderType(),
+                                   this->sourceHint,
+                                   !flag);
 
   if (!flag) {
     this->shaderHandle = 0;
@@ -170,10 +226,13 @@ SoGLSLShaderObject::loadARB(const char* srcStr)
   if (this->shaderHandle == 0) return;
   this->programid = soglshaderobject_idcounter++;
 
-  this->glctx->glShaderSourceARB(this->shaderHandle, 1, (const COIN_GLchar **)&srcStr, NULL);
+  const SbString preparedSource = soglshaderobject_prepare_source(srcStr);
+  const COIN_GLchar * preparedSourcePtr =
+    (const COIN_GLchar *) preparedSource.getString();
+  this->glctx->glShaderSourceARB(this->shaderHandle, 1, &preparedSourcePtr, NULL);
   this->glctx->glCompileShaderARB(this->shaderHandle);
 
-  if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::load()")) {
+  if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::loadARB()")) {
     this->shaderHandle = 0;
     return;
   }
@@ -181,8 +240,11 @@ SoGLSLShaderObject::loadARB(const char* srcStr)
   this->glctx->glGetObjectParameterivARB(this->shaderHandle,
                                          GL_OBJECT_COMPILE_STATUS_ARB,
                                          &flag);
-  SoGLSLShaderObject::printInfoLog(this->GLContext(), this->shaderHandle,
-                                   this->getShaderType());
+  SoGLSLShaderObject::printInfoLog(this->GLContext(),
+                                   this->shaderHandle,
+                                   this->getShaderType(),
+                                   this->sourceHint,
+                                   !flag);
 
   if (!flag) this->shaderHandle = 0;
 }
@@ -240,7 +302,11 @@ SoGLSLShaderObject::isAttached(void) const
 }
 
 void
-SoGLSLShaderObject::printInfoLog(const cc_glglue * g, COIN_GLhandle handle, int objType)
+SoGLSLShaderObject::printInfoLog(const cc_glglue * g,
+                                 COIN_GLhandle handle,
+                                 const ShaderType shaderType,
+                                 const SbString & sourceHint,
+                                 const SbBool failed)
 {
   GLint length = 0;
 
@@ -250,6 +316,9 @@ SoGLSLShaderObject::printInfoLog(const cc_glglue * g, COIN_GLhandle handle, int 
     glGetShaderiv(handle, GL_INFO_LOG_LENGTH, &length);
   }
 
+  const char * sourceName = sourceHint.getLength() > 0 ?
+    sourceHint.getString() : "<unnamed>";
+
   if (length > 1) {
     COIN_GLchar *infoLog = new COIN_GLchar[length];
     GLsizei charsWritten = 0;
@@ -258,17 +327,28 @@ SoGLSLShaderObject::printInfoLog(const cc_glglue * g, COIN_GLhandle handle, int 
     } else {
       glGetShaderInfoLog(handle, length, &charsWritten, infoLog);
     }
-    SbString s("GLSL");
-    switch (objType) {
-    case 0: s += "vertexShader "; break;
-    case 1: s += "fragmentShader "; break;
-    case 2: s += "geometryShader "; break;
-    default: ;// do nothing
+
+    if (failed) {
+      SoDebugError::postWarning("SoGLSLShaderObject::printInfoLog",
+                                "%s '%s' failed to compile: %s",
+                                soglshaderobject_stage_name(shaderType),
+                                sourceName,
+                                infoLog);
     }
-    SoDebugError::postInfo("SoGLSLShaderObject::printInfoLog",
-                           "%s log: '%s'",
-                           s.getString(), infoLog);
+    else {
+      SoDebugError::postInfo("SoGLSLShaderObject::printInfoLog",
+                             "%s '%s' log: %s",
+                             soglshaderobject_stage_name(shaderType),
+                             sourceName,
+                             infoLog);
+    }
     delete [] infoLog;
+  }
+  else if (failed) {
+    SoDebugError::postWarning("SoGLSLShaderObject::printInfoLog",
+                              "%s '%s' failed to compile with no compiler log",
+                              soglshaderobject_stage_name(shaderType),
+                              sourceName);
   }
 }
 
