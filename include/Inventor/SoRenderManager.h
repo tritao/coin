@@ -48,6 +48,7 @@ class SoNode;
 class SoCamera;
 class SoNodeSensor;
 class SoOneShotSensor;
+class SoPickedPoint;
 class SoSensor;
 class SoRenderManagerP;
 
@@ -74,6 +75,7 @@ public:
     void render(SoGLRenderAction * action, SbBool clearcolorbuffer = FALSE);
     void setEnabled(SbBool yes);
     int getStateFlags(void) const;
+    SoNode * getScene(void) const;
     void setTransparencyType(SoGLRenderAction::TransparencyType transparencytype);
 
   private:
@@ -196,6 +198,63 @@ public:
   /// Resolve a pick LUT index to a pick identity string.
   /// Returns tab-separated "pickIdentity\tElementName" or empty string.
   std::string resolveGpuPickIdentity(uint32_t lutIndex) const;
+
+  /// Get the stored scene graph path for a pick LUT entry's command.
+  /// Returns NULL if not available. Path is ref'd and owned by the action.
+  SoPath * getGpuPickPath(uint32_t lutIndex) const;
+
+  /// Get the element index (face/edge/vertex) for a pick LUT entry.
+  /// Returns -1 if index is out of range.
+  int getGpuPickElement(uint32_t lutIndex) const;
+
+  /// Get the element type for a pick LUT entry.
+  /// Returns: 0=face, 1=edge, 2=vertex, 3=whole_body, -1=invalid
+  int getGpuPickElementType(uint32_t lutIndex) const;
+
+  /// Assemble a complete SoPickedPoint from the GPU ID buffer pick.
+  /// Returns a newly allocated SoPickedPoint with the correct path, detail,
+  /// and 3D intersection point — identical to what SoRayPickAction produces.
+  /// Returns NULL for no hit. Caller owns the returned pointer.
+  SoPickedPoint * assemblePickedPoint(int screenX, int screenY,
+                                      int pickRadius = 5) const;
+
+  /// Set/get the line width for edge picking in the ID buffer.
+  /// Wider lines make edges easier to select. Default 7.0.
+  void setGpuPickLineWidth(float width);
+  float getGpuPickLineWidth() const;
+
+  /// Set/get the point size for vertex picking in the ID buffer.
+  /// Larger points make vertices easier to select. Default 7.0.
+  void setGpuPickPointSize(float size);
+  float getGpuPickPointSize() const;
+
+  /// Force the modern renderer to re-traverse the scene graph on the next frame.
+  void invalidateDrawList();
+
+  /// Directly set preselection highlight on a draw list command by pick LUT index.
+  /// Avoids scene graph traversal. Returns true if highlight was applied.
+  /// @param lutIndex  Pick LUT index (1-based, from gpuPick). 0 clears all highlights.
+  /// @param color     Highlight color (RGBA).
+  bool setDrawListHighlight(uint32_t lutIndex, const SbColor4f & color);
+
+  /// Clear all preselection highlights in the draw list.
+  void clearDrawListHighlight();
+
+  /// Set selection state on a draw list command by pick LUT index.
+  /// @param lutIndex  Pick LUT index (1-based). 0 is invalid.
+  /// @param color     Selection color (RGBA).
+  /// @param append    If true, add to existing selection. If false, replace.
+  bool setDrawListSelection(uint32_t lutIndex, const SbColor4f & color,
+                            SbBool append = TRUE);
+
+  /// Clear all selection state in the draw list.
+  void clearDrawListSelection();
+
+  /// Set interactive mode (true during camera orbit/pan/zoom).
+  /// When interactive, the backend skips the ID pick buffer to save GPU time.
+  void setInteractive(SbBool interactive);
+  SbBool isInteractive() const;
+
   void setAudioRenderAction(SoAudioRenderAction * const action);
   SoAudioRenderAction * getAudioRenderAction(void) const;
 

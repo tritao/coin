@@ -10,6 +10,14 @@
 #include <cstdint>
 #include <vector>
 
+/// Per-command cached VBO info passed from the visual pass backend
+/// to the ID pick buffer, avoiding redundant geometry uploads.
+struct SoIDPassVBOInfo {
+  uint32_t posVBO;        ///< GL buffer name for positions (0 = not cached)
+  uint32_t idxVBO;        ///< GL buffer name for indices (0 = not cached)
+  uint32_t vertexStride;  ///< Stride used when VBO was uploaded
+};
+
 /*!
   \class SoIDPickBuffer
   \brief Off-screen FBO for GPU-based ID picking.
@@ -56,14 +64,52 @@ public:
   /// @param viewMatrix   Column-major 4x4 view matrix
   /// @param projMatrix   Column-major 4x4 projection matrix
   /// @param drawlist     The draw list with commands (for VAO/transform access)
+  /// @param vboCache     Optional per-command cached VBOs from the visual pass.
+  ///                     When provided, the ID pass binds these instead of
+  ///                     re-uploading positions/indices. Size must be >= numCommands.
   void render(const float * viewMatrix, const float * projMatrix,
-              const SoDrawList & drawlist);
+              const SoDrawList & drawlist,
+              const SoIDPassVBOInfo * vboCache = nullptr, int vboCacheCount = 0);
 
   /// Pick at pixel coordinates. Returns pick LUT index (1-based), or 0.
   /// Reads from CPU cache — no GL calls, safe from any thread.
   uint32_t pick(int x, int y, int pickRadius = 5) const;
 
+  /// Compute the 3D intersection point for a picked element.
+  /// Casts a ray from the camera through (pixelX, pixelY) and intersects
+  /// the identified triangle/edge. Returns the object-space point.
+  /// @param lutIndex   Pick LUT index (1-based)
+  /// @param drawlist   Draw list with geometry data
+  /// @param viewMatrix Column-major 4x4 view matrix
+  /// @param projMatrix Column-major 4x4 projection matrix
+  /// @param pixelX     Pixel X coordinate
+  /// @param pixelY     Pixel Y coordinate
+  /// @param vpWidth    Viewport width in pixels
+  /// @param vpHeight   Viewport height in pixels
+  /// @param outWorldPoint  Output: world-space intersection point
+  /// @return true if intersection was found
+  bool computeIntersection(uint32_t lutIndex, const SoDrawList & drawlist,
+                           const float * viewMatrix, const float * projMatrix,
+                           int pixelX, int pixelY, int vpWidth, int vpHeight,
+                           SbVec3f & outWorldPoint) const;
+
   SbBool isInitialized() const { return shaderInitialized; }
+
+  /// Set coordinate scale for half-resolution ID buffer.
+  /// pick() will scale input viewport coordinates by these factors.
+  void setPickScale(float sx, float sy) { pickScaleX = sx; pickScaleY = sy; }
+
+  /// Set the pick line width for edges in the ID buffer (default 7.0)
+  void setPickLineWidth(float w) { pickLineWidth = w; }
+  float getPickLineWidth() const { return pickLineWidth; }
+
+  /// Set the pick point size for vertices in the ID buffer (default 7.0)
+  void setPickPointSize(float s) { pickPointSize = s; }
+  float getPickPointSize() const { return pickPointSize; }
+  size_t getIdColorVBOCount() const { return idColorVBOs.size(); }
+  bool hasIdColorVBO(int ci) const {
+    return ci >= 0 && ci < static_cast<int>(idColorVBOs.size()) && idColorVBOs[ci] != 0;
+  }
 
   /// Debug: blit the ID buffer to the current framebuffer.
   void blitToScreen(int screenWidth, int screenHeight) const;
@@ -73,7 +119,8 @@ public:
 
 private:
   void renderIdPass(const float * viewMatrix, const float * projMatrix,
-                    const SoDrawList & drawlist);
+                    const SoDrawList & drawlist,
+                    const SoIDPassVBOInfo * vboCache, int vboCacheCount);
 
   // GL resources
   uint32_t fbo = 0;
@@ -95,6 +142,25 @@ private:
   // Per-command ID color VBOs (index = command index in draw list)
   std::vector<uint32_t> idColorVBOs;
   std::vector<int> idColorVertexCounts;
+
+  // Temporary VBOs for CPU data upload in ID pass (fallback)
+  uint32_t tempPosVBO = 0;
+  uint32_t tempIdxVBO = 0;
+
+  // Per-command ID VAOs (lazily built from cached VBOs + idColorVBOs)
+  std::vector<uint32_t> idVAOs;
+  std::vector<uint32_t> idVAOColorKey;  // idColorVBO bound when VAO was built
+  std::vector<uint32_t> idVAOPosKey;    // posVBO bound when VAO was built
+
+  // Cached attribute locations for the ID shader
+  int cachedPosLoc = -1;
+  int cachedIdColorLoc = -1;
+
+  // Pick dimensions
+  float pickLineWidth = 7.0f;
+  float pickPointSize = 7.0f;
+  float pickScaleX = 1.0f;
+  float pickScaleY = 1.0f;
 
   // ID pass shader
   uint32_t shaderProgram = 0;

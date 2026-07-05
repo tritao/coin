@@ -93,6 +93,7 @@ option(COIN_BUILD_TESTS "Build unit tests when ON (default), skips them when OFF
 option(COIN_BUILD_DOCUMENTATION "Build and install API documentation (requires Doxygen)." OFF)
 option(COIN_BUILD_AWESOME_DOCUMENTATION "Build and install API documentation in new modern style (requires Doxygen)." OFF)
 option(COIN_BUILD_EXAMPLES "Build examples when ON (default), skips them when OFF." OFF)
+
 cmake_dependent_option(COIN_BUILD_INTERNAL_DOCUMENTATION "Document internal code not part of the API." OFF "COIN_BUILD_DOCUMENTATION" OFF)
 cmake_dependent_option(COIN_BUILD_DOCUMENTATION_MAN "Build Coin man pages." OFF "COIN_BUILD_DOCUMENTATION" OFF)
 cmake_dependent_option(COIN_BUILD_DOCUMENTATION_QTHELP "Build QtHelp documentation." OFF "COIN_BUILD_DOCUMENTATION" OFF)
@@ -132,10 +133,19 @@ cmake_dependent_option(COIN_BUILD_MAC_AGL "Build for AGL on Mac OS X when ON. De
 option(COIN_BUILD_GLX "Build for GLX on Linux when ON. Default is ON." ON)
 option(COIN_BUILD_EGL "Build for EGL on Linux when ON. Default is ON." ON)
 
-option(COIN_GL_COMPATIBILITY "Enable legacy desktop GL compatibility rendering" ON)
+option(COIN_GL_COMPATIBILITY "If enabled the GL compatibility code is enabled" ON)
+if (EMSCRIPTEN)
+  set(COIN_GL_COMPATIBILITY OFF)
+endif()
 
 check_include_file_cxx(thread HAVE_STD_THREAD)
 cmake_dependent_option(COIN_DEBUG_CHECK_THREAD "Enable thread check in several central Coin functions." OFF "HAVE_STD_THREAD" OFF)
+
+# Render regression testing options
+option(RENDER_TESTS_ENABLED "Enable render regression test tooling and CLI helpers." ON)
+cmake_dependent_option(RENDER_TESTS_ENABLE_GLES "Enable GLES render backend when render tests are enabled." OFF "RENDER_TESTS_ENABLED" OFF)
+cmake_dependent_option(RENDER_TESTS_ENABLE_WEB "Enable web render backend tooling when render tests are enabled." OFF "RENDER_TESTS_ENABLED" OFF)
+cmake_dependent_option(RENDER_TESTS_ENABLE_PERCEPTUAL_METRICS "Enable perceptual regression metrics once compare tooling is in place." OFF "RENDER_TESTS_ENABLED" OFF)
 
 report_prepare(
   COIN_BUILD_SHARED_LIBS
@@ -166,6 +176,10 @@ report_prepare(
   ZLIB_RUNTIME_LINKING
   GLU_RUNTIME_LINKING
   SPIDERMONKEY_RUNTIME_LINKING
+  RENDER_TESTS_ENABLED
+  RENDER_TESTS_ENABLE_GLES
+  RENDER_TESTS_ENABLE_WEB
+  RENDER_TESTS_ENABLE_PERCEPTUAL_METRICS
   HAVE_MULTIPLE_VERSION
   IF_APPLE
     COIN_BUILD_MAC_FRAMEWORK
@@ -244,6 +258,8 @@ else()
         else()
           list(APPEND COIN_TARGET_LINK_LIBRARIES_GL OpenGL::EGL)
         endif()
+      elseif (EMSCRIPTEN)
+        set(HAVE_EGL 1)
       endif()
     endif ()
     if(APPLE)
@@ -284,6 +300,16 @@ if(Threads_FOUND)
   endif()
   list(APPEND COIN_TARGET_LINK_LIBRARIES Threads::Threads)
   #pthreads does not provide pkg-config file, therefore not added here
+endif()
+
+# Optional libbacktrace for debug stack traces
+find_library(BACKTRACE_LIBRARY backtrace)
+find_path(BACKTRACE_INCLUDE_DIR backtrace.h)
+if(BACKTRACE_LIBRARY AND BACKTRACE_INCLUDE_DIR)
+  message(STATUS "Found libbacktrace: ${BACKTRACE_LIBRARY}")
+  list(APPEND COIN_TARGET_LINK_LIBRARIES ${BACKTRACE_LIBRARY})
+  add_definitions(-DCOIN_USE_BACKTRACE)
+  include_directories(${BACKTRACE_INCLUDE_DIR})
 endif()
 
 if(USE_EXTERNAL_EXPAT)
@@ -550,6 +576,7 @@ if(MSVC)
   coin_msvc_link_static_crt(${COIN_BUILD_MSVC_STATIC_RUNTIME})
   add_definitions(-D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_SECURE_NO_DEPRECATE -D_CRT_SECURE_NO_WARNINGS -D_USE_MATH_DEFINES)
 else()
+  add_compile_options(-fdiagnostics-color=always)
   if(APPLE)
     add_definitions(-DGL_SILENCE_DEPRECATION)
   endif()
@@ -745,7 +772,9 @@ endif()
 
 # Helpers to keep GL header logic in one place.
 macro(coin_check_gl_headers)
-  if(COIN_GL_COMPATIBILITY)
+  if(EMSCRIPTEN)
+    message(STATUS "GL header probe skipped (Emscripten uses GLES3 includes)")
+  elseif(COIN_GL_COMPATIBILITY)
     message(STATUS "GL compatibility mode enabled; using legacy headers")
     if(HAVE_WINDOWS_H)
       check_include_files("windows.h;GL/gl.h" HAVE_GL_GL_H)
@@ -787,7 +816,11 @@ macro(coin_configure_gl_include_strings)
     set(SIM_INCLUDE_WINDOWS_H "/* #include <windows.h> - not needed on system */")
   endif()
 
-  if(COIN_GL_COMPATIBILITY)
+  if(EMSCRIPTEN)
+    set(SIM_INCLUDE_GL_H "#include <GLES3/gl3.h>")
+    set(SIM_INCLUDE_GLEXT_H "#include <GLES2/gl2ext.h>")
+    set(SIM_INCLUDE_GLU_H "#include <GL/glu.h>")
+  elseif(COIN_GL_COMPATIBILITY)
     if(HAVE_GL_GL_H)
       set(SIM_INCLUDE_GL_H "#include <GL/gl.h>")
     elseif(HAVE_OPENGL_GL_H)
@@ -1006,6 +1039,21 @@ endif()
 if(COIN_BUILD_TESTS)
   enable_testing()
   add_subdirectory(testsuite)
+endif()
+
+if(RENDER_TESTS_ENABLED)
+  enable_testing()
+  find_package(yaml-cpp REQUIRED)
+  add_subdirectory(thirdparty)
+  add_subdirectory(tools)
+  add_test(NAME render_smoke COMMAND CoinRenderTests snapshot --help)
+  add_test(
+    NAME render_gl
+    COMMAND CoinRenderTests run
+      --spec-dir ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/specs
+      --backend gl
+      --artifacts-dir ${CMAKE_BINARY_DIR}/render_artifacts/gl
+  )
 endif()
 
 # add_feature_info(ThreadSafe COIN_THREADSAFE "Thread safe render traversals.")

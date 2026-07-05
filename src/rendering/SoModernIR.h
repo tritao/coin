@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -48,6 +49,7 @@ enum SoPrimitiveTopology : uint8_t {
 struct SoGeometryDesc {
   SoPrimitiveTopology topology;
   uint32_t            vertexCount;
+  uint32_t            normalCount;   //!< Number of normals (may be < vertexCount for BRep shapes).
   uint32_t            indexCount;
 
   const float *       positions;
@@ -211,7 +213,10 @@ struct SoRenderCommand {
 
 /*!
   \class SoIRBuffer
-  \brief Linear CPU-side scratch buffer used while assembling geometry blobs.
+  \brief Chunk-based CPU scratch allocator for per-frame geometry data.
+
+  Allocations are stable: pointers remain valid until clear() is called.
+  Growth allocates new chunks without moving old data.
 */
 class SoIRBuffer {
 public:
@@ -227,11 +232,17 @@ public:
     return static_cast<T *>(this->allocate(count * sizeof(T), alignment));
   }
 
-  size_t size() const { return this->cursor; }
+  size_t size() const { return this->totalAllocated; }
 
 private:
-  std::vector<uint8_t> storage;
-  size_t cursor;
+  static constexpr size_t MIN_CHUNK_SIZE = 1024 * 1024; // 1 MB
+  struct Chunk {
+    std::vector<uint8_t> data;
+    size_t cursor = 0;
+  };
+  std::vector<std::unique_ptr<Chunk>> chunks;
+  size_t totalAllocated = 0;
+  size_t highWaterMark = 0;  // largest total allocation seen across frames
 };
 
 /*!
@@ -287,6 +298,18 @@ public:
   const std::vector<SoPickLUTEntry> & getPickLUT() const { return pickLUT; }
   std::vector<SoPickLUTEntry> & getMutablePickLUT() { return pickLUT; }
 
+  //! Build a sorted index array for correct render ordering.
+  //! The draw list itself is NOT reordered — command indices stay stable
+  //! for pick LUT and command path lookups.
+  void buildSortedOrder(const SbMatrix & viewMatrix);
+
+  //! Get the sorted rendering order (indices into the command list).
+  const std::vector<int> & getSortedOrder() const { return sortedOrder; }
+
+  //! Generation counter — incremented on each buildPickLUT() call.
+  //! Used by the backend to detect when ID color VBOs need rebuilding.
+  uint64_t getPickLUTGeneration() const { return pickLUTGeneration; }
+
   //! Build the pick LUT from the current commands. Each face of BRep
   //! shapes gets a separate entry; edges/points/whole-body get one each.
   void buildPickLUT();
@@ -298,6 +321,8 @@ public:
 private:
   SbList<SoRenderCommand> commands;
   std::vector<SoPickLUTEntry> pickLUT;
+  std::vector<int> sortedOrder;
+  uint64_t pickLUTGeneration = 0;
 };
 
 /*! Utility helpers declared in SoModernIR.cpp */

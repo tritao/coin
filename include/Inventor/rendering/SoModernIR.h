@@ -48,6 +48,7 @@ enum SoPrimitiveTopology : uint8_t {
 struct SoGeometryDesc {
   SoPrimitiveTopology topology;
   uint32_t            vertexCount;
+  uint32_t            normalCount;   //!< Number of normals (may be < vertexCount for BRep shapes).
   uint32_t            indexCount;
 
   const float *       positions;
@@ -287,6 +288,15 @@ public:
   const std::vector<SoPickLUTEntry> & getPickLUT() const { return pickLUT; }
   std::vector<SoPickLUTEntry> & getMutablePickLUT() { return pickLUT; }
 
+  //! Build a sorted index array for correct render ordering.
+  void buildSortedOrder(const SbMatrix & viewMatrix);
+
+  //! Get the sorted rendering order (indices into the command list).
+  const std::vector<int> & getSortedOrder() const { return sortedOrder; }
+
+  //! Generation counter — incremented on each buildPickLUT() call.
+  uint64_t getPickLUTGeneration() const { return pickLUTGeneration; }
+
   //! Build the pick LUT from the current commands. Each face of BRep
   //! shapes gets a separate entry; edges/points/whole-body get one each.
   void buildPickLUT();
@@ -298,6 +308,8 @@ public:
 private:
   SbList<SoRenderCommand> commands;
   std::vector<SoPickLUTEntry> pickLUT;
+  std::vector<int> sortedOrder;
+  uint64_t pickLUTGeneration = 0;
 };
 
 /*! Utility helpers declared in SoModernIR.cpp */

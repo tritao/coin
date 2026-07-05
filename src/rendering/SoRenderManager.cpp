@@ -69,6 +69,14 @@
 #include <Inventor/system/renderer.h>
 #include <Inventor/nodes/SoInfo.h>
 #include <Inventor/nodes/SoCamera.h>
+#include <Inventor/nodes/SoGroup.h>
+#include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoShape.h>
+#include <Inventor/nodes/SoTransformation.h>
+#include <Inventor/SoPickedPoint.h>
+#include <Inventor/details/SoFaceDetail.h>
+#include <Inventor/details/SoLineDetail.h>
+#include <Inventor/details/SoPointDetail.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
 #include <Inventor/elements/SoComplexityTypeElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
@@ -82,6 +90,7 @@
 #include <Inventor/actions/SoAudioRenderAction.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoModernRenderAction.h>
+#include "CoinTracyConfig.h"
 #include <Inventor/SbTime.h>
 #include <Inventor/SbViewVolume.h>
 #include <Inventor/sensors/SoOneShotSensor.h>
@@ -97,6 +106,7 @@
 #include "rendering/SoModernGLBackend.h"
 #include "rendering/SoModernIR.h"
 #include "coindefs.h"
+
 
 #if COIN_WORKAROUND(COIN_MSVC, <= COIN_MSVC_6_0_VERSION)
 // symbol length truncation
@@ -271,6 +281,7 @@ SoRenderManager::SoRenderManager(void)
   PRIVATE(this)->stereostencilmask = NULL;
   PRIVATE(this)->superimpositions = NULL;
   PRIVATE(this)->modernAction = NULL;
+  PRIVATE(this)->overlayAction = NULL;
   PRIVATE(this)->modernBackend = NULL;
   PRIVATE(this)->modernEnabled = FALSE;
 
@@ -288,6 +299,9 @@ SoRenderManager::SoRenderManager(void)
   PRIVATE(this)->overlaycolor = SbColor(1.0f, 0.0f, 0.0f).getPackedValue();
   PRIVATE(this)->stereostencilmaskvp = SbViewportRegion(0, 0);
   PRIVATE(this)->modernFrameCounter = 0;
+#ifdef COIN_USE_BACKTRACE
+  PRIVATE(this)->btState = backtrace_create_state(NULL, 0, NULL, NULL);
+#endif
   const char * modernenv = coin_getenv("COIN_USE_MODERN_RENDER");
   if (modernenv && modernenv[0] != '0' && modernenv[0] != '\0') {
     PRIVATE(this)->modernEnabled = TRUE;
@@ -321,6 +335,7 @@ SoRenderManager::~SoRenderManager()
     delete PRIVATE(this)->modernBackend;
   }
   delete PRIVATE(this)->modernAction;
+  delete PRIVATE(this)->overlayAction;
 
   PRIVATE(this)->dummynode->unref();
 
@@ -369,7 +384,8 @@ SoRenderManager::setSceneGraph(SoNode * const sceneroot)
     this->attachRootSensor(PRIVATE(this)->scene);
     //this->attachClipSensor(PRIVATE(this)->scene);
   }
-  
+  PRIVATE(this)->drawListValid = false;
+
   if (oldroot) oldroot->unref();
 }
 
@@ -415,13 +431,44 @@ SoRenderManager::getCamera(void) const
   \deprecated Will be made private in a later version of Coin
 */
 void
-SoRenderManager::nodesensorCB(void * data, SoSensor * /* sensor */)
+SoRenderManager::nodesensorCB(void * data, SoSensor * sensor)
 {
 #if COIN_DEBUG && 0 // debug
   SoDebugError::postInfo("SoRenderManager::nodesensorCB",
                          "detected change in scene graph");
 #endif // debug
-  ((SoRenderManager *)data)->scheduleRedraw();
+  SoRenderManager * self = static_cast<SoRenderManager *>(data);
+  SoNodeSensor * ns = static_cast<SoNodeSensor *>(sensor);
+
+  // Determine if the draw list needs rebuilding.
+  SoNode * trigger = ns->getTriggerNode();
+
+  if (PRIVATE(self)->modernEnabled) {
+    // Modern renderer: invalidate unless it's a camera-only change
+    // or we're in interactive navigation mode. This catches scene load,
+    // geometry updates, visibility changes, and all structural changes.
+    if (PRIVATE(self)->interactive) {
+      // Navigation: just redraw, no invalidation
+    }
+    else if (trigger && trigger == PRIVATE(self)->camera) {
+      // Camera-only change: geometry unchanged
+    }
+    else if (trigger && trigger->isOfType(SoShape::getClassTypeId())) {
+      // Shape touch: selection/highlight context, not geometry change
+    }
+    else {
+      // Structural change, visibility toggle (SoSwitch), or NULL trigger
+      // from field propagation. Must re-traverse to pick up the change.
+      PRIVATE(self)->drawListValid = false;
+    }
+  }
+  else {
+    // Legacy renderer: any non-camera change invalidates
+    if (!trigger || trigger != PRIVATE(self)->camera) {
+      PRIVATE(self)->drawListValid = false;
+    }
+  }
+  self->scheduleRedraw();
 }
 
 /*!
@@ -467,9 +514,24 @@ SoRenderManager::renderModern(const SbBool clearwindow,
 {
   if (!PRIVATE(this)->scene) return;
 
+  SoGLRenderAction * glaction = PRIVATE(this)->glaction;
+  PRIVATE(this)->invokePreRenderCallbacks();
+
+  // Render BACKGROUND superimpositions via legacy action (before main scene)
+  SbBool clearwindow_tmp = clearwindow;
+  if (PRIVATE(this)->superimpositions) {
+    for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
+      Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
+      if (s->getStateFlags() & Superimposition::BACKGROUND) {
+        s->render(glaction, clearwindow_tmp);
+        clearwindow_tmp = FALSE;
+      }
+    }
+  }
+
   SoModernRenderAction * action = PRIVATE(this)->modernAction;
   if (!action) {
-    action = new SoModernRenderAction(PRIVATE(this)->glaction->getViewportRegion());
+    action = new SoModernRenderAction(glaction->getViewportRegion());
     PRIVATE(this)->modernAction = action;
   }
 
@@ -478,7 +540,7 @@ SoRenderManager::renderModern(const SbBool clearwindow,
     backend = new SoModernGLBackend();
     PRIVATE(this)->modernBackend = backend;
     SoRenderBackendInitParams initparams = {};
-    SbVec2s size = PRIVATE(this)->glaction->getViewportRegion().getViewportSizePixels();
+    SbVec2s size = glaction->getViewportRegion().getViewportSizePixels();
     initparams.targetInfo.size = size;
     initparams.targetInfo.samples = 1;
     initparams.targetInfo.colorFormat = 0;
@@ -488,12 +550,26 @@ SoRenderManager::renderModern(const SbBool clearwindow,
     backend->initialize(initparams);
   }
 
-  this->clearBuffers(clearwindow, clearzbuffer);
+  this->clearBuffers(clearwindow_tmp, clearzbuffer);
 
   SbViewportRegion vp = PRIVATE(this)->glaction->getViewportRegion();
   action->setViewportRegion(vp);
   action->setCamera(PRIVATE(this)->camera);
-  action->apply(PRIVATE(this)->scene);
+
+  if (!PRIVATE(this)->drawListValid) {
+    action->apply(PRIVATE(this)->scene);
+
+    if (PRIVATE(this)->camera) {
+      float aspect = vp.getViewportAspectRatio();
+      SbViewVolume vv = PRIVATE(this)->camera->getViewVolume(aspect);
+      SbMatrix sortView, sortProj;
+      vv.getMatrices(sortView, sortProj);
+      action->getMutableDrawList().buildSortedOrder(sortView);
+    }
+
+    action->getMutableDrawList().buildPickLUT();
+    PRIVATE(this)->drawListValid = true;
+  }
 
   SoRenderTargetInfo targetinfo = {};
   targetinfo.size = vp.getViewportSizePixels();
@@ -522,11 +598,37 @@ SoRenderManager::renderModern(const SbBool clearwindow,
   }
   params.clearColor = PRIVATE(this)->backgroundcolor;
   params.clearDepth = 1.0f;
-  params.flags = (clearwindow ? 1 : 0);
+  params.flags = (clearwindow ? 1u : 0u)
+               | (PRIVATE(this)->interactive ? 2u : 0u);
   params.state = action->getState();
   params.contextId = SoGLCacheContextElement::get(action->getState());
 
   backend->render(list, params);
+
+  // Render FOREGROUND superimpositions via legacy action.
+  // The NaviCube's internal scene graph uses Coin nodes (SoTexture2 etc.)
+  // that require state elements not enabled for SoModernRenderAction.
+  // Until all overlay nodes are migrated, use the legacy path.
+  if (PRIVATE(this)->superimpositions) {
+    glUseProgram(0);
+#if defined(__APPLE__) && !defined(glBindVertexArray)
+    glBindVertexArrayAPPLE(0);
+#else
+    glBindVertexArray(0);
+#endif
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+
+    glaction->invalidateState();
+    for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
+      Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
+      if (!(s->getStateFlags() & Superimposition::BACKGROUND)) {
+        s->render(glaction);
+      }
+    }
+  }
+
+  PRIVATE(this)->invokePostRenderCallbacks();
 }
 
 /*
@@ -898,13 +1000,9 @@ SoRenderManager::renderScene( SoGLRenderAction * action,
   if (clearmask) {
     if (clearmask & GL_COLOR_BUFFER_BIT) {
       if (PRIVATE(this)->isrgbmode) {
-        if (SoRenderer::isOpenGL()) {
           const SbColor4f bgcol = PRIVATE(this)->backgroundcolor;
           glClearColor(bgcol[0], bgcol[1], bgcol[2], bgcol[3]);
-        }
       } else {
-
-        if (SoRenderer::isOpenGL()) {
 #if defined(COIN_GL_COMPATIBILITY)
           if (sogl_compatibility_profile(action->getState())) {
             glClearIndex((GLfloat) PRIVATE(this)->backgroundindex);
@@ -912,7 +1010,6 @@ SoRenderManager::renderScene( SoGLRenderAction * action,
 #else
           assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
-        }
       }
     }
     // Registering a callback is needed since the correct GL viewport
@@ -1779,6 +1876,253 @@ SoRenderManager::resolveGpuPickIdentity(uint32_t lutIndex) const
   SoModernRenderAction * action = PRIVATE(this)->modernAction;
   if (!action) return std::string();
   return action->getDrawList().resolvePickIdentity(lutIndex);
+}
+
+SoPath *
+SoRenderManager::getGpuPickPath(uint32_t lutIndex) const
+{
+  SoModernRenderAction * action = PRIVATE(this)->modernAction;
+  if (!action || lutIndex == 0) return nullptr;
+  const auto & lut = action->getDrawList().getPickLUT();
+  if (lutIndex > lut.size()) return nullptr;
+  int cmdIdx = lut[lutIndex - 1].commandIndex;
+  return action->getCommandPath(cmdIdx);
+}
+
+int
+SoRenderManager::getGpuPickElement(uint32_t lutIndex) const
+{
+  SoModernRenderAction * action = PRIVATE(this)->modernAction;
+  if (!action || lutIndex == 0) return -1;
+  const auto & lut = action->getDrawList().getPickLUT();
+  if (lutIndex > lut.size()) return -1;
+  return lut[lutIndex - 1].elementIndex;
+}
+
+int
+SoRenderManager::getGpuPickElementType(uint32_t lutIndex) const
+{
+  SoModernRenderAction * action = PRIVATE(this)->modernAction;
+  if (!action || lutIndex == 0) return -1;
+  const auto & lut = action->getDrawList().getPickLUT();
+  if (lutIndex > lut.size()) return -1;
+  return static_cast<int>(lut[lutIndex - 1].elementType);
+}
+
+SoPickedPoint *
+SoRenderManager::assemblePickedPoint(int screenX, int screenY, int pickRadius) const
+{
+  SoRenderBackend * backend = PRIVATE(this)->modernBackend;
+  SoModernRenderAction * action = PRIVATE(this)->modernAction;
+  if (!backend || !action) return NULL;
+
+  uint32_t lutIndex = backend->pick(screenX, screenY, pickRadius);
+  if (lutIndex == 0) return NULL;
+
+  // Get stored path — verify it's valid (not stale from a previous traversal)
+  SoPath * path = this->getGpuPickPath(lutIndex);
+  if (!path || path->getLength() == 0) return NULL;
+
+  // Validate the draw list is valid — if it's been invalidated,
+  // the stored paths may reference freed nodes.
+  if (!PRIVATE(this)->drawListValid) return NULL;
+
+  // Validate path nodes aren't null
+  SoFullPath * fullPath = static_cast<SoFullPath *>(path);
+  for (int i = 0; i < fullPath->getLength(); i++) {
+    if (!fullPath->getNode(i)) return NULL;
+  }
+
+  // Get action state (needed for SoPickedPoint constructor)
+  SoState * state = action->getState();
+  if (!state) return NULL;
+
+  // 3D intersection point — use (0,0,0) for now.
+  // computeIntersection accesses draw list geometry which can be stale
+  // when the draw list is being rebuilt. TODO: add proper synchronization.
+  SbVec3f worldPoint(0, 0, 0);
+
+  // Transform world point to object space via inverse model matrix
+  const auto & lut = action->getDrawList().getPickLUT();
+  const SoPickLUTEntry & entry = lut[lutIndex - 1];
+  int cmdIdx = entry.commandIndex;
+  SbVec3f objPoint = worldPoint;
+  if (cmdIdx >= 0 && cmdIdx < action->getDrawList().getNumCommands()) {
+    SbMatrix modelInv = action->getDrawList().getCommand(cmdIdx).modelMatrix.inverse();
+    modelInv.multVecMatrix(worldPoint, objPoint);
+  }
+
+  // Construct SoPickedPoint
+  SoPickedPoint * pp = new SoPickedPoint(path, state, objPoint);
+
+  // Create and set detail based on element type
+  SoDetail * detail = NULL;
+  switch (entry.elementType) {
+  case SO_PICK_FACE: {
+    SoFaceDetail * fd = new SoFaceDetail;
+    fd->setPartIndex(entry.elementIndex);
+    detail = fd;
+    break;
+  }
+  case SO_PICK_EDGE: {
+    SoLineDetail * ld = new SoLineDetail;
+    ld->setLineIndex(entry.elementIndex);
+    detail = ld;
+    break;
+  }
+  case SO_PICK_VERTEX: {
+    SoPointDetail * pd = new SoPointDetail;
+    pd->setCoordinateIndex(entry.elementIndex);
+    detail = pd;
+    break;
+  }
+  default:
+    break;
+  }
+
+  if (detail) {
+    SoFullPath * fullPath = static_cast<SoFullPath *>(path);
+    if (fullPath->getLength() > 0) {
+      pp->setDetail(detail, fullPath->getTail());
+    }
+    else {
+      delete detail;
+    }
+  }
+
+  return pp;
+}
+
+void
+SoRenderManager::invalidateDrawList()
+{
+  PRIVATE(this)->drawListValid = false;
+  this->scheduleRedraw();
+}
+
+bool
+SoRenderManager::setDrawListHighlight(uint32_t lutIndex, const SbColor4f & color)
+{
+  SoModernRenderAction * action = PRIVATE(this)->modernAction;
+  if (!action) return false;
+  SoDrawList & drawlist = action->getMutableDrawList();
+  int numCmds = drawlist.getNumCommands();
+
+  // Clear previous highlight on all commands
+  for (int i = 0; i < numCmds; i++) {
+    SoRenderCommand & cmd = drawlist.getCommand(i);
+    if (cmd.selection.highlightElement != -1) {
+      cmd.selection.highlightElement = -1;
+    }
+  }
+
+  if (lutIndex == 0) return true;  // Just clearing
+
+  const auto & lut = drawlist.getPickLUT();
+  if (lutIndex > lut.size()) return false;
+
+  const SoPickLUTEntry & entry = lut[lutIndex - 1];
+  int cmdIdx = entry.commandIndex;
+  if (cmdIdx < 0 || cmdIdx >= numCmds) return false;
+
+  SoRenderCommand & cmd = drawlist.getCommand(cmdIdx);
+  cmd.selection.highlightElement = entry.elementIndex;
+  cmd.selection.highlightColor.setValue(color[0], color[1], color[2], color[3]);
+  return true;
+}
+
+void
+SoRenderManager::clearDrawListHighlight()
+{
+  setDrawListHighlight(0, SbColor4f(0, 0, 0, 0));
+}
+
+bool
+SoRenderManager::setDrawListSelection(uint32_t lutIndex, const SbColor4f & color,
+                                      SbBool append)
+{
+  SoModernRenderAction * action = PRIVATE(this)->modernAction;
+  if (!action || lutIndex == 0) return false;
+  SoDrawList & drawlist = action->getMutableDrawList();
+  int numCmds = drawlist.getNumCommands();
+
+  if (!append) {
+    // Clear all existing selection
+    for (int i = 0; i < numCmds; i++) {
+      SoRenderCommand & cmd = drawlist.getCommand(i);
+      if (!cmd.selection.selectedElements.empty()) {
+        cmd.selection.selectedElements.clear();
+      }
+    }
+  }
+
+  const auto & lut = drawlist.getPickLUT();
+  if (lutIndex > lut.size()) return false;
+
+  const SoPickLUTEntry & entry = lut[lutIndex - 1];
+  int cmdIdx = entry.commandIndex;
+  if (cmdIdx < 0 || cmdIdx >= numCmds) return false;
+
+  SoRenderCommand & cmd = drawlist.getCommand(cmdIdx);
+  cmd.selection.selectionColor.setValue(color[0], color[1], color[2], color[3]);
+  cmd.selection.selectedElements.push_back(entry.elementIndex);
+  return true;
+}
+
+void
+SoRenderManager::clearDrawListSelection()
+{
+  SoModernRenderAction * action = PRIVATE(this)->modernAction;
+  if (!action) return;
+  SoDrawList & drawlist = action->getMutableDrawList();
+  int numCmds = drawlist.getNumCommands();
+  for (int i = 0; i < numCmds; i++) {
+    SoRenderCommand & cmd = drawlist.getCommand(i);
+    if (!cmd.selection.selectedElements.empty()) {
+      cmd.selection.selectedElements.clear();
+    }
+  }
+}
+
+void
+SoRenderManager::setInteractive(SbBool interactive)
+{
+  PRIVATE(this)->interactive = interactive;
+}
+
+SbBool
+SoRenderManager::isInteractive() const
+{
+  return PRIVATE(this)->interactive;
+}
+
+
+void
+SoRenderManager::setGpuPickLineWidth(float width)
+{
+  SoRenderBackend * backend = PRIVATE(this)->modernBackend;
+  if (backend) backend->setPickLineWidth(width);
+}
+
+float
+SoRenderManager::getGpuPickLineWidth() const
+{
+  SoRenderBackend * backend = PRIVATE(this)->modernBackend;
+  return backend ? backend->getPickLineWidth() : 7.0f;
+}
+
+void
+SoRenderManager::setGpuPickPointSize(float size)
+{
+  SoRenderBackend * backend = PRIVATE(this)->modernBackend;
+  if (backend) backend->setPickPointSize(size);
+}
+
+float
+SoRenderManager::getGpuPickPointSize() const
+{
+  SoRenderBackend * backend = PRIVATE(this)->modernBackend;
+  return backend ? backend->getPickPointSize() : 7.0f;
 }
 
 /*!

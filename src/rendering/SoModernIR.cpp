@@ -1,6 +1,7 @@
 // src/rendering/SoModernIR.cpp
 
 #include "rendering/SoModernIR.h"
+#include "CoinTracyConfig.h"
 
 #include <Inventor/actions/SoModernRenderAction.h>
 #include <Inventor/caches/SoPrimitiveVertexCache.h>
@@ -24,21 +25,36 @@
 #include <inttypes.h>
 
 SoIRBuffer::SoIRBuffer()
-  : cursor(0)
 {
 }
 
 void
 SoIRBuffer::clear()
 {
-  this->cursor = 0;
+  // Track high-water mark so we can pre-size on next frame
+  if (this->totalAllocated > this->highWaterMark) {
+    this->highWaterMark = this->totalAllocated;
+  }
+  // Reset cursors but keep chunks allocated
+  for (auto & chunk : this->chunks) {
+    chunk->cursor = 0;
+  }
+  this->totalAllocated = 0;
 }
 
 void
 SoIRBuffer::reserve(size_t bytes)
 {
-  if (bytes > this->storage.size()) {
-    this->storage.resize(bytes);
+  // Ensure the first chunk is at least this large
+  if (this->chunks.empty()) {
+    auto c = std::make_unique<Chunk>();
+    c->data.resize(std::max(bytes, MIN_CHUNK_SIZE));
+    this->chunks.push_back(std::move(c));
+  } else if (bytes > this->chunks[0]->data.size()) {
+    // Only resize the first chunk if it hasn't been used yet
+    if (this->chunks[0]->cursor == 0) {
+      this->chunks[0]->data.resize(bytes);
+    }
   }
 }
 
@@ -46,13 +62,27 @@ void *
 SoIRBuffer::allocate(size_t bytes, size_t alignment)
 {
   if (alignment == 0) alignment = 1;
-  size_t alignedCursor = (this->cursor + alignment - 1) & ~(alignment - 1);
-  const size_t required = alignedCursor + bytes;
-  if (required > this->storage.size()) {
-    this->storage.resize(required);
+
+  // Try to allocate from an existing chunk
+  for (auto & chunk : this->chunks) {
+    size_t aligned = (chunk->cursor + alignment - 1) & ~(alignment - 1);
+    if (aligned + bytes <= chunk->data.size()) {
+      void * ptr = chunk->data.data() + aligned;
+      chunk->cursor = aligned + bytes;
+      this->totalAllocated += bytes;
+      return ptr;
+    }
   }
-  void * ptr = this->storage.data() + alignedCursor;
-  this->cursor = required;
+
+  // Need a new chunk — size it to at least fit this allocation
+  // and to avoid many small chunks
+  size_t chunkSize = std::max({bytes, MIN_CHUNK_SIZE, this->highWaterMark / 2});
+  auto c = std::make_unique<Chunk>();
+  c->data.resize(chunkSize);
+  c->cursor = bytes;
+  void * ptr = c->data.data();
+  this->chunks.push_back(std::move(c));
+  this->totalAllocated += bytes;
   return ptr;
 }
 
@@ -65,6 +95,7 @@ SoDrawList::clear()
 {
   this->commands.truncate(0);
   this->pickLUT.clear();
+  this->sortedOrder.clear();
 }
 
 void
@@ -134,17 +165,68 @@ SoDrawList::end() const
 }
 
 void
+SoDrawList::buildSortedOrder(const SbMatrix & viewMatrix)
+{
+  ZoneScopedN("buildSortedOrder");
+  int n = this->commands.getLength();
+  sortedOrder.resize(n);
+  for (int i = 0; i < n; i++) sortedOrder[i] = i;
+  if (n <= 1) return;
+
+  SoRenderCommand * arr = const_cast<SoRenderCommand *>(this->commands.getArrayPtr());
+
+  // Compute camera-space depth for each command using the model matrix origin.
+  SbMat v;
+  viewMatrix.getValue(v);
+  for (int i = 0; i < n; i++) {
+    SoRenderCommand & cmd = arr[i];
+    SbMat m;
+    cmd.modelMatrix.getValue(m);
+    float wx = m[3][0], wy = m[3][1], wz = m[3][2];
+    float eyeZ = v[0][2] * wx + v[1][2] * wy + v[2][2] * wz + v[3][2];
+    float depth = -eyeZ;
+
+    // Float-to-uint reinterpretation for monotonic ordering
+    uint32_t bits;
+    std::memcpy(&bits, &depth, sizeof(bits));
+    if (bits & 0x80000000u) {
+      bits = ~bits;
+    } else {
+      bits |= 0x80000000u;
+    }
+    uint32_t depthBucket = (bits >> 8) & 0x00FFFFFFu;
+
+    // Transparent: back-to-front (invert depth)
+    uint32_t passOrder = static_cast<uint32_t>(cmd.pass);
+    if (cmd.pass == SO_RENDERPASS_TRANSPARENT) {
+      depthBucket = 0x00FFFFFFu - depthBucket;
+    }
+    cmd.sortKey = SoIRComputeSortKey(cmd, passOrder, depthBucket);
+  }
+
+  // Sort the INDEX array by sort key, leaving commands in place
+  std::stable_sort(sortedOrder.begin(), sortedOrder.end(),
+    [arr](int a, int b) {
+      return arr[a].sortKey < arr[b].sortKey;
+    });
+}
+
+void
 SoDrawList::buildPickLUT()
 {
+  ZoneScopedN("buildPickLUT");
   pickLUT.clear();
+  pickLUTGeneration++;
   int numCmds = this->getNumCommands();
 
   for (int ci = 0; ci < numCmds; ci++) {
     SoRenderCommand & cmd = this->getCommand(ci);
     cmd.pick.pickLutBase = static_cast<uint32_t>(pickLUT.size());
 
-    if (!cmd.pick.faceStart.empty()) {
-      // BRep shape with per-face ranges: one LUT entry per face
+    if (!cmd.pick.faceStart.empty() &&
+        (cmd.geometry.topology == SO_TOPOLOGY_TRIANGLES ||
+         cmd.geometry.topology == SO_TOPOLOGY_TRIANGLE_STRIP)) {
+      // BRep face shape with per-face ranges
       int numFaces = static_cast<int>(cmd.pick.faceStart.size());
       for (int f = 0; f < numFaces; f++) {
         SoPickLUTEntry le;
@@ -153,6 +235,21 @@ SoDrawList::buildPickLUT()
         le.elementIndex = f;
         le.eboOffset = cmd.pick.faceStart[f];
         le.eboCount = cmd.pick.faceCount[f];
+        pickLUT.push_back(le);
+      }
+    }
+    else if (!cmd.pick.faceStart.empty() &&
+             (cmd.geometry.topology == SO_TOPOLOGY_LINES ||
+              cmd.geometry.topology == SO_TOPOLOGY_LINE_STRIP)) {
+      // BRep edge shape with per-edge ranges
+      int numEdges = static_cast<int>(cmd.pick.faceStart.size());
+      for (int e = 0; e < numEdges; e++) {
+        SoPickLUTEntry le;
+        le.commandIndex = ci;
+        le.elementType = SO_PICK_EDGE;
+        le.elementIndex = e;
+        le.eboOffset = cmd.pick.faceStart[e];
+        le.eboCount = cmd.pick.faceCount[e];
         pickLUT.push_back(le);
       }
     }
@@ -169,7 +266,7 @@ SoDrawList::buildPickLUT()
     }
     else if (cmd.geometry.topology == SO_TOPOLOGY_LINES ||
              cmd.geometry.topology == SO_TOPOLOGY_LINE_STRIP) {
-      // Edge set
+      // Whole edge set (no per-edge ranges)
       SoPickLUTEntry le;
       le.commandIndex = ci;
       le.elementType = SO_PICK_EDGE;
@@ -179,14 +276,17 @@ SoDrawList::buildPickLUT()
       pickLUT.push_back(le);
     }
     else if (cmd.geometry.topology == SO_TOPOLOGY_POINTS) {
-      // Point set
-      SoPickLUTEntry le;
-      le.commandIndex = ci;
-      le.elementType = SO_PICK_VERTEX;
-      le.elementIndex = 0;
-      le.eboOffset = 0;
-      le.eboCount = 0;
-      pickLUT.push_back(le);
+      // Per-vertex entries: each vertex gets its own LUT entry
+      int numVerts = static_cast<int>(cmd.geometry.vertexCount);
+      for (int v = 0; v < numVerts; v++) {
+        SoPickLUTEntry le;
+        le.commandIndex = ci;
+        le.elementType = SO_PICK_VERTEX;
+        le.elementIndex = v;
+        le.eboOffset = v;
+        le.eboCount = 1;
+        pickLUT.push_back(le);
+      }
     }
 
     cmd.pick.pickLutCount = static_cast<uint32_t>(pickLUT.size()) - cmd.pick.pickLutBase;
@@ -196,6 +296,7 @@ SoDrawList::buildPickLUT()
 std::string
 SoDrawList::resolvePickIdentity(uint32_t lutIndex) const
 {
+  ZoneScopedN("resolvePickIdentity");
   if (lutIndex == 0 || lutIndex > pickLUT.size()) {
     return {};
   }
@@ -423,6 +524,7 @@ appendCacheDrawCommands(const SoPrimitiveVertexCache * cache,
   std::memset(&cmd, 0, sizeof(SoRenderCommand));
   cmd.geometry.topology = SO_TOPOLOGY_TRIANGLES;
   cmd.geometry.vertexCount = static_cast<uint32_t>(numverts);
+  cmd.geometry.normalCount = static_cast<uint32_t>(numverts);
   cmd.geometry.indexCount = static_cast<uint32_t>(numtriangles);
   cmd.shaderProgram = SoGLShaderProgramElement::get(state);
 

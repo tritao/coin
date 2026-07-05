@@ -644,16 +644,14 @@ SoShape::GLRender(SoGLRenderAction * action)
 void
 SoShape::render(SoModernRenderAction * action)
 {
-  // Default: no-op. Shapes must explicitly override render() to
-  // participate in the modern rendering path. The generatePrimitives()
-  // fallback is too expensive for complex models (2.5s+ for 3000 shapes,
-  // heap corruption risk from unbounded PV cache growth).
-  //
-  // Shapes that override this should either:
-  // 1. Use ensurePVCache() + SoModernIR::appendCacheDrawCommands() if
-  //    they have a PV cache, or
-  // 2. Emit SoRenderCommands directly from their cached geometry.
-  (void)action;
+  // Fallback: collect primitives via generatePrimitives() and emit a
+  // single draw command. BRep shapes have dedicated render() overrides
+  // and never reach this code.
+  SoModernPrimitiveAssembler assembler(action, this);
+  action->pushPrimitiveCollector(&assembler);
+  this->generatePrimitives(action);
+  action->popPrimitiveCollector(&assembler);
+  assembler.finalize();
 }
 
 // Doc in parent.

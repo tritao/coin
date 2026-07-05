@@ -132,9 +132,10 @@ struct SoRenderParams {
   */
   uint32_t           contextId;
   /*!
-    \brief Bitfield for view-specific options (wireframe, debug overlays, etc.).
-    
-    No bits are defined yet; reserving the field keeps the ABI stable.
+    \brief Bitfield for view-specific options.
+
+    Bit 0: clear window requested
+    Bit 1: interactive mode (camera orbiting/panning — skip ID buffer)
   */
   uint32_t           flags;
   /*!
@@ -219,6 +220,14 @@ public:
     \param pickRadius  Half-size of the pick region (default 5 = 11x11)
   */
   virtual uint32_t pick(int x, int y, int pickRadius = 5) const;
+
+  /// Set the line width used for edge picking in the ID buffer (default 7.0).
+  /// Wider lines make edges easier to pick.
+  virtual void setPickLineWidth(float width);
+  /// Set the point size used for vertex picking in the ID buffer (default 7.0).
+  virtual void setPickPointSize(float size);
+  virtual float getPickLineWidth() const;
+  virtual float getPickPointSize() const;
 
   SbBool isInitialized() const;
 
