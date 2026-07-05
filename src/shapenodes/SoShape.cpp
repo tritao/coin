@@ -706,9 +706,8 @@ void SoShape::setupShaders(SoGLRenderAction * action)
       shaderProgram->ref();
 
       auto vertexShader = new SoVertexShader();
-      vertexShader->sourceProgram = SoShader::getNamedScript(SbName("base/Unlit.vert"),
-                                                      SoShader::GLSL_SHADER);
-      vertexShader->sourceType= SoShaderObject::GLSL_PROGRAM;
+      SoShader::setNamedScript(vertexShader, SbName("base/Unlit.vert"),
+                               SoShader::GLSL_SHADER);
       shaderProgram->shaderObject.addNode(vertexShader);
 
       auto mvpParam = new SoShaderStateMatrixParameter();
@@ -719,9 +718,8 @@ void SoShape::setupShaders(SoGLRenderAction * action)
       vertexShader->parameter.addNode(mvpParam);
 
       auto fragmentShader = new SoFragmentShader();
-      fragmentShader->sourceProgram = SoShader::getNamedScript(SbName("base/Unlit.frag"),
-                                                      SoShader::GLSL_SHADER);
-      fragmentShader->sourceType= SoShaderObject::GLSL_PROGRAM;
+      SoShader::setNamedScript(fragmentShader, SbName("base/Unlit.frag"),
+                               SoShader::GLSL_SHADER);
       shaderProgram->shaderObject.addNode(fragmentShader);
 
       PRIVATE(this)->shaderProgram = shaderProgram;

@@ -39,7 +39,11 @@
 
 // *************************************************************************
 
+#include <Inventor/SbBasic.h>
+
 class SbName;
+class SbString;
+class SoShaderObject;
 
 class SoShader
 {
@@ -53,6 +57,13 @@ public:
   };
 
   static const char * getNamedScript(const SbName & name, const Type type);
+  // Configure a shader object to load a registered built-in by name.
+  static void setNamedScript(SoShaderObject * shader,
+                             const SbName & name,
+                             const Type type);
+  // Returns TRUE when sourceProgram contains an internal built-in reference.
+  static SbBool isNamedScriptReference(const SbString & sourceProgram,
+                                       SbString & name);
   static void setupBuiltinShaders(void);
 };
 
