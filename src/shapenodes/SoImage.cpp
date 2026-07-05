@@ -311,6 +311,7 @@ SoImage::SoImage(void)
 
   PRIVATE(this)->glimage = NULL;
   PRIVATE(this)->glimagevalid = FALSE;
+  PRIVATE(this)->program = NULL;
 
   this->readstatus = TRUE;
   this->transparency = FALSE;
@@ -417,6 +418,10 @@ SoImage::GLRender(SoGLRenderAction * action)
     SoShapeStyleElement::setVertexArrayRendering(state, true);
     if (!this->shouldGLRender(action)) return;
 
+    if (!PRIVATE(this)->program) {
+      PRIVATE(this)->program = this->createShader();
+    }
+
     LOCK_GLIMAGE(this);
 
     if (!PRIVATE(this)->glimagevalid) {
@@ -436,13 +441,13 @@ SoImage::GLRender(SoGLRenderAction * action)
       if (state->isCacheOpen()) {
         SoCacheElement::invalidate(state);
       }
-
-      UNLOCK_GLIMAGE(this);
-
-      PRIVATE(this)->program->GLRender(action);
-
-      SoShape::GLRender(action);
     }
+
+    UNLOCK_GLIMAGE(this);
+
+    PRIVATE(this)->program->GLRender(action);
+
+    SoShape::GLRender(action);
   }
 }
 
