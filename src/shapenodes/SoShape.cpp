@@ -1112,8 +1112,6 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
 
   // test if we should sort triangles before rendering
   if (transparent && (shapestyleflags & SoShapeStyleElement::TRANSP_SORTED_TRIANGLES)) {
-    }
-
     if (SoRenderer::isOpenGL()) {
       // lock since pvcache is shared among all threads
       PRIVATE(this)->lock();
@@ -1156,6 +1154,7 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
       PRIVATE(this)->unlock();
       return FALSE; // tell shape _not_ to render
     }
+  }
 
   if (shapestyleflags & SoShapeStyleElement::BIGIMAGE) {
 
