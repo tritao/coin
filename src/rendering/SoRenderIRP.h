@@ -63,6 +63,8 @@ uint64_t SoIRComputeSortKey(const SoRenderCommand & cmd,
 void SoIRDumpSummary(const SoDrawList & drawlist);
 //! Dump the first \a count render commands to Coin's debug output.
 void SoIRDumpFirstN(const SoDrawList & drawlist, int count);
+//! Return whether render-backend trace logging is enabled.
+SbBool coin_render_ir_trace_enabled();
 
 /*!
   \namespace SoRenderIR

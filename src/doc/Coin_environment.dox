@@ -200,6 +200,7 @@
   \li \ref COIN_DEBUG_NORMALIZE
   \li \ref COIN_DEBUG_NPRINTF
   \li \ref COIN_DEBUG_NURBS_COMPLEXITY
+  \li \ref COIN_DEBUG_RENDER_IR
   \li \ref COIN_DEBUG_ROOT_NOTIFICATIONS
   \li \ref COIN_DEBUG_SIMAGE
   \li \ref COIN_DEBUG_SOEXTSELECTION
@@ -395,6 +396,7 @@ EnvironmentVariable COIN_DEBUG_MUTEX_COUNT;
 EnvironmentVariable COIN_DEBUG_NORMALIZE;
 EnvironmentVariable COIN_DEBUG_NPRINTF;
 EnvironmentVariable COIN_DEBUG_NURBS_COMPLEXITY;
+EnvironmentVariable COIN_DEBUG_RENDER_IR;
 EnvironmentVariable COIN_DEBUG_ROOT_NOTIFICATIONS;
 EnvironmentVariable COIN_DEBUG_SIMAGE;
 EnvironmentVariable COIN_DEBUG_SOEXTSELECTION;
@@ -1497,6 +1499,19 @@ EnvironmentVariable WINDIR;
 */
 
 /*!
+  \var EnvironmentVariable COIN_DEBUG_RENDER_IR
+
+  If this environment variable is set, Coin emits render-backend trace
+  logging for each frame, including backend initialization/shutdown and
+  compact draw-list summaries.
+
+  Intended for renderer development and debugging; leave unset during
+  normal application use.
+
+  \ingroup coin_envvars
+*/
+
+/*!
   \var EnvironmentVariable COIN_DEBUG_ROOT_NOTIFICATIONS
 
   \todo Write documentation for this
@@ -1857,4 +1872,3 @@ EnvironmentVariable WINDIR;
   \%WINDIR\%/Fonts is always searched for fonts on Windows.
   \ingroup coin_envvars
 */
-

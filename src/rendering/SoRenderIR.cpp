@@ -3,6 +3,7 @@
 #include "rendering/SoRenderIRP.h"
 #include "CoinTracyConfig.h"
 
+#include <Inventor/C/tidbits.h>
 #include <Inventor/caches/SoPrimitiveVertexCache.h>
 #include <Inventor/elements/SoDepthBufferElement.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
@@ -68,6 +69,18 @@ lightingEqual(const SoLightingData & lhs, const SoLightingData & rhs)
 }
 
 } // namespace
+
+SbBool
+coin_render_ir_trace_enabled()
+{
+  static int initialized = 0;
+  static SbBool enabled = FALSE;
+  if (!initialized) {
+    enabled = coin_getenv("COIN_DEBUG_RENDER_IR") ? TRUE : FALSE;
+    initialized = 1;
+  }
+  return enabled;
+}
 
 struct SoIRRenderAction::GeometrySavePoint::Data {
   std::vector<size_t> chunkCursors;
@@ -436,6 +449,10 @@ renderpass_name(SoRenderPassType pass)
 void
 SoIRDumpSummary(const SoDrawList & drawlist)
 {
+  if (!coin_render_ir_trace_enabled()) {
+    return;
+  }
+
   int counts[SO_RENDERPASS_COUNT] = { 0 };
   uint32_t minVerts = UINT32_MAX;
   uint32_t maxVerts = 0;
@@ -465,6 +482,10 @@ SoIRDumpSummary(const SoDrawList & drawlist)
 void
 SoIRDumpFirstN(const SoDrawList & drawlist, int count)
 {
+  if (!coin_render_ir_trace_enabled()) {
+    return;
+  }
+
   const int num = drawlist.getNumCommands();
   const int limit = std::min(num, count);
   for (int i = 0; i < limit; ++i) {
