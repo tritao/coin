@@ -1,6 +1,7 @@
 // src/rendering/SoGLRenderBackend.cpp
 
 #include "rendering/SoGLRenderBackend.h"
+#include "rendering/SoRenderIRP.h"
 #include "rendering/SoVBO.h"
 #include "CoinTracyConfig.h"
 

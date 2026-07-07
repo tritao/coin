@@ -135,7 +135,7 @@
 #include <Inventor/elements/SoMultiTextureEnabledElement.h>
 #include <Inventor/elements/SoGLMultiTextureEnabledElement.h>
 #include <Inventor/actions/SoIRRenderAction.h>
-#include <Inventor/rendering/SoRenderIR.h>
+#include "rendering/SoRenderIRP.h"
 
 #ifdef COIN_THREADSAFE
 #include <Inventor/threads/SbMutex.h>

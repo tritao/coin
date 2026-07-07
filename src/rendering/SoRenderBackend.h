@@ -12,7 +12,7 @@
 
 #include <cstdint>
 
-#include "rendering/SoRenderIR.h"
+#include <Inventor/rendering/SoRenderIR.h>
 
 class SoDrawList;
 

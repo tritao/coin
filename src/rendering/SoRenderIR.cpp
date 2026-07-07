@@ -1,9 +1,8 @@
 // src/rendering/SoRenderIR.cpp
 
-#include "rendering/SoRenderIR.h"
+#include "rendering/SoRenderIRP.h"
 #include "CoinTracyConfig.h"
 
-#include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/caches/SoPrimitiveVertexCache.h>
 #include <Inventor/elements/SoDepthBufferElement.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
@@ -70,6 +69,11 @@ lightingEqual(const SoLightingData & lhs, const SoLightingData & rhs)
 
 } // namespace
 
+struct SoIRRenderAction::GeometrySavePoint::Data {
+  std::vector<size_t> chunkCursors;
+  size_t totalAllocated = 0;
+};
+
 SoIRBuffer::SoIRBuffer()
 {
 }
@@ -88,27 +92,32 @@ SoIRBuffer::clear()
   this->totalAllocated = 0;
 }
 
-SoIRBuffer::SavePoint
+SoIRRenderAction::GeometrySavePoint
 SoIRBuffer::save() const
 {
-  SavePoint sp;
-  sp.totalAllocated = this->totalAllocated;
-  sp.chunkCursors.reserve(this->chunks.size());
+  auto data = std::make_shared<SoIRRenderAction::GeometrySavePoint::Data>();
+  data->totalAllocated = this->totalAllocated;
+  data->chunkCursors.reserve(this->chunks.size());
   for (const auto & chunk : this->chunks) {
-    sp.chunkCursors.push_back(chunk->cursor);
+    data->chunkCursors.push_back(chunk->cursor);
   }
-  return sp;
+  return SoIRRenderAction::GeometrySavePoint(data);
 }
 
 void
-SoIRBuffer::rewindTo(const SavePoint & sp)
+SoIRBuffer::rewindTo(const SoIRRenderAction::GeometrySavePoint & sp)
 {
-  this->totalAllocated = sp.totalAllocated;
-  for (size_t i = 0; i < sp.chunkCursors.size() && i < this->chunks.size(); ++i) {
-    this->chunks[i]->cursor = sp.chunkCursors[i];
+  if (!sp.data) {
+    this->clear();
+    return;
+  }
+
+  this->totalAllocated = sp.data->totalAllocated;
+  for (size_t i = 0; i < sp.data->chunkCursors.size() && i < this->chunks.size(); ++i) {
+    this->chunks[i]->cursor = sp.data->chunkCursors[i];
   }
   // Reset any chunks beyond the save point
-  for (size_t i = sp.chunkCursors.size(); i < this->chunks.size(); ++i) {
+  for (size_t i = sp.data->chunkCursors.size(); i < this->chunks.size(); ++i) {
     this->chunks[i]->cursor = 0;
   }
 }
@@ -460,13 +469,29 @@ SoIRDumpFirstN(const SoDrawList & drawlist, int count)
   const int limit = std::min(num, count);
   for (int i = 0; i < limit; ++i) {
     const SoRenderCommand & cmd = drawlist.getCommand(i);
+    const SbVec4f & diffuse = cmd.material.diffuse;
+    const SoLightingData * lighting = drawlist.getLighting(cmd.lightingHandle);
+    int numlights = lighting ? static_cast<int>(lighting->lights.size()) : -1;
+    SbVec3f ambient(0.0f, 0.0f, 0.0f);
+    if (lighting) {
+      ambient = lighting->ambient;
+    }
     SoDebugError::postInfo("SoDrawList",
-                           "[%d] pass=%s topo=%d verts=%u idx=%u pipeline=0x%016" PRIx64,
+                           "[%d] pass=%s topo=%d verts=%u idx=%u colors=%p diffuse=(%.3f, %.3f, %.3f, %.3f) lights=%d ambient=(%.3f, %.3f, %.3f) pipeline=0x%016" PRIx64,
                            i,
                            renderpass_name(cmd.pass),
                            static_cast<int>(cmd.geometry.topology),
                            cmd.geometry.vertexCount,
                            cmd.geometry.indexCount,
+                           cmd.geometry.colors,
+                           diffuse[0],
+                           diffuse[1],
+                           diffuse[2],
+                           diffuse[3],
+                           numlights,
+                           ambient[0],
+                           ambient[1],
+                           ambient[2],
                            static_cast<uint64_t>(cmd.pipelineKey));
   }
 }

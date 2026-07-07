@@ -105,7 +105,7 @@
 #include "rendering/SoGL.h"
 #include "rendering/SoRenderBackend.h"
 #include "rendering/SoGLRenderBackend.h"
-#include "rendering/SoRenderIR.h"
+#include <Inventor/rendering/SoRenderIR.h>
 #include "coindefs.h"
 
 
