@@ -51,6 +51,10 @@ public:
   /// Initialize GL resources (shader, FBO). Requires valid GL context.
   SbBool initialize();
 
+  /// Discard tracked GL names without issuing GL delete calls.
+  /// This is only for late process teardown when the GL context is gone.
+  void discard();
+
   /// Resize FBO when viewport changes. No-op if size unchanged.
   void resize(int width, int height);
 

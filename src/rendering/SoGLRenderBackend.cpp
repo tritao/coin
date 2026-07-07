@@ -328,6 +328,31 @@ SoGLRenderBackend::shutdown()
   }
 }
 
+void
+SoGLRenderBackend::discard()
+{
+  if (!this->isInitialized()) {
+    return;
+  }
+
+  if (pickBuffer) {
+    pickBuffer->discard();
+    pickBuffer.reset();
+  }
+
+  gpuCache.clear();
+  ptrToCacheIndex.clear();
+
+  this->shaderProgram = 0;
+  this->lineShaderProgram = 0;
+  this->pointShaderProgram = 0;
+  this->currentFrame = 0;
+  this->pickBufferDirty = true;
+  this->lastPickLUTSize = 0;
+  this->matricesInitialized = false;
+  this->setInitialized(FALSE);
+}
+
 // -----------------------------------------------------------------------
 // GPU Cache Management
 // -----------------------------------------------------------------------

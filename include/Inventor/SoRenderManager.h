@@ -200,6 +200,16 @@ public:
   void setRendererMode(RendererMode mode);
   RendererMode getRendererMode(void) const;
 
+  /// Release render-backend GPU resources for the current OpenGL context.
+  /// The backend object remains alive and will be reinitialized lazily on the
+  /// next render.
+  void releaseRenderBackendResources(void);
+
+  /// Discard render-backend GPU resource bookkeeping without issuing GL calls.
+  /// Use this only during late teardown when the owning GL context can no
+  /// longer be made current.
+  void discardRenderBackendResources(void);
+
   /// Access the render backend (NULL if not initialized).
   /// Used for GPU picking via backend->pick().
   class SoRenderBackend * getRenderBackend(void) const;

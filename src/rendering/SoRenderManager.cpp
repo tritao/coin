@@ -586,6 +586,8 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
   if (!backend) {
     backend = new SoGLRenderBackend();
     PRIVATE(this)->renderBackend = backend;
+  }
+  if (!backend->isInitialized()) {
     SoRenderBackendInitParams initparams = {};
     SbVec2s size = PRIVATE(this)->backendViewport.getViewportSizePixels();
     initparams.targetInfo.size = size;
@@ -1974,6 +1976,24 @@ SoRenderManager::RendererMode
 SoRenderManager::getRendererMode(void) const
 {
   return PRIVATE(this)->rendererMode;
+}
+
+void
+SoRenderManager::releaseRenderBackendResources(void)
+{
+  SoRenderBackend * backend = PRIVATE(this)->renderBackend;
+  if (backend && backend->isInitialized()) {
+    backend->shutdown();
+  }
+}
+
+void
+SoRenderManager::discardRenderBackendResources(void)
+{
+  SoRenderBackend * backend = PRIVATE(this)->renderBackend;
+  if (backend && backend->isInitialized()) {
+    backend->discard();
+  }
 }
 
 SoRenderBackend *
