@@ -8,8 +8,6 @@
 #include <Inventor/SbVec3f.h>
 #include <Inventor/SbVec4f.h>
 
-#include <Inventor/lists/SbList.h>
-
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -400,7 +398,7 @@ public:
   std::string resolvePickIdentity(uint32_t lutIndex) const;
 
 private:
-  SbList<SoRenderCommand> commands;
+  std::vector<SoRenderCommand> commands;
   std::vector<SoLightingData> lightingSetups;
   std::vector<SoPickLUTEntry> pickLUT;
   std::vector<int> sortedOrder;

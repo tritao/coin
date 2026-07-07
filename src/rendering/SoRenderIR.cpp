@@ -186,7 +186,7 @@ SoDrawList::SoDrawList()
 void
 SoDrawList::clear()
 {
-  this->commands.truncate(0);
+  this->commands.clear();
   this->lightingSetups.clear();
   this->pickLUT.clear();
   this->sortedOrder.clear();
@@ -196,8 +196,8 @@ SoDrawList::clear()
 void
 SoDrawList::truncate(int count)
 {
-  if (count < this->commands.getLength()) {
-    this->commands.truncate(count);
+  if (count < static_cast<int>(this->commands.size())) {
+    this->commands.resize(static_cast<size_t>(count));
     // Pick LUT and sorted order are rebuilt after traversal, no need to
     // truncate them here — they'll be fully rebuilt by buildPickLUT()
     // and buildSortedOrder().
@@ -207,39 +207,38 @@ SoDrawList::truncate(int count)
 void
 SoDrawList::reserve(int count)
 {
-  this->commands.ensureCapacity(count);
+  this->commands.reserve(static_cast<size_t>(count));
 }
 
 void
 SoDrawList::addCommand(const SoRenderCommand & cmd)
 {
-  this->commands.append(cmd);
+  this->commands.push_back(cmd);
 }
 
 SoRenderCommand &
 SoDrawList::emplaceCommand()
 {
-  const int idx = this->commands.getLength();
-  this->commands.append(SoRenderCommand());
-  return this->commands[idx];
+  this->commands.emplace_back();
+  return this->commands.back();
 }
 
 int
 SoDrawList::getNumCommands() const
 {
-  return this->commands.getLength();
+  return static_cast<int>(this->commands.size());
 }
 
 SoRenderCommand &
 SoDrawList::getCommand(int i)
 {
-  return this->commands[i];
+  return this->commands[static_cast<size_t>(i)];
 }
 
 const SoRenderCommand &
 SoDrawList::getCommand(int i) const
 {
-  return *(this->commands.getArrayPtr() + i);
+  return this->commands[static_cast<size_t>(i)];
 }
 
 SoLightingHandle
@@ -270,41 +269,37 @@ SoDrawList::getLighting(SoLightingHandle handle) const
 SoRenderCommand *
 SoDrawList::begin()
 {
-  return this->commands.getLength() ?
-         const_cast<SoRenderCommand *>(this->commands.getArrayPtr()) : nullptr;
+  return this->commands.empty() ? nullptr : this->commands.data();
 }
 
 SoRenderCommand *
 SoDrawList::end()
 {
-  return this->commands.getLength() ?
-         const_cast<SoRenderCommand *>(this->commands.getArrayPtr()) + this->commands.getLength() : nullptr;
+  return this->commands.empty() ? nullptr : this->commands.data() + this->commands.size();
 }
 
 const SoRenderCommand *
 SoDrawList::begin() const
 {
-  return this->commands.getLength() ?
-         this->commands.getArrayPtr() : nullptr;
+  return this->commands.empty() ? nullptr : this->commands.data();
 }
 
 const SoRenderCommand *
 SoDrawList::end() const
 {
-  return this->commands.getLength() ?
-         this->commands.getArrayPtr() + this->commands.getLength() : nullptr;
+  return this->commands.empty() ? nullptr : this->commands.data() + this->commands.size();
 }
 
 void
 SoDrawList::buildSortedOrder(const SbMatrix & viewMatrix)
 {
   ZoneScopedN("buildSortedOrder");
-  int n = this->commands.getLength();
+  int n = static_cast<int>(this->commands.size());
   sortedOrder.resize(n);
   for (int i = 0; i < n; i++) sortedOrder[i] = i;
   if (n <= 1) return;
 
-  SoRenderCommand * arr = const_cast<SoRenderCommand *>(this->commands.getArrayPtr());
+  SoRenderCommand * arr = this->commands.data();
 
   // Compute camera-space depth for each command using the model matrix origin.
   SbMat v;
