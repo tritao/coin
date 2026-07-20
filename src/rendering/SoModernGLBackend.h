@@ -39,8 +39,11 @@ private:
   GLuint shaderProgram;
   GLuint vao;
   GLuint vertexBuffer;
+  GLuint normalBuffer;
   GLuint indexBuffer;
-  GLint  uMvpLocation;
+  GLint  uViewLocation;
+  GLint  uProjLocation;
+  GLint  uModelLocation;
   GLint  uColorLocation;
   bool   vaoInitialized;
   bool   createShaders();
