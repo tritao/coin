@@ -29,6 +29,12 @@ SoRenderBackend::resizeTarget(const SoRenderTargetInfo & info)
   (void) info;
 }
 
+void
+SoRenderBackend::discard()
+{
+  this->setInitialized(FALSE);
+}
+
 SbBool
 SoRenderBackend::isInitialized() const
 {
