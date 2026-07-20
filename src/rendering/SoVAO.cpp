@@ -1,6 +1,3 @@
-#ifndef COIN_SOSHADERPROGRAM_H
-#define COIN_SOSHADERPROGRAM_H
-
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
  * All rights reserved.
@@ -33,47 +30,43 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#include <Inventor/nodes/SoNode.h>
-#include <Inventor/nodes/SoSubNode.h>
-#include <Inventor/fields/SoMFNode.h>
+/*!
+  \class SoVAO
+  \brief The SoVAO class is used to represent OpenGL VAOs.
 
-class SoState;
-class SoGLRenderAction;
-class SoModernRenderAction;
+*/
 
+#include "rendering/SoGL.h"
+#include "rendering/SoVAO.h"
+#include "rendering/SoVBO.h"
+#include "glue/glp.h"
 
-typedef void SoShaderProgramEnableCB(void * closure, 
-                                     SoState * state,
-                                     const SbBool enable);
+#include <cstdio>
+#include <cstdlib>
+#include <cassert>
 
-// *************************************************************************
+SoVAO::SoVAO()
+    : id(UINT32_MAX)
+{
+}
 
-class COIN_DLL_API SoShaderProgram : public SoNode {
-  typedef SoNode inherited;
-  SO_NODE_HEADER(SoShaderProgram);
+SoVAO::~SoVAO()
+{
+  if (id != UINT32_MAX) {
+    glDeleteVertexArrays(1, &id);
+  }
+}
 
-public:
-  SoMFNode shaderObject;
+void SoVAO::bind(uint32_t contextid)
+{
+  if (id == UINT32_MAX) {
+    glGenVertexArrays(1, &id);
+  }
 
-  SoShaderProgram(void);
+  glBindVertexArray(id);
+}
 
-  void setEnableCallback(SoShaderProgramEnableCB * cb,
-                         void * closure);
-
-SoEXTENDER public:
-  virtual void GLRender(SoGLRenderAction * action);
-  virtual void render(SoModernRenderAction * action);
-  virtual void search(SoSearchAction * action);
-  void render(SoState * state);
-
-SoINTERNAL public:
-  static void initClass();
-
-protected:
-  virtual ~SoShaderProgram();
-
-private:
-  class SoShaderProgramP * pimpl;
-};
-
-#endif /* ! COIN_SOSHADERPROGRAM_H */
+void SoVAO::unbind(uint32_t contextid)
+{
+  glBindVertexArray(0);
+}
