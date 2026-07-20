@@ -57,6 +57,7 @@ set(COIN_NODES_FILES
 	SoProfileCoordinate2.cpp
 	SoProfileCoordinate3.cpp
 	SoResetTransform.cpp
+	SoRenderLayerGroup.cpp
 	SoReversePerspectiveCamera.cpp
 	SoRotation.cpp
 	SoRotationXYZ.cpp

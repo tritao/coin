@@ -29,6 +29,25 @@ SoRenderBackend::resizeTarget(const SoRenderTargetInfo & info)
   (void) info;
 }
 
+uint32_t
+SoRenderBackend::pick(int x, int y, int pickRadius) const
+{
+  (void) x; (void) y; (void) pickRadius;
+  return 0; // Default: no pick support
+}
+
+void
+SoRenderBackend::setPickLineWidth(float /*width*/) {}
+
+void
+SoRenderBackend::setPickPointSize(float /*size*/) {}
+
+float
+SoRenderBackend::getPickLineWidth() const { return 7.0f; }
+
+float
+SoRenderBackend::getPickPointSize() const { return 7.0f; }
+
 SbBool
 SoRenderBackend::isInitialized() const
 {

@@ -56,6 +56,7 @@ public:
     SMOKE = SoEnvironmentElement::SMOKE
   };
 
+  virtual void doAction(SoAction * action);
   virtual void GLRender(SoGLRenderAction * action);
   virtual void callback(SoCallbackAction * action);
 

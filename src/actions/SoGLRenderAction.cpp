@@ -153,6 +153,7 @@
 #include <Inventor/annex/Profiler/SoProfiler.h>
 
 #include "coindefs.h"
+#include "elements/SoRenderPlacementElement.h"
 #include "tidbitsp.h"
 #include "SbBasicP.h"
 #include "actions/SoActionP.h"
@@ -680,6 +681,10 @@ SoGLRenderAction::initClass(void)
 {
   SO_ACTION_INTERNAL_INIT_CLASS(SoGLRenderAction, SoAction);
 
+  if (SoRenderPlacementElement::getClassTypeId() == SoType::badType()) {
+    SoRenderPlacementElement::initClass();
+  }
+
   SO_ENABLE(SoGLRenderAction, SoDecimationPercentageElement);
   SO_ENABLE(SoGLRenderAction, SoDecimationTypeElement);
   SO_ENABLE_GL(SoGLRenderAction, SoGLLightIdElement);
@@ -689,6 +694,7 @@ SoGLRenderAction::initClass(void)
   SO_ENABLE(SoGLRenderAction, SoOverrideElement);
   SO_ENABLE(SoGLRenderAction, SoTextureOverrideElement);
   SO_ENABLE(SoGLRenderAction, SoWindowElement);
+  SO_ENABLE(SoGLRenderAction, SoRenderPlacementElement);
   SO_ENABLE_GL(SoGLRenderAction, SoGLViewportRegionElement);
   SO_ENABLE_GL(SoGLRenderAction, SoGLCacheContextElement);
 

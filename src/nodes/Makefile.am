@@ -60,6 +60,7 @@ RegularSources = \
 	SoProfileCoordinate2.cpp \
 	SoProfileCoordinate3.cpp \
 	SoResetTransform.cpp \
+	SoRenderLayerGroup.cpp \
 	SoRotation.cpp \
 	SoRotationXYZ.cpp \
 	SoRotor.cpp \
