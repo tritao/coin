@@ -340,6 +340,7 @@ public:
     if (topo == SO_TOPOLOGY_COUNT) topo = SO_TOPOLOGY_TRIANGLES;
     cmd.geometry.topology = topo;
     cmd.geometry.vertexCount = static_cast<uint32_t>(this->vertices.size());
+    cmd.geometry.normalCount = cmd.geometry.vertexCount;
     cmd.geometry.indexCount = 0;
 
     const size_t numverts = this->vertices.size();

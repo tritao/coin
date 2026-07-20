@@ -119,6 +119,7 @@ PublicHeaders = \
 	SoSoundElement.h \
 	SoGLShaderProgramElement.h \
 	SoDepthBufferElement.h \
+	SoDevicePixelRatioElement.h \
 	SoGLDepthBufferElement.h \
         SoVertexAttributeElement.h \
         SoGLVertexAttributeElement.h

@@ -1354,8 +1354,8 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
 
   for (int i = 0; i < count; ++i) {
     const SoRenderCommand & cmd = drawlist.getCommand(i);
-    int hlElem = cmd.selection.highlightElement;
-    bool hasHighlight = cmd.selection.highlightWholeObject || (hlElem != -1);
+    bool hasHighlight = cmd.selection.highlightWholeObject
+                     || !cmd.selection.highlightedElements.empty();
     bool hasSelection = cmd.selection.selectWholeObject || !cmd.selection.selectedElements.empty();
     if (!hasHighlight && !hasSelection) continue;
 
@@ -1516,7 +1516,9 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
         drawWholeCommand(cmd, prim);
       }
       else {
-        drawElementRanges(cmd, hlElem, prim);
+        for (int elem : cmd.selection.highlightedElements) {
+          drawElementRanges(cmd, elem, prim);
+        }
       }
     }
 
@@ -1546,8 +1548,21 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
 void
 SoGLRenderBackend::endFrame()
 {
+#if defined(__APPLE__) && !defined(glBindVertexArray)
+  glBindVertexArrayAPPLE(0);
+#else
   glBindVertexArray(0);
+#endif
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
   glUseProgram(0);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glDepthMask(GL_TRUE);
+  glDepthFunc(GL_LEQUAL);
+  glDisable(GL_BLEND);
+  glDisable(GL_CULL_FACE);
+  glDisable(GL_POLYGON_OFFSET_FILL);
   gcStaleEntries(this->currentFrame);
 }
 
@@ -1633,8 +1648,8 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
   renderTransparentPass(drawlist, viewMat, projMat, params);
   renderSelectionPass(drawlist, viewMat, projMat, params);
   renderOverlayPass(drawlist, viewMat, projMat, params);
-  endFrame();
   renderIDBufferPass(drawlist, viewMat, projMat, params);
+  endFrame();
 
   return TRUE;
 }
