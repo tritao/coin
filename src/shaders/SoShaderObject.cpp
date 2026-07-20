@@ -115,6 +115,7 @@
 #include <Inventor/misc/SoContextHandler.h>
 #include <Inventor/misc/SoGLDriverDatabase.h>
 #include <Inventor/errors/SoDebugError.h>
+#include <Inventor/SbName.h>
 #include <Inventor/nodes/SoFragmentShader.h>
 #include <Inventor/nodes/SoShaderParameter.h>
 #include <Inventor/nodes/SoVertexShader.h>
@@ -129,6 +130,52 @@
 #include "shaders/SoGLCgShaderObject.h"
 #include "shaders/SoGLSLShaderObject.h"
 #include "shaders/SoGLShaderProgram.h"
+
+// *************************************************************************
+
+static SoShader::Type
+soshaderobject_shader_type(SoShaderObject::SourceType type)
+{
+  switch (type) {
+  case SoShaderObject::ARB_PROGRAM:
+    return SoShader::ARB_SHADER;
+  case SoShaderObject::CG_PROGRAM:
+    return SoShader::CG_SHADER;
+  case SoShaderObject::GLSL_PROGRAM:
+    return SoShader::GLSL_SHADER;
+  default:
+    assert(0 && "unknown shader source type");
+    return SoShader::GLSL_SHADER;
+  }
+}
+
+static SbString
+soshaderobject_inline_source_hint(const SbString & source)
+{
+  const char * text = source.getString();
+  if (text == NULL) return SbString("<inline>");
+
+  while (*text == ' ' || *text == '\t' || *text == '\n' || *text == '\r') {
+    ++text;
+  }
+
+  const char * end = text;
+  while (*end != '\0' && *end != '\n' && *end != '\r') {
+    ++end;
+  }
+  while (end > text && (end[-1] == ' ' || end[-1] == '\t')) {
+    --end;
+  }
+
+  if (end == text) return SbString("<inline>");
+
+  SbString hint(text, 0, int(end - text) - 1);
+  if (hint.getLength() > 80) {
+    hint = hint.getSubString(0, 79);
+    hint += "...";
+  }
+  return hint;
+}
 
 // *************************************************************************
 
@@ -198,6 +245,7 @@ public:
 
   SoShaderObject * owner;
   SoShaderObject::SourceType cachedSourceType;
+  SbString cachedSourceName;
   SbString cachedSourceProgram;
   SbBool didSetSearchDirectories;
   SbBool shouldload;
@@ -221,9 +269,7 @@ private:
 
   SbBool isSupported(SoShaderObject::SourceType sourceType, const cc_glglue * glue);
 
-#if defined(SOURCE_HINT)
   SbString getSourceHint(void) const;
-#endif
 };
 
 #define PRIVATE(obj) ((obj)->pimpl)
@@ -466,9 +512,7 @@ SoShaderObjectP::render(SoState * state)
 
     }
 
-#if defined(SOURCE_HINT)
     shaderobject->sourceHint = getSourceHint();
-#endif
     shaderobject->load(this->cachedSourceProgram.getString());
     this->setGLShaderObject(shaderobject, cachecontext);
   }
@@ -539,11 +583,26 @@ SoShaderObjectP::readSource(void)
 {
   SoShaderObject::SourceType srcType =
     (SoShaderObject::SourceType)this->owner->sourceType.getValue();
+  SbString namedScript;
 
+  this->cachedSourceName.makeEmpty();
   this->cachedSourceProgram.makeEmpty();
 
   if (this->owner->sourceProgram.isDefault())
     return;
+  else if (srcType != SoShaderObject::FILENAME &&
+           SoShader::isNamedScriptReference(this->owner->sourceProgram.getValue(),
+                                           namedScript)) {
+    const char * script =
+      SoShader::getNamedScript(SbName(namedScript.getString()),
+                               soshaderobject_shader_type(srcType));
+    if (script == NULL) {
+      this->cachedSourceType = SoShaderObject::FILENAME;
+      return;
+    }
+    this->cachedSourceName = namedScript;
+    this->cachedSourceProgram = script;
+  }
   else if (srcType != SoShaderObject::FILENAME)
     this->cachedSourceProgram = this->owner->sourceProgram.getValue();
   else {
@@ -577,6 +636,7 @@ SoShaderObjectP::readSource(void)
             size_t readlen = fread(srcstr, 1, length, f);
             if (readlen == (size_t) length) {
               srcstr[length] = '\0';
+              this->cachedSourceName = fileName;
               this->cachedSourceProgram = srcstr;
               readok = TRUE;
             }
@@ -771,19 +831,19 @@ SoShaderObjectP::containStateMatrixParameters(void) const
   return FALSE;
 }
 
-#if defined(SOURCE_HINT)
 SbString
 SoShaderObjectP::getSourceHint(void) const
 {
-  SoShaderObject::SourceType srcType =
-    (SoShaderObject::SourceType)this->owner->sourceType.getValue();
+  if (this->cachedSourceName.getLength() > 0) {
+    return this->cachedSourceName;
+  }
 
-  if (srcType == SoShaderObject::FILENAME)
+  if (this->cachedSourceType == SoShaderObject::FILENAME) {
     return this->owner->sourceProgram.getValue();
-  else
-    return ""; // FIXME: should return first line of shader source code
+  }
+
+  return soshaderobject_inline_source_hint(this->cachedSourceProgram);
 }
-#endif
 
 void
 SoShaderObjectP::sensorCB(void *data, SoSensor *sensor)

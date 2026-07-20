@@ -88,6 +88,7 @@
 #include "SoProfileCoordinate2.cpp"
 #include "SoProfileCoordinate3.cpp"
 #include "SoResetTransform.cpp"
+#include "SoRenderLayerGroup.cpp"
 #include "SoRotation.cpp"
 #include "SoRotationXYZ.cpp"
 #include "SoRotor.cpp"

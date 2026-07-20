@@ -180,6 +180,7 @@
 #include "shaders/SoShader.h"
 
 #include <cassert>
+#include <cstring>
 #include <cstdio>
 #include <cstdlib>
 
@@ -214,6 +215,23 @@
 static const char * SO_SHADER_DIR = NULL;
 static SbHash<const char *, char *> * shader_dict = NULL;
 static SbHash<const char *, char *> * shader_builtin_dict = NULL;
+static const char * COIN_NAMED_SHADER_PREFIX = "coin_builtin:";
+
+static SoShaderObject::SourceType
+soshader_source_type(SoShader::Type type)
+{
+  switch (type) {
+  case SoShader::ARB_SHADER:
+    return SoShaderObject::ARB_PROGRAM;
+  case SoShader::CG_SHADER:
+    return SoShaderObject::CG_PROGRAM;
+  case SoShader::GLSL_SHADER:
+    return SoShaderObject::GLSL_PROGRAM;
+  default:
+    assert(0 && "unknown shader type");
+    return SoShaderObject::FILENAME;
+  }
+}
 
 static void
 soshader_cleanup(void)
@@ -325,8 +343,35 @@ SoShader::init(void)
   coin_atexit((coin_atexit_f*) soshader_cleanup, CC_ATEXIT_NORMAL);
 }
 
+void
+SoShader::setNamedScript(SoShaderObject * shader,
+                         const SbName & name,
+                         const Type type)
+{
+  assert(shader != NULL);
 
+  SbString reference(COIN_NAMED_SHADER_PREFIX);
+  reference += name.getString();
 
+  shader->sourceType = soshader_source_type(type);
+  shader->sourceProgram = reference;
+}
+
+SbBool
+SoShader::isNamedScriptReference(const SbString & sourceProgram,
+                                 SbString & name)
+{
+  const char * source = sourceProgram.getString();
+  const size_t prefixlen = std::strlen(COIN_NAMED_SHADER_PREFIX);
+
+  if (std::strncmp(source, COIN_NAMED_SHADER_PREFIX, prefixlen) != 0) {
+    name.makeEmpty();
+    return FALSE;
+  }
+
+  name = source + prefixlen;
+  return name.getLength() > 0;
+}
 
 const char *
 SoShader::getNamedScript(const SbName & name, const Type type)

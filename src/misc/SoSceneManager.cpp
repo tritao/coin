@@ -606,15 +606,15 @@ SoSceneManager::setHandleEventAction(SoHandleEventAction * hea)
 }
 
 void
-SoSceneManager::setModernRenderEnabled(SbBool enable)
+SoSceneManager::setRendererMode(SoRenderManager::RendererMode mode)
 {
-  PRIVATE(this)->rendermanager->setModernRenderEnabled(enable);
+  PRIVATE(this)->rendermanager->setRendererMode(mode);
 }
 
-SbBool
-SoSceneManager::isModernRenderEnabled(void) const
+SoRenderManager::RendererMode
+SoSceneManager::getRendererMode(void) const
 {
-  return PRIVATE(this)->rendermanager->isModernRenderEnabled();
+  return PRIVATE(this)->rendermanager->getRendererMode();
 }
 
 /*!

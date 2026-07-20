@@ -76,6 +76,7 @@ public:
 
   virtual void GLRender(SoGLRenderAction * action);
   virtual void GLRenderCompat(SoGLRenderAction * action);
+  virtual void render(SoIRRenderAction * action);
 
   virtual void rayPick(SoRayPickAction * action);
   virtual void getPrimitiveCount(SoGetPrimitiveCountAction * action);
