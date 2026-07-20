@@ -1,5 +1,5 @@
-#ifndef COIN_SOSHADERPROGRAM_H
-#define COIN_SOSHADERPROGRAM_H
+#ifndef COIN_VAO_H
+#define COIN_VAO_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
@@ -33,47 +33,31 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#include <Inventor/nodes/SoNode.h>
-#include <Inventor/nodes/SoSubNode.h>
-#include <Inventor/fields/SoMFNode.h>
+#ifndef COIN_INTERNAL
+#error this is a private header file
+#endif /* !COIN_INTERNAL */
+
+#include <Inventor/system/renderer.h>
+#include <Inventor/system/gl.h>
+#include <Inventor/C/glue/gl.h>
 
 class SoState;
 class SoGLRenderAction;
-class SoModernRenderAction;
 
+struct SoVAO
+{
+  SoVAO();
+  ~SoVAO();
 
-typedef void SoShaderProgramEnableCB(void * closure, 
-                                     SoState * state,
-                                     const SbBool enable);
+  /// Binds the VAO.
+  void bind(uint32_t contextid);
 
-// *************************************************************************
-
-class COIN_DLL_API SoShaderProgram : public SoNode {
-  typedef SoNode inherited;
-  SO_NODE_HEADER(SoShaderProgram);
-
-public:
-  SoMFNode shaderObject;
-
-  SoShaderProgram(void);
-
-  void setEnableCallback(SoShaderProgramEnableCB * cb,
-                         void * closure);
-
-SoEXTENDER public:
-  virtual void GLRender(SoGLRenderAction * action);
-  virtual void render(SoModernRenderAction * action);
-  virtual void search(SoSearchAction * action);
-  void render(SoState * state);
-
-SoINTERNAL public:
-  static void initClass();
-
-protected:
-  virtual ~SoShaderProgram();
+  /// Unbinds the VAO.
+  void unbind(uint32_t contextid);
 
 private:
-  class SoShaderProgramP * pimpl;
+
+  GLuint id;
 };
 
-#endif /* ! COIN_SOSHADERPROGRAM_H */
+#endif // COIN_VAO_H

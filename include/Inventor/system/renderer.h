@@ -1,5 +1,5 @@
-#ifndef COIN_SOSHADERPROGRAM_H
-#define COIN_SOSHADERPROGRAM_H
+#ifndef COIN_SYSTEM_RENDERER_H
+#define COIN_SYSTEM_RENDERER_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
@@ -33,47 +33,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#include <Inventor/nodes/SoNode.h>
-#include <Inventor/nodes/SoSubNode.h>
-#include <Inventor/fields/SoMFNode.h>
-
-class SoState;
-class SoGLRenderAction;
-class SoModernRenderAction;
-
-
-typedef void SoShaderProgramEnableCB(void * closure, 
-                                     SoState * state,
-                                     const SbBool enable);
-
-// *************************************************************************
-
-class COIN_DLL_API SoShaderProgram : public SoNode {
-  typedef SoNode inherited;
-  SO_NODE_HEADER(SoShaderProgram);
-
+class SoRenderer {
 public:
-  SoMFNode shaderObject;
+  enum Enum {
+    GL,
+    GLES,
+  };
 
-  SoShaderProgram(void);
-
-  void setEnableCallback(SoShaderProgramEnableCB * cb,
-                         void * closure);
-
-SoEXTENDER public:
-  virtual void GLRender(SoGLRenderAction * action);
-  virtual void render(SoModernRenderAction * action);
-  virtual void search(SoSearchAction * action);
-  void render(SoState * state);
-
-SoINTERNAL public:
-  static void initClass();
-
-protected:
-  virtual ~SoShaderProgram();
-
-private:
-  class SoShaderProgramP * pimpl;
+  static SoRenderer::Enum get();
+  static void set(SoRenderer::Enum renderer);
+  static bool isOpenGL();
 };
 
-#endif /* ! COIN_SOSHADERPROGRAM_H */
+#endif /* ! COIN_SYSTEM_RENDERER_H */
