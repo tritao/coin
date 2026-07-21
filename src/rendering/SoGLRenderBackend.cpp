@@ -265,6 +265,15 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
   this->storedparams = params;
   this->setInitParams(params);
 
+  // Fault injection for the Coin render-manager fallback test. This is
+  // intentionally an environment hook so the test can exercise the real
+  // backend initialization boundary without exposing a test-only API.
+  const char * failInit = coin_getenv("COIN_TEST_FAIL_DRAW_LIST_INITIALIZATION");
+  if (failInit && failInit[0] != '0' && failInit[0] != '\0') {
+    this->emitError("forced DrawList backend initialization failure");
+    return FALSE;
+  }
+
   char buffer[128];
   std::snprintf(buffer, sizeof(buffer),
                 "target=%dx%d samples=%d id=%u",
@@ -298,9 +307,6 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
 void
 SoGLRenderBackend::shutdown()
 {
-  if (!this->isInitialized()) {
-    return;
-  }
   pickBuffer.reset();
 
   // Destroy all cached GPU resources

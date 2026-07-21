@@ -52,6 +52,50 @@ probeOverlayTraversal(void * userdata, SoAction * action)
 }
 
 #if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+BOOST_AUTO_TEST_SUITE(BackendLifecycleTests);
+
+BOOST_AUTO_TEST_CASE(draw_list_backend_retries_after_context_replacement)
+{
+  coin_setenv("COIN_EGL", "1", TRUE);
+  coin_setenv("EGL_PLATFORM", "surfaceless", TRUE);
+  coin_setenv("COIN_EGL_CORE_PROFILE", "1", TRUE);
+
+  CoinOffscreenGLCanvas canvas;
+  canvas.setWantedSize(SbVec2s(32, 32));
+  const uint32_t firstContext = canvas.activateGLContext();
+  BOOST_REQUIRE(firstContext != 0);
+  BOOST_REQUIRE(isCoreProfileContext());
+
+  SoRenderManager manager;
+  manager.setViewportRegion(SbViewportRegion(32, 32));
+  manager.getGLRenderAction()->setCacheContext(firstContext);
+  SoSeparator * scene = new SoSeparator;
+  scene->ref();
+  manager.setSceneGraph(scene);
+  scene->unref();
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+
+  coin_setenv("COIN_TEST_FAIL_DRAW_LIST_INITIALIZATION", "1", TRUE);
+  manager.render(FALSE, FALSE);
+  coin_unsetenv("COIN_TEST_FAIL_DRAW_LIST_INITIALIZATION");
+  BOOST_CHECK(manager.getRenderBackend() == NULL);
+
+  canvas.deactivateGLContext();
+  canvas.setWantedSize(SbVec2s(64, 64));
+  const uint32_t secondContext = canvas.activateGLContext();
+  BOOST_REQUIRE(secondContext != 0);
+  BOOST_CHECK(secondContext != firstContext);
+  BOOST_REQUIRE(isCoreProfileContext());
+  manager.getGLRenderAction()->setCacheContext(secondContext);
+  manager.render(FALSE, FALSE);
+
+  BOOST_REQUIRE(manager.getRenderBackend());
+}
+
+BOOST_AUTO_TEST_SUITE_END();
+#endif
+
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
 BOOST_AUTO_TEST_SUITE(RetainedOverlayTests);
 
 BOOST_AUTO_TEST_CASE(draw_list_overlays_use_ir_without_legacy_action)
