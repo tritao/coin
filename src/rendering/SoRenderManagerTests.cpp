@@ -576,8 +576,13 @@ BOOST_AUTO_TEST_CASE(draw_list_initialization_falls_back_to_legacy_gl)
   coin_unsetenv("COIN_TEST_FAIL_DRAW_LIST_INITIALIZATION");
 
   BOOST_REQUIRE(rendered);
+#if defined(COIN_GL_COMPATIBILITY)
   BOOST_CHECK(manager.getRenderPipeline() ==
               SoRenderManager::RenderPipeline::LEGACY_GL);
+#else
+  BOOST_CHECK(manager.getRenderPipeline() ==
+              SoRenderManager::RenderPipeline::DRAW_LIST);
+#endif
   outer->unref();
 }
 
