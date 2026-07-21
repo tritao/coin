@@ -13,6 +13,7 @@
 
 #ifdef COIN_TEST_SUITE
 
+#include <Inventor/C/tidbits.h>
 #include <Inventor/SoOffscreenRenderer.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoIRRenderAction.h>
@@ -264,6 +265,37 @@ BOOST_AUTO_TEST_CASE(draw_list_invalidates_all_shared_gl_actions)
   BOOST_CHECK(probe.context != 0);
   BOOST_CHECK(probe.invalidationsAfterBackend > probe.invalidationsBeforeBackend);
 
+  outer->unref();
+}
+
+BOOST_AUTO_TEST_CASE(draw_list_initialization_falls_back_to_legacy_gl)
+{
+  if (!renderTestsHaveDisplay()) {
+    return;
+  }
+
+  SoRenderManager manager;
+  SoSeparator * scene = new SoSeparator;
+  scene->ref();
+  manager.setSceneGraph(scene);
+  scene->unref();
+
+  SoSeparator * outer = new SoSeparator;
+  outer->ref();
+  ManagerRenderProbe probe;
+  probe.manager = &manager;
+  SoCallback * callback = new SoCallback;
+  callback->setCallback(renderManagerFromCallback, &probe);
+  outer->addChild(callback);
+
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+  coin_setenv("COIN_TEST_FAIL_DRAW_LIST_INITIALIZATION", "1", TRUE);
+  const SbBool rendered = renderWithManager(manager, outer);
+  coin_unsetenv("COIN_TEST_FAIL_DRAW_LIST_INITIALIZATION");
+
+  BOOST_REQUIRE(rendered);
+  BOOST_CHECK(manager.getRenderPipeline() ==
+              SoRenderManager::RenderPipeline::LEGACY_GL);
   outer->unref();
 }
 
