@@ -844,8 +844,8 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   params.state = action->getState();
   params.contextId = SoGLCacheContextElement::get(action->getState());
   params.bgCommandCount = PRIVATE(this)->backgroundCommandCount;
-  params.lineSmoothing = PRIVATE(this)->glaction->isSmoothing() != FALSE;
-  params.pointSmoothing = params.lineSmoothing;
+  params.lineSmoothing = PRIVATE(this)->lineSmoothing != FALSE;
+  params.pointSmoothing = PRIVATE(this)->pointSmoothing != FALSE;
   params.devicePixelRatio = PRIVATE(this)->devicePixelRatio;
 
   backend->render(list, params);
@@ -2113,6 +2113,8 @@ SoRenderManager::getStereoOffset(void) const
 void
 SoRenderManager::setAntialiasing(const SbBool smoothing, const int numpasses)
 {
+  PRIVATE(this)->lineSmoothing = smoothing;
+  PRIVATE(this)->pointSmoothing = smoothing;
   PRIVATE(this)->glaction->setSmoothing(smoothing);
   PRIVATE(this)->glaction->setNumPasses(numpasses);
   this->scheduleRedraw();
@@ -2128,6 +2130,42 @@ SoRenderManager::getAntialiasing(SbBool & smoothing, int & numpasses) const
 {
   smoothing = PRIVATE(this)->glaction->isSmoothing();
   numpasses = PRIVATE(this)->glaction->getNumPasses();
+}
+
+/*! Enable or disable line primitive smoothing independently of multisampling. */
+void
+SoRenderManager::setLineSmoothing(const SbBool smoothing)
+{
+  if (PRIVATE(this)->lineSmoothing == smoothing) return;
+  PRIVATE(this)->lineSmoothing = smoothing;
+  if (PRIVATE(this)->glaction) {
+    PRIVATE(this)->glaction->setLineSmoothing(smoothing);
+  }
+  this->scheduleRedraw();
+}
+
+SbBool
+SoRenderManager::getLineSmoothing(void) const
+{
+  return PRIVATE(this)->lineSmoothing;
+}
+
+/*! Enable or disable point primitive smoothing independently of multisampling. */
+void
+SoRenderManager::setPointSmoothing(const SbBool smoothing)
+{
+  if (PRIVATE(this)->pointSmoothing == smoothing) return;
+  PRIVATE(this)->pointSmoothing = smoothing;
+  if (PRIVATE(this)->glaction) {
+    PRIVATE(this)->glaction->setPointSmoothing(smoothing);
+  }
+  this->scheduleRedraw();
+}
+
+SbBool
+SoRenderManager::getPointSmoothing(void) const
+{
+  return PRIVATE(this)->pointSmoothing;
 }
 
 /*!
@@ -2156,8 +2194,12 @@ SoRenderManager::setGLRenderAction(SoGLRenderAction * const action)
   if (action && action != PRIVATE(this)->glaction) action->invalidateState();
   PRIVATE(this)->glaction = action;
   PRIVATE(this)->deleteglaction = FALSE;
-  if (PRIVATE(this)->glaction && haveregion)
-    PRIVATE(this)->glaction->setViewportRegion(region);
+  if (PRIVATE(this)->glaction) {
+    PRIVATE(this)->glaction->setLineSmoothing(PRIVATE(this)->lineSmoothing);
+    PRIVATE(this)->glaction->setPointSmoothing(PRIVATE(this)->pointSmoothing);
+    if (haveregion)
+      PRIVATE(this)->glaction->setViewportRegion(region);
+  }
 }
 
 void

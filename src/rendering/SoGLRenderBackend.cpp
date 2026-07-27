@@ -1135,6 +1135,12 @@ SoGLRenderBackend::beginFrame(const SoDrawList & drawlist,
   else {
     glDisable(GL_LINE_SMOOTH);
   }
+  if (params.pointSmoothing) {
+    glEnable(GL_POINT_SMOOTH);
+  }
+  else {
+    glDisable(GL_POINT_SMOOTH);
+  }
 #endif
 
   glUseProgram(this->shaderProgram);
