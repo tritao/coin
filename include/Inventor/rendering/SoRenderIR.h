@@ -79,6 +79,24 @@ static constexpr uint32_t SO_MAT_IS_BILLBOARD = 0x2;  //!< Screen-space billboar
 // --- Feature flags (SoMaterialData::featureFlags) ---
 static constexpr uint32_t SO_FEAT_BASE_COLOR = 0x1;   //!< Flat/unlit rendering (BASE_COLOR light model)
 
+// --- Texture sampler state ---
+// These are semantic sampler modes rather than OpenGL enum values so the IR
+// can be consumed by non-OpenGL backends as well.
+enum SoTextureFilter : uint8_t {
+  SO_TEXTURE_FILTER_NEAREST = 0,
+  SO_TEXTURE_FILTER_LINEAR,
+  SO_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST,
+  SO_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST,
+  SO_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR,
+  SO_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR
+};
+
+enum SoTextureWrap : uint8_t {
+  SO_TEXTURE_WRAP_CLAMP_TO_EDGE = 0,
+  SO_TEXTURE_WRAP_REPEAT,
+  SO_TEXTURE_WRAP_CLAMP_TO_BORDER
+};
+
 // --- Render param flags (SoRenderParams::flags) ---
 static constexpr uint32_t SO_PARAM_CLEAR_WINDOW = 1u;
 static constexpr uint32_t SO_PARAM_INTERACTIVE  = 2u;  //!< Camera orbiting/panning — skip ID buffer
@@ -98,6 +116,11 @@ struct SoTextureData {
   int width = 0;
   int height = 0;
   int numComponents = 0; // 1=L, 2=LA, 3=RGB, 4=RGBA
+
+  SoTextureFilter minFilter = SO_TEXTURE_FILTER_NEAREST;
+  SoTextureFilter magFilter = SO_TEXTURE_FILTER_NEAREST;
+  SoTextureWrap wrapS = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+  SoTextureWrap wrapT = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
 };
 
 /*!
