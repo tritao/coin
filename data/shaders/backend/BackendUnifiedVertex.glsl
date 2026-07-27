@@ -11,6 +11,7 @@ uniform mat4 u_model;
 uniform vec4 u_color;
 uniform float u_useVertexColor;
 uniform float u_renderMode;
+uniform int u_shadingModel;
 uniform vec3 u_quadCenter;
 uniform vec2 u_texSize;
 uniform vec2 u_vpSize;
