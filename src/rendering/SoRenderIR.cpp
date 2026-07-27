@@ -557,11 +557,16 @@ fillMaterialFromState(SoState * state, SoMaterialData & material)
                               1.0f - transparency);
   }
 
-  // Flag BASE_COLOR light model for flat (unlit) rendering
-  int lightModel = SoLightModelElement::get(mutableState);
-  if (lightModel == SoLightModelElement::BASE_COLOR) {
-    material.featureFlags |= SO_FEAT_BASE_COLOR;
-  }
+  // Capture the effective shading contract explicitly. Coin's traditional
+  // PHONG light model currently maps to the legacy-compatible Gouraud path;
+  // a true per-fragment PHONG path can be introduced without changing the
+  // material/light payload carried by the IR.
+  const int lightModel = SoLightModelElement::get(mutableState);
+  const bool baseColor = lightModel == SoLightModelElement::BASE_COLOR;
+  material.shadingModel = baseColor
+    ? SO_SHADING_UNLIT
+    : SO_SHADING_LEGACY_GOURAUD;
+  material.featureFlags = baseColor ? SO_FEAT_BASE_COLOR : 0;
   material.ambient.setValue(ambient[0], ambient[1], ambient[2], 1.0f);
   material.specular.setValue(specular[0], specular[1], specular[2], 1.0f);
   material.emissive.setValue(emissive[0], emissive[1], emissive[2], 1.0f);
@@ -575,7 +580,6 @@ fillMaterialFromState(SoState * state, SoMaterialData & material)
   material.normalTexture = NULL;
   material.emissiveTexture = NULL;
   material.flags = 0;
-  // Note: featureFlags is set above (BASE_COLOR flag) — don't reset it here
 }
 
 void

@@ -88,6 +88,21 @@ static constexpr uint32_t SO_MAT_IS_PIXEL_TEXT = 0x4; //!< Integer-aligned pixel
 // --- Feature flags (SoMaterialData::featureFlags) ---
 static constexpr uint32_t SO_FEAT_BASE_COLOR = 0x1;   //!< Flat/unlit rendering (BASE_COLOR light model)
 
+/*!
+  \enum SoShadingModel
+  \brief Effective shading contract carried by a render command.
+
+  The legacy-compatible model is the current default. It preserves the
+  fixed-function Coin/GL behavior while the DrawList backend is migrated to
+  an explicit shading model. SO_SHADING_PHONG is reserved for a future
+  per-fragment implementation and is not emitted by the current traversal.
+*/
+enum SoShadingModel : uint8_t {
+  SO_SHADING_UNLIT = 0,
+  SO_SHADING_LEGACY_GOURAUD,
+  SO_SHADING_PHONG
+};
+
 // --- Texture sampler state ---
 // These are semantic sampler modes rather than OpenGL enum values so the IR
 // can be consumed by non-OpenGL backends as well.
@@ -143,6 +158,7 @@ struct SoMaterialData {
   SbVec4f  ambient = {0.2f, 0.2f, 0.2f, 1.0f};
   SbVec4f  specular = {0.0f, 0.0f, 0.0f, 1.0f};
   SbVec4f  emissive = {0.0f, 0.0f, 0.0f, 1.0f};
+  SoShadingModel shadingModel = SO_SHADING_LEGACY_GOURAUD;
   float    shininess = 0.2f;
   float    opacity = 1.0f;
 

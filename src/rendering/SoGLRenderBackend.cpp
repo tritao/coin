@@ -820,6 +820,8 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   const SbVec4f & diffuse = cmd.material.diffuse;
   glUniform4f(this->uColorLocation,
               diffuse[0], diffuse[1], diffuse[2], diffuse[3]);
+  glUniform1i(this->uShadingModelLocation,
+              static_cast<GLint>(cmd.material.shadingModel));
   const SbVec4f & ambient = cmd.material.ambient;
   glUniform3f(this->uMaterialAmbientLocation,
               ambient[0], ambient[1], ambient[2]);
@@ -849,6 +851,7 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   // Points/lines have zero normals; BASE_COLOR materials use emissive
   // as the display color (e.g. rotation center sphere, annotations).
   bool flatColor = (prim == GL_POINTS || prim == GL_LINES || prim == GL_LINE_STRIP
+                    || cmd.material.shadingModel == SO_SHADING_UNLIT
                     || (cmd.material.featureFlags & SO_FEAT_BASE_COLOR));
   glUniform1f(this->uRenderModeLocation, flatColor ? 1.0f : 0.0f);
 
@@ -1926,6 +1929,7 @@ SoGLRenderBackend::createShaders()
   this->uModelLocation = glGetUniformLocation(this->shaderProgram, "u_model");
   this->uColorLocation = glGetUniformLocation(this->shaderProgram, "u_color");
   this->uRenderModeLocation = glGetUniformLocation(this->shaderProgram, "u_renderMode");
+  this->uShadingModelLocation = glGetUniformLocation(this->shaderProgram, "u_shadingModel");
   this->uEmissiveColorLocation = glGetUniformLocation(this->shaderProgram, "u_emissiveColor");
   this->uUseVertexColorLocation = glGetUniformLocation(this->shaderProgram, "u_useVertexColor");
   this->uTextureLocation = glGetUniformLocation(this->shaderProgram, "u_texture");
