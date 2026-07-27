@@ -614,6 +614,9 @@ fillRenderStateFromState(SoState * state, SoRenderState & rs)
     break;
   }
   rs.raster.fillMode = fillmode;
+  // Native GL_POINTS are square unless point smoothing is enabled. Keep the
+  // primitive shape explicit in the IR so backends do not choose independently.
+  rs.raster.pointShape = SO_POINT_SHAPE_SQUARE;
 
   // Backface culling from SoShapeHintsElement:
   // vertexOrdering == COUNTERCLOCKWISE + shapeType == SOLID → cull back faces

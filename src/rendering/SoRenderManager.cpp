@@ -845,6 +845,7 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   params.contextId = SoGLCacheContextElement::get(action->getState());
   params.bgCommandCount = PRIVATE(this)->backgroundCommandCount;
   params.lineSmoothing = PRIVATE(this)->glaction->isSmoothing() != FALSE;
+  params.pointSmoothing = params.lineSmoothing;
   params.devicePixelRatio = PRIVATE(this)->devicePixelRatio;
 
   backend->render(list, params);
