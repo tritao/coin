@@ -257,6 +257,14 @@ struct SoPixelTextData {
   int originY = 0;
 };
 
+/*! \struct SoPixelTextData
+  \brief Pixel-space placement metadata for a text texture.
+*/
+struct SoPixelTextData {
+  int originX = 0;
+  int originY = 0;
+};
+
 /*!
   \struct SoDepthState
   \brief Depth-test configuration for a draw call.
