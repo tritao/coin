@@ -444,9 +444,12 @@ SoRenderManager::~SoRenderManager()
   if (PRIVATE(this)->renderLayerForegroundRoot)
     PRIVATE(this)->renderLayerForegroundRoot->unref();
 
+  // Release the camera reference while the scene graph is still alive. A
+  // camera is commonly also a child of the scene, and clearing the scene
+  // first can otherwise leave the manager with a dangling camera pointer.
+  this->setCamera(NULL);
   if (PRIVATE(this)->scene)
     PRIVATE(this)->scene->unref();
-  this->setCamera(NULL);
 
   delete PRIVATE(this);
 }
