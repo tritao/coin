@@ -21,6 +21,7 @@ struct CachedGPUCommand {
   GLuint texcoordVBO = 0;
   GLuint lineDistVBO = 0;  // cumulative object-space distance for line stipple
   GLuint textureId = 0;  // GL texture for embedded textures (SoImage)
+  bool textureHasMipmaps = false;
   GLuint idxVBO = 0;
   GLuint vao = 0;       // visual pass VAO (pos + norm + color + idx)
   GLuint idVAO = 0;     // ID pass VAO (pos + idColor + idx)
