@@ -24,6 +24,7 @@
 #include <Inventor/nodes/SoFaceSet.h>
 #include <Inventor/nodes/SoLightModel.h>
 #include <Inventor/nodes/SoMaterial.h>
+#include <Inventor/nodes/SoNormal.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/rendering/SoRenderIR.h>
@@ -103,6 +104,47 @@ struct SharedContextRenderProbe {
   int invalidationsBeforeBackend = 0;
   int invalidationsAfterBackend = 0;
 };
+
+static const SoRenderCommand *findGeometryCommand(const SoDrawList & drawlist)
+{
+  for (int i = 0; i < drawlist.getNumCommands(); ++i) {
+    const SoRenderCommand & command = drawlist.getCommand(i);
+    if (command.geometry.vertexCount != 0) {
+      return &command;
+    }
+  }
+  return nullptr;
+}
+
+static SoSeparator *makeShadingModelProbeScene(SoLightModel::Model model)
+{
+  SoSeparator *scene = new SoSeparator;
+  scene->ref();
+
+  SoLightModel *lightModel = new SoLightModel;
+  lightModel->model = model;
+  scene->addChild(lightModel);
+
+  SoMaterial *material = new SoMaterial;
+  material->diffuseColor.setValue(0.8f, 0.2f, 0.1f);
+  scene->addChild(material);
+
+  SoCoordinate3 *coordinates = new SoCoordinate3;
+  coordinates->point.set1Value(0, -1.0f, -1.0f, 0.0f);
+  coordinates->point.set1Value(1, 1.0f, -1.0f, 0.0f);
+  coordinates->point.set1Value(2, 1.0f, 1.0f, 0.0f);
+  coordinates->point.set1Value(3, -1.0f, 1.0f, 0.0f);
+  scene->addChild(coordinates);
+
+  SoNormal *normals = new SoNormal;
+  normals->vector.set1Value(0, 0.0f, 0.0f, 1.0f);
+  scene->addChild(normals);
+
+  SoFaceSet *faces = new SoFaceSet;
+  faces->numVertices.setValue(4);
+  scene->addChild(faces);
+  return scene;
+}
 
 static void renderManagerFromCallback(void * userdata, SoAction * action)
 {
@@ -351,6 +393,25 @@ BOOST_AUTO_TEST_CASE(draw_list_invalidates_all_shared_gl_actions)
   BOOST_CHECK(probe.invalidationsAfterBackend > probe.invalidationsBeforeBackend);
 
   outer->unref();
+}
+
+BOOST_AUTO_TEST_CASE(ir_commands_carry_explicit_shading_model)
+{
+  SoIRRenderAction action(SbViewportRegion(32, 32));
+
+  SoSeparator *litScene = makeShadingModelProbeScene(SoLightModel::PHONG);
+  action.apply(litScene);
+  const SoRenderCommand *litCommand = findGeometryCommand(action.getDrawList());
+  BOOST_REQUIRE(litCommand);
+  BOOST_CHECK(litCommand->material.shadingModel == SO_SHADING_LEGACY_GOURAUD);
+  litScene->unref();
+
+  SoSeparator *unlitScene = makeShadingModelProbeScene(SoLightModel::BASE_COLOR);
+  action.apply(unlitScene);
+  const SoRenderCommand *unlitCommand = findGeometryCommand(action.getDrawList());
+  BOOST_REQUIRE(unlitCommand);
+  BOOST_CHECK(unlitCommand->material.shadingModel == SO_SHADING_UNLIT);
+  unlitScene->unref();
 }
 
 BOOST_AUTO_TEST_CASE(draw_list_initialization_falls_back_to_legacy_gl)

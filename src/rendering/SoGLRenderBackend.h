@@ -191,6 +191,7 @@ private:
   GLint  uModelLocation = -1;
   GLint  uColorLocation = -1;
   GLint  uRenderModeLocation = -1;
+  GLint  uShadingModelLocation = -1;
   GLint  uEmissiveColorLocation = -1;
   GLint  uUseVertexColorLocation = -1;
   GLint  uTextureLocation = -1;
