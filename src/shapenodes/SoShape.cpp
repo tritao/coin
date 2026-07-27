@@ -97,6 +97,7 @@
 #include <Inventor/elements/SoDepthBufferElement.h>
 #include <Inventor/elements/SoMultiTextureCoordinateElement.h>
 #include <Inventor/elements/SoMultiTextureEnabledElement.h>
+#include <Inventor/elements/SoMultiTextureImageElement.h>
 #include <Inventor/elements/SoNormalElement.h>
 #include <Inventor/elements/SoProjectionMatrixElement.h>
 #include <Inventor/elements/SoShapeHintsElement.h>
@@ -154,6 +155,38 @@
 // *************************************************************************
 
 namespace {
+
+// Keep the IR sampler description aligned with Coin's legacy SoGLImage
+// quality bands.  The values are semantic; a backend is responsible for
+// mapping them to its own sampler API.
+static SoTextureFilter
+irTextureMinFilter(const float quality)
+{
+  if (quality < 0.2f) return SO_TEXTURE_FILTER_NEAREST;
+  if (quality < 0.5f) return SO_TEXTURE_FILTER_LINEAR;
+  if (quality < 0.8f) return SO_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR;
+  return SO_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR;
+}
+
+static SoTextureFilter
+irTextureMagFilter(const float quality)
+{
+  return quality < 0.2f ? SO_TEXTURE_FILTER_NEAREST : SO_TEXTURE_FILTER_LINEAR;
+}
+
+static SoTextureWrap
+irTextureWrap(const SoMultiTextureImageElement::Wrap wrap)
+{
+  switch (wrap) {
+    case SoMultiTextureImageElement::REPEAT:
+      return SO_TEXTURE_WRAP_REPEAT;
+    case SoMultiTextureImageElement::CLAMP_TO_BORDER:
+      return SO_TEXTURE_WRAP_CLAMP_TO_BORDER;
+    case SoMultiTextureImageElement::CLAMP:
+    default:
+      return SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+  }
+}
 
 struct IRVertex {
   SbVec3f position;
@@ -416,6 +449,10 @@ public:
       cmd.material.texture.width = this->texWidth;
       cmd.material.texture.height = this->texHeight;
       cmd.material.texture.numComponents = this->texNC;
+      cmd.material.texture.minFilter = this->texMinFilter;
+      cmd.material.texture.magFilter = this->texMagFilter;
+      cmd.material.texture.wrapS = this->texWrapS;
+      cmd.material.texture.wrapT = this->texWrapT;
       cmd.material.flags |= SO_MAT_HAS_TEXTURE;
       if (this->useBillboard) {
         cmd.material.flags |= SO_MAT_IS_BILLBOARD;
@@ -551,6 +588,11 @@ private:
     if (this->textureCaptured) return;
     this->textureCaptured = TRUE;
     SoState * st = this->action->getState();
+    const float quality = SoTextureQualityElement::get(st);
+    this->texMinFilter = irTextureMinFilter(quality);
+    this->texMagFilter = irTextureMagFilter(quality);
+    this->texWrapS = irTextureWrap(SoMultiTextureImageElement::getWrapS(st, 0));
+    this->texWrapT = irTextureWrap(SoMultiTextureImageElement::getWrapT(st, 0));
     SbVec2s texSize;
     int texNC = 0;
     const unsigned char * texPixels =
@@ -577,6 +619,10 @@ private:
   int texWidth = 0;
   int texHeight = 0;
   int texNC = 0;
+  SoTextureFilter texMinFilter = SO_TEXTURE_FILTER_NEAREST;
+  SoTextureFilter texMagFilter = SO_TEXTURE_FILTER_NEAREST;
+  SoTextureWrap texWrapS = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+  SoTextureWrap texWrapT = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
   std::vector<IRVertex> vertices;
   std::vector<SoRenderElementRange> elementRanges;
   int activeLineRangeIndex = -1;
