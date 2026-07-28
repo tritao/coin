@@ -88,6 +88,8 @@ protected:
   float getComplexityValue(SoAction * action);
   virtual void generatePrimitives(SoAction * action) =  0;
   virtual SbBool shouldGLRender(SoGLRenderAction * action);
+  SbBool shouldGLRender(SoGLRenderAction * action,
+                        SbBool sortTransparentTriangles);
   void renderGeneratedPrimitives(SoIRRenderAction * action,
                                  SbBool billboard = FALSE);
   void beginSolidShape(SoGLRenderAction * action);
