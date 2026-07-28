@@ -227,6 +227,22 @@ inline GLenum topologyToGL(SoPrimitiveTopology topology) {
   }
 }
 
+inline GLenum depthFunctionToGL(uint8_t function)
+{
+  // Keep this mapping aligned with SoDepthBufferElement::DepthWriteFunction.
+  switch (function) {
+    case 0: return GL_NEVER;
+    case 1: return GL_ALWAYS;
+    case 2: return GL_LESS;
+    case 3: return GL_LEQUAL;
+    case 4: return GL_EQUAL;
+    case 5: return GL_GEQUAL;
+    case 6: return GL_GREATER;
+    case 7: return GL_NOTEQUAL;
+    default: return GL_LEQUAL;
+  }
+}
+
 inline bool textureFilterUsesMipmaps(const SoTextureFilter filter)
 {
   return filter == SO_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST
@@ -339,6 +355,12 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
     this->emitError("failed to create ModernGL shader");
     return FALSE;
   }
+
+  // Use the same range queried by SoGLLineWidthElement in LegacyGL.  Native
+  // DrawList lines therefore receive the same driver clamping behavior.
+  GLfloat lineWidthRange[2] = {1.0f, 1.0f};
+  glGetFloatv(GL_LINE_WIDTH_RANGE, lineWidthRange);
+  this->nativeLineWidthMax = std::max(lineWidthRange[1], 1.0f);
 
   // Cache attribute locations
   this->posLoc = glGetAttribLocation(this->shaderProgram, "a_position");
@@ -871,7 +893,7 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   const bool linePrimitive = prim == GL_LINES || prim == GL_LINE_STRIP;
   if (linePrimitive || fillMode == 1) {
     float lw = std::max(cmd.state.raster.lineWidth, 1.0f) * dpr;
-    if (linePrimitive && this->lineShaderProgram && lw > 1.0f) {
+    if (linePrimitive && this->shouldUseWideLineShader(lw)) {
       // Switch actual line primitives to the geometry-based width expansion
       // shader. Wireframe triangle commands stay on the regular triangle
       // path: the wide-line shader accepts GL_LINES input only.
@@ -1411,7 +1433,15 @@ SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     for (int ci : overlay3D) {
-      drawCommand(drawlist, drawlist.getCommand(ci), viewMat, projMat, params);
+      const SoRenderCommand & cmd = drawlist.getCommand(ci);
+      if (cmd.state.depth.enabled) {
+        glEnable(GL_DEPTH_TEST);
+      } else {
+        glDisable(GL_DEPTH_TEST);
+      }
+      glDepthFunc(depthFunctionToGL(cmd.state.depth.func));
+      glDepthMask(cmd.state.depth.writeEnabled ? GL_TRUE : GL_FALSE);
+      drawCommand(drawlist, cmd, viewMat, projMat, params);
     }
     coin_apply_default_viewport(params);
   }
@@ -1510,6 +1540,7 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
 
     GLenum prim = topologyToGL(cmd.geometry.topology);
     bool pointShaderActive = false;
+    bool lineShaderActive = false;
 
     if (prim == GL_POINTS) {
       float pointSize = cmd.state.raster.pointSize;
@@ -1538,7 +1569,8 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
       // This matches the legacy renderer which replaces the edge color.
       glDepthFunc(GL_ALWAYS);
       float edgeWidth = std::max(cmd.state.raster.lineWidth, 1.0f) * params.devicePixelRatio;
-      if (this->lineShaderProgram && edgeWidth > 1.0f) {
+      if (this->shouldUseWideLineShader(edgeWidth)) {
+        lineShaderActive = true;
         glUseProgram(this->lineShaderProgram);
         glUniformMatrix4fv(this->lineUModelLocation, 1, GL_FALSE, &modelMat[0][0]);
         glUniformMatrix4fv(this->lineUViewLocation, 1, GL_FALSE, &viewMat[0][0]);
@@ -1549,6 +1581,8 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
         glUniform1f(this->lineULineWidthLocation, edgeWidth);
         glUniform1f(this->lineUStipplePeriodLocation, 0.0f);
         glUniform1f(this->lineUUseVertexColorLocation, 0.0f);
+      } else {
+        glLineWidth(edgeWidth);
       }
     }
 
@@ -1560,7 +1594,6 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
     // For edges, use opaque color (replaces the edge, not overlays).
     bool isEdge = (prim == GL_LINES || prim == GL_LINE_STRIP);
     bool isPoint = (prim == GL_POINTS);
-    bool lineShaderActive = isEdge && this->lineShaderProgram;
     auto setSelColor = [&](float r, float g, float b, float a) {
       float alpha = (isEdge || isPoint) ? 1.0f : a;  // opaque for edges/points
       if (lineShaderActive) {
@@ -1668,9 +1701,11 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
     }
     if (prim == GL_LINES || prim == GL_LINE_STRIP) {
       glDepthFunc(GL_LEQUAL);
-      if (this->lineShaderProgram) {
+      if (lineShaderActive) {
         glUseProgram(this->shaderProgram);
         glUniform1f(this->uRenderModeLocation, 1.0f);
+      } else {
+        glLineWidth(1.0f);
       }
     }
   }
