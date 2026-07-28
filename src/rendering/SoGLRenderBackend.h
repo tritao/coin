@@ -150,6 +150,12 @@ private:
   void setupVisualVAO(CachedGPUCommand & entry, const SoRenderCommand & cmd);
   void gcStaleEntries(int currentFrame);
   void destroyCacheEntry(CachedGPUCommand & entry);
+  bool shouldUseWideLineShader(float width) const
+  {
+    return this->lineShaderProgram != 0
+        && width > 1.0f
+        && width > this->nativeLineWidthMax;
+  }
 
   SoRenderBackendInitParams storedparams;
 
@@ -157,6 +163,9 @@ private:
   GLuint shaderProgram = 0;
   // Line shader program (with geometry shader for screen-space width)
   GLuint lineShaderProgram = 0;
+  // Native lines preserve LegacyGL rasterization exactly.  The geometry
+  // shader is used only when the context clamps the requested width.
+  float nativeLineWidthMax = 1.0f;
   // Point shader program (with geometry shader for screen-space billboards)
   GLuint pointShaderProgram = 0;
   GLint  lineUViewLocation = -1;

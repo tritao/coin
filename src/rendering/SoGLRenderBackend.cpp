@@ -340,6 +340,12 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
     return FALSE;
   }
 
+  // Use the same range queried by SoGLLineWidthElement in LegacyGL.  Native
+  // DrawList lines therefore receive the same driver clamping behavior.
+  GLfloat lineWidthRange[2] = {1.0f, 1.0f};
+  glGetFloatv(GL_LINE_WIDTH_RANGE, lineWidthRange);
+  this->nativeLineWidthMax = std::max(lineWidthRange[1], 1.0f);
+
   // Cache attribute locations
   this->posLoc = glGetAttribLocation(this->shaderProgram, "a_position");
   this->normLoc = glGetAttribLocation(this->shaderProgram, "a_normal");
@@ -855,10 +861,13 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   }
   bool useLineShader = false;
-  if (prim == GL_LINES || prim == GL_LINE_STRIP || fillMode == 1) {
+  const bool linePrimitive = prim == GL_LINES || prim == GL_LINE_STRIP;
+  if (linePrimitive || fillMode == 1) {
     float lw = std::max(cmd.state.raster.lineWidth, 1.0f) * dpr;
-    if (this->lineShaderProgram && lw > 1.0f) {
-      // Switch to line shader with geometry-based width expansion
+    if (linePrimitive && this->shouldUseWideLineShader(lw)) {
+      // Switch actual line primitives to the geometry-based width expansion
+      // shader. Wireframe triangle commands stay on the regular triangle
+      // path: the wide-line shader accepts GL_LINES input only.
       useLineShader = true;
       glUseProgram(this->lineShaderProgram);
       SbMat modelMat2;
