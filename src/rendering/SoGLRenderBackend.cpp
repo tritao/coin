@@ -1123,6 +1123,15 @@ SoGLRenderBackend::beginFrame(const SoDrawList & drawlist,
   glDepthFunc(GL_LEQUAL);
   glDepthMask(GL_TRUE);
 
+#if defined(COIN_GL_COMPATIBILITY)
+  if (params.lineSmoothing) {
+    glEnable(GL_LINE_SMOOTH);
+  }
+  else {
+    glDisable(GL_LINE_SMOOTH);
+  }
+#endif
+
   glUseProgram(this->shaderProgram);
   coin_apply_default_viewport(params);
 
