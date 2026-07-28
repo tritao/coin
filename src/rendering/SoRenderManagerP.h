@@ -51,10 +51,10 @@
 #include <Inventor/SbColor4f.h>
 #include <Inventor/SoRenderManager.h>
 #include <Inventor/SbViewportRegion.h>
+#include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/elements/SoLazyElement.h>
-#include <Inventor/sensors/SoNodeSensor.h>
-#include <Inventor/rendering/SoRenderIR.h>
 #include <Inventor/misc/SoNotification.h>
+#include <Inventor/sensors/SoNodeSensor.h>
 
 class SbMatrix;
 class SoNodeSensor;
@@ -64,7 +64,6 @@ class SoGetBoundingBoxAction;
 class SoGetMatrixAction;
 class SoSearchAction;
 class SbPList;
-class SoIRRenderAction;
 class SoRenderBackend;
 
 class SoRenderManagerP {
@@ -137,7 +136,7 @@ public:
   SoNode * renderLayerForegroundRoot = NULL;
   int backgroundCommandCount = 0;
   int mainSceneCommandCount = 0;  // bg + main scene commands (excludes foreground)
-  SoIRBuffer::SavePoint poolSavePoint;  // geometry pool state after main scene traversal
+  SoIRRenderAction::GeometrySavePoint poolSavePoint;  // geometry pool state after main scene traversal
   SbViewportRegion backendViewport;  // viewport for the render backend (replaces glaction viewport)
   int backendFrameCounter;
 
