@@ -141,7 +141,7 @@
 #include "tidbitsp.h"
 #include "elements/SoRenderPlacementElement.h"
 #include "rendering/SoVBO.h"
-#include "rendering/SoRenderIR.h"
+#include "rendering/SoRenderIRP.h"
 #include "coindefs.h" // COIN_OBSOLETED()
 
 // SoShape.cpp grew too big, so I had to move some code into new
