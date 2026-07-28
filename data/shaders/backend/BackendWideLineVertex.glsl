@@ -15,6 +15,7 @@ out float vs_lineDistance;
 void main()
 {
   gl_Position = u_proj * u_view * u_model * vec4(a_position, 1.0);
-  vs_color = (u_useVertexColor > 0.5) ? a_color : u_color;
+  vs_color = (u_useVertexColor > 0.5)
+    ? vec4(a_color.rgb, a_color.a * u_color.a) : u_color;
   vs_lineDistance = a_lineDistance;
 }

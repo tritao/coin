@@ -171,6 +171,7 @@ SoLazyElement::init(SoState * COIN_UNUSED_ARG(state))
   this->coinstate.blend_dfactor = 0;
   this->coinstate.alpha_blend_sfactor = 0;
   this->coinstate.alpha_blend_dfactor = 0;
+  this->coinstate.separateblending = FALSE;
   this->coinstate.lightmodel = PHONG;
   this->coinstate.packeddiffuse = FALSE;
   this->coinstate.numdiffuse = 1;
@@ -392,7 +393,19 @@ SoLazyElement::setColorMaterial(SoState * COIN_UNUSED_ARG(state), SbBool COIN_UN
 void
 SoLazyElement::enableBlending(SoState * state,  int sfactor, int dfactor)
 {
-  SoLazyElement::enableSeparateBlending(state, sfactor, dfactor, 0, 0);
+  SoLazyElement * elem = SoLazyElement::getInstance(state);
+  if (!elem->coinstate.blending ||
+      elem->coinstate.blend_sfactor != sfactor ||
+      elem->coinstate.blend_dfactor != dfactor ||
+      elem->coinstate.separateblending) {
+    elem = getWInstance(state);
+    elem->enableBlendingElt(sfactor, dfactor, 0, 0);
+    elem->coinstate.separateblending = FALSE;
+    if (state->isCacheOpen()) elem->lazyDidSet(BLENDING_MASK);
+  }
+  else if (state->isCacheOpen()) {
+    elem->lazyDidntSet(BLENDING_MASK);
+  }
 }
 
 void
@@ -405,9 +418,11 @@ SoLazyElement::enableSeparateBlending(SoState * state,
       elem->coinstate.blend_sfactor != sfactor ||
       elem->coinstate.blend_dfactor != dfactor ||
       elem->coinstate.alpha_blend_sfactor != alpha_sfactor ||
-      elem->coinstate.alpha_blend_dfactor != alpha_dfactor) {
+      elem->coinstate.alpha_blend_dfactor != alpha_dfactor ||
+      !elem->coinstate.separateblending) {
     elem = getWInstance(state);
     elem->enableBlendingElt(sfactor, dfactor, alpha_sfactor, alpha_dfactor);
+    elem->coinstate.separateblending = TRUE;
     if (state->isCacheOpen()) elem->lazyDidSet(BLENDING_MASK);
   }
   else if (state->isCacheOpen()) {
@@ -567,7 +582,7 @@ SoLazyElement::getAlphaBlending(SoState * state, int & sfactor, int & dfactor)
   sfactor = elem->coinstate.alpha_blend_sfactor;
   dfactor = elem->coinstate.alpha_blend_dfactor;
 
-  return elem->coinstate.blending && (sfactor != 0) && (dfactor != 0);
+  return elem->coinstate.blending && elem->coinstate.separateblending;
 }
 
 // ! FIXME: write doc
