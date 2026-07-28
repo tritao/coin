@@ -74,6 +74,13 @@ public:
                 const SoRenderParams & params) override;
   void resizeTarget(const SoRenderTargetInfo & info) override;
 
+  // After render(), the OpenGL backend leaves the host in a minimal safe
+  // state: no VAO, array or element buffer, program, or 2D texture is bound;
+  // texture unit zero is active; depth writes and LEQUAL are enabled; blend,
+  // culling, and polygon offset fill are disabled. It does not restore every
+  // other OpenGL property. Legacy SoGLRenderAction users must invalidate their
+  // action state before traversing after this backend.
+
   /// GPU pick at pixel coordinates. Returns pick LUT index (1-based).
   uint32_t pick(int x, int y, int pickRadius = 5) const override;
 

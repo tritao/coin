@@ -42,6 +42,7 @@
 
 class SbViewportRegion;
 class SoEvent;
+class SoAction;
 class SoGLRenderAction;
 class SoAudioRenderAction;
 class SoNode;
@@ -53,6 +54,9 @@ class SoSensor;
 class SoRenderManagerP;
 
 typedef void SoRenderManagerRenderCB(void * userdata, class SoRenderManager * mgr);
+typedef void SoRenderManagerStageCB(void * userdata,
+                                    class SoRenderManager * mgr,
+                                    SoAction * action);
 
 class COIN_DLL_API SoRenderManager {
 public:
@@ -93,6 +97,11 @@ public:
     SHADED_HIDDEN_LINES
   };
 
+  enum LightingMode {
+    LIT,
+    UNLIT
+  };
+
   enum StereoMode {
     MONO,
     ANAGLYPH,
@@ -120,9 +129,9 @@ public:
     RENDER_LAYER_FOREGROUND
   };
 
-  enum RendererMode {
-    RENDERER_LEGACY_GL,
-    RENDERER_RENDER_BACKEND
+  enum class RenderPipeline {
+    LEGACY_GL,
+    DRAW_LIST
   };
 
   SoRenderManager(void);
@@ -159,6 +168,8 @@ public:
   SbBool isDoubleBuffer(void) const;
   void setRenderMode(const RenderMode mode);
   RenderMode getRenderMode(void) const;
+  void setLightingMode(const LightingMode mode);
+  LightingMode getLightingMode(void) const;
   void setStereoMode(const StereoMode mode);
   StereoMode getStereoMode(void) const;
   void setStereoOffset(const float offset);
@@ -197,20 +208,25 @@ public:
   void getAntialiasing(SbBool & smoothing, int & numPasses) const;
   void setGLRenderAction(SoGLRenderAction * const action);
   SoGLRenderAction * getGLRenderAction(void) const;
-  void setRendererMode(RendererMode mode);
-  RendererMode getRendererMode(void) const;
+  void setRenderPipeline(RenderPipeline pipeline);
+  RenderPipeline getRenderPipeline(void) const;
 
-  /// Release render-backend GPU resources for the current OpenGL context.
+  /// Notify Coin that the shared GL context was modified outside the
+  /// current render action. The next action using the context will rebuild
+  /// its cached state before traversing.
+  void invalidateSharedGLState(void);
+
+  /// Release draw-list GPU resources for the current OpenGL context.
   /// The backend object remains alive and will be reinitialized lazily on the
   /// next render.
   void releaseRenderBackendResources(void);
 
-  /// Discard render-backend GPU resource bookkeeping without issuing GL calls.
+  /// Discard draw-list GPU resource bookkeeping without issuing GL calls.
   /// Use this only during late teardown when the owning GL context can no
   /// longer be made current.
   void discardRenderBackendResources(void);
 
-  /// Access the render backend (NULL if not initialized).
+  /// Access the draw-list backend (NULL if not initialized).
   /// Used for GPU picking via backend->pick().
   class SoRenderBackend * getRenderBackend(void) const;
 
@@ -264,7 +280,16 @@ public:
   float getGpuPickPointSize() const;
 
   /// Force the render-backend path to re-traverse the scene graph on the next frame.
+  /// This compatibility entry point is equivalent to invalidateScene().
+  ///
+  /// @deprecated Use invalidateScene() or invalidateForeground() instead.
   void invalidateDrawList();
+
+  /// Invalidate the main scene and all explicit render layers.
+  void invalidateScene();
+
+  /// Invalidate only the foreground render layer.
+  void invalidateForeground();
 
   /// Directly set preselection highlight on a draw list command by pick LUT index.
   /// Avoids scene graph traversal. Returns true if highlight was applied.
@@ -313,6 +338,12 @@ public:
   void addPostRenderCallback(SoRenderManagerRenderCB * cb, void * data);
   void removePostRenderCallback(SoRenderManagerRenderCB * cb, void * data);
 
+  /// Add a callback between main-scene and foreground-layer traversal.
+  void addAfterMainSceneCallback(SoRenderManagerStageCB * cb, void * data);
+
+  /// Remove an after-main-scene callback.
+  void removeAfterMainSceneCallback(SoRenderManagerStageCB * cb, void * data);
+
   void reinitialize(void);
 
 protected:
@@ -332,7 +363,7 @@ protected:
                     SbBool initmatrices,
                     SbBool clearwindow,
                     SbBool clearzbuffer);
-  void renderWithBackend(const SbBool clearwindow,
+  void renderDrawListPipeline(const SbBool clearwindow,
                     const SbBool clearzbuffer);
 
   void renderStereo(SoGLRenderAction * action,

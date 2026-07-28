@@ -293,11 +293,20 @@ struct SoPickData {
 */
 struct SoSelectionData {
   bool        highlightWholeObject = false;  //!< Highlight the full command/object
-  int         highlightElement = -1;         //!< -1=none, >=0=public element index
+  std::vector<int> highlightedElements;       //!< Public element IDs
   SbVec4f     highlightColor;
   bool        selectWholeObject = false;     //!< Select the full command/object
   std::vector<int> selectedElements;         //!< Public element IDs
   SbVec4f     selectionColor;
+
+  //! Replace the highlighted element collection with one element.
+  void setHighlightedElement(int element)
+  {
+    highlightedElements.clear();
+    if (element >= 0) {
+      highlightedElements.push_back(element);
+    }
+  }
 };
 
 /*!

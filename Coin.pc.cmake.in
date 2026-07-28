@@ -24,5 +24,5 @@ have_sound=@FEAT_HAVE_SOUND@
 have_superglu=@FEAT_HAVE_SUPERGLU@
 have_threads=@FEAT_HAVE_THREADS@
 have_threadsafe=@FEAT_HAVE_SAFETHREAD@
-have_render_backend=@COIN_HAVE_RENDER_BACKEND@
-render_backend_api_version=@COIN_RENDER_BACKEND_API_VERSION@
+have_draw_list_rendering=@COIN_HAVE_DRAW_LIST_RENDERING@
+draw_list_api_version=@COIN_DRAW_LIST_API_VERSION@

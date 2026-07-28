@@ -52,6 +52,7 @@
 #include <Inventor/elements/SoLineWidthElement.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
 #include <Inventor/elements/SoLightModelElement.h>
+#include <Inventor/elements/SoDevicePixelRatioElement.h>
 #include <Inventor/elements/SoMaterialBindingElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
 #include <Inventor/elements/SoOverrideElement.h>
@@ -90,6 +91,7 @@
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoAudioRenderAction.h>
 #include <Inventor/actions/SoGLRenderAction.h>
+#include <Inventor/actions/SoAction.h>
 #include <Inventor/actions/SoIRRenderAction.h>
 #include "CoinTracyConfig.h"
 #include <Inventor/SbTime.h>
@@ -98,6 +100,7 @@
 #include <Inventor/fields/SoSFTime.h>
 #include <Inventor/misc/SoAudioDevice.h>
 #include <Inventor/SoDB.h>
+#include <Inventor/errors/SoDebugError.h>
 
 #include "coindefs.h"
 #include "tidbitsp.h"
@@ -281,6 +284,65 @@
 #define PRIVATE(p) (p->pimpl)
 #define PUBLIC(p) (p->publ)
 
+namespace {
+
+void
+setCommonTraversalState(SoState * state,
+                        SoNode * node,
+                        float devicePixelRatio)
+{
+  SoDevicePixelRatioElement::set(state, node, devicePixelRatio);
+}
+
+SoRenderManager::RenderMode
+normalizeDrawListRenderMode(SoRenderManager::RenderMode renderMode)
+{
+  if (renderMode != SoRenderManager::AS_IS
+      && renderMode != SoRenderManager::WIREFRAME
+      && renderMode != SoRenderManager::POINTS) {
+    static bool warnedUnsupportedMode = false;
+    if (!warnedUnsupportedMode) {
+      warnedUnsupportedMode = true;
+      SoDebugError::postWarning(
+        "SoRenderManager::renderDrawListPipeline",
+        "Render mode %d is not supported by the draw-list pipeline; rendering AS_IS",
+        static_cast<int>(renderMode));
+    }
+    return SoRenderManager::AS_IS;
+  }
+  return renderMode;
+}
+
+void
+setMainScenePolicy(SoState * state,
+                   SoNode * node,
+                   SoRenderManager::RenderMode renderMode,
+                   SoRenderManager::LightingMode lightingMode)
+{
+  if (renderMode == SoRenderManager::WIREFRAME) {
+    SoDrawStyleElement::set(state, node, SoDrawStyleElement::LINES);
+    SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
+    SoOverrideElement::setDrawStyleOverride(state, node, TRUE);
+    SoOverrideElement::setLightModelOverride(state, node, TRUE);
+  }
+  else if (renderMode == SoRenderManager::POINTS) {
+    SoDrawStyleElement::set(state, node, SoDrawStyleElement::POINTS);
+    SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
+    SoOverrideElement::setDrawStyleOverride(state, node, TRUE);
+    SoOverrideElement::setLightModelOverride(state, node, TRUE);
+  }
+  else if (lightingMode == SoRenderManager::UNLIT) {
+    SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
+    SoOverrideElement::setLightModelOverride(state, node, TRUE);
+  }
+  else {
+    SoLightModelElement::set(state, node, SoLightModelElement::PHONG);
+    SoOverrideElement::setLightModelOverride(state, node, FALSE);
+  }
+}
+
+} // namespace
+
 /*!
   Constructor.
 */
@@ -304,7 +366,7 @@ SoRenderManager::SoRenderManager(void)
   PRIVATE(this)->irAction = NULL;
   PRIVATE(this)->foregroundAction = NULL;
   PRIVATE(this)->renderBackend = NULL;
-  PRIVATE(this)->rendererMode = SoRenderManager::RENDERER_LEGACY_GL;
+  PRIVATE(this)->renderPipeline = SoRenderManager::RenderPipeline::LEGACY_GL;
 
   PRIVATE(this)->doublebuffer = TRUE;
   PRIVATE(this)->deleteaudiorenderaction = TRUE;
@@ -323,13 +385,14 @@ SoRenderManager::SoRenderManager(void)
 #ifdef COIN_USE_BACKTRACE
   PRIVATE(this)->btState = backtrace_create_state(NULL, 0, NULL, NULL);
 #endif
-  const char * backendenv = coin_getenv("COIN_USE_RENDER_BACKEND");
+  const char * backendenv = coin_getenv("COIN_USE_DRAW_LIST");
   if (backendenv && backendenv[0] != '0' && backendenv[0] != '\0') {
-    PRIVATE(this)->rendererMode = SoRenderManager::RENDERER_RENDER_BACKEND;
+    PRIVATE(this)->renderPipeline = SoRenderManager::RenderPipeline::DRAW_LIST;
   }
 
   PRIVATE(this)->stereostenciltype = SoRenderManager::MONO;
   PRIVATE(this)->rendermode = SoRenderManager::AS_IS;
+  PRIVATE(this)->lightingmode = SoRenderManager::LIT;
   PRIVATE(this)->stereomode = SoRenderManager::MONO;
   PRIVATE(this)->autoclipping = SoRenderManager::NO_AUTO_CLIPPING;
   PRIVATE(this)->redrawpri = SoRenderManager::getDefaultRedrawPriority();
@@ -363,6 +426,8 @@ SoRenderManager::~SoRenderManager()
   if (PRIVATE(this)->deleteglaction) delete PRIVATE(this)->glaction;
   if (PRIVATE(this)->deleteaudiorenderaction) delete PRIVATE(this)->audiorenderaction;
   delete PRIVATE(this)->rootsensor;
+  delete PRIVATE(this)->renderLayerBackgroundSensor;
+  delete PRIVATE(this)->renderLayerForegroundSensor;
   delete PRIVATE(this)->redrawshot;
 
   if (PRIVATE(this)->superimpositions != NULL) {
@@ -467,10 +532,19 @@ SoRenderManager::nodesensorCB(void * data, SoSensor * sensor)
   SoRenderManager * self = static_cast<SoRenderManager *>(data);
   SoNodeSensor * ns = static_cast<SoNodeSensor *>(sensor);
 
+  if (ns == PRIVATE(self)->renderLayerBackgroundSensor) {
+    self->invalidateScene();
+    return;
+  }
+  if (ns == PRIVATE(self)->renderLayerForegroundSensor) {
+    self->invalidateForeground();
+    return;
+  }
+
   // Determine if the draw list needs rebuilding.
   SoNode * trigger = ns->getTriggerNode();
 
-  if (PRIVATE(self)->rendererMode == SoRenderManager::RENDERER_RENDER_BACKEND) {
+  if (PRIVATE(self)->renderPipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
     bool isCameraChange = (trigger && trigger == PRIVATE(self)->camera);
 
     // Consume the pending camera change flag (set by notifyCameraChange()
@@ -556,7 +630,7 @@ SoRenderManager::detachRootSensor(void)
 }
 
 void
-SoRenderManager::renderWithBackend(const SbBool clearwindow,
+SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
                                    const SbBool clearzbuffer)
 {
   if (!PRIVATE(this)->scene) return;
@@ -570,7 +644,13 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
     for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
       Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
       if (s->getStateFlags() & Superimposition::BACKGROUND) {
+        SoState * state = glaction->getState();
+        state->push();
+        setCommonTraversalState(state,
+                                PRIVATE(this)->dummynode,
+                                PRIVATE(this)->devicePixelRatio);
         s->render(glaction, clearwindow_tmp);
+        state->pop();
         clearwindow_tmp = FALSE;
       }
     }
@@ -605,6 +685,9 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
   action->setViewportRegion(vp);
   action->setCamera(PRIVATE(this)->camera);
 
+  SoState * traversalState = action->getState();
+  SoNode * traversalNode = PRIVATE(this)->dummynode;
+
   bool sceneChanged = (PRIVATE(this)->cachedSceneGen != PRIVATE(this)->sceneGeneration);
   bool fgChanged = (PRIVATE(this)->cachedForegroundGen != PRIVATE(this)->foregroundGeneration);
 
@@ -624,27 +707,52 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
     // Traverse background root first (gradient, grid)
     PRIVATE(this)->backgroundCommandCount = 0;
     if (PRIVATE(this)->renderLayerBackgroundRoot) {
+      traversalState->push();
+      setCommonTraversalState(traversalState,
+                              traversalNode,
+                              PRIVATE(this)->devicePixelRatio);
       action->apply(PRIVATE(this)->renderLayerBackgroundRoot);
+      traversalState->pop();
       PRIVATE(this)->backgroundCommandCount = action->getDrawList().getNumCommands();
     }
 
     // Traverse main scene — appends after background
+    traversalState->push();
+    setCommonTraversalState(traversalState,
+                            traversalNode,
+                            PRIVATE(this)->devicePixelRatio);
+    setMainScenePolicy(traversalState,
+                       traversalNode,
+                       normalizeDrawListRenderMode(PRIVATE(this)->rendermode),
+                       PRIVATE(this)->lightingmode);
     if (PRIVATE(this)->backgroundCommandCount > 0) {
       action->traverseAdditionalRoot(PRIVATE(this)->scene);
-    } else {
+    }
+    else {
       action->apply(PRIVATE(this)->scene);
     }
+    traversalState->pop();
 
-    PRIVATE(this)->mainSceneCommandCount = action->getDrawList().getNumCommands();
+    PRIVATE(this)->invokeAfterMainSceneCallbacks(action);
+
+    // After-main callbacks are retained scene content.  Keep both their
+    // commands and geometry in the checkpoint so foreground-only rebuilds
+    // do not truncate them away.
+    PRIVATE(this)->preForegroundCommandCount = action->getDrawList().getNumCommands();
 
     // Save geometry pool state so partial rebuilds can rewind to this
     // point, re-allocating foreground geometry at the same addresses
     // for stable VBO cache keys.
-    PRIVATE(this)->poolSavePoint = action->saveGeometryPool();
+    PRIVATE(this)->preForegroundPoolSavePoint = action->saveGeometryPool();
 
     // Traverse foreground root (NaviCube, overlays)
     if (PRIVATE(this)->renderLayerForegroundRoot) {
+      traversalState->push();
+      setCommonTraversalState(traversalState,
+                              traversalNode,
+                              PRIVATE(this)->devicePixelRatio);
       action->traverseAdditionalRoot(PRIVATE(this)->renderLayerForegroundRoot);
+      traversalState->pop();
     }
 
     PRIVATE(this)->cachedSceneGen = PRIVATE(this)->sceneGeneration;
@@ -665,11 +773,16 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
     // Rewind the geometry pool to the save point after main scene traversal
     // so foreground geometry re-allocates at the same addresses — VBO cache
     // hits automatically.
-    action->getMutableDrawList().truncate(PRIVATE(this)->mainSceneCommandCount);
-    action->rewindGeometryPool(PRIVATE(this)->poolSavePoint);
+    action->getMutableDrawList().truncate(PRIVATE(this)->preForegroundCommandCount);
+    action->rewindGeometryPool(PRIVATE(this)->preForegroundPoolSavePoint);
 
     if (PRIVATE(this)->renderLayerForegroundRoot) {
+      traversalState->push();
+      setCommonTraversalState(traversalState,
+                              traversalNode,
+                              PRIVATE(this)->devicePixelRatio);
       action->traverseAdditionalRoot(PRIVATE(this)->renderLayerForegroundRoot);
+      traversalState->pop();
     }
 
     PRIVATE(this)->cachedForegroundGen = PRIVATE(this)->foregroundGeneration;
@@ -722,6 +835,7 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
   params.devicePixelRatio = PRIVATE(this)->devicePixelRatio;
 
   backend->render(list, params);
+  this->invalidateSharedGLState();
 
   // Render FOREGROUND superimpositions via the legacy action.
   // The NaviCube's internal scene graph uses Coin nodes (SoTexture2 etc.)
@@ -737,11 +851,16 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
-    glaction->invalidateState();
     for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
       Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
       if (!(s->getStateFlags() & Superimposition::BACKGROUND)) {
+        SoState * state = glaction->getState();
+        state->push();
+        setCommonTraversalState(state,
+                                PRIVATE(this)->dummynode,
+                                PRIVATE(this)->devicePixelRatio);
         s->render(glaction);
+        state->pop();
       }
     }
   }
@@ -934,8 +1053,8 @@ SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
       SoAudioDevice::instance()->isEnabled())
     PRIVATE(this)->audiorenderaction->apply(PRIVATE(this)->scene);
 
-  if (PRIVATE(this)->rendererMode == SoRenderManager::RENDERER_RENDER_BACKEND) {
-    this->renderWithBackend(clearwindow, clearzbuffer);
+  if (PRIVATE(this)->renderPipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
+    this->renderDrawListPipeline(clearwindow, clearzbuffer);
     return;
   }
 
@@ -1001,27 +1120,69 @@ SoRenderManager::render(SoGLRenderAction * action,
                         const SbBool clearzbuffer)
 {
   SbBool clearwindow_tmp = clearwindow; // make sure we only clear the color buffer once
+  SbBool clearzbuffer_tmp = clearzbuffer;
   PRIVATE(this)->invokePreRenderCallbacks();
 
   if (PRIVATE(this)->superimpositions) {
     for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
       Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
       if (s->getStateFlags() & Superimposition::BACKGROUND) {
+        SoState * state = action->getState();
+        state->push();
+        setCommonTraversalState(state,
+                                PRIVATE(this)->dummynode,
+                                PRIVATE(this)->devicePixelRatio);
         s->render(action, clearwindow_tmp);
+        state->pop();
         clearwindow_tmp = FALSE;
       }
     }
   }
 
+  if (PRIVATE(this)->renderLayerBackgroundRoot) {
+    SoState * state = action->getState();
+    state->push();
+    setCommonTraversalState(state,
+                            PRIVATE(this)->dummynode,
+                            PRIVATE(this)->devicePixelRatio);
+    uint32_t clearmask = 0;
+    if (clearwindow_tmp) clearmask |= GL_COLOR_BUFFER_BIT;
+    if (clearzbuffer_tmp) clearmask |= GL_DEPTH_BUFFER_BIT;
+    this->renderScene(action,
+                      PRIVATE(this)->renderLayerBackgroundRoot,
+                      clearmask);
+    state->pop();
+    clearwindow_tmp = FALSE;
+    clearzbuffer_tmp = FALSE;
+  }
+
   (this->getStereoMode() == SoRenderManager::MONO) ?
-    this->renderSingle(action, initmatrices, clearwindow_tmp, clearzbuffer):
-    this->renderStereo(action, initmatrices, clearwindow_tmp, clearzbuffer);
+    this->renderSingle(action, initmatrices, clearwindow_tmp, clearzbuffer_tmp):
+    this->renderStereo(action, initmatrices, clearwindow_tmp, clearzbuffer_tmp);
+
+  PRIVATE(this)->invokeAfterMainSceneCallbacks(action);
+
+  if (PRIVATE(this)->renderLayerForegroundRoot) {
+    SoState * state = action->getState();
+    state->push();
+    setCommonTraversalState(state,
+                            PRIVATE(this)->dummynode,
+                            PRIVATE(this)->devicePixelRatio);
+    action->apply(PRIVATE(this)->renderLayerForegroundRoot);
+    state->pop();
+  }
 
   if (PRIVATE(this)->superimpositions) {
     for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
       Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
       if (!(s->getStateFlags() & Superimposition::BACKGROUND)) {
+        SoState * state = action->getState();
+        state->push();
+        setCommonTraversalState(state,
+                                PRIVATE(this)->dummynode,
+                                PRIVATE(this)->devicePixelRatio);
         s->render(action);
+        state->pop();
       }
     }
   }
@@ -1160,6 +1321,16 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
 
   SoNode * node = PRIVATE(this)->dummynode;
 
+  setCommonTraversalState(state, node, PRIVATE(this)->devicePixelRatio);
+  const RenderMode renderMode = this->getRenderMode();
+  const bool drawListMode = renderMode == SoRenderManager::AS_IS
+                         || renderMode == SoRenderManager::WIREFRAME
+                         || renderMode == SoRenderManager::POINTS;
+  setMainScenePolicy(state,
+                     node,
+                     drawListMode ? renderMode : SoRenderManager::AS_IS,
+                     PRIVATE(this)->lightingmode);
+
   if (!this->isTexturesEnabled()) {
     SoTextureQualityElement::set(state, node, 0.0f);
     SoTextureOverrideElement::setQualityOverride(state, TRUE);
@@ -1169,23 +1340,15 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
     this->actuallyRender(action, initmatrices, clearwindow, clearzbuffer);
     break;
   case SoRenderManager::WIREFRAME:
-    SoDrawStyleElement::set(state, node, SoDrawStyleElement::LINES);
-    SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
-    SoOverrideElement::setDrawStyleOverride(state, node, TRUE);
-    SoOverrideElement::setLightModelOverride(state, node, TRUE);
     this->actuallyRender(action, initmatrices, clearwindow, clearzbuffer);
     break;
   case SoRenderManager::POINTS:
-    SoDrawStyleElement::set(state, node, SoDrawStyleElement::POINTS);
-    SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
-    SoOverrideElement::setDrawStyleOverride(state, node, TRUE);
-    SoOverrideElement::setLightModelOverride(state, node, TRUE);
     this->actuallyRender(action, initmatrices, clearwindow, clearzbuffer);
     break;
   case SoRenderManager::HIDDEN_LINE:
     {
       // must clear before setting draw mask
-      this->clearBuffers(TRUE, TRUE);
+      this->clearBuffers(FALSE, TRUE);
 
       // only draw into depth buffer
       if (SoRenderer::isOpenGL()) {
@@ -1317,7 +1480,7 @@ SoRenderManager::renderStereo(SoGLRenderAction * action,
 {
   if (!PRIVATE(this)->camera) return;
   if (SoRenderer::isOpenGL()) {
-    this->clearBuffers(TRUE, TRUE);
+    this->clearBuffers(FALSE, TRUE);
     PRIVATE(this)->camera->setStereoAdjustment(PRIVATE(this)->stereooffset);
 
     SbBool stenciltestenabled = glIsEnabled(GL_STENCIL_TEST);
@@ -1854,8 +2017,9 @@ SoRenderManager::isAutoRedraw(void) const
 void
 SoRenderManager::setRenderMode(const RenderMode mode)
 {
+  if (PRIVATE(this)->rendermode == mode) return;
   PRIVATE(this)->rendermode = mode;
-  this->scheduleRedraw();
+  this->invalidateScene();
   PRIVATE(this)->dummynode->touch();
 }
 
@@ -1866,6 +2030,24 @@ SoRenderManager::RenderMode
 SoRenderManager::getRenderMode(void) const
 {
   return PRIVATE(this)->rendermode;
+}
+
+void
+SoRenderManager::setLightingMode(const LightingMode mode)
+{
+  if (PRIVATE(this)->lightingmode == mode) return;
+  PRIVATE(this)->lightingmode = mode;
+  if (PRIVATE(this)->renderPipeline == SoRenderManager::RenderPipeline::LEGACY_GL) {
+    PRIVATE(this)->glaction->invalidateState();
+  }
+  this->invalidateScene();
+  PRIVATE(this)->dummynode->touch();
+}
+
+SoRenderManager::LightingMode
+SoRenderManager::getLightingMode(void) const
+{
+  return PRIVATE(this)->lightingmode;
 }
 
 /*!
@@ -1965,17 +2147,43 @@ SoRenderManager::setGLRenderAction(SoGLRenderAction * const action)
 }
 
 void
-SoRenderManager::setRendererMode(RendererMode mode)
+SoRenderManager::setRenderPipeline(RenderPipeline pipeline)
 {
-  if (mode == PRIVATE(this)->rendererMode) return;
-  PRIVATE(this)->rendererMode = mode;
-  this->scheduleRedraw();
+  if (pipeline == PRIVATE(this)->renderPipeline) return;
+
+  this->invalidateSharedGLState();
+
+  if (PRIVATE(this)->renderPipeline == RenderPipeline::DRAW_LIST) {
+    this->clearDrawListSelection();
+    this->clearDrawListHighlight();
+  }
+
+  PRIVATE(this)->renderPipeline = pipeline;
+  if (pipeline == RenderPipeline::DRAW_LIST) {
+    this->invalidateScene();
+  }
+  else {
+    this->scheduleRedraw();
+  }
 }
 
-SoRenderManager::RendererMode
-SoRenderManager::getRendererMode(void) const
+void
+SoRenderManager::invalidateSharedGLState(void)
 {
-  return PRIVATE(this)->rendererMode;
+  if (!PRIVATE(this)->glaction) return;
+
+  const uint32_t context = PRIVATE(this)->glaction->getCacheContext();
+  SoGLCacheContextElement::invalidateContextState(context);
+
+  // Keep the manager-owned action immediately ready for a transition while
+  // the generation also covers temporary actions sharing this context.
+  PRIVATE(this)->glaction->invalidateState();
+}
+
+SoRenderManager::RenderPipeline
+SoRenderManager::getRenderPipeline(void) const
+{
+  return PRIVATE(this)->renderPipeline;
 }
 
 void
@@ -2012,12 +2220,15 @@ void
 SoRenderManager::setRenderLayerRoot(RenderLayer layer, SoNode * root)
 {
   SoNode ** slot = NULL;
+  SoNodeSensor ** sensorSlot = NULL;
   switch (layer) {
   case RENDER_LAYER_BACKGROUND:
     slot = &PRIVATE(this)->renderLayerBackgroundRoot;
+    sensorSlot = &PRIVATE(this)->renderLayerBackgroundSensor;
     break;
   case RENDER_LAYER_FOREGROUND:
     slot = &PRIVATE(this)->renderLayerForegroundRoot;
+    sensorSlot = &PRIVATE(this)->renderLayerForegroundSensor;
     break;
   default:
     assert(0 && "unknown render layer");
@@ -2028,21 +2239,29 @@ SoRenderManager::setRenderLayerRoot(RenderLayer layer, SoNode * root)
     return;
   }
 
+  if (*sensorSlot) {
+    (*sensorSlot)->detach();
+  }
+
   if (*slot) {
     (*slot)->unref();
   }
   *slot = root;
   if (root) {
     root->ref();
+    if (!*sensorSlot) {
+      *sensorSlot = new SoNodeSensor(SoRenderManager::nodesensorCB, this);
+      (*sensorSlot)->setPriority(PRIVATE(this)->redrawpri == 0 ? 0 : 1);
+    }
+    (*sensorSlot)->attach(root);
   }
 
   if (layer == RENDER_LAYER_BACKGROUND) {
-    PRIVATE(this)->sceneGeneration++;
+    this->invalidateScene();
   }
   else {
-    PRIVATE(this)->foregroundGeneration++;
+    this->invalidateForeground();
   }
-  this->scheduleRedraw();
 }
 
 SoNode *
@@ -2196,7 +2415,20 @@ SoRenderManager::assemblePickedPoint(int screenX, int screenY, int pickRadius) c
 void
 SoRenderManager::invalidateDrawList()
 {
+  this->invalidateScene();
+}
+
+void
+SoRenderManager::invalidateScene()
+{
   PRIVATE(this)->sceneGeneration++;
+  PRIVATE(this)->foregroundGeneration++;
+  this->scheduleRedraw();
+}
+
+void
+SoRenderManager::invalidateForeground()
+{
   PRIVATE(this)->foregroundGeneration++;
   this->scheduleRedraw();
 }
@@ -2213,9 +2445,7 @@ SoRenderManager::setDrawListHighlight(uint32_t lutIndex, const SbColor4f & color
   for (int i = 0; i < numCmds; i++) {
     SoRenderCommand & cmd = drawlist.getCommand(i);
     cmd.selection.highlightWholeObject = false;
-    if (cmd.selection.highlightElement != -1) {
-      cmd.selection.highlightElement = -1;
-    }
+    cmd.selection.highlightedElements.clear();
   }
 
   if (lutIndex == 0) return true;  // Just clearing
@@ -2229,8 +2459,10 @@ SoRenderManager::setDrawListHighlight(uint32_t lutIndex, const SbColor4f & color
 
   SoRenderCommand & cmd = drawlist.getCommand(cmdIdx);
   cmd.selection.highlightWholeObject = (entry.elementType == SO_PICK_WHOLE_BODY);
-  cmd.selection.highlightElement =
-    (entry.elementType == SO_PICK_WHOLE_BODY) ? -1 : entry.elementIndex;
+  cmd.selection.highlightedElements.clear();
+  if (entry.elementType != SO_PICK_WHOLE_BODY) {
+    cmd.selection.highlightedElements.push_back(entry.elementIndex);
+  }
   cmd.selection.highlightColor.setValue(color[0], color[1], color[2], color[3]);
   return true;
 }
@@ -2331,7 +2563,9 @@ SoRenderManager::clearDrawListSelection()
 void
 SoRenderManager::setDevicePixelRatio(float dpr)
 {
+  if (PRIVATE(this)->devicePixelRatio == dpr) return;
   PRIVATE(this)->devicePixelRatio = dpr;
+  this->invalidateScene();
 }
 
 float
@@ -2626,6 +2860,28 @@ SoRenderManager::removePostRenderCallback(SoRenderManagerRenderCB * cb, void * d
         "Tried to remove a cb,data tuple which doesn't exist"
         );
   PRIVATE(this)->postRenderCallbacks.erase(findit);
+}
+
+void
+SoRenderManager::addAfterMainSceneCallback(SoRenderManagerStageCB * cb, void * data)
+{
+  PRIVATE(this)->afterMainSceneCallbacks.push_back(
+    SoRenderManagerP::StageCBTouple(cb, data)
+  );
+}
+
+void
+SoRenderManager::removeAfterMainSceneCallback(SoRenderManagerStageCB * cb, void * data)
+{
+  std::vector<SoRenderManagerP::StageCBTouple>::iterator findit =
+    std::find(PRIVATE(this)->afterMainSceneCallbacks.begin(),
+              PRIVATE(this)->afterMainSceneCallbacks.end(),
+              SoRenderManagerP::StageCBTouple(cb, data));
+  assert(
+    (findit != PRIVATE(this)->afterMainSceneCallbacks.end())
+    && "Tried to remove an after-main-scene callback which doesn't exist"
+  );
+  PRIVATE(this)->afterMainSceneCallbacks.erase(findit);
 }
 
 #undef PRIVATE

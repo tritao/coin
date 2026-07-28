@@ -57,6 +57,7 @@
 #include <Inventor/sensors/SoNodeSensor.h>
 
 class SbMatrix;
+class SoAction;
 class SoNodeSensor;
 class SoInfo;
 class SoNode;
@@ -119,7 +120,8 @@ public:
 
   SoRenderManager::StereoMode stereostenciltype;
   SoRenderManager::RenderMode rendermode;
-  SoRenderManager::RendererMode rendererMode;
+  SoRenderManager::LightingMode lightingmode;
+  SoRenderManager::RenderPipeline renderPipeline;
   SoRenderManager::StereoMode stereomode;
   SoRenderManager::AutoClippingStrategy autoclipping;
 
@@ -134,9 +136,11 @@ public:
   SoRenderBackend * renderBackend;
   SoNode * renderLayerBackgroundRoot = NULL;
   SoNode * renderLayerForegroundRoot = NULL;
+  SoNodeSensor * renderLayerBackgroundSensor = NULL;
+  SoNodeSensor * renderLayerForegroundSensor = NULL;
   int backgroundCommandCount = 0;
-  int mainSceneCommandCount = 0;  // bg + main scene commands (excludes foreground)
-  SoIRRenderAction::GeometrySavePoint poolSavePoint;  // geometry pool state after main scene traversal
+  int preForegroundCommandCount = 0;  // bg + main + after-main commands
+  SoIRRenderAction::GeometrySavePoint preForegroundPoolSavePoint;
   SbViewportRegion backendViewport;  // viewport for the render backend (replaces glaction viewport)
   int backendFrameCounter;
 
@@ -156,9 +160,12 @@ public:
 
   void invokePreRenderCallbacks(void);
   void invokePostRenderCallbacks(void);
+  void invokeAfterMainSceneCallbacks(SoAction * action);
   typedef std::pair<SoRenderManagerRenderCB *, void *> RenderCBTouple;
   std::vector<RenderCBTouple> preRenderCallbacks;
   std::vector<RenderCBTouple> postRenderCallbacks;
+  typedef std::pair<SoRenderManagerStageCB *, void *> StageCBTouple;
+  std::vector<StageCBTouple> afterMainSceneCallbacks;
 
   // "private" data
   static SbBool touchtimer;

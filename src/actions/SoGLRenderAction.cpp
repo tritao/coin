@@ -116,6 +116,7 @@
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/elements/SoDecimationPercentageElement.h>
 #include <Inventor/elements/SoDecimationTypeElement.h>
+#include <Inventor/elements/SoDevicePixelRatioElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
 #include <Inventor/elements/SoGLLazyElement.h>
 #include <Inventor/elements/SoGLLightIdElement.h>
@@ -589,6 +590,7 @@ public:
   SoGLRenderAction::SoGLRenderAbortCB * abortcallback;
   void * abortcallbackdata;
   uint32_t cachecontext;
+  uint64_t cachecontextgeneration;
   int currentpass;
   SoPathList delayedpaths;
   SbBool delayedpathrender;
@@ -687,6 +689,7 @@ SoGLRenderAction::initClass(void)
 
   SO_ENABLE(SoGLRenderAction, SoDecimationPercentageElement);
   SO_ENABLE(SoGLRenderAction, SoDecimationTypeElement);
+  SO_ENABLE(SoGLRenderAction, SoDevicePixelRatioElement);
   SO_ENABLE_GL(SoGLRenderAction, SoGLLightIdElement);
   SO_ENABLE_GL(SoGLRenderAction, SoGLRenderPassElement);
   SO_ENABLE_GL(SoGLRenderAction, SoGLUpdateAreaElement);
@@ -766,6 +769,8 @@ SoGLRenderAction::SoGLRenderAction(const SbViewportRegion & viewportregion)
   PRIVATE(this)->rendering = SoGLRenderActionP::RENDERING_UNSET;
   PRIVATE(this)->abortcallback = NULL;
   PRIVATE(this)->cachecontext = 0;
+  PRIVATE(this)->cachecontextgeneration =
+    SoGLCacheContextElement::getContextStateGeneration(PRIVATE(this)->cachecontext);
   PRIVATE(this)->needglinit = TRUE;
   PRIVATE(this)->sortedlayersblendpasses = 4;
   PRIVATE(this)->viewportheight = 0;
@@ -1028,6 +1033,8 @@ SoGLRenderAction::setCacheContext(const uint32_t context)
 {
   if (context != PRIVATE(this)->cachecontext) {
     PRIVATE(this)->cachecontext = context;
+    PRIVATE(this)->cachecontextgeneration =
+      SoGLCacheContextElement::getContextStateGeneration(context);
     this->invalidateState();
   }
 }
@@ -1069,6 +1076,13 @@ SoGLRenderAction::getSortedLayersNumPasses() const
 void
 SoGLRenderAction::beginTraversal(SoNode * node)
 {
+  const uint64_t contextgeneration =
+    SoGLCacheContextElement::getContextStateGeneration(PRIVATE(this)->cachecontext);
+  if (contextgeneration != PRIVATE(this)->cachecontextgeneration) {
+    PRIVATE(this)->cachecontextgeneration = contextgeneration;
+    this->invalidateState();
+  }
+
   if (PRIVATE(this)->cachedprofilingsg == NULL) {
     if (node->isOfType(SoGroup::getClassTypeId()) &&
         (coin_assert_cast<SoGroup *>(node))->getNumChildren() > 0) {
@@ -1534,6 +1548,8 @@ SoGLRenderAction::invalidateState(void)
 {
   inherited::invalidateState();
   PRIVATE(this)->needglinit = TRUE;
+  PRIVATE(this)->cachecontextgeneration =
+    SoGLCacheContextElement::getContextStateGeneration(PRIVATE(this)->cachecontext);
 }
 
 // Sort paths with transparent objects before rendering.

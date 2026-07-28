@@ -40,6 +40,7 @@
 #include <Inventor/elements/SoProfileElement.h>
 #include <Inventor/elements/SoProfileCoordinateElement.h>
 #include <Inventor/elements/SoTextureQualityElement.h>
+#include <Inventor/elements/SoTextureUnitElement.h>
 #include <Inventor/elements/SoSwitchElement.h>
 #include <Inventor/elements/SoUnitsElement.h>
 #include <Inventor/elements/SoShapeHintsElement.h>
@@ -52,6 +53,7 @@
 #include <Inventor/elements/SoGLLightIdElement.h>
 #include <Inventor/elements/SoDecimationPercentageElement.h>
 #include <Inventor/elements/SoDecimationTypeElement.h>
+#include <Inventor/elements/SoDevicePixelRatioElement.h>
 #include <Inventor/elements/SoTextureOverrideElement.h>
 #include <Inventor/elements/SoWindowElement.h>
 #include <Inventor/elements/SoPointSizeElement.h>
@@ -133,6 +135,7 @@ SoIRRenderAction::initClass(void)
   SO_ENABLE(SoIRRenderAction, SoProfileElement);
   SO_ENABLE(SoIRRenderAction, SoProfileCoordinateElement);
   SO_ENABLE(SoIRRenderAction, SoTextureQualityElement);
+  SO_ENABLE(SoIRRenderAction, SoTextureUnitElement);
   SO_ENABLE(SoIRRenderAction, SoSwitchElement);
   SO_ENABLE(SoIRRenderAction, SoUnitsElement);
 
@@ -148,6 +151,7 @@ SoIRRenderAction::initClass(void)
   SO_ENABLE(SoIRRenderAction, SoGLLightIdElement);
   SO_ENABLE(SoIRRenderAction, SoDecimationPercentageElement);
   SO_ENABLE(SoIRRenderAction, SoDecimationTypeElement);
+  SO_ENABLE(SoIRRenderAction, SoDevicePixelRatioElement);
   SO_ENABLE(SoIRRenderAction, SoTextureOverrideElement);
   SO_ENABLE(SoIRRenderAction, SoWindowElement);
   SO_ENABLE(SoIRRenderAction, SoRenderPlacementElement);

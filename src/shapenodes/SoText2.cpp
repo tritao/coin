@@ -627,6 +627,16 @@ SoText2::render(SoIRRenderAction * action)
     return;
   }
 
+  // Match the object-space quad used by the legacy renderer.  The backend
+  // sizes billboard commands in pixels, but the billboard center must still
+  // include Text2 justification and glyph-bearing-box offsets.
+  SbVec3f quad0, quad1, quad2, quad3;
+  if (!PRIVATE(this)->getQuad(state, quad0, quad1, quad2, quad3)) {
+    PRIVATE(this)->unlock();
+    return;
+  }
+  const SbVec3f quadCenter = (quad0 + quad1 + quad2 + quad3) * 0.25f;
+
   // Get current text color
   const SbColor & diffuse = SoLazyElement::getDiffuse(state, 0);
   unsigned char red   = (unsigned char)(diffuse[0] * 255.0f);
@@ -721,24 +731,16 @@ SoText2::render(SoIRRenderAction * action)
   float * texcoords = static_cast<float *>(
     action->allocateGeometryStorage(4 * 4 * sizeof(float)));
 
-  // All positions at origin — billboard shader handles positioning
+  // All positions share the projected text-quad center.  The billboard
+  // shader supplies the pixel-sized extents around that center.
   for (int v = 0; v < 4; v++) {
-    positions[v * 3 + 0] = 0.0f;
-    positions[v * 3 + 1] = 0.0f;
-    positions[v * 3 + 2] = 0.0f;
+    positions[v * 3 + 0] = quadCenter[0];
+    positions[v * 3 + 1] = quadCenter[1];
+    positions[v * 3 + 2] = quadCenter[2];
   }
 
   // Texcoords: (s, t, 0, 0) — corners of the quad
-  // Adjust for justification offset
-  float offX = 0.0f;
-  switch (this->justification.getValue()) {
-  case SoText2::LEFT:   offX = (float)bbmin[0]; break;
-  case SoText2::RIGHT:  offX = (float)(bbmin[0] - PRIVATE(this)->maxwidth); break;
-  case SoText2::CENTER: offX = (float)(bbmin[0] - PRIVATE(this)->maxwidth / 2.0f); break;
-  }
   // The billboard shader maps texcoord (0,0)-(1,1) to a pixel-sized quad.
-  // We need to offset the quad center so it aligns with the text origin.
-  // texcoords encode normalized position within the quad.
   // Triangle strip order: BL, BR, TL, TR
   texcoords[0]  = 0.0f; texcoords[1]  = 0.0f; texcoords[2]  = 0.0f; texcoords[3]  = 0.0f;
   texcoords[4]  = 1.0f; texcoords[5]  = 0.0f; texcoords[6]  = 0.0f; texcoords[7]  = 0.0f;

@@ -25,6 +25,7 @@ RegularSources = \
 	SoDecimationPercentageElement.cpp \
 	SoDecimationTypeElement.cpp \
 	SoDepthBufferElement.cpp \
+	SoDevicePixelRatioElement.cpp \
 	SoDiffuseColorElement.cpp \
 	SoDrawStyleElement.cpp \
 	SoElement.cpp \
