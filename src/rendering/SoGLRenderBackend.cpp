@@ -227,6 +227,22 @@ inline GLenum topologyToGL(SoPrimitiveTopology topology) {
   }
 }
 
+inline GLenum depthFunctionToGL(uint8_t function)
+{
+  // Keep this mapping aligned with SoDepthBufferElement::DepthWriteFunction.
+  switch (function) {
+    case 0: return GL_NEVER;
+    case 1: return GL_ALWAYS;
+    case 2: return GL_LESS;
+    case 3: return GL_LEQUAL;
+    case 4: return GL_EQUAL;
+    case 5: return GL_GEQUAL;
+    case 6: return GL_GREATER;
+    case 7: return GL_NOTEQUAL;
+    default: return GL_LEQUAL;
+  }
+}
+
 inline bool textureFilterUsesMipmaps(const SoTextureFilter filter)
 {
   return filter == SO_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST
@@ -768,6 +784,19 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   if (entry.vao == 0) return;
 
   coin_apply_command_viewport(cmd, params);
+
+  // Restore blending per command. Overlay rendering starts with blending
+  // enabled, but textured commands disable it after drawing; without this
+  // guard a later translucent untextured command becomes opaque.
+  const bool commandNeedsBlend = cmd.state.blend.enabled
+                              || cmd.material.opacity < 0.999f;
+  if (commandNeedsBlend) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  }
+  else {
+    glDisable(GL_BLEND);
+  }
 
   // Per-command model matrix; view/proj from params (auto-clipped) for
   // main scene, or per-command for overlay/background (different camera).
@@ -1404,7 +1433,15 @@ SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     for (int ci : overlay3D) {
-      drawCommand(drawlist, drawlist.getCommand(ci), viewMat, projMat, params);
+      const SoRenderCommand & cmd = drawlist.getCommand(ci);
+      if (cmd.state.depth.enabled) {
+        glEnable(GL_DEPTH_TEST);
+      } else {
+        glDisable(GL_DEPTH_TEST);
+      }
+      glDepthFunc(depthFunctionToGL(cmd.state.depth.func));
+      glDepthMask(cmd.state.depth.writeEnabled ? GL_TRUE : GL_FALSE);
+      drawCommand(drawlist, cmd, viewMat, projMat, params);
     }
     coin_apply_default_viewport(params);
   }
