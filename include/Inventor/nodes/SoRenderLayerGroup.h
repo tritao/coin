@@ -1,25 +1,25 @@
-#ifndef COIN_SOANNOTATION_H
-#define COIN_SOANNOTATION_H
+#ifndef COIN_SORENDERLAYERGROUP_H
+#define COIN_SORENDERLAYERGROUP_H
 
 /**************************************************************************\
  * Copyright (c) Kongsberg Oil & Gas Technologies AS
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  * Redistributions of source code must retain the above copyright notice,
  * this list of conditions and the following disclaimer.
- * 
+ *
  * Redistributions in binary form must reproduce the above copyright
  * notice, this list of conditions and the following disclaimer in the
  * documentation and/or other materials provided with the distribution.
- * 
+ *
  * Neither the name of the copyright holder nor the names of its
  * contributors may be used to endorse or promote products derived from
  * this software without specific prior written permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
@@ -33,17 +33,32 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#include <Inventor/nodes/SoSubNode.h>
-#include <Inventor/nodes/SoSeparator.h>
+#define COIN_HAVE_RENDER_LAYER_GROUP 1
 
-class COIN_DLL_API SoAnnotation : public SoSeparator {
+#include <Inventor/fields/SoSFBool.h>
+#include <Inventor/fields/SoSFEnum.h>
+#include <Inventor/fields/SoSFVec4f.h>
+#include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoSubNode.h>
+
+class COIN_DLL_API SoRenderLayerGroup : public SoSeparator {
   typedef SoSeparator inherited;
 
-  SO_NODE_HEADER(SoAnnotation);
+  SO_NODE_HEADER(SoRenderLayerGroup);
 
 public:
   static void initClass(void);
-  SoAnnotation(void);
+  SoRenderLayerGroup(void);
+
+  enum Layer {
+    INHERIT,
+    FOREGROUND
+  };
+
+  SoSFEnum layer;
+  SoSFBool viewportOverride;
+  SoSFVec4f viewportPixels;
+  SoSFBool clearDepthBuffer;
 
   virtual void GLRender(SoGLRenderAction * action);
   virtual void GLRenderBelowPath(SoGLRenderAction * action);
@@ -52,7 +67,10 @@ public:
   virtual void doAction(SoAction * action);
 
 protected:
-  virtual ~SoAnnotation();
+  virtual ~SoRenderLayerGroup();
+
+private:
+  void GLRenderLayer(SoGLRenderAction * action);
 };
 
-#endif // !COIN_SOANNOTATION_H
+#endif // !COIN_SORENDERLAYERGROUP_H

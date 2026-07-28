@@ -63,7 +63,7 @@
 #include <Inventor/SoPrimitiveVertex.h>
 #include <Inventor/actions/SoCallbackAction.h>
 #include <Inventor/actions/SoGLRenderAction.h>
-#include <Inventor/actions/SoModernRenderAction.h>
+#include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
 #include <Inventor/actions/SoRayPickAction.h>
@@ -73,6 +73,7 @@
 #include <Inventor/caches/SoPrimitiveVertexCache.h>
 #include <Inventor/details/SoFaceDetail.h>
 #include <Inventor/details/SoLineDetail.h>
+#include <Inventor/details/SoPointDetail.h>
 #include <Inventor/elements/SoBumpMapElement.h>
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/elements/SoComplexityElement.h>
@@ -138,8 +139,9 @@
 #include "misc/SoShaderGenerator.h"
 #include "threads/threadsutilp.h"
 #include "tidbitsp.h"
+#include "elements/SoRenderPlacementElement.h"
 #include "rendering/SoVBO.h"
-#include "rendering/SoModernIR.h"
+#include "rendering/SoRenderIR.h"
 #include "coindefs.h" // COIN_OBSOLETED()
 
 // SoShape.cpp grew too big, so I had to move some code into new
@@ -157,47 +159,182 @@ struct IRVertex {
   SbVec3f position;
   SbVec3f normal;
   SbVec4f texcoord;
+  SbVec4f color;       // per-vertex RGBA from material index
+  int     materialIdx; // -1 = use uniform color
 };
 
-class SoModernPrimitiveAssembler : public SoModernRenderAction::PrimitiveCollector {
+struct PrimitiveElementInfo {
+  SoPickElementType type = SO_PICK_WHOLE_BODY;
+  int index = -1;
+};
+
+static bool
+resolvePrimitiveElementInfo(const SoPrimitiveVertex * vertex,
+                            SoPrimitiveTopology topology,
+                            PrimitiveElementInfo & info)
+{
+  if (!vertex) return false;
+
+  const SoDetail * detail = vertex->getDetail();
+  if (!detail) return false;
+
+  switch (topology) {
+    case SO_TOPOLOGY_TRIANGLES:
+    case SO_TOPOLOGY_TRIANGLE_STRIP:
+      if (detail->isOfType(SoFaceDetail::getClassTypeId())) {
+        const SoFaceDetail * face = static_cast<const SoFaceDetail *>(detail);
+        int faceIndex = face->getFaceIndex();
+        if (faceIndex < 0) faceIndex = face->getPartIndex();
+        if (faceIndex < 0) return false;
+        info.type = SO_PICK_FACE;
+        info.index = faceIndex;
+        return true;
+      }
+      break;
+    case SO_TOPOLOGY_LINES:
+    case SO_TOPOLOGY_LINE_STRIP:
+      if (detail->isOfType(SoLineDetail::getClassTypeId())) {
+        const SoLineDetail * line = static_cast<const SoLineDetail *>(detail);
+        int lineIndex = line->getLineIndex();
+        if (lineIndex < 0) lineIndex = line->getPartIndex();
+        if (lineIndex < 0) return false;
+        info.type = SO_PICK_EDGE;
+        info.index = lineIndex;
+        return true;
+      }
+      break;
+    case SO_TOPOLOGY_POINTS:
+      if (detail->isOfType(SoPointDetail::getClassTypeId())) {
+        const SoPointDetail * point = static_cast<const SoPointDetail *>(detail);
+        const int pointIndex = point->getCoordinateIndex();
+        if (pointIndex < 0) return false;
+        info.type = SO_PICK_VERTEX;
+        info.index = pointIndex;
+        return true;
+      }
+      break;
+    case SO_TOPOLOGY_COUNT:
+      break;
+  }
+
+  return false;
+}
+
+class SoIRPrimitiveAssembler : public SoIRRenderAction::PrimitiveCollector {
 public:
-  SoModernPrimitiveAssembler(SoModernRenderAction * action,
-                             SoShape * shape)
+  SoIRPrimitiveAssembler(SoIRRenderAction * action,
+                             SoShape * shape,
+                             SbBool billboard = FALSE)
   : action(action),
     shape(shape),
     topology(SO_TOPOLOGY_COUNT),
-    warnedMixed(FALSE) {}
+    warnedMixed(FALSE),
+    useBillboard(billboard) {}
 
   void onTriangle(const SoPrimitiveVertex * v1,
                   const SoPrimitiveVertex * v2,
                   const SoPrimitiveVertex * v3) override
   {
     if (!this->ensureTopology(SO_TOPOLOGY_TRIANGLES)) return;
+    this->captureTexture();
+    const int drawStart = static_cast<int>(this->vertices.size());
+    PrimitiveElementInfo info;
+    const bool haveInfo =
+      resolvePrimitiveElementInfo(v1, SO_TOPOLOGY_TRIANGLES, info) ||
+      resolvePrimitiveElementInfo(v2, SO_TOPOLOGY_TRIANGLES, info) ||
+      resolvePrimitiveElementInfo(v3, SO_TOPOLOGY_TRIANGLES, info);
     this->appendVertex(v1);
     this->appendVertex(v2);
     this->appendVertex(v3);
+    if (haveInfo) {
+      this->appendTriangleRange(info, drawStart);
+    }
   }
 
   void onLine(const SoPrimitiveVertex * v1,
               const SoPrimitiveVertex * v2) override
   {
-    if (!this->ensureTopology(SO_TOPOLOGY_LINES)) return;
-    this->appendVertex(v1);
+    if (!this->ensureTopology(SO_TOPOLOGY_LINE_STRIP)) return;
+    PrimitiveElementInfo info;
+    const bool haveInfo =
+      resolvePrimitiveElementInfo(v1, SO_TOPOLOGY_LINE_STRIP, info) ||
+      resolvePrimitiveElementInfo(v2, SO_TOPOLOGY_LINE_STRIP, info);
+
+    // Build connected line strips. When consecutive line segments share
+    // an endpoint (v1 == last vertex), extend the current strip.
+    // On discontinuity, flush the current strip and start a new one.
+    if (!this->vertices.empty()) {
+      const SbVec3f & last = this->vertices.back().position;
+      const SbVec3f & p1 = v1->getPoint();
+      const bool sameStrip = (last == p1);
+      const bool sameElement =
+        haveInfo &&
+        this->activeLineRangeIndex >= 0 &&
+        this->elementRanges[this->activeLineRangeIndex].elementType == info.type &&
+        this->elementRanges[this->activeLineRangeIndex].elementIndex == info.index;
+      const bool mustFlush =
+        !sameStrip ||
+        (this->activeLineRangeIndex >= 0 && !sameElement) ||
+        (this->activeLineRangeIndex < 0 && haveInfo);
+      if (mustFlush) {
+        this->flushLineStrip();
+      }
+    }
+
+    if (this->vertices.empty()) {
+      this->appendVertex(v1);
+      this->appendVertex(v2);
+      if (haveInfo) {
+        this->beginLineRange(info);
+      } else {
+        this->activeLineRangeIndex = -1;
+      }
+      return;
+    }
+
     this->appendVertex(v2);
+    if (haveInfo && this->activeLineRangeIndex >= 0) {
+      this->elementRanges[this->activeLineRangeIndex].drawCount += 1;
+    }
   }
 
   void onPoint(const SoPrimitiveVertex * v) override
   {
     if (!this->ensureTopology(SO_TOPOLOGY_POINTS)) return;
+    const int drawStart = static_cast<int>(this->vertices.size());
+    PrimitiveElementInfo info;
+    const bool haveInfo = resolvePrimitiveElementInfo(v, SO_TOPOLOGY_POINTS, info);
     this->appendVertex(v);
+    if (haveInfo) {
+      this->appendPointRange(info, drawStart);
+    }
+  }
+
+  /// Flush accumulated line strip vertices as a separate draw command.
+  /// Called on discontinuities between line segments.
+  void flushLineStrip()
+  {
+    if (this->vertices.size() < 2) {
+      this->clearAccumulatedGeometry();
+      return;
+    }
+    // Temporarily save and emit current vertices as a command
+    this->emitCommand();
+    this->clearAccumulatedGeometry();
   }
 
   void finalize()
   {
     if (this->vertices.empty()) return;
+    this->emitCommand();
+    this->clearAccumulatedGeometry();
+  }
 
-    SoRenderCommand cmd;
-    std::memset(&cmd, 0, sizeof(SoRenderCommand));
+  void emitCommand()
+  {
+    if (this->vertices.empty()) return;
+
+    SoRenderCommand cmd = {};
 
     SoPrimitiveTopology topo = this->topology;
     if (topo == SO_TOPOLOGY_COUNT) topo = SO_TOPOLOGY_TRIANGLES;
@@ -212,6 +349,19 @@ public:
       this->action->allocateGeometryStorage(sizeof(float) * 3 * numverts));
     float * texcoords = static_cast<float *>(
       this->action->allocateGeometryStorage(sizeof(float) * 4 * numverts));
+
+    // Per-vertex colors: use the flag set during appendVertex() when
+    // SoVertexProperty state was active (numDiffuse > 1). The state is
+    // popped by generatePrimitives() before we get here, so we can't
+    // re-check numDiffuse — it would show 1 even though colors were captured.
+    SoState * state = this->action->getState();
+    bool hasPerVertexColor = (this->capturedPerVertexColor == TRUE);
+
+    float * colors = NULL;
+    if (hasPerVertexColor) {
+      colors = static_cast<float *>(
+        this->action->allocateGeometryStorage(sizeof(float) * 4 * numverts));
+    }
 
     for (size_t i = 0; i < numverts; ++i) {
       const IRVertex & v = this->vertices[i];
@@ -234,41 +384,140 @@ public:
       tdst[1] = tex[1];
       tdst[2] = tex[2];
       tdst[3] = tex[3];
+
+      if (colors) {
+        float * cdst = colors + (i * 4);
+        const SbVec4f & vc = v.color;
+        cdst[0] = vc[0]; cdst[1] = vc[1]; cdst[2] = vc[2]; cdst[3] = vc[3];
+      }
     }
 
     cmd.geometry.positions = positions;
     cmd.geometry.normals = normals;
     cmd.geometry.texcoords = texcoords;
-    cmd.geometry.colors = NULL;
+    cmd.geometry.colors = colors;
     cmd.geometry.indices = NULL;
     cmd.geometry.vertexStride = sizeof(float) * 3;
     cmd.geometry.texcoordStride = sizeof(float) * 4;
 
-    SoState * state = this->action->getState();
     cmd.modelMatrix = SoModelMatrixElement::get(state);
+    cmd.viewMatrix = SoViewingMatrixElement::get(state);
+    cmd.projMatrix = SoProjectionMatrixElement::get(state);
 
-    SoModernIR::fillMaterialFromState(state, cmd.material);
-    SoModernIR::fillRenderStateFromState(state, cmd.state);
+    SoRenderIR::fillMaterialFromState(state, cmd.material);
+    SoRenderIR::fillRenderStateFromState(state, cmd.state);
 
-    cmd.pass = SoModernIR::isMaterialTransparent(cmd.material) ?
-      SO_RENDERPASS_TRANSPARENT : SO_RENDERPASS_OPAQUE;
-    cmd.lightingHandle = 0;
+    // Use texture data captured during onTriangle (while state was pushed
+    // by SoImage::generatePrimitives). Reading the state here is too late —
+    // the state has been popped by then.
+    if (this->texCopy && this->texWidth > 0) {
+      cmd.material.texture.pixels = this->texCopy;
+      cmd.material.texture.width = this->texWidth;
+      cmd.material.texture.height = this->texHeight;
+      cmd.material.texture.numComponents = this->texNC;
+      cmd.material.flags |= SO_MAT_HAS_TEXTURE;
+      if (this->useBillboard) {
+        cmd.material.flags |= SO_MAT_IS_BILLBOARD;
+      }
+    }
+
+    // Annotation commands (depth test disabled) render last, on top of
+    // all other geometry — matching legacy SoAnnotation::GLRender behavior.
+    SoRenderPassType defaultPass;
+    if (!cmd.state.depth.enabled) {
+      defaultPass = SO_RENDERPASS_OVERLAY;
+    } else {
+      defaultPass = SoRenderIR::isMaterialTransparent(cmd.material) ?
+        SO_RENDERPASS_TRANSPARENT : SO_RENDERPASS_OPAQUE;
+    }
+    cmd.pass = defaultPass;
+    if (SoRenderPlacementElement::getLayer(state) ==
+        SoRenderPlacementElement::FOREGROUND) {
+      cmd.pass = SO_RENDERPASS_OVERLAY;
+    }
+    cmd.lightingHandle = SoRenderIR::fillLightingFromState(
+      state, this->action->getMutableDrawList());
     cmd.pipelineKey = 0;
     cmd.sortKey = SoIRComputeSortKey(cmd,
                                      static_cast<uint32_t>(cmd.pass),
                                      0);
     cmd.userData = this->shape;
+    cmd.pick.elementRanges = this->elementRanges;
 
     this->action->getMutableDrawList().addCommand(cmd);
   }
 
 private:
+  void clearAccumulatedGeometry()
+  {
+    this->vertices.clear();
+    this->elementRanges.clear();
+    this->activeLineRangeIndex = -1;
+  }
+
+  void appendTriangleRange(const PrimitiveElementInfo & info, int drawStart)
+  {
+    if (!this->elementRanges.empty()) {
+      SoRenderElementRange & last = this->elementRanges.back();
+      if (last.elementType == info.type &&
+          last.elementIndex == info.index &&
+          last.drawStart + last.drawCount == drawStart) {
+        last.drawCount += 3;
+        return;
+      }
+    }
+
+    SoRenderElementRange range;
+    range.elementType = info.type;
+    range.elementIndex = info.index;
+    range.drawStart = drawStart;
+    range.drawCount = 3;
+    this->elementRanges.push_back(range);
+  }
+
+  void beginLineRange(const PrimitiveElementInfo & info)
+  {
+    SoRenderElementRange range;
+    range.elementType = info.type;
+    range.elementIndex = info.index;
+    range.drawStart = 0;
+    range.drawCount = 2;
+    this->elementRanges.push_back(range);
+    this->activeLineRangeIndex = static_cast<int>(this->elementRanges.size()) - 1;
+  }
+
+  void appendPointRange(const PrimitiveElementInfo & info, int drawStart)
+  {
+    SoRenderElementRange range;
+    range.elementType = info.type;
+    range.elementIndex = info.index;
+    range.drawStart = drawStart;
+    range.drawCount = 1;
+    this->elementRanges.push_back(range);
+  }
+
   void appendVertex(const SoPrimitiveVertex * v)
   {
     IRVertex vertex;
     vertex.position = v->getPoint();
     vertex.normal = v->getNormal();
     vertex.texcoord = v->getTextureCoords();
+    vertex.materialIdx = v->getMaterialIndex();
+    // Capture per-vertex color NOW while SoVertexProperty state is pushed.
+    // The state is popped before emitCommand() runs, so we can't defer this.
+    SoState * st = this->action->getState();
+    int numDiff = SoLazyElement::getInstance(st)->getNumDiffuse();
+    if (numDiff > 1) {
+      int idx = v->getMaterialIndex();
+      if (idx < 0) idx = 0;
+      if (idx >= numDiff) idx = numDiff - 1;
+      const SbColor & dc = SoLazyElement::getDiffuse(st, idx);
+      float tr = SoLazyElement::getTransparency(st, idx);
+      vertex.color.setValue(dc[0], dc[1], dc[2], 1.0f - tr);
+      this->capturedPerVertexColor = TRUE;
+    } else {
+      vertex.color.setValue(1.0f, 1.0f, 1.0f, 1.0f);
+    }
     this->vertices.push_back(vertex);
   }
 
@@ -291,11 +540,40 @@ private:
     return TRUE;
   }
 
-  SoModernRenderAction * action;
+  void captureTexture()
+  {
+    if (this->textureCaptured) return;
+    this->textureCaptured = TRUE;
+    SoState * st = this->action->getState();
+    SbVec2s texSize;
+    int texNC = 0;
+    const unsigned char * texPixels =
+      SoMultiTextureImageElement::getImage(st, 0, texSize, texNC);
+    if (texPixels && texSize[0] > 0 && texSize[1] > 0 && texNC > 0) {
+      this->texWidth = texSize[0];
+      this->texHeight = texSize[1];
+      this->texNC = texNC;
+      size_t texBytes = static_cast<size_t>(texSize[0]) * texSize[1] * texNC;
+      this->texCopy = static_cast<unsigned char *>(
+        this->action->allocateGeometryStorage(texBytes));
+      std::memcpy(this->texCopy, texPixels, texBytes);
+    }
+  }
+
+  SoIRRenderAction * action;
   SoShape * shape;
   SoPrimitiveTopology topology;
   SbBool warnedMixed;
+  SbBool useBillboard;
+  SbBool capturedPerVertexColor = FALSE;
+  SbBool textureCaptured = FALSE;
+  unsigned char * texCopy = NULL;
+  int texWidth = 0;
+  int texHeight = 0;
+  int texNC = 0;
   std::vector<IRVertex> vertices;
+  std::vector<SoRenderElementRange> elementRanges;
+  int activeLineRangeIndex = -1;
 };
 
 } // anonymous namespace
@@ -579,9 +857,8 @@ void SoShape::setupShaders(SoGLRenderAction * action)
       shaderProgram->ref();
 
       auto vertexShader = new SoVertexShader();
-      vertexShader->sourceProgram = SoShader::getNamedScript(SbName("base/Unlit.vert"),
-                                                      SoShader::GLSL_SHADER);
-      vertexShader->sourceType= SoShaderObject::GLSL_PROGRAM;
+      SoShader::setNamedScript(vertexShader, SbName("base/Unlit.vert"),
+                               SoShader::GLSL_SHADER);
       shaderProgram->shaderObject.addNode(vertexShader);
 
       auto mvpParam = new SoShaderStateMatrixParameter();
@@ -592,9 +869,8 @@ void SoShape::setupShaders(SoGLRenderAction * action)
       vertexShader->parameter.addNode(mvpParam);
 
       auto fragmentShader = new SoFragmentShader();
-      fragmentShader->sourceProgram = SoShader::getNamedScript(SbName("base/Unlit.frag"),
-                                                      SoShader::GLSL_SHADER);
-      fragmentShader->sourceType= SoShaderObject::GLSL_PROGRAM;
+      SoShader::setNamedScript(fragmentShader, SbName("base/Unlit.frag"),
+                               SoShader::GLSL_SHADER);
       shaderProgram->shaderObject.addNode(fragmentShader);
 
       PRIVATE(this)->shaderProgram = shaderProgram;
@@ -642,18 +918,23 @@ SoShape::GLRender(SoGLRenderAction * action)
 }
 
 void
-SoShape::render(SoModernRenderAction * action)
+SoShape::render(SoIRRenderAction * action)
 {
-  // Default: no-op. Shapes must explicitly override render() to
-  // participate in the modern rendering path. The generatePrimitives()
-  // fallback is too expensive for complex models (2.5s+ for 3000 shapes,
-  // heap corruption risk from unbounded PV cache growth).
-  //
-  // Shapes that override this should either:
-  // 1. Use ensurePVCache() + SoModernIR::appendCacheDrawCommands() if
-  //    they have a PV cache, or
-  // 2. Emit SoRenderCommands directly from their cached geometry.
-  (void)action;
+  this->renderGeneratedPrimitives(action, FALSE);
+}
+
+void
+SoShape::renderGeneratedPrimitives(SoIRRenderAction * action,
+                                   SbBool billboard)
+{
+  // Fallback: collect primitives via generatePrimitives() and emit a
+  // single draw command. BRep shapes have dedicated render() overrides
+  // and never reach this code.
+  SoIRPrimitiveAssembler assembler(action, this, billboard);
+  action->pushPrimitiveCollector(&assembler);
+  this->generatePrimitives(action);
+  action->popPrimitiveCollector(&assembler);
+  assembler.finalize();
 }
 
 // Doc in parent.
@@ -1321,8 +1602,8 @@ SoShape::invokeTriangleCallbacks(SoAction * const action,
     SoGetPrimitiveCountAction * ga = (SoGetPrimitiveCountAction *) action;
     ga->incNumTriangles();
   }
-  else if (action->getTypeId().isDerivedFrom(SoModernRenderAction::getClassTypeId())) {
-    SoModernRenderAction * modern = static_cast<SoModernRenderAction *>(action);
+  else if (action->getTypeId().isDerivedFrom(SoIRRenderAction::getClassTypeId())) {
+    SoIRRenderAction * irAction = static_cast<SoIRRenderAction *>(action);
     soshape_staticdata * shapedata = soshape_get_staticdata();
     if (shapedata->rendermode == PVCACHE && PRIVATE(this)->pvcache) {
       int pdidx[3];
@@ -1331,8 +1612,8 @@ SoShape::invokeTriangleCallbacks(SoAction * const action,
       pdidx[2] = shapedata->primdata->getPointDetailIndex(v3);
       PRIVATE(this)->pvcache->addTriangle(v1, v2, v3, pdidx);
     } else {
-      SoModernRenderAction::PrimitiveCollector * collector =
-        modern->getActivePrimitiveCollector();
+      SoIRRenderAction::PrimitiveCollector * collector =
+        irAction->getActivePrimitiveCollector();
       if (collector) {
         collector->onTriangle(v1, v2, v3);
       }
@@ -1439,14 +1720,14 @@ SoShape::invokeLineSegmentCallbacks(SoAction * const action,
     SoGetPrimitiveCountAction * ga = (SoGetPrimitiveCountAction *) action;
     ga->incNumLines();
   }
-  else if (action->getTypeId().isDerivedFrom(SoModernRenderAction::getClassTypeId())) {
-    SoModernRenderAction * modern = static_cast<SoModernRenderAction *>(action);
+  else if (action->getTypeId().isDerivedFrom(SoIRRenderAction::getClassTypeId())) {
+    SoIRRenderAction * irAction = static_cast<SoIRRenderAction *>(action);
     soshape_staticdata * shapedata = soshape_get_staticdata();
     if (shapedata->rendermode == PVCACHE && PRIVATE(this)->pvcache) {
       PRIVATE(this)->pvcache->addLine(v1, v2);
     }
-    SoModernRenderAction::PrimitiveCollector * collector =
-      modern->getActivePrimitiveCollector();
+    SoIRRenderAction::PrimitiveCollector * collector =
+      irAction->getActivePrimitiveCollector();
     if (collector) {
       collector->onLine(v1, v2);
     }
@@ -1511,14 +1792,14 @@ SoShape::invokePointCallbacks(SoAction * const action,
     SoGetPrimitiveCountAction * ga = (SoGetPrimitiveCountAction *) action;
     ga->incNumPoints();
   }
-  else if (action->getTypeId().isDerivedFrom(SoModernRenderAction::getClassTypeId())) {
-    SoModernRenderAction * modern = static_cast<SoModernRenderAction *>(action);
+  else if (action->getTypeId().isDerivedFrom(SoIRRenderAction::getClassTypeId())) {
+    SoIRRenderAction * irAction = static_cast<SoIRRenderAction *>(action);
     soshape_staticdata * shapedata = soshape_get_staticdata();
     if (shapedata->rendermode == PVCACHE && PRIVATE(this)->pvcache) {
       PRIVATE(this)->pvcache->addPoint(v);
     }
-    SoModernRenderAction::PrimitiveCollector * collector =
-      modern->getActivePrimitiveCollector();
+    SoIRRenderAction::PrimitiveCollector * collector =
+      irAction->getActivePrimitiveCollector();
     if (collector) {
       collector->onPoint(v);
     }
