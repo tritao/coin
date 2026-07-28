@@ -91,6 +91,7 @@
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoAudioRenderAction.h>
 #include <Inventor/actions/SoGLRenderAction.h>
+#include <Inventor/actions/SoAction.h>
 #include <Inventor/actions/SoIRRenderAction.h>
 #include "CoinTracyConfig.h"
 #include <Inventor/SbTime.h>
@@ -732,6 +733,8 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
     }
     traversalState->pop();
 
+    PRIVATE(this)->invokeAfterMainSceneCallbacks(action);
+
     // After-main callbacks are retained scene content.  Keep both their
     // commands and geometry in the checkpoint so foreground-only rebuilds
     // do not truncate them away.
@@ -1150,6 +1153,8 @@ SoRenderManager::render(SoGLRenderAction * action,
   (this->getStereoMode() == SoRenderManager::MONO) ?
     this->renderSingle(action, initmatrices, clearwindow_tmp, clearzbuffer_tmp):
     this->renderStereo(action, initmatrices, clearwindow_tmp, clearzbuffer_tmp);
+
+  PRIVATE(this)->invokeAfterMainSceneCallbacks(action);
 
   if (PRIVATE(this)->renderLayerForegroundRoot) {
     SoState * state = action->getState();
@@ -2823,6 +2828,28 @@ SoRenderManager::removePostRenderCallback(SoRenderManagerRenderCB * cb, void * d
         "Tried to remove a cb,data tuple which doesn't exist"
         );
   PRIVATE(this)->postRenderCallbacks.erase(findit);
+}
+
+void
+SoRenderManager::addAfterMainSceneCallback(SoRenderManagerStageCB * cb, void * data)
+{
+  PRIVATE(this)->afterMainSceneCallbacks.push_back(
+    SoRenderManagerP::StageCBTouple(cb, data)
+  );
+}
+
+void
+SoRenderManager::removeAfterMainSceneCallback(SoRenderManagerStageCB * cb, void * data)
+{
+  std::vector<SoRenderManagerP::StageCBTouple>::iterator findit =
+    std::find(PRIVATE(this)->afterMainSceneCallbacks.begin(),
+              PRIVATE(this)->afterMainSceneCallbacks.end(),
+              SoRenderManagerP::StageCBTouple(cb, data));
+  assert(
+    (findit != PRIVATE(this)->afterMainSceneCallbacks.end())
+    && "Tried to remove an after-main-scene callback which doesn't exist"
+  );
+  PRIVATE(this)->afterMainSceneCallbacks.erase(findit);
 }
 
 #undef PRIVATE

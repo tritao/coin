@@ -57,6 +57,7 @@
 #include <Inventor/sensors/SoNodeSensor.h>
 
 class SbMatrix;
+class SoAction;
 class SoNodeSensor;
 class SoInfo;
 class SoNode;
@@ -159,9 +160,12 @@ public:
 
   void invokePreRenderCallbacks(void);
   void invokePostRenderCallbacks(void);
+  void invokeAfterMainSceneCallbacks(SoAction * action);
   typedef std::pair<SoRenderManagerRenderCB *, void *> RenderCBTouple;
   std::vector<RenderCBTouple> preRenderCallbacks;
   std::vector<RenderCBTouple> postRenderCallbacks;
+  typedef std::pair<SoRenderManagerStageCB *, void *> StageCBTouple;
+  std::vector<StageCBTouple> afterMainSceneCallbacks;
 
   // "private" data
   static SbBool touchtimer;

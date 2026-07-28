@@ -42,6 +42,7 @@
 
 class SbViewportRegion;
 class SoEvent;
+class SoAction;
 class SoGLRenderAction;
 class SoAudioRenderAction;
 class SoNode;
@@ -53,6 +54,9 @@ class SoSensor;
 class SoRenderManagerP;
 
 typedef void SoRenderManagerRenderCB(void * userdata, class SoRenderManager * mgr);
+typedef void SoRenderManagerStageCB(void * userdata,
+                                    class SoRenderManager * mgr,
+                                    SoAction * action);
 
 class COIN_DLL_API SoRenderManager {
 public:
@@ -328,6 +332,12 @@ public:
 
   void addPostRenderCallback(SoRenderManagerRenderCB * cb, void * data);
   void removePostRenderCallback(SoRenderManagerRenderCB * cb, void * data);
+
+  /// Add a callback between main-scene and foreground-layer traversal.
+  void addAfterMainSceneCallback(SoRenderManagerStageCB * cb, void * data);
+
+  /// Remove an after-main-scene callback.
+  void removeAfterMainSceneCallback(SoRenderManagerStageCB * cb, void * data);
 
   void reinitialize(void);
 

@@ -355,6 +355,17 @@ SoRenderManagerP::invokePostRenderCallbacks(void)
   }
 }
 
+void
+SoRenderManagerP::invokeAfterMainSceneCallbacks(SoAction * action)
+{
+  std::vector<StageCBTouple>::const_iterator cbit =
+    this->afterMainSceneCallbacks.begin();
+  while (cbit != this->afterMainSceneCallbacks.end()) {
+    cbit->first(cbit->second, PUBLIC(this), action);
+    ++cbit;
+  }
+}
+
 #undef INHERIT_TRANSPARENCY_TYPE
 #undef PRIVATE
 #undef PUBLIC
