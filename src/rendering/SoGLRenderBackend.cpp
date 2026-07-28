@@ -227,6 +227,58 @@ inline GLenum topologyToGL(SoPrimitiveTopology topology) {
   }
 }
 
+inline bool textureFilterUsesMipmaps(const SoTextureFilter filter)
+{
+  return filter == SO_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST
+      || filter == SO_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST
+      || filter == SO_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR
+      || filter == SO_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR;
+}
+
+inline GLenum textureFilterToGL(const SoTextureFilter filter)
+{
+  switch (filter) {
+    case SO_TEXTURE_FILTER_LINEAR:
+      return GL_LINEAR;
+    case SO_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST:
+      return GL_NEAREST_MIPMAP_NEAREST;
+    case SO_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST:
+      return GL_LINEAR_MIPMAP_NEAREST;
+    case SO_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR:
+      return GL_NEAREST_MIPMAP_LINEAR;
+    case SO_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR:
+      return GL_LINEAR_MIPMAP_LINEAR;
+    case SO_TEXTURE_FILTER_NEAREST:
+    default:
+      return GL_NEAREST;
+  }
+}
+
+inline GLenum textureWrapToGL(const SoTextureWrap wrap)
+{
+  switch (wrap) {
+    case SO_TEXTURE_WRAP_REPEAT:
+      return GL_REPEAT;
+    case SO_TEXTURE_WRAP_CLAMP_TO_BORDER:
+      return GL_CLAMP_TO_BORDER;
+    case SO_TEXTURE_WRAP_CLAMP_TO_EDGE:
+    default:
+      return GL_CLAMP_TO_EDGE;
+  }
+}
+
+inline void applyTextureSampler(const SoTextureData & texture)
+{
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                  textureFilterToGL(texture.minFilter));
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                  textureFilterToGL(texture.magFilter));
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
+                  textureWrapToGL(texture.wrapS));
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,
+                  textureWrapToGL(texture.wrapT));
+}
+
 } // namespace
 
 // -----------------------------------------------------------------------
@@ -464,10 +516,12 @@ SoGLRenderBackend::uploadGeometry(CachedGPUCommand & entry,
     GLenum fmt = (nc == 3) ? GL_RGB : GL_RGBA;
     glTexImage2D(GL_TEXTURE_2D, 0, fmt, tw, th, 0, fmt,
                  GL_UNSIGNED_BYTE, src);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    entry.textureHasMipmaps = false;
+    if (textureFilterUsesMipmaps(cmd.material.texture.minFilter)) {
+      glGenerateMipmap(GL_TEXTURE_2D);
+      entry.textureHasMipmaps = true;
+    }
+    applyTextureSampler(cmd.material.texture);
     glBindTexture(GL_TEXTURE_2D, 0);
   }
   else {
@@ -477,6 +531,7 @@ SoGLRenderBackend::uploadGeometry(CachedGPUCommand & entry,
       glDeleteTextures(1, &entry.textureId);
       entry.textureId = 0;
     }
+    entry.textureHasMipmaps = false;
     if (entry.texcoordVBO) {
       glDeleteBuffers(1, &entry.texcoordVBO);
       entry.texcoordVBO = 0;
@@ -653,6 +708,7 @@ SoGLRenderBackend::destroyCacheEntry(CachedGPUCommand & entry)
   if (entry.texcoordVBO) { glDeleteBuffers(1, &entry.texcoordVBO); entry.texcoordVBO = 0; }
   if (entry.lineDistVBO) { glDeleteBuffers(1, &entry.lineDistVBO); entry.lineDistVBO = 0; }
   if (entry.textureId) { glDeleteTextures(1, &entry.textureId); entry.textureId = 0; }
+  entry.textureHasMipmaps = false;
   if (entry.idxVBO) { glDeleteBuffers(1, &entry.idxVBO); entry.idxVBO = 0; }
   if (entry.vao) { glDeleteVertexArrays(1, &entry.vao); entry.vao = 0; }
   if (entry.idVAO) { glDeleteVertexArrays(1, &entry.idVAO); entry.idVAO = 0; }
@@ -917,6 +973,10 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, entry.textureId);
+    // Sampler state belongs to the draw command, not the cached texture.
+    // Reapply it here because one texture cache entry can be reused by
+    // commands with different quality or wrap state.
+    applyTextureSampler(cmd.material.texture);
     glUniform1i(this->uTextureLocation, 0);
     // Modulate texture with diffuse color (MODULATE mode for NaviCube labels).
     // Billboard textures (SoImage, SoText2) use white modulation (pass-through).
@@ -1168,6 +1228,17 @@ SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
       uploadGeometry(entry, cmd);
       setupVisualVAO(entry, cmd);
       entry.cacheGeneration = gen;
+    }
+    else if (cmd.material.texture.pixels && entry.textureId != 0
+             && textureFilterUsesMipmaps(cmd.material.texture.minFilter)
+             && !entry.textureHasMipmaps) {
+      // The geometry cache can outlive a command's sampler state. Create
+      // the mip levels here if a later command needs them; drawCommand()
+      // deliberately keeps its cache reference read-only.
+      glBindTexture(GL_TEXTURE_2D, entry.textureId);
+      glGenerateMipmap(GL_TEXTURE_2D);
+      entry.textureHasMipmaps = true;
+      glBindTexture(GL_TEXTURE_2D, 0);
     }
     entry.lastUsedFrame = this->currentFrame;
   }
