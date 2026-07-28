@@ -39,6 +39,7 @@
 
 // *************************************************************************
 
+#include <Inventor/SbString.h>
 #include <Inventor/lists/SbList.h>
 
 #include "misc/SbHash.h"
@@ -63,9 +64,7 @@ public:
   void addProgramParameter(int mode, int value);
   void removeProgramParameters(void);
 
-#if defined(SOURCE_HINT)
   SbString getSourceHint(void) const;
-#endif
 
 public:
   SoGLSLShaderProgram(void);
@@ -82,7 +81,10 @@ protected:
   SbBool isExecutable;
   SbBool neededlinking;
 
-  static void printInfoLog(const cc_glglue * g, COIN_GLhandle handle);
+  static void printInfoLog(const cc_glglue * g,
+                           COIN_GLhandle handle,
+                           const SbString & sourceHint,
+                           const SbBool failed);
   int indexOfShaderObject(SoGLSLShaderObject * shaderObject);
   void ensureLinking(const cc_glglue * g);
   void ensureProgramHandle(const cc_glglue * g);
