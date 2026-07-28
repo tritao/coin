@@ -11,12 +11,13 @@
 #include <Inventor/rendering/SoRenderIR.h>
 
 #include <cstddef>
+#include <memory>
 
 class SoPath;
 class SoPathList;
 class SoCamera;
 class SoPrimitiveVertex;
-class SoShape;
+class SoIRBuffer;
 class SoIRRenderActionP;
 
 /*!
@@ -58,6 +59,27 @@ public:
     virtual void onLine(const SoPrimitiveVertex * v1,
                         const SoPrimitiveVertex * v2) = 0;
     virtual void onPoint(const SoPrimitiveVertex * v) = 0;
+  };
+
+  /*!
+    \class SoIRRenderAction::GeometrySavePoint
+    \brief Opaque checkpoint for rewinding per-frame geometry allocations.
+
+    Instances are created by saveGeometryPool() and later passed back to
+    rewindGeometryPool() during partial draw-list rebuilds.
+  */
+  class GeometrySavePoint {
+  public:
+    GeometrySavePoint() = default;
+
+  private:
+    struct Data;
+    explicit GeometrySavePoint(const std::shared_ptr<Data> & data)
+      : data(data) { }
+
+    std::shared_ptr<Data> data;
+
+    friend class SoIRBuffer;
   };
 
   static void initClass(void);
@@ -119,9 +141,9 @@ public:
     re-traversing a foreground layer so geometry is reallocated at the same
     addresses and backend cache keys remain stable.
   */
-  SoIRBuffer::SavePoint saveGeometryPool() const;
+  GeometrySavePoint saveGeometryPool() const;
   //! Rewind the geometry pool to a previously captured save point.
-  void rewindGeometryPool(const SoIRBuffer::SavePoint & sp);
+  void rewindGeometryPool(const GeometrySavePoint & sp);
   //! Clear all transient geometry owned by the current frame.
   void clearGeometryPool();
 

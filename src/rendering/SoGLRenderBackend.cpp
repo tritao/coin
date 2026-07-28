@@ -1,6 +1,7 @@
 // src/rendering/SoGLRenderBackend.cpp
 
 #include "rendering/SoGLRenderBackend.h"
+#include "rendering/SoRenderIRP.h"
 #include "rendering/SoVBO.h"
 #include "CoinTracyConfig.h"
 
@@ -90,18 +91,6 @@ coin_fallback_lighting()
     return fallback;
   }();
   return lighting;
-}
-
-static SbBool
-coin_render_ir_trace_enabled()
-{
-  static int initialized = 0;
-  static SbBool enabled = FALSE;
-  if (!initialized) {
-    enabled = coin_getenv("COIN_DEBUG_RENDER_IR") ? TRUE : FALSE;
-    initialized = 1;
-  }
-  return enabled;
 }
 
 static SbVec2s
@@ -281,7 +270,9 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
                 "target=%dx%d samples=%d id=%u",
                 params.targetInfo.size[0], params.targetInfo.size[1],
                 params.targetInfo.samples, params.targetInfo.targetId);
-  this->emitLog(buffer);
+  if (coin_render_ir_trace_enabled()) {
+    this->emitLog(buffer);
+  }
 
   if (!this->createShaders()) {
     this->emitError("failed to create ModernGL shader");
@@ -332,7 +323,34 @@ SoGLRenderBackend::shutdown()
     this->pointShaderProgram = 0;
   }
   this->setInitialized(FALSE);
-  this->emitLog("shutdown");
+  if (coin_render_ir_trace_enabled()) {
+    this->emitLog("shutdown");
+  }
+}
+
+void
+SoGLRenderBackend::discard()
+{
+  if (!this->isInitialized()) {
+    return;
+  }
+
+  if (pickBuffer) {
+    pickBuffer->discard();
+    pickBuffer.reset();
+  }
+
+  gpuCache.clear();
+  ptrToCacheIndex.clear();
+
+  this->shaderProgram = 0;
+  this->lineShaderProgram = 0;
+  this->pointShaderProgram = 0;
+  this->currentFrame = 0;
+  this->pickBufferDirty = true;
+  this->lastPickLUTSize = 0;
+  this->matricesInitialized = false;
+  this->setInitialized(FALSE);
 }
 
 // -----------------------------------------------------------------------
@@ -1644,15 +1662,17 @@ void
 SoGLRenderBackend::logFrameStats(const SoDrawList & drawlist,
                                  const SoRenderParams & params) const
 {
+  if (!coin_render_ir_trace_enabled()) {
+    return;
+  }
+
   const int num = drawlist.getNumCommands();
   SoDebugError::postInfo("SoGLRenderBackend::render",
                          "frame=%d cmds=%d",
                          params.frameIndex, num);
   SoIRDumpSummary(drawlist);
 
-  if (coin_render_ir_trace_enabled()) {
-    SoIRDumpFirstN(drawlist, 8);
-  }
+  SoIRDumpFirstN(drawlist, 8);
 }
 
 bool

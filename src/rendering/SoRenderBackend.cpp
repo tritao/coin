@@ -29,6 +29,12 @@ SoRenderBackend::resizeTarget(const SoRenderTargetInfo & info)
   (void) info;
 }
 
+void
+SoRenderBackend::discard()
+{
+  this->setInitialized(FALSE);
+}
+
 uint32_t
 SoRenderBackend::pick(int x, int y, int pickRadius) const
 {

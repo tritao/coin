@@ -141,7 +141,7 @@
 #include "tidbitsp.h"
 #include "elements/SoRenderPlacementElement.h"
 #include "rendering/SoVBO.h"
-#include "rendering/SoRenderIR.h"
+#include "rendering/SoRenderIRP.h"
 #include "coindefs.h" // COIN_OBSOLETED()
 
 // SoShape.cpp grew too big, so I had to move some code into new
@@ -1112,8 +1112,6 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
 
   // test if we should sort triangles before rendering
   if (transparent && (shapestyleflags & SoShapeStyleElement::TRANSP_SORTED_TRIANGLES)) {
-    }
-
     if (SoRenderer::isOpenGL()) {
       // lock since pvcache is shared among all threads
       PRIVATE(this)->lock();
@@ -1156,6 +1154,7 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
       PRIVATE(this)->unlock();
       return FALSE; // tell shape _not_ to render
     }
+  }
 
   if (shapestyleflags & SoShapeStyleElement::BIGIMAGE) {
 

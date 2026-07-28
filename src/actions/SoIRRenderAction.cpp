@@ -62,6 +62,7 @@
 
 #include "actions/SoSubActionP.h"
 #include "elements/SoRenderPlacementElement.h"
+#include "rendering/SoRenderIRP.h"
 
 #include <cassert>
 
@@ -290,14 +291,14 @@ SoIRRenderAction::allocateGeometryStorage(size_t bytes, size_t alignment)
   return PRIVATE(this)->geometryPool.allocate(bytes, alignment);
 }
 
-SoIRBuffer::SavePoint
+SoIRRenderAction::GeometrySavePoint
 SoIRRenderAction::saveGeometryPool() const
 {
   return PRIVATE(this)->geometryPool.save();
 }
 
 void
-SoIRRenderAction::rewindGeometryPool(const SoIRBuffer::SavePoint & sp)
+SoIRRenderAction::rewindGeometryPool(const GeometrySavePoint & sp)
 {
   PRIVATE(this)->geometryPool.rewindTo(sp);
 }
