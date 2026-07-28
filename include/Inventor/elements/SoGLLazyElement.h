@@ -87,6 +87,7 @@ public:
     int32_t blend_dfactor;
     int32_t alpha_blend_sfactor;
     int32_t alpha_blend_dfactor;
+    int32_t separateblending;
     int32_t stipplenum;
     int32_t vertexordering;
     int32_t culling;

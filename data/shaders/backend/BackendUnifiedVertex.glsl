@@ -31,6 +31,7 @@ uniform float u_materialShininess;
 
 out vec3 v_litColor;
 out vec4 v_color;
+out float v_vertexAlpha;
 out vec2 v_texcoord;
 out float v_lineDistance;
 
@@ -82,7 +83,11 @@ vec3 computeLitColor(vec3 eyePos, vec3 eyeNormal, vec3 baseColor)
 
 void main()
 {
+  // Keep vertex alpha as a separate modulation so material opacity is
+  // composed exactly once in the fragment stage. RGB retains the legacy
+  // vertex-color replacement behavior, including flat overlays.
   v_color = (u_useVertexColor > 0.5) ? a_color : u_color;
+  v_vertexAlpha = (u_useVertexColor > 0.5) ? a_color.a : 1.0;
   v_litColor = vec3(0.0);
   v_texcoord = a_texcoord;
 

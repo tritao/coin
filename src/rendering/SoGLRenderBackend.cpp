@@ -227,18 +227,17 @@ inline GLenum topologyToGL(SoPrimitiveTopology topology) {
   }
 }
 
-inline GLenum depthFunctionToGL(uint8_t function)
+inline GLenum depthFunctionToGL(SoDepthFunction function)
 {
-  // Keep this mapping aligned with SoDepthBufferElement::DepthWriteFunction.
   switch (function) {
-    case 0: return GL_NEVER;
-    case 1: return GL_ALWAYS;
-    case 2: return GL_LESS;
-    case 3: return GL_LEQUAL;
-    case 4: return GL_EQUAL;
-    case 5: return GL_GEQUAL;
-    case 6: return GL_GREATER;
-    case 7: return GL_NOTEQUAL;
+    case SO_DEPTH_NEVER: return GL_NEVER;
+    case SO_DEPTH_ALWAYS: return GL_ALWAYS;
+    case SO_DEPTH_LESS: return GL_LESS;
+    case SO_DEPTH_LEQUAL: return GL_LEQUAL;
+    case SO_DEPTH_EQUAL: return GL_EQUAL;
+    case SO_DEPTH_GEQUAL: return GL_GEQUAL;
+    case SO_DEPTH_GREATER: return GL_GREATER;
+    case SO_DEPTH_NOTEQUAL: return GL_NOTEQUAL;
     default: return GL_LEQUAL;
   }
 }
@@ -293,6 +292,87 @@ inline void applyTextureSampler(const SoTextureData & texture)
                   textureWrapToGL(texture.wrapS));
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,
                   textureWrapToGL(texture.wrapT));
+}
+
+inline GLenum blendFactorToGL(const SoBlendFactor factor)
+{
+  switch (factor) {
+    case SO_BLEND_FACTOR_ZERO: return GL_ZERO;
+    case SO_BLEND_FACTOR_ONE: return GL_ONE;
+    case SO_BLEND_FACTOR_SRC_COLOR: return GL_SRC_COLOR;
+    case SO_BLEND_FACTOR_ONE_MINUS_SRC_COLOR: return GL_ONE_MINUS_SRC_COLOR;
+    case SO_BLEND_FACTOR_DST_COLOR: return GL_DST_COLOR;
+    case SO_BLEND_FACTOR_ONE_MINUS_DST_COLOR: return GL_ONE_MINUS_DST_COLOR;
+    case SO_BLEND_FACTOR_SRC_ALPHA: return GL_SRC_ALPHA;
+    case SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA: return GL_ONE_MINUS_SRC_ALPHA;
+    case SO_BLEND_FACTOR_DST_ALPHA: return GL_DST_ALPHA;
+    case SO_BLEND_FACTOR_ONE_MINUS_DST_ALPHA: return GL_ONE_MINUS_DST_ALPHA;
+    case SO_BLEND_FACTOR_CONSTANT_COLOR: return GL_CONSTANT_COLOR;
+    case SO_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
+      return GL_ONE_MINUS_CONSTANT_COLOR;
+    case SO_BLEND_FACTOR_CONSTANT_ALPHA: return GL_CONSTANT_ALPHA;
+    case SO_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
+      return GL_ONE_MINUS_CONSTANT_ALPHA;
+    case SO_BLEND_FACTOR_SRC_ALPHA_SATURATE: return GL_SRC_ALPHA_SATURATE;
+    case SO_BLEND_FACTOR_SRC1_COLOR: return GL_SRC1_COLOR;
+    case SO_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR:
+      return GL_ONE_MINUS_SRC1_COLOR;
+    case SO_BLEND_FACTOR_SRC1_ALPHA: return GL_SRC1_ALPHA;
+    case SO_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA:
+      return GL_ONE_MINUS_SRC1_ALPHA;
+    default: return GL_ONE;
+  }
+}
+
+inline GLenum blendEquationToGL(const SoBlendEquation equation)
+{
+  switch (equation) {
+    case SO_BLEND_EQUATION_SUBTRACT: return GL_FUNC_SUBTRACT;
+    case SO_BLEND_EQUATION_REVERSE_SUBTRACT: return GL_FUNC_REVERSE_SUBTRACT;
+    case SO_BLEND_EQUATION_MIN: return GL_MIN;
+    case SO_BLEND_EQUATION_MAX: return GL_MAX;
+    case SO_BLEND_EQUATION_ADD:
+    default: return GL_FUNC_ADD;
+  }
+}
+
+// Apply one command's complete blend contract. Pass setup may establish a
+// useful default for legacy GL, but this is the authoritative per-command
+// state and is deliberately the only helper used by drawCommand().
+inline void coin_apply_blend_state(const SoBlendState & blend)
+{
+  if (!blend.enabled) {
+    glDisable(GL_BLEND);
+    return;
+  }
+
+  glEnable(GL_BLEND);
+  const GLenum srcRGB = blendFactorToGL(blend.srcRGBFactor);
+  const GLenum dstRGB = blendFactorToGL(blend.dstRGBFactor);
+  const GLenum srcAlpha = blendFactorToGL(blend.srcAlphaFactor);
+  const GLenum dstAlpha = blendFactorToGL(blend.dstAlphaFactor);
+  glBlendFuncSeparate(srcRGB, dstRGB, srcAlpha, dstAlpha);
+
+  const GLenum rgbEquation = blendEquationToGL(blend.rgbEquation);
+  const GLenum alphaEquation = blendEquationToGL(blend.alphaEquation);
+  glBlendEquationSeparate(rgbEquation, alphaEquation);
+}
+
+inline void coin_apply_depth_state(const SoRenderCommand & cmd)
+{
+  if (cmd.state.depth.enabled) {
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(depthFunctionToGL(cmd.state.depth.func));
+  } else {
+    glDisable(GL_DEPTH_TEST);
+  }
+
+  // Legacy transparent passes intentionally keep the depth buffer read-only;
+  // all other command stages honor the captured write policy.
+  const bool transparentPass = cmd.pass == SO_RENDERPASS_TRANSPARENT &&
+                               cmd.stage != SoRenderStage::Foreground;
+  const bool writeDepth = cmd.state.depth.writeEnabled && !transparentPass;
+  glDepthMask(writeDepth ? GL_TRUE : GL_FALSE);
 }
 
 } // namespace
@@ -785,18 +865,8 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
 
   coin_apply_command_viewport(cmd, params);
 
-  // Restore blending per command. Overlay rendering starts with blending
-  // enabled, but textured commands disable it after drawing; without this
-  // guard a later translucent untextured command becomes opaque.
-  const bool commandNeedsBlend = cmd.state.blend.enabled
-                              || cmd.material.opacity < 0.999f;
-  if (commandNeedsBlend) {
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-  }
-  else {
-    glDisable(GL_BLEND);
-  }
+  coin_apply_blend_state(cmd.state.blend);
+  coin_apply_depth_state(cmd);
 
   // Per-command model matrix; view/proj from params (auto-clipped) for
   // main scene, or per-command for overlay/background (different camera).
@@ -820,6 +890,14 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   const SbVec4f & diffuse = cmd.material.diffuse;
   glUniform4f(this->uColorLocation,
               diffuse[0], diffuse[1], diffuse[2], diffuse[3]);
+  glUniform1i(this->uAlphaTestPolicyLocation,
+              static_cast<GLint>(cmd.state.alphaTest.policy));
+  glUniform1i(this->uAlphaTestFunctionLocation,
+              static_cast<GLint>(cmd.state.alphaTest.function));
+  glUniform1f(this->uAlphaTestReferenceLocation,
+              cmd.state.alphaTest.reference);
+  glUniform1f(this->uVertexColorAlphaIncludesOpacityLocation,
+              cmd.material.vertexColorAlphaIncludesOpacity ? 1.0f : 0.0f);
   glUniform1i(this->uShadingModelLocation,
               static_cast<GLint>(cmd.material.shadingModel));
   const SbVec4f & ambient = cmd.material.ambient;
@@ -832,13 +910,6 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   this->applyLighting(drawlist, cmd);
 
   GLenum prim = topologyToGL(cmd.geometry.topology);
-
-  // Per-command depth state: for non-overlay commands that individually
-  // disable depth (e.g. constraint depth buffer nodes), handle per-command.
-  // Overlay commands use the overlay pass's depth state instead.
-  if (!cmd.state.depth.enabled && cmd.pass != SO_RENDERPASS_OVERLAY) {
-    glDisable(GL_DEPTH_TEST);
-  }
 
   // Per-command backface culling
   if (cmd.state.raster.cullMode != 0) {
@@ -892,8 +963,6 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
       glPointSize(pointSize);
       glUniform1f(this->uRenderModeLocation, 1.0f);
     }
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   }
   bool useLineShader = false;
   const bool linePrimitive = prim == GL_LINES || prim == GL_LINE_STRIP;
@@ -1034,15 +1103,16 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
     // Modulate texture with diffuse color (MODULATE mode for NaviCube labels).
     // Billboard textures (SoImage, SoText2) use white modulation (pass-through).
     const SbVec4f & diff = cmd.material.diffuse;
+    const float textureAlpha = cmd.material.textureAlphaIncludesOpacity ||
+                               (hasVertexColors &&
+                                cmd.material.vertexColorAlphaIncludesOpacity)
+      ? 1.0f : diff[3];
     if (isBillboard) {
-      glUniform4f(this->uTexModColorLocation, 1.0f, 1.0f, 1.0f, 1.0f);
+      glUniform4f(this->uTexModColorLocation, 1.0f, 1.0f, 1.0f,
+                  textureAlpha);
     } else {
-      glUniform4f(this->uTexModColorLocation, diff[0], diff[1], diff[2], diff[3]);
-    }
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    if (isBillboard) {
-      glDepthFunc(GL_ALWAYS);  // billboards render on top
+      glUniform4f(this->uTexModColorLocation, diff[0], diff[1], diff[2],
+                  textureAlpha);
     }
   }
 
@@ -1059,9 +1129,6 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   // --- State restore ---
   if (isTextured) {
     glBindTexture(GL_TEXTURE_2D, 0);
-    glDisable(GL_BLEND);
-    glDepthFunc(GL_LEQUAL);
-    glDepthMask(GL_TRUE);
     glUniform1f(this->uRenderModeLocation, 0.0f);  // restore to lit mode
   }
 
@@ -1078,14 +1145,10 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   if (fillMode != 0 && (prim == GL_TRIANGLES || prim == GL_TRIANGLE_STRIP)) {
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
   }
-  if (!cmd.state.depth.enabled && cmd.pass != SO_RENDERPASS_OVERLAY) {
-    glEnable(GL_DEPTH_TEST);
-  }
   if (prim == GL_POINTS || fillMode == 2) {
     if (usePointShader) {
       glUseProgram(this->shaderProgram);
     }
-    glDisable(GL_BLEND);
     glPointSize(1.0f);
   }
   if (prim == GL_LINES || prim == GL_LINE_STRIP || fillMode == 1) {
@@ -1326,7 +1389,14 @@ SoGLRenderBackend::renderBackgroundPass(const SoDrawList & drawlist,
   glDisable(GL_DEPTH_TEST);
   glDisable(GL_BLEND);
   for (int i = 0; i < bgCount && i < count; ++i) {
-    drawCommand(drawlist, drawlist.getCommand(i), viewMat, projMat, params);
+    // Background rendering is a pass-level exception: it must remain
+    // depth/blend independent even if the captured traversal state came from
+    // a surrounding node with different values.
+    SoRenderCommand backgroundCommand = drawlist.getCommand(i);
+    backgroundCommand.state.depth.enabled = false;
+    backgroundCommand.state.depth.writeEnabled = false;
+    backgroundCommand.state.blend.enabled = false;
+    drawCommand(drawlist, backgroundCommand, viewMat, projMat, params);
   }
 
   // Restore default state; clear depth so main scene renders on top
@@ -1464,7 +1534,13 @@ SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     for (int ci : overlay2D) {
-      drawCommand(drawlist, drawlist.getCommand(ci), viewMat, projMat, params);
+      // 2D foreground annotations are an explicit pass-level exception:
+      // keep them on top even when their traversal state inherited depth
+      // testing from the surrounding scene.
+      SoRenderCommand annotationCommand = drawlist.getCommand(ci);
+      annotationCommand.state.depth.enabled = false;
+      annotationCommand.state.depth.writeEnabled = false;
+      drawCommand(drawlist, annotationCommand, viewMat, projMat, params);
     }
     coin_apply_default_viewport(params);
   }
@@ -1934,6 +2010,11 @@ SoGLRenderBackend::createShaders()
   this->uUseVertexColorLocation = glGetUniformLocation(this->shaderProgram, "u_useVertexColor");
   this->uTextureLocation = glGetUniformLocation(this->shaderProgram, "u_texture");
   this->uTexModColorLocation = glGetUniformLocation(this->shaderProgram, "u_texModColor");
+  this->uAlphaTestPolicyLocation = glGetUniformLocation(this->shaderProgram, "u_alphaTestPolicy");
+  this->uAlphaTestFunctionLocation = glGetUniformLocation(this->shaderProgram, "u_alphaTestFunction");
+  this->uAlphaTestReferenceLocation = glGetUniformLocation(this->shaderProgram, "u_alphaTestReference");
+  this->uVertexColorAlphaIncludesOpacityLocation =
+    glGetUniformLocation(this->shaderProgram, "u_vertexColorAlphaIncludesOpacity");
   this->uQuadCenterLocation = glGetUniformLocation(this->shaderProgram, "u_quadCenter");
   this->uTexSizeLocation = glGetUniformLocation(this->shaderProgram, "u_texSize");
   this->uVpSizeLocation = glGetUniformLocation(this->shaderProgram, "u_vpSize");

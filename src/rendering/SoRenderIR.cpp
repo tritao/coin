@@ -68,6 +68,51 @@ lightingEqual(const SoLightingData & lhs, const SoLightingData & rhs)
   return true;
 }
 
+SoBlendFactor
+blendFactorFromLegacyGL(const int value)
+{
+  // Keep the GL values local to this conversion boundary. No GL enum is
+  // stored in the public IR.
+  switch (value) {
+  case 0x0000: return SO_BLEND_FACTOR_ZERO;                    // GL_ZERO
+  case 0x0001: return SO_BLEND_FACTOR_ONE;                     // GL_ONE
+  case 0x0300: return SO_BLEND_FACTOR_SRC_COLOR;              // GL_SRC_COLOR
+  case 0x0301: return SO_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+  case 0x0302: return SO_BLEND_FACTOR_SRC_ALPHA;
+  case 0x0303: return SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+  case 0x0304: return SO_BLEND_FACTOR_DST_ALPHA;
+  case 0x0305: return SO_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+  case 0x0306: return SO_BLEND_FACTOR_DST_COLOR;
+  case 0x0307: return SO_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+  case 0x0308: return SO_BLEND_FACTOR_SRC_ALPHA_SATURATE;
+  case 0x8001: return SO_BLEND_FACTOR_CONSTANT_COLOR;
+  case 0x8002: return SO_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
+  case 0x8003: return SO_BLEND_FACTOR_CONSTANT_ALPHA;
+  case 0x8004: return SO_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
+  case 0x8589: return SO_BLEND_FACTOR_SRC1_ALPHA;
+  case 0x88F9: return SO_BLEND_FACTOR_SRC1_COLOR;
+  case 0x88FA: return SO_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR;
+  case 0x88FB: return SO_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA;
+  default:     return SO_BLEND_FACTOR_ONE;
+  }
+}
+
+SoAlphaTestFunction
+alphaTestFunctionFromLegacyGL(const int value)
+{
+  switch (value) {
+  case 0x0200: return SO_ALPHA_TEST_NEVER;
+  case 0x0207: return SO_ALPHA_TEST_ALWAYS;
+  case 0x0201: return SO_ALPHA_TEST_LESS;
+  case 0x0203: return SO_ALPHA_TEST_LEQUAL;
+  case 0x0202: return SO_ALPHA_TEST_EQUAL;
+  case 0x0206: return SO_ALPHA_TEST_GEQUAL;
+  case 0x0204: return SO_ALPHA_TEST_GREATER;
+  case 0x0205: return SO_ALPHA_TEST_NOTEQUAL;
+  default:     return SO_ALPHA_TEST_NONE;
+  }
+}
+
 } // namespace
 
 SbBool
@@ -580,6 +625,8 @@ fillMaterialFromState(SoState * state, SoMaterialData & material)
   material.normalTexture = NULL;
   material.emissiveTexture = NULL;
   material.flags = 0;
+  material.textureAlphaIncludesOpacity = false;
+  material.vertexColorAlphaIncludesOpacity = false;
 }
 
 void
@@ -595,14 +642,42 @@ fillRenderStateFromState(SoState * state, SoRenderState & rs)
 
   rs.depth.enabled = depthtest;
   rs.depth.writeEnabled = depthwrite;
-  rs.depth.func = static_cast<uint8_t>(depthfunc);
+  rs.depth.func = static_cast<SoDepthFunction>(depthfunc);
 
   int srcfactor = 0;
   int dstfactor = 0;
   rs.blend.enabled = SoLazyElement::getBlending(mutableState, srcfactor, dstfactor);
-  rs.blend.srcFactor = static_cast<uint8_t>(srcfactor);
-  rs.blend.dstFactor = static_cast<uint8_t>(dstfactor);
-  rs.blend.op = 0;
+  rs.blend.srcRGBFactor = blendFactorFromLegacyGL(srcfactor);
+  rs.blend.dstRGBFactor = blendFactorFromLegacyGL(dstfactor);
+
+  // A regular glBlendFunc applies the RGB factors to alpha as well. When
+  // Coin's separate-alpha state is present, retain its factors verbatim,
+  // including ZERO, which was previously indistinguishable from "not set".
+  int srcAlphaFactor = 0;
+  int dstAlphaFactor = 0;
+  if (SoLazyElement::getAlphaBlending(mutableState,
+                                      srcAlphaFactor, dstAlphaFactor)) {
+    rs.blend.srcAlphaFactor = blendFactorFromLegacyGL(srcAlphaFactor);
+    rs.blend.dstAlphaFactor = blendFactorFromLegacyGL(dstAlphaFactor);
+  } else {
+    rs.blend.srcAlphaFactor = rs.blend.srcRGBFactor;
+    rs.blend.dstAlphaFactor = rs.blend.dstRGBFactor;
+  }
+
+  // LegacyGL does not expose a Coin state element for blend equations. ADD
+  // is its effective equation and is the only value that can be captured
+  // deterministically from traversal.
+  rs.blend.rgbEquation = SO_BLEND_EQUATION_ADD;
+  rs.blend.alphaEquation = SO_BLEND_EQUATION_ADD;
+
+  float alphaTestValue = 0.5f;
+  const int alphaTestFunction = SoLazyElement::getAlphaTest(mutableState,
+                                                              alphaTestValue);
+  rs.alphaTest.function = alphaTestFunctionFromLegacyGL(alphaTestFunction);
+  rs.alphaTest.reference = alphaTestValue;
+  rs.alphaTest.policy = rs.alphaTest.function == SO_ALPHA_TEST_NONE
+    ? SO_ALPHA_TEST_POLICY_NONE
+    : SO_ALPHA_TEST_POLICY_EXPLICIT;
 
   SoDrawStyleElement::Style style = SoDrawStyleElement::get(mutableState);
   uint8_t fillmode = 0;
@@ -757,6 +832,29 @@ isMaterialTransparent(const SoMaterialData & material)
   return material.opacity < 0.999f;
 }
 
+void
+ensureMaterialBlendState(SoRenderState & renderState,
+                         const SoMaterialData & material)
+{
+  // SoIRRenderAction captures Coin's logical material state, while the
+  // legacy GL action enables the conventional blend function as part of its
+  // transparency setup. Make that implicit IR contract explicit without
+  // replacing an actual non-standard blend state.
+  if (renderState.blend.enabled ||
+      (!isMaterialTransparent(material) &&
+       (material.flags & SO_MAT_HAS_TEXTURE) == 0)) {
+    return;
+  }
+
+  renderState.blend.enabled = TRUE;
+  renderState.blend.srcRGBFactor = SO_BLEND_FACTOR_SRC_ALPHA;
+  renderState.blend.dstRGBFactor = SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+  renderState.blend.srcAlphaFactor = SO_BLEND_FACTOR_SRC_ALPHA;
+  renderState.blend.dstAlphaFactor = SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+  renderState.blend.rgbEquation = SO_BLEND_EQUATION_ADD;
+  renderState.blend.alphaEquation = SO_BLEND_EQUATION_ADD;
+}
+
 SbBool
 appendCacheDrawCommands(const SoPrimitiveVertexCache * cache,
                         SoIRRenderAction * action,
@@ -878,6 +976,7 @@ appendCacheDrawCommands(const SoPrimitiveVertexCache * cache,
 
   SoRenderIR::fillMaterialFromState(state, cmd.material);
   SoRenderIR::fillRenderStateFromState(state, cmd.state);
+  SoRenderIR::ensureMaterialBlendState(cmd.state, cmd.material);
   cmd.modelMatrix = SoModelMatrixElement::get(state);
   cmd.viewMatrix = SoViewingMatrixElement::get(state);
   cmd.projMatrix = SoProjectionMatrixElement::get(state);

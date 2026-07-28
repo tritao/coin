@@ -217,6 +217,7 @@ protected:
     int blend_dfactor;
     int alpha_blend_sfactor;
     int alpha_blend_dfactor;
+    SbBool separateblending;
     int32_t lightmodel;
     SbBool packeddiffuse;
     int32_t numdiffuse;
