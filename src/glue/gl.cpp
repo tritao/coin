@@ -120,6 +120,11 @@
     initialization spit out lots of info about the underlying OpenGL
     implementation.
 
+  - COIN_EGL: set to "1" to select EGL for offscreen contexts, or to "0"
+    to select GLX when both bindings are available. If unset, Coin selects
+    the binding associated with the current context and otherwise defaults to
+    GLX.
+
   - COIN_PREFER_GLPOLYGONOFFSET_EXT: when set to "1" and both
     glPolygonOffset() and glPolygonOffsetEXT() are available, the
     latter will be used. This can be useful to work around a
@@ -4622,6 +4627,7 @@ cc_glglue_context_create_offscreen(unsigned int width, unsigned int height)
 #elif defined(HAVE_WGL)
   return wglglue_context_create_offscreen(width, height);
 #else
+  check_egl();
 #if defined(HAVE_EGL)
     if (COIN_USE_EGL > 0) return eglglue_context_create_offscreen(width, height);
 #endif
