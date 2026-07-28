@@ -44,6 +44,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <unordered_map>
 
 #include <Inventor/SbName.h>
 #include <Inventor/elements/SoGLDisplayList.h>
@@ -60,6 +61,7 @@
 // *************************************************************************
 
 static int biggest_cache_context_id = 0;
+static std::unordered_map<uint32_t, uint64_t> context_state_generations;
 
 // *************************************************************************
 
@@ -108,6 +110,7 @@ static void soglcachecontext_cleanup(void)
   delete extsupportlist;
   delete scheduledeletelist;
   delete scheduledeletecblist;
+  context_state_generations.clear();
   CC_MUTEX_DESTRUCT(glcache_mutex);
 
   if (soglcache_contextdestructioncb) {
@@ -542,4 +545,32 @@ SoGLCacheContextElement::getUniqueCacheContext(void)
   uint32_t id = ++biggest_cache_context_id;
   CC_MUTEX_UNLOCK(glcache_mutex);
   return id;
+}
+
+uint64_t
+SoGLCacheContextElement::getContextStateGeneration(uint32_t contextid)
+{
+  CC_MUTEX_LOCK(glcache_mutex);
+  uint64_t & generation = context_state_generations[contextid];
+  if (generation == 0) {
+    generation = 1;
+  }
+  const uint64_t result = generation;
+  CC_MUTEX_UNLOCK(glcache_mutex);
+  return result;
+}
+
+void
+SoGLCacheContextElement::invalidateContextState(uint32_t contextid)
+{
+  CC_MUTEX_LOCK(glcache_mutex);
+  uint64_t & generation = context_state_generations[contextid];
+  if (generation == 0) {
+    generation = 1;
+  }
+  ++generation;
+  if (generation == 0) {
+    generation = 1;
+  }
+  CC_MUTEX_UNLOCK(glcache_mutex);
 }

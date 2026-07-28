@@ -35,6 +35,8 @@
 
 #include <Inventor/elements/SoSubElement.h>
 
+#include <cstdint>
+
 // This shouldn't strictly be necessary, but the OSF1/cxx compiler
 // complains if this is left out, while using the "friend class
 // SoGLDisplayList" statement in the class definition.
@@ -77,6 +79,12 @@ public:
   static SbBool getIsRemoteRendering(SoState * state);
 
   static uint32_t getUniqueCacheContext(void);
+
+  /// Returns the shared GL state generation for a contextid.
+  static uint64_t getContextStateGeneration(uint32_t contextid);
+
+  /// Marks the shared GL state for a contextid as externally changed.
+  static void invalidateContextState(uint32_t contextid);
 
   static void scheduleDeleteCallback(const uint32_t contextid,
                                      SoScheduleDeleteCB * cb,

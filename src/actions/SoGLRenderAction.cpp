@@ -590,6 +590,7 @@ public:
   SoGLRenderAction::SoGLRenderAbortCB * abortcallback;
   void * abortcallbackdata;
   uint32_t cachecontext;
+  uint64_t cachecontextgeneration;
   int currentpass;
   SoPathList delayedpaths;
   SbBool delayedpathrender;
@@ -768,6 +769,8 @@ SoGLRenderAction::SoGLRenderAction(const SbViewportRegion & viewportregion)
   PRIVATE(this)->rendering = SoGLRenderActionP::RENDERING_UNSET;
   PRIVATE(this)->abortcallback = NULL;
   PRIVATE(this)->cachecontext = 0;
+  PRIVATE(this)->cachecontextgeneration =
+    SoGLCacheContextElement::getContextStateGeneration(PRIVATE(this)->cachecontext);
   PRIVATE(this)->needglinit = TRUE;
   PRIVATE(this)->sortedlayersblendpasses = 4;
   PRIVATE(this)->viewportheight = 0;
@@ -1030,6 +1033,8 @@ SoGLRenderAction::setCacheContext(const uint32_t context)
 {
   if (context != PRIVATE(this)->cachecontext) {
     PRIVATE(this)->cachecontext = context;
+    PRIVATE(this)->cachecontextgeneration =
+      SoGLCacheContextElement::getContextStateGeneration(context);
     this->invalidateState();
   }
 }
@@ -1071,6 +1076,29 @@ SoGLRenderAction::getSortedLayersNumPasses() const
 void
 SoGLRenderAction::beginTraversal(SoNode * node)
 {
+  // SoAction::apply() has already created the state by the time this
+  // defensive boundary is reached. Keep the capability check independent of
+  // that state, and perform it before any state recreation for a context
+  // generation change.
+  if (!sogl_legacy_rendering_available(sogl_current_glue())) {
+    SoDebugError::postWarning(
+      "SoGLRenderAction::beginTraversal",
+      "legacy OpenGL traversal requested without a compatibility context");
+    this->setTerminated(TRUE);
+    return;
+  }
+
+  const uint64_t contextgeneration =
+    SoGLCacheContextElement::getContextStateGeneration(PRIVATE(this)->cachecontext);
+  if (contextgeneration != PRIVATE(this)->cachecontextgeneration) {
+    PRIVATE(this)->cachecontextgeneration = contextgeneration;
+    this->invalidateState();
+    // SoAction::apply() creates the state before entering beginTraversal(),
+    // but invalidating it here leaves the action without a state. Recreate it
+    // before any GL traversal code accesses the state directly.
+    (void) this->getState();
+  }
+
   if (PRIVATE(this)->cachedprofilingsg == NULL) {
     if (node->isOfType(SoGroup::getClassTypeId()) &&
         (coin_assert_cast<SoGroup *>(node))->getNumChildren() > 0) {
@@ -1536,6 +1564,8 @@ SoGLRenderAction::invalidateState(void)
 {
   inherited::invalidateState();
   PRIVATE(this)->needglinit = TRUE;
+  PRIVATE(this)->cachecontextgeneration =
+    SoGLCacheContextElement::getContextStateGeneration(PRIVATE(this)->cachecontext);
 }
 
 // Sort paths with transparent objects before rendering.
