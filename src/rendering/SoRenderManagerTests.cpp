@@ -268,6 +268,7 @@ BOOST_AUTO_TEST_CASE(draw_list_invalidates_all_shared_gl_actions)
   camera->nearDistance.setValue(0.1f);
   camera->farDistance.setValue(10.0f);
   camera->height.setValue(2.0f);
+  camera->ref();
   scene->addChild(camera);
   manager.setCamera(camera);
   camera->unref();

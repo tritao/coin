@@ -763,6 +763,19 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
 
   coin_apply_command_viewport(cmd, params);
 
+  // Restore blending per command. Overlay rendering starts with blending
+  // enabled, but textured commands disable it after drawing; without this
+  // guard a later translucent untextured command becomes opaque.
+  const bool commandNeedsBlend = cmd.state.blend.enabled
+                              || cmd.material.opacity < 0.999f;
+  if (commandNeedsBlend) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  }
+  else {
+    glDisable(GL_BLEND);
+  }
+
   // Per-command model matrix; view/proj from params (auto-clipped) for
   // main scene, or per-command for overlay/background (different camera).
   SbMat modelMat;
