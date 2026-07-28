@@ -314,8 +314,61 @@ SoIRRenderAction::clearGeometryPool()
 }
 
 void
+SoIRRenderAction::beginAfterMainStage()
+{
+  if (this->afterMainStageDepth == 0) {
+    this->afterMainDepthClearPending = true;
+  }
+  ++this->afterMainStageDepth;
+}
+
+void
+SoIRRenderAction::endAfterMainStage()
+{
+  if (this->afterMainStageDepth == 0) {
+    return;
+  }
+  --this->afterMainStageDepth;
+  if (this->afterMainStageDepth == 0) {
+    this->afterMainDepthClearPending = false;
+  }
+}
+
+void
+SoIRRenderAction::applyRenderStage(SoRenderCommand & command)
+{
+  if (!this->isAfterMainStage()) {
+    return;
+  }
+
+  command.stage = SoRenderStage::AfterMain;
+  if (this->afterMainDepthClearPending) {
+    command.state.raster.clearDepth = TRUE;
+    this->afterMainDepthClearPending = false;
+  }
+}
+
+SoIRRenderStageScope::SoIRRenderStageScope(SoIRRenderAction & action,
+                                           SoRenderStage stage)
+  : action(&action), active(stage == SoRenderStage::AfterMain)
+{
+  if (this->active) {
+    this->action->beginAfterMainStage();
+  }
+}
+
+SoIRRenderStageScope::~SoIRRenderStageScope()
+{
+  if (this->active) {
+    this->action->endAfterMainStage();
+  }
+}
+
+void
 SoIRRenderAction::resetFrameResources()
 {
   PRIVATE(this)->geometryPool.clear();
   PRIVATE(this)->collectorStack.truncate(0);
+  this->afterMainStageDepth = 0;
+  this->afterMainDepthClearPending = false;
 }

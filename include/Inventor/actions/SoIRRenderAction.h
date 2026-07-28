@@ -113,6 +113,18 @@ public:
   SoDrawList & getMutableDrawList() { return this->drawlist; }
 
   /*!
+    \brief Mark commands emitted by the current traversal as after-main content.
+
+    The render manager uses this transitional stage around its after-main
+    callback. The first command emitted in the stage carries the depth-clear
+    barrier; later commands retain the same stage without clearing again.
+  */
+  void beginAfterMainStage();
+  void endAfterMainStage();
+  bool isAfterMainStage() const { return afterMainStageDepth != 0; }
+  void applyRenderStage(SoRenderCommand & command);
+
+  /*!
     \brief Store the scene graph path associated with a draw command.
 
     Called by shapes during render() so later picking/highlighting code can
@@ -187,6 +199,25 @@ private:
   SoDrawList       drawlist;
   SoIRRenderActionP * pimpl;
   bool             cameraDependentShapes = false;
+  unsigned int     afterMainStageDepth = 0;
+  bool             afterMainDepthClearPending = false;
+};
+
+/*!
+  \class SoIRRenderStageScope
+  \brief RAII guard for an action-local render-stage traversal.
+*/
+class COIN_DLL_API SoIRRenderStageScope {
+public:
+  SoIRRenderStageScope(SoIRRenderAction & action, SoRenderStage stage);
+  ~SoIRRenderStageScope();
+
+  SoIRRenderStageScope(const SoIRRenderStageScope &) = delete;
+  SoIRRenderStageScope & operator=(const SoIRRenderStageScope &) = delete;
+
+private:
+  SoIRRenderAction * action;
+  bool active;
 };
 
 #endif // COIN_SOIRRENDERACTION_H

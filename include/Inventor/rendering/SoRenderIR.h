@@ -183,8 +183,18 @@ struct SoRenderState {
 };
 
 /*!
+  \enum SoRenderStage
+  \brief Ordered scene stage containing one or more render passes.
+*/
+enum class SoRenderStage : uint8_t {
+  Main,
+  AfterMain,
+  Foreground
+};
+
+/*!
   \enum SoRenderPassType
-  \brief Logical pass identifier used for coarse sorting.
+  \brief Logical pass identifier used for coarse sorting within a stage.
 */
 enum SoRenderPassType : uint8_t {
   SO_RENDERPASS_OPAQUE = 0,
@@ -322,6 +332,7 @@ struct SoRenderCommand {
   SbMatrix         viewMatrix;
   SbMatrix         projMatrix;
 
+  SoRenderStage    stage = SoRenderStage::Main;
   SoRenderPassType pass = SO_RENDERPASS_OPAQUE;
   SoLightingHandle lightingHandle = 0;
   SoPipelineKey    pipelineKey = 0;
