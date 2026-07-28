@@ -129,6 +129,9 @@ private:
   void renderTransparentPass(const SoDrawList & drawlist,
                              const SbMat & viewMat, const SbMat & projMat,
                              const SoRenderParams & params);
+  void renderAfterMainPass(const SoDrawList & drawlist,
+                           const SbMat & viewMat, const SbMat & projMat,
+                           const SoRenderParams & params);
   void renderOverlayPass(const SoDrawList & drawlist,
                          const SbMat & viewMat, const SbMat & projMat,
                          const SoRenderParams & params);

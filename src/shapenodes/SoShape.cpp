@@ -436,6 +436,7 @@ public:
         SoRenderPlacementElement::FOREGROUND) {
       cmd.pass = SO_RENDERPASS_OVERLAY;
     }
+    this->action->applyRenderStage(cmd);
     cmd.lightingHandle = SoRenderIR::fillLightingFromState(
       state, this->action->getMutableDrawList());
     cmd.pipelineKey = 0;

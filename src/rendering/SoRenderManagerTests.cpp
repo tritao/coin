@@ -296,6 +296,42 @@ BOOST_AUTO_TEST_CASE(after_main_commands_survive_foreground_rebuild)
   BOOST_CHECK_EQUAL(probe.calls, 1);
 }
 
+BOOST_AUTO_TEST_CASE(after_main_stage_has_depth_barrier_and_order)
+{
+  SoIRRenderAction action(SbViewportRegion(1, 1));
+  int mainTag = 1;
+  int afterMainTag = 2;
+  int secondAfterMainTag = 3;
+  int foregroundTag = 4;
+
+  SoRenderCommand & mainCommand = action.getMutableDrawList().emplaceCommand();
+  mainCommand.userData = &mainTag;
+
+  action.beginAfterMainStage();
+  SoRenderCommand & afterMainCommand = action.getMutableDrawList().emplaceCommand();
+  afterMainCommand.userData = &afterMainTag;
+  action.applyRenderStage(afterMainCommand);
+
+  SoRenderCommand & secondAfterMainCommand = action.getMutableDrawList().emplaceCommand();
+  secondAfterMainCommand.userData = &secondAfterMainTag;
+  action.applyRenderStage(secondAfterMainCommand);
+  action.endAfterMainStage();
+
+  SoRenderCommand & foregroundCommand = action.getMutableDrawList().emplaceCommand();
+  foregroundCommand.userData = &foregroundTag;
+
+  BOOST_CHECK_EQUAL(action.getDrawList().getNumCommands(), 4);
+  BOOST_CHECK(action.getDrawList().getCommand(0).userData == &mainTag);
+  BOOST_CHECK(action.getDrawList().getCommand(1).userData == &afterMainTag);
+  BOOST_CHECK(action.getDrawList().getCommand(2).userData == &secondAfterMainTag);
+  BOOST_CHECK(action.getDrawList().getCommand(3).userData == &foregroundTag);
+  BOOST_CHECK_EQUAL(action.getDrawList().getCommand(1).pass, SO_RENDERPASS_AFTER_MAIN);
+  BOOST_CHECK(action.getDrawList().getCommand(1).state.raster.clearDepth);
+  BOOST_CHECK_EQUAL(action.getDrawList().getCommand(2).pass, SO_RENDERPASS_AFTER_MAIN);
+  BOOST_CHECK(!action.getDrawList().getCommand(2).state.raster.clearDepth);
+  BOOST_CHECK_EQUAL(action.getDrawList().getCommand(3).pass, SO_RENDERPASS_OPAQUE);
+}
+
 BOOST_AUTO_TEST_CASE(manager_after_main_callback_survives_foreground_rebuild)
 {
   if (!renderTestsHaveDisplay()) {

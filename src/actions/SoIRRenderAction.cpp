@@ -314,8 +314,45 @@ SoIRRenderAction::clearGeometryPool()
 }
 
 void
+SoIRRenderAction::beginAfterMainStage()
+{
+  if (this->afterMainStageDepth == 0) {
+    this->afterMainDepthClearPending = true;
+  }
+  ++this->afterMainStageDepth;
+}
+
+void
+SoIRRenderAction::endAfterMainStage()
+{
+  if (this->afterMainStageDepth == 0) {
+    return;
+  }
+  --this->afterMainStageDepth;
+  if (this->afterMainStageDepth == 0) {
+    this->afterMainDepthClearPending = false;
+  }
+}
+
+void
+SoIRRenderAction::applyRenderStage(SoRenderCommand & command)
+{
+  if (!this->isAfterMainStage()) {
+    return;
+  }
+
+  command.pass = SO_RENDERPASS_AFTER_MAIN;
+  if (this->afterMainDepthClearPending) {
+    command.state.raster.clearDepth = TRUE;
+    this->afterMainDepthClearPending = false;
+  }
+}
+
+void
 SoIRRenderAction::resetFrameResources()
 {
   PRIVATE(this)->geometryPool.clear();
   PRIVATE(this)->collectorStack.truncate(0);
+  this->afterMainStageDepth = 0;
+  this->afterMainDepthClearPending = false;
 }

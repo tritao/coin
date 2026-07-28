@@ -1242,6 +1242,33 @@ SoGLRenderBackend::renderTransparentPass(const SoDrawList & drawlist,
 }
 
 void
+SoGLRenderBackend::renderAfterMainPass(const SoDrawList & drawlist,
+                                       const SbMat & viewMat,
+                                       const SbMat & projMat,
+                                       const SoRenderParams & params)
+{
+  const int count = drawlist.getNumCommands();
+
+  // After-main commands retain traversal order and use the main camera. The
+  // first command carries the stage barrier recorded by SoIRRenderAction.
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LEQUAL);
+  glDepthMask(GL_TRUE);
+  glDisable(GL_BLEND);
+
+  for (int i = 0; i < count; ++i) {
+    const SoRenderCommand & cmd = drawlist.getCommand(i);
+    if (cmd.pass != SO_RENDERPASS_AFTER_MAIN) {
+      continue;
+    }
+    if (cmd.state.raster.clearDepth) {
+      glClear(GL_DEPTH_BUFFER_BIT);
+    }
+    drawCommand(drawlist, cmd, viewMat, projMat, params);
+  }
+}
+
+void
 SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
                                      const SbMat & viewMat,
                                      const SbMat & projMat,
@@ -1646,6 +1673,7 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
   renderBackgroundPass(drawlist, viewMat, projMat, params);
   renderOpaquePass(drawlist, viewMat, projMat, params);
   renderTransparentPass(drawlist, viewMat, projMat, params);
+  renderAfterMainPass(drawlist, viewMat, projMat, params);
   renderSelectionPass(drawlist, viewMat, projMat, params);
   renderOverlayPass(drawlist, viewMat, projMat, params);
   renderIDBufferPass(drawlist, viewMat, projMat, params);

@@ -1436,6 +1436,7 @@ SoMarkerSet::render(SoIRRenderAction * action)
         SoRenderPlacementElement::FOREGROUND) {
       cmd.pass = SO_RENDERPASS_OVERLAY;
     }
+    action->applyRenderStage(cmd);
     cmd.lightingHandle = 0;
     cmd.pipelineKey = 0;
     cmd.sortKey = 0;

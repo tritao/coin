@@ -434,6 +434,7 @@ renderpass_name(SoRenderPassType pass)
   switch (pass) {
   case SO_RENDERPASS_OPAQUE: return "opaque";
   case SO_RENDERPASS_TRANSPARENT: return "transparent";
+  case SO_RENDERPASS_AFTER_MAIN: return "after-main";
   case SO_RENDERPASS_OVERLAY: return "overlay";
   case SO_RENDERPASS_SHADOW: return "shadow";
   case SO_RENDERPASS_CUSTOM: return "custom";
@@ -463,10 +464,11 @@ SoIRDumpSummary(const SoDrawList & drawlist)
   }
 
   SoDebugError::postInfo("SoDrawList",
-                         "commands=%d opaque=%d transparent=%d overlay=%d shadow=%d custom=%d minVerts=%u maxVerts=%u",
+                         "commands=%d opaque=%d transparent=%d after-main=%d overlay=%d shadow=%d custom=%d minVerts=%u maxVerts=%u",
                          num,
                          counts[SO_RENDERPASS_OPAQUE],
                          counts[SO_RENDERPASS_TRANSPARENT],
+                         counts[SO_RENDERPASS_AFTER_MAIN],
                          counts[SO_RENDERPASS_OVERLAY],
                          counts[SO_RENDERPASS_SHADOW],
                          counts[SO_RENDERPASS_CUSTOM],
@@ -874,6 +876,7 @@ appendCacheDrawCommands(const SoPrimitiveVertexCache * cache,
       SoRenderPlacementElement::FOREGROUND) {
     cmd.pass = SO_RENDERPASS_OVERLAY;
   }
+  action->applyRenderStage(cmd);
   cmd.lightingHandle = SoRenderIR::fillLightingFromState(state,
                                                          action->getMutableDrawList());
   cmd.pipelineKey = cmd.shaderProgram ? reinterpret_cast<uint64_t>(cmd.shaderProgram) : 0;

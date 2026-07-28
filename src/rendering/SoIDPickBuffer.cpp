@@ -598,7 +598,8 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
   // Pass 1: Triangles — normal depth test, standard rendering
   for (int ci = 0; ci < numCmds; ci++) {
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
-    if (cmd.pass == SO_RENDERPASS_OVERLAY) continue;  // not pickable
+    if (cmd.pass == SO_RENDERPASS_OVERLAY ||
+        cmd.pass == SO_RENDERPASS_AFTER_MAIN) continue;  // not pickable
     if (cmd.geometry.topology != SO_TOPOLOGY_TRIANGLES &&
         cmd.geometry.topology != SO_TOPOLOGY_TRIANGLE_STRIP) continue;
     if (cmd.material.flags & SO_MAT_HAS_TEXTURE) continue;  // skip textured (SoImage)
@@ -621,7 +622,8 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
   }
   for (int ci = 0; ci < numCmds; ci++) {
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
-    if (cmd.pass == SO_RENDERPASS_OVERLAY) continue;
+    if (cmd.pass == SO_RENDERPASS_OVERLAY ||
+        cmd.pass == SO_RENDERPASS_AFTER_MAIN) continue;
     if (cmd.geometry.topology != SO_TOPOLOGY_LINES &&
         cmd.geometry.topology != SO_TOPOLOGY_LINE_STRIP) continue;
     if (cmd.material.flags & SO_MAT_HAS_TEXTURE) continue;
@@ -645,7 +647,8 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
   glDepthMask(GL_FALSE);
   for (int ci = 0; ci < numCmds; ci++) {
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
-    if (cmd.pass == SO_RENDERPASS_OVERLAY) continue;
+    if (cmd.pass == SO_RENDERPASS_OVERLAY ||
+        cmd.pass == SO_RENDERPASS_AFTER_MAIN) continue;
     if (cmd.geometry.topology != SO_TOPOLOGY_POINTS) continue;
     if (cmd.material.flags & SO_MAT_HAS_TEXTURE) continue;
     float ps = cmd.state.raster.pointSize;
