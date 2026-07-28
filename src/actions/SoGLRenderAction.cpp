@@ -584,6 +584,8 @@ public:
   SbBool internal_multipass;
   SoGLRenderAction::TransparencyType transparencytype;
   SbBool smoothing;
+  SbBool lineSmoothing;
+  SbBool pointSmoothing;
   SbBool passupdate;
   SoGLRenderPassCB * passcallback;
   void * passcallbackdata;
@@ -754,6 +756,8 @@ SoGLRenderAction::SoGLRenderAction(const SbViewportRegion & viewportregion)
   PRIVATE(this)->passcallback = NULL;
   PRIVATE(this)->passcallbackdata = NULL;
   PRIVATE(this)->smoothing = FALSE;
+  PRIVATE(this)->lineSmoothing = FALSE;
+  PRIVATE(this)->pointSmoothing = FALSE;
   PRIVATE(this)->currentpass = 0;
   PRIVATE(this)->numpasses = 1;
   PRIVATE(this)->internal_multipass = FALSE;
@@ -946,8 +950,12 @@ SoGLRenderAction::getTransparencyType(void) const
 void
 SoGLRenderAction::setSmoothing(const SbBool smooth)
 {
-  if (smooth != PRIVATE(this)->smoothing) {
+  if (smooth != PRIVATE(this)->smoothing
+      || smooth != PRIVATE(this)->lineSmoothing
+      || smooth != PRIVATE(this)->pointSmoothing) {
     PRIVATE(this)->smoothing = smooth;
+    PRIVATE(this)->lineSmoothing = smooth;
+    PRIVATE(this)->pointSmoothing = smooth;
     PRIVATE(this)->needglinit = TRUE;
   }
 }
@@ -959,6 +967,36 @@ SbBool
 SoGLRenderAction::isSmoothing(void) const
 {
   return PRIVATE(this)->smoothing;
+}
+
+void
+SoGLRenderAction::setLineSmoothing(const SbBool smooth)
+{
+  if (smooth != PRIVATE(this)->lineSmoothing) {
+    PRIVATE(this)->lineSmoothing = smooth;
+    PRIVATE(this)->needglinit = TRUE;
+  }
+}
+
+SbBool
+SoGLRenderAction::isLineSmoothing(void) const
+{
+  return PRIVATE(this)->lineSmoothing;
+}
+
+void
+SoGLRenderAction::setPointSmoothing(const SbBool smooth)
+{
+  if (smooth != PRIVATE(this)->pointSmoothing) {
+    PRIVATE(this)->pointSmoothing = smooth;
+    PRIVATE(this)->needglinit = TRUE;
+  }
+}
+
+SbBool
+SoGLRenderAction::isPointSmoothing(void) const
+{
+  return PRIVATE(this)->pointSmoothing;
 }
 
 /*!
@@ -1159,18 +1197,22 @@ SoGLRenderAction::beginTraversal(SoNode * node)
     // well).
     glDepthFunc(GL_LEQUAL);
 
-    if (PRIVATE(this)->smoothing) {
-      if (sogl_context_supports_legacy_rendering(this->state)) {
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
+    if (sogl_context_supports_legacy_rendering(this->state)) {
+      if (PRIVATE(this)->pointSmoothing) {
         glEnable(GL_POINT_SMOOTH);
+      }
+      else {
+        glDisable(GL_POINT_SMOOTH);
+      }
+      if (PRIVATE(this)->lineSmoothing) {
         glEnable(GL_LINE_SMOOTH);
       }
-    }
-    else {
-      if (sogl_context_supports_legacy_rendering(this->state)) {
-        glDisable(GL_POINT_SMOOTH);
+      else {
         glDisable(GL_LINE_SMOOTH);
       }
     }
+#endif
   }
 
   int err_after_init = GL_NO_ERROR;

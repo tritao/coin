@@ -210,6 +210,12 @@ public:
 
   void setAntialiasing(const SbBool smoothing, const int numPasses);
   void getAntialiasing(SbBool & smoothing, int & numPasses) const;
+  /// Enable or disable line primitive smoothing independently of multisampling.
+  void setLineSmoothing(const SbBool smoothing);
+  SbBool getLineSmoothing(void) const;
+  /// Enable or disable point primitive smoothing independently of multisampling.
+  void setPointSmoothing(const SbBool smoothing);
+  SbBool getPointSmoothing(void) const;
   void setGLRenderAction(SoGLRenderAction * const action);
   SoGLRenderAction * getGLRenderAction(void) const;
   void setRenderPipeline(RenderPipeline pipeline);

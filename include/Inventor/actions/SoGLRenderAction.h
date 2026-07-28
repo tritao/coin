@@ -97,6 +97,10 @@ public:
   TransparentDelayedObjectRenderType getTransparentDelayedObjectRenderType(void) const;
   void setSmoothing(const SbBool smooth);
   SbBool isSmoothing(void) const;
+  void setLineSmoothing(const SbBool smooth);
+  SbBool isLineSmoothing(void) const;
+  void setPointSmoothing(const SbBool smooth);
+  SbBool isPointSmoothing(void) const;
   void setNumPasses(const int num);
   int getNumPasses(void) const;
   void setPassUpdate(const SbBool flag);
