@@ -1134,6 +1134,13 @@ SoShape::getComplexityValue(SoAction * action)
 SbBool
 SoShape::shouldGLRender(SoGLRenderAction * action)
 {
+  return this->shouldGLRender(action, TRUE);
+}
+
+SbBool
+SoShape::shouldGLRender(SoGLRenderAction * action,
+                        SbBool sortTransparentTriangles)
+{
   SoState * state = action->getState();
  
   const SoShapeStyleElement * shapestyle = SoShapeStyleElement::get(state);
@@ -1175,7 +1182,8 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
   }
 
   // test if we should sort triangles before rendering
-  if (transparent && (shapestyleflags & SoShapeStyleElement::TRANSP_SORTED_TRIANGLES)) {
+  if (sortTransparentTriangles && transparent &&
+      (shapestyleflags & SoShapeStyleElement::TRANSP_SORTED_TRIANGLES)) {
     if (SoRenderer::isOpenGL()) {
       // lock since pvcache is shared among all threads
       PRIVATE(this)->lock();
