@@ -424,6 +424,7 @@ SoElement::initElements(void)
     SoGLLineWidthElement::initClass();
   }
   SoPointSizeElement::initClass();
+  SoDevicePixelRatioElement::initClass();
   if (SoRenderer::isOpenGL()) {
     SoGLPointSizeElement::initClass();
   }
