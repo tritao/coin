@@ -79,6 +79,9 @@ void fillRenderStateFromState(SoState * state, SoRenderState & renderState);
 SoLightingHandle fillLightingFromState(SoState * state, SoDrawList & drawlist);
 //! Return whether the material should be treated as translucent.
 bool isMaterialTransparent(const SoMaterialData & material);
+//! Add the implicit standard-alpha blend state used by IR material/texture commands.
+void ensureMaterialBlendState(SoRenderState & renderState,
+                              const SoMaterialData & material);
 //! Append draw commands from a primitive vertex cache when direct rendering is possible.
 SbBool appendCacheDrawCommands(const SoPrimitiveVertexCache * cache,
                                SoIRRenderAction * action,
