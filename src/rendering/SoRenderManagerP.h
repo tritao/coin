@@ -55,8 +55,10 @@
 #include <Inventor/elements/SoLazyElement.h>
 #include <Inventor/misc/SoNotification.h>
 #include <Inventor/sensors/SoNodeSensor.h>
+#include "rendering/SoRenderBackend.h"
 
 class SbMatrix;
+class SoAction;
 class SoNodeSensor;
 class SoInfo;
 class SoNode;
@@ -116,6 +118,8 @@ public:
   SoSearchAction * searchaction;
   SbBool deleteaudiorenderaction;
   SbBool deleteglaction;
+  SbBool lineSmoothing = FALSE;
+  SbBool pointSmoothing = FALSE;
 
   SoRenderManager::StereoMode stereostenciltype;
   SoRenderManager::RenderMode rendermode;
@@ -133,11 +137,18 @@ public:
   SoIRRenderAction * irAction;
   SoIRRenderAction * foregroundAction;  // Separate action for foreground overlays
   SoRenderBackend * renderBackend;
+  bool renderBackendFailed = false;
+  void * renderBackendFailedContext = NULL;
+  uint64_t renderBackendFailedGeneration = 0;
+  SoRenderTargetInfo renderBackendFailedTarget = {};
+  bool renderBackendFailureTargetValid = false;
   SoNode * renderLayerBackgroundRoot = NULL;
   SoNode * renderLayerForegroundRoot = NULL;
+  SoNodeSensor * renderLayerBackgroundSensor = NULL;
+  SoNodeSensor * renderLayerForegroundSensor = NULL;
   int backgroundCommandCount = 0;
-  int mainSceneCommandCount = 0;  // bg + main scene commands (excludes foreground)
-  SoIRRenderAction::GeometrySavePoint poolSavePoint;  // geometry pool state after main scene traversal
+  int preForegroundCommandCount = 0;  // bg + main + after-main commands
+  SoIRRenderAction::GeometrySavePoint preForegroundPoolSavePoint;
   SbViewportRegion backendViewport;  // viewport for the render backend (replaces glaction viewport)
   int backendFrameCounter;
 
@@ -157,9 +168,12 @@ public:
 
   void invokePreRenderCallbacks(void);
   void invokePostRenderCallbacks(void);
+  void invokeAfterMainSceneCallbacks(SoAction * action);
   typedef std::pair<SoRenderManagerRenderCB *, void *> RenderCBTouple;
   std::vector<RenderCBTouple> preRenderCallbacks;
   std::vector<RenderCBTouple> postRenderCallbacks;
+  typedef std::pair<SoRenderManagerStageCB *, void *> StageCBTouple;
+  std::vector<StageCBTouple> afterMainSceneCallbacks;
 
   // "private" data
   static SbBool touchtimer;

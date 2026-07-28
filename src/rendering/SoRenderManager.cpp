@@ -68,7 +68,7 @@
 #include <vector>
 
 #include <Inventor/system/gl.h>
-#include <Inventor/system/renderer.h>
+#include "glue/glp.h"
 #include <Inventor/nodes/SoInfo.h>
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoGroup.h>
@@ -91,6 +91,7 @@
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoAudioRenderAction.h>
 #include <Inventor/actions/SoGLRenderAction.h>
+#include <Inventor/actions/SoAction.h>
 #include <Inventor/actions/SoIRRenderAction.h>
 #include "CoinTracyConfig.h"
 #include <Inventor/SbTime.h>
@@ -340,6 +341,39 @@ setMainScenePolicy(SoState * state,
   }
 }
 
+SoRenderTargetInfo
+drawListTargetInfo(const SbViewportRegion & viewport)
+{
+  SoRenderTargetInfo target = {};
+  target.size = viewport.getViewportSizePixels();
+  target.samples = 1;
+  target.colorFormat = 0;
+  target.depthFormat = 0;
+  target.targetId = 0;
+  return target;
+}
+
+bool
+sameDrawListTarget(const SoRenderTargetInfo & a,
+                   const SoRenderTargetInfo & b)
+{
+  return a.size == b.size &&
+    a.samples == b.samples &&
+    a.colorFormat == b.colorFormat &&
+    a.depthFormat == b.depthFormat &&
+    a.targetId == b.targetId;
+}
+
+void
+clearBackendFailure(SoRenderManagerP * manager)
+{
+  manager->renderBackendFailed = false;
+  manager->renderBackendFailedContext = NULL;
+  manager->renderBackendFailedGeneration = 0;
+  manager->renderBackendFailedTarget = {};
+  manager->renderBackendFailureTargetValid = false;
+}
+
 } // namespace
 
 /*!
@@ -365,7 +399,11 @@ SoRenderManager::SoRenderManager(void)
   PRIVATE(this)->irAction = NULL;
   PRIVATE(this)->foregroundAction = NULL;
   PRIVATE(this)->renderBackend = NULL;
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
   PRIVATE(this)->renderPipeline = SoRenderManager::RenderPipeline::LEGACY_GL;
+#else
+  PRIVATE(this)->renderPipeline = SoRenderManager::RenderPipeline::DRAW_LIST;
+#endif
 
   PRIVATE(this)->doublebuffer = TRUE;
   PRIVATE(this)->deleteaudiorenderaction = TRUE;
@@ -425,6 +463,8 @@ SoRenderManager::~SoRenderManager()
   if (PRIVATE(this)->deleteglaction) delete PRIVATE(this)->glaction;
   if (PRIVATE(this)->deleteaudiorenderaction) delete PRIVATE(this)->audiorenderaction;
   delete PRIVATE(this)->rootsensor;
+  delete PRIVATE(this)->renderLayerBackgroundSensor;
+  delete PRIVATE(this)->renderLayerForegroundSensor;
   delete PRIVATE(this)->redrawshot;
 
   if (PRIVATE(this)->superimpositions != NULL) {
@@ -441,9 +481,12 @@ SoRenderManager::~SoRenderManager()
   if (PRIVATE(this)->renderLayerForegroundRoot)
     PRIVATE(this)->renderLayerForegroundRoot->unref();
 
+  // Release the camera reference while the scene graph is still alive. A
+  // camera is commonly also a child of the scene, and clearing the scene
+  // first can otherwise leave the manager with a dangling camera pointer.
+  this->setCamera(NULL);
   if (PRIVATE(this)->scene)
     PRIVATE(this)->scene->unref();
-  this->setCamera(NULL);
 
   delete PRIVATE(this);
 }
@@ -529,10 +572,19 @@ SoRenderManager::nodesensorCB(void * data, SoSensor * sensor)
   SoRenderManager * self = static_cast<SoRenderManager *>(data);
   SoNodeSensor * ns = static_cast<SoNodeSensor *>(sensor);
 
+  if (ns == PRIVATE(self)->renderLayerBackgroundSensor) {
+    self->invalidateScene();
+    return;
+  }
+  if (ns == PRIVATE(self)->renderLayerForegroundSensor) {
+    self->invalidateForeground();
+    return;
+  }
+
   // Determine if the draw list needs rebuilding.
   SoNode * trigger = ns->getTriggerNode();
 
-  if (PRIVATE(self)->rendererMode == SoRenderManager::RENDERER_RENDER_BACKEND) {
+  if (PRIVATE(self)->renderPipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
     bool isCameraChange = (trigger && trigger == PRIVATE(self)->camera);
 
     // Consume the pending camera change flag (set by notifyCameraChange()
@@ -618,31 +670,26 @@ SoRenderManager::detachRootSensor(void)
 }
 
 void
-SoRenderManager::renderWithBackend(const SbBool clearwindow,
+SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
                                    const SbBool clearzbuffer)
 {
   if (!PRIVATE(this)->scene) return;
 
-  SoGLRenderAction * glaction = PRIVATE(this)->glaction;
-  PRIVATE(this)->invokePreRenderCallbacks();
+  const uint32_t cacheContext = PRIVATE(this)->glaction ?
+    PRIVATE(this)->glaction->getCacheContext() : 0;
+  const uint64_t contextGeneration =
+    SoGLCacheContextElement::getContextStateGeneration(cacheContext);
+  void * currentContext = coin_gl_current_context();
+  const SoRenderTargetInfo targetinfo =
+    drawListTargetInfo(PRIVATE(this)->backendViewport);
 
-  // Render BACKGROUND superimpositions via legacy action (before main scene)
-  SbBool clearwindow_tmp = clearwindow;
-  if (PRIVATE(this)->superimpositions) {
-    for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
-      Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
-      if (s->getStateFlags() & Superimposition::BACKGROUND) {
-        s->render(glaction, clearwindow_tmp);
-        clearwindow_tmp = FALSE;
-      }
-    }
-  }
-
-  SoIRRenderAction * action = PRIVATE(this)->irAction;
-  if (!action) {
-    action = new SoIRRenderAction(PRIVATE(this)->backendViewport);
-    PRIVATE(this)->irAction = action;
-  }
+  const bool sameFailedContext =
+    PRIVATE(this)->renderBackendFailureTargetValid &&
+    PRIVATE(this)->renderBackendFailedContext == currentContext &&
+    PRIVATE(this)->renderBackendFailedGeneration == contextGeneration &&
+    sameDrawListTarget(PRIVATE(this)->renderBackendFailedTarget, targetinfo);
+  if (PRIVATE(this)->renderBackendFailed && sameFailedContext) return;
+  if (PRIVATE(this)->renderBackendFailed) clearBackendFailure(PRIVATE(this));
 
   SoRenderBackend * backend = PRIVATE(this)->renderBackend;
   if (!backend) {
@@ -651,21 +698,51 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
   }
   if (!backend->isInitialized()) {
     SoRenderBackendInitParams initparams = {};
-    SbVec2s size = PRIVATE(this)->backendViewport.getViewportSizePixels();
-    initparams.targetInfo.size = size;
-    initparams.targetInfo.samples = 1;
-    initparams.targetInfo.colorFormat = 0;
-    initparams.targetInfo.depthFormat = 0;
-    initparams.targetInfo.targetId = 0;
+    initparams.targetInfo = targetinfo;
     initparams.sharedContext = NULL;
-    backend->initialize(initparams);
+    if (!backend->initialize(initparams)) {
+      const SbBool legacyAvailable =
+        sogl_legacy_rendering_available(sogl_current_glue());
+      backend->shutdown();
+      delete backend;
+      PRIVATE(this)->renderBackend = NULL;
+      if (legacyAvailable) {
+        SoDebugError::postWarning(
+          "SoRenderManager::renderDrawListPipeline",
+          "DrawList backend initialization failed; falling back to LegacyGL");
+        PRIVATE(this)->renderPipeline = SoRenderManager::RenderPipeline::LEGACY_GL;
+        this->invalidateSharedGLState();
+        this->render(clearwindow, clearzbuffer);
+      }
+      else {
+        SoDebugError::postWarning(
+          "SoRenderManager::renderDrawListPipeline",
+          "DrawList backend initialization failed and LegacyGL is unavailable");
+        PRIVATE(this)->renderBackendFailed = true;
+        PRIVATE(this)->renderBackendFailedContext = currentContext;
+        PRIVATE(this)->renderBackendFailedGeneration = contextGeneration;
+        PRIVATE(this)->renderBackendFailedTarget = targetinfo;
+        PRIVATE(this)->renderBackendFailureTargetValid = true;
+      }
+      return;
+    }
   }
 
-  this->clearBuffers(clearwindow_tmp, clearzbuffer);
+  PRIVATE(this)->invokePreRenderCallbacks();
+
+  SoIRRenderAction * action = PRIVATE(this)->irAction;
+  if (!action) {
+    action = new SoIRRenderAction(PRIVATE(this)->backendViewport);
+    PRIVATE(this)->irAction = action;
+  }
 
   SbViewportRegion vp = PRIVATE(this)->backendViewport;
   action->setViewportRegion(vp);
   action->setCamera(PRIVATE(this)->camera);
+  action->setCacheContext(PRIVATE(this)->glaction->getCacheContext());
+
+  SoState * traversalState = action->getState();
+  SoNode * traversalNode = PRIVATE(this)->dummynode;
 
   bool sceneChanged = (PRIVATE(this)->cachedSceneGen != PRIVATE(this)->sceneGeneration);
   bool fgChanged = (PRIVATE(this)->cachedForegroundGen != PRIVATE(this)->foregroundGeneration);
@@ -683,30 +760,87 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
       PRIVATE(this)->setClippingPlanes();
     }
 
-    // Traverse background root first (gradient, grid)
+    action->beginFrame();
+
+    // Traverse background superimpositions and explicit background roots
+    // through IR before the main scene.
     PRIVATE(this)->backgroundCommandCount = 0;
-    if (PRIVATE(this)->renderLayerBackgroundRoot) {
-      action->apply(PRIVATE(this)->renderLayerBackgroundRoot);
-      PRIVATE(this)->backgroundCommandCount = action->getDrawList().getNumCommands();
+    if (PRIVATE(this)->superimpositions) {
+      for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
+        Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
+        if (s->getStateFlags() & Superimposition::BACKGROUND) {
+          traversalState->push();
+          setCommonTraversalState(traversalState,
+                                  traversalNode,
+                                  PRIVATE(this)->devicePixelRatio);
+          s->render(action, SoRenderStage::Main);
+          traversalState->pop();
+        }
+      }
     }
+    if (PRIVATE(this)->renderLayerBackgroundRoot) {
+      traversalState->push();
+      setCommonTraversalState(traversalState,
+                              traversalNode,
+                              PRIVATE(this)->devicePixelRatio);
+      action->traverseAdditionalRoot(PRIVATE(this)->renderLayerBackgroundRoot);
+      traversalState->pop();
+    }
+    PRIVATE(this)->backgroundCommandCount = action->getDrawList().getNumCommands();
 
     // Traverse main scene — appends after background
+    traversalState->push();
+    setCommonTraversalState(traversalState,
+                            traversalNode,
+                            PRIVATE(this)->devicePixelRatio);
+    setMainScenePolicy(traversalState,
+                       traversalNode,
+                       normalizeDrawListRenderMode(PRIVATE(this)->rendermode),
+                       PRIVATE(this)->lightingmode);
     if (PRIVATE(this)->backgroundCommandCount > 0) {
       action->traverseAdditionalRoot(PRIVATE(this)->scene);
-    } else {
+    }
+    else {
       action->apply(PRIVATE(this)->scene);
     }
+    traversalState->pop();
 
-    PRIVATE(this)->mainSceneCommandCount = action->getDrawList().getNumCommands();
+    PRIVATE(this)->invokeAfterMainSceneCallbacks(action);
+
+    // After-main callbacks are retained scene content.  Keep both their
+    // commands and geometry in the checkpoint so foreground-only rebuilds
+    // do not truncate them away.
+    PRIVATE(this)->preForegroundCommandCount = action->getDrawList().getNumCommands();
 
     // Save geometry pool state so partial rebuilds can rewind to this
     // point, re-allocating foreground geometry at the same addresses
     // for stable VBO cache keys.
-    PRIVATE(this)->poolSavePoint = action->saveGeometryPool();
+    PRIVATE(this)->preForegroundPoolSavePoint = action->saveGeometryPool();
 
     // Traverse foreground root (NaviCube, overlays)
     if (PRIVATE(this)->renderLayerForegroundRoot) {
-      action->traverseAdditionalRoot(PRIVATE(this)->renderLayerForegroundRoot);
+      traversalState->push();
+      setCommonTraversalState(traversalState,
+                              traversalNode,
+                              PRIVATE(this)->devicePixelRatio);
+      {
+        SoIRRenderStageScope stageScope(*action, SoRenderStage::Foreground);
+        action->traverseAdditionalRoot(PRIVATE(this)->renderLayerForegroundRoot);
+      }
+      traversalState->pop();
+    }
+    if (PRIVATE(this)->superimpositions) {
+      for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
+        Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
+        if (!(s->getStateFlags() & Superimposition::BACKGROUND)) {
+          traversalState->push();
+          setCommonTraversalState(traversalState,
+                                  traversalNode,
+                                  PRIVATE(this)->devicePixelRatio);
+          s->render(action, SoRenderStage::Foreground);
+          traversalState->pop();
+        }
+      }
     }
 
     PRIVATE(this)->cachedSceneGen = PRIVATE(this)->sceneGeneration;
@@ -727,11 +861,32 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
     // Rewind the geometry pool to the save point after main scene traversal
     // so foreground geometry re-allocates at the same addresses — VBO cache
     // hits automatically.
-    action->getMutableDrawList().truncate(PRIVATE(this)->mainSceneCommandCount);
-    action->rewindGeometryPool(PRIVATE(this)->poolSavePoint);
+    action->getMutableDrawList().truncate(PRIVATE(this)->preForegroundCommandCount);
+    action->rewindGeometryPool(PRIVATE(this)->preForegroundPoolSavePoint);
 
     if (PRIVATE(this)->renderLayerForegroundRoot) {
-      action->traverseAdditionalRoot(PRIVATE(this)->renderLayerForegroundRoot);
+      traversalState->push();
+      setCommonTraversalState(traversalState,
+                              traversalNode,
+                              PRIVATE(this)->devicePixelRatio);
+      {
+        SoIRRenderStageScope stageScope(*action, SoRenderStage::Foreground);
+        action->traverseAdditionalRoot(PRIVATE(this)->renderLayerForegroundRoot);
+      }
+      traversalState->pop();
+    }
+    if (PRIVATE(this)->superimpositions) {
+      for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
+        Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
+        if (!(s->getStateFlags() & Superimposition::BACKGROUND)) {
+          traversalState->push();
+          setCommonTraversalState(traversalState,
+                                  traversalNode,
+                                  PRIVATE(this)->devicePixelRatio);
+          s->render(action, SoRenderStage::Foreground);
+          traversalState->pop();
+        }
+      }
     }
 
     PRIVATE(this)->cachedForegroundGen = PRIVATE(this)->foregroundGeneration;
@@ -749,12 +904,6 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
     action->getMutableDrawList().buildPickLUT();
   }
 
-  SoRenderTargetInfo targetinfo = {};
-  targetinfo.size = vp.getViewportSizePixels();
-  targetinfo.samples = 1;
-  targetinfo.colorFormat = 0;
-  targetinfo.depthFormat = 0;
-  targetinfo.targetId = 0;
   backend->resizeTarget(targetinfo);
 
   const SoDrawList & list = action->getDrawList();
@@ -779,34 +928,14 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
   params.flags = (clearwindow ? SO_PARAM_CLEAR_WINDOW : 0u)
                | (PRIVATE(this)->interactive ? SO_PARAM_INTERACTIVE : 0u);
   params.state = action->getState();
-  params.contextId = SoGLCacheContextElement::get(action->getState());
+  params.contextId = action->getCacheContext();
   params.bgCommandCount = PRIVATE(this)->backgroundCommandCount;
+  params.lineSmoothing = PRIVATE(this)->lineSmoothing != FALSE;
+  params.pointSmoothing = PRIVATE(this)->pointSmoothing != FALSE;
   params.devicePixelRatio = PRIVATE(this)->devicePixelRatio;
 
   backend->render(list, params);
-
-  // Render FOREGROUND superimpositions via the legacy action.
-  // The NaviCube's internal scene graph uses Coin nodes (SoTexture2 etc.)
-  // that require state elements not enabled for SoIRRenderAction.
-  // Until all overlay nodes are migrated, use the legacy path.
-  if (PRIVATE(this)->superimpositions) {
-    glUseProgram(0);
-#if defined(__APPLE__) && !defined(glBindVertexArray)
-    glBindVertexArrayAPPLE(0);
-#else
-    glBindVertexArray(0);
-#endif
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-
-    glaction->invalidateState();
-    for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
-      Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
-      if (!(s->getStateFlags() & Superimposition::BACKGROUND)) {
-        s->render(glaction);
-      }
-    }
-  }
+  this->invalidateSharedGLState();
 
   PRIVATE(this)->invokePostRenderCallbacks();
 }
@@ -852,15 +981,12 @@ SoRenderManager::detachClipSensor(void)
 void
 SoRenderManager::clearBuffers(SbBool color, SbBool depth)
 {
-  if (SoRenderer::isOpenGL()) {
-    GLbitfield mask = 0;
-    if (color) mask |= GL_COLOR_BUFFER_BIT;
-    if (depth) mask |= GL_DEPTH_BUFFER_BIT;
-    const SbColor4f bgcol = PRIVATE(this)->backgroundcolor;
-    glClearColor(bgcol[0], bgcol[1], bgcol[2], bgcol[3]);
-    glClear(mask);
-    return;
-  }
+  GLbitfield mask = 0;
+  if (color) mask |= GL_COLOR_BUFFER_BIT;
+  if (depth) mask |= GL_DEPTH_BUFFER_BIT;
+  const SbColor4f bgcol = PRIVATE(this)->backgroundcolor;
+  glClearColor(bgcol[0], bgcol[1], bgcol[2], bgcol[3]);
+  glClear(mask);
 }
 
 /*
@@ -881,19 +1007,15 @@ SoRenderManager::prerendercb(void * userdata, SoGLRenderAction * action)
   GLbitfield mask = (GLbitfield)bitfield;
 
 #if COIN_DEBUG && 0 // debug
-  if (SoRenderer::isOpenGL()) {
-    GLint view[4];
-    glGetIntegerv(GL_VIEWPORT, view);
-    SoDebugError::postInfo("SoRenderManager::prerendercb",
-                           "GL_VIEWPORT=<%d, %d, %d, %d>",
-                           view[0], view[1], view[2], view[3]);
-  }
+  GLint view[4];
+  glGetIntegerv(GL_VIEWPORT, view);
+  SoDebugError::postInfo("SoRenderManager::prerendercb",
+                         "GL_VIEWPORT=<%d, %d, %d, %d>",
+                         view[0], view[1], view[2], view[3]);
 #endif // debug
 
-  if (SoRenderer::isOpenGL()) {
-    // clear the viewport
-    glClear(mask);
-  }
+  // clear the viewport
+  glClear(mask);
 }
 
 /*!
@@ -996,8 +1118,19 @@ SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
       SoAudioDevice::instance()->isEnabled())
     PRIVATE(this)->audiorenderaction->apply(PRIVATE(this)->scene);
 
-  if (PRIVATE(this)->rendererMode == SoRenderManager::RENDERER_RENDER_BACKEND) {
-    this->renderWithBackend(clearwindow, clearzbuffer);
+  // The build may contain the legacy sources while the active context is a
+  // core profile (or GLES). Resolve that requested pipeline from the active
+  // context before touching legacy action state.
+  if (PRIVATE(this)->renderPipeline == SoRenderManager::RenderPipeline::LEGACY_GL &&
+      !sogl_legacy_rendering_available(sogl_current_glue())) {
+    SoDebugError::postWarning(
+      "SoRenderManager::render",
+      "LegacyGL is unavailable for the active context; using DrawList");
+    this->setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+  }
+
+  if (PRIVATE(this)->renderPipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
+    this->renderDrawListPipeline(clearwindow, clearzbuffer);
     return;
   }
 
@@ -1021,22 +1154,19 @@ SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
     this->render(action, TRUE, clearwindow, clearzbuffer);
 
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-      if (SoRenderer::isOpenGL() &&
-          sogl_context_supports_legacy_rendering(action->getState())) {
-        // check if we have an accumulation buffer, and render additional passes
-        GLint accumbits;
-        glGetIntegerv(GL_ACCUM_RED_BITS, &accumbits);
-        if (!action->hasTerminated() && accumbits > 0) {
-          const float fraction = 1.0f / float(numpasses);
-          glAccum(GL_LOAD, fraction);
+      // Check if we have an accumulation buffer, and render additional passes.
+      GLint accumbits;
+      glGetIntegerv(GL_ACCUM_RED_BITS, &accumbits);
+      if (!action->hasTerminated() && accumbits > 0) {
+        const float fraction = 1.0f / float(numpasses);
+        glAccum(GL_LOAD, fraction);
 
-          for (int i = 1; (i < numpasses) && !action->hasTerminated(); i++) {
-            action->setCurPass(i, numpasses);
-            this->render(action, TRUE, TRUE, TRUE);
-            glAccum(GL_ACCUM, fraction);
-          }
-          glAccum(GL_RETURN, 1.0f);
+        for (int i = 1; (i < numpasses) && !action->hasTerminated(); i++) {
+          action->setCurPass(i, numpasses);
+          this->render(action, TRUE, TRUE, TRUE);
+          glAccum(GL_ACCUM, fraction);
         }
+        glAccum(GL_RETURN, 1.0f);
       }
 #endif // COIN_BUILD_LEGACY_GL_RENDERER
 
@@ -1063,27 +1193,69 @@ SoRenderManager::render(SoGLRenderAction * action,
                         const SbBool clearzbuffer)
 {
   SbBool clearwindow_tmp = clearwindow; // make sure we only clear the color buffer once
+  SbBool clearzbuffer_tmp = clearzbuffer;
   PRIVATE(this)->invokePreRenderCallbacks();
 
   if (PRIVATE(this)->superimpositions) {
     for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
       Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
       if (s->getStateFlags() & Superimposition::BACKGROUND) {
+        SoState * state = action->getState();
+        state->push();
+        setCommonTraversalState(state,
+                                PRIVATE(this)->dummynode,
+                                PRIVATE(this)->devicePixelRatio);
         s->render(action, clearwindow_tmp);
+        state->pop();
         clearwindow_tmp = FALSE;
       }
     }
   }
 
+  if (PRIVATE(this)->renderLayerBackgroundRoot) {
+    SoState * state = action->getState();
+    state->push();
+    setCommonTraversalState(state,
+                            PRIVATE(this)->dummynode,
+                            PRIVATE(this)->devicePixelRatio);
+    uint32_t clearmask = 0;
+    if (clearwindow_tmp) clearmask |= GL_COLOR_BUFFER_BIT;
+    if (clearzbuffer_tmp) clearmask |= GL_DEPTH_BUFFER_BIT;
+    this->renderScene(action,
+                      PRIVATE(this)->renderLayerBackgroundRoot,
+                      clearmask);
+    state->pop();
+    clearwindow_tmp = FALSE;
+    clearzbuffer_tmp = FALSE;
+  }
+
   (this->getStereoMode() == SoRenderManager::MONO) ?
-    this->renderSingle(action, initmatrices, clearwindow_tmp, clearzbuffer):
-    this->renderStereo(action, initmatrices, clearwindow_tmp, clearzbuffer);
+    this->renderSingle(action, initmatrices, clearwindow_tmp, clearzbuffer_tmp):
+    this->renderStereo(action, initmatrices, clearwindow_tmp, clearzbuffer_tmp);
+
+  PRIVATE(this)->invokeAfterMainSceneCallbacks(action);
+
+  if (PRIVATE(this)->renderLayerForegroundRoot) {
+    SoState * state = action->getState();
+    state->push();
+    setCommonTraversalState(state,
+                            PRIVATE(this)->dummynode,
+                            PRIVATE(this)->devicePixelRatio);
+    action->apply(PRIVATE(this)->renderLayerForegroundRoot);
+    state->pop();
+  }
 
   if (PRIVATE(this)->superimpositions) {
     for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
       Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
       if (!(s->getStateFlags() & Superimposition::BACKGROUND)) {
+        SoState * state = action->getState();
+        state->push();
+        setCommonTraversalState(state,
+                                PRIVATE(this)->dummynode,
+                                PRIVATE(this)->devicePixelRatio);
         s->render(action);
+        state->pop();
       }
     }
   }
@@ -1116,15 +1288,13 @@ SoRenderManager::actuallyRender(SoGLRenderAction * action,
   if (clearzbuffer) mask |= GL_DEPTH_BUFFER_BIT;
 
   if (initmatrices) {
-    if (SoRenderer::isOpenGL()) {
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-      if (sogl_context_supports_legacy_rendering(action->getState())) {
-        glMatrixMode(GL_PROJECTION);
-        glLoadIdentity();
-        glMatrixMode(GL_MODELVIEW);
-        glLoadIdentity();
-      }
-    }
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+#else
+    (void)action;
 #endif
   }
 
@@ -1184,11 +1354,10 @@ SoRenderManager::renderScene( SoGLRenderAction * action,
           glClearColor(bgcol[0], bgcol[1], bgcol[2], bgcol[3]);
       } else {
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-          if (sogl_context_supports_legacy_rendering(action->getState())) {
-            glClearIndex((GLfloat) PRIVATE(this)->backgroundindex);
-          }
+          glClearIndex((GLfloat) PRIVATE(this)->backgroundindex);
 #else
-          assert(0 && "Not implemented for non-compatibility GL renderer");
+          // Indexed clears are unavailable in the core/GLES build. The
+          // draw-list pipeline uses RGBA clears and never reaches this path.
 #endif
       }
     }
@@ -1252,9 +1421,7 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
       this->clearBuffers(FALSE, TRUE);
 
       // only draw into depth buffer
-      if (SoRenderer::isOpenGL()) {
-        glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
-      }
+      glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
       SoMaterialBindingElement::set(state, node, SoMaterialBindingElement::OVERALL);
       SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
       SoPolygonOffsetElement::set(state, node, 1.0f, 1.0f,
@@ -1265,9 +1432,7 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
       this->actuallyRender(action, initmatrices, FALSE, FALSE);
 
       // re-enable draw masks
-      if (SoRenderer::isOpenGL()) {
-        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-      }
+      glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
       SoPolygonOffsetElement::set(state, node, 0.0f, 0.0f,
                                   SoPolygonOffsetElement::FILLED, FALSE);
       SoDrawStyleElement::set(state, node, SoDrawStyleElement::LINES);
@@ -1301,23 +1466,23 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
       SoOverrideElement::setPolygonOffsetOverride(state, node, TRUE);
       
       // sanity checks
-      if (SoRenderer::isOpenGL()) {
-        glDisable(GL_LINE_STIPPLE);
-        glDepthMask(GL_FALSE);
-        glDepthFunc(GL_LEQUAL);
-      }
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
+      glDisable(GL_LINE_STIPPLE);
+      glDepthMask(GL_FALSE);
+      glDepthFunc(GL_LEQUAL);
+#endif
 
       // render visible edges as solid ones
       this->actuallyRender(action, initmatrices, FALSE, FALSE);
       
       // pass 3
       // render hidden edges using dashed state when available
-      if (SoRenderer::isOpenGL()) {
-        glDepthFunc(GL_GREATER);
-        glLineWidth(1.0f);
-        glEnable(GL_LINE_STIPPLE);
-        glLineStipple(2, 0xF0F0); // dashed line
-      }
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
+      glDepthFunc(GL_GREATER);
+      glLineWidth(1.0f);
+      glEnable(GL_LINE_STIPPLE);
+      glLineStipple(2, 0xF0F0); // dashed line
+#endif
       SoLineWidthElement::set(state, node, 1.0f);
       SoOverrideElement::setLineWidthOverride(state, node, TRUE);
       
@@ -1325,12 +1490,12 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
       this->actuallyRender(action, initmatrices, FALSE, FALSE);
 
       // Restore OpenGL state
-      if (SoRenderer::isOpenGL()) {
-        glDisable(GL_LINE_STIPPLE);
-        glDepthMask(GL_TRUE);
-        glDepthFunc(GL_LEQUAL);
-        glLineWidth(1.0f);
-      }
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
+      glDisable(GL_LINE_STIPPLE);
+      glDepthMask(GL_TRUE);
+      glDepthFunc(GL_LEQUAL);
+      glLineWidth(1.0f);
+#endif
     }
     break;
   case SoRenderManager::WIREFRAME_OVERLAY:
@@ -1380,8 +1545,7 @@ SoRenderManager::renderStereo(SoGLRenderAction * action,
                               SbBool clearzbuffer)
 {
   if (!PRIVATE(this)->camera) return;
-  if (SoRenderer::isOpenGL()) {
-    this->clearBuffers(TRUE, TRUE);
+  this->clearBuffers(FALSE, TRUE);
     PRIVATE(this)->camera->setStereoAdjustment(PRIVATE(this)->stereooffset);
 
     SbBool stenciltestenabled = glIsEnabled(GL_STENCIL_TEST);
@@ -1454,11 +1618,7 @@ SoRenderManager::renderStereo(SoGLRenderAction * action,
       assert(0 && "unknown stereo mode");
       break;
     }
-    return;
-  }
-
-  // Fall back to mono rendering for non-OpenGL backends.
-  this->renderSingle(action, initmatrices, clearwindow, clearzbuffer);
+  return;
 }
 
 /*!
@@ -1493,10 +1653,9 @@ SoRenderManager::setAutoClipping(AutoClippingStrategy autoclipping)
 void
 SoRenderManager::initStencilBufferForInterleavedStereo(void)
 {
-  if (!SoRenderer::isOpenGL()) {
-    return;
-  }
-
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  return;
+#else
   const SbViewportRegion & currentvp = PRIVATE(this)->glaction->getViewportRegion();
   if (PRIVATE(this)->stereostencilmaskvp == currentvp) { return; } // the common case
 
@@ -1579,21 +1738,16 @@ SoRenderManager::initStencilBufferForInterleavedStereo(void)
     // XFree86 v4.1.0.1). Should test on other systems to see if they
     // show the same artifact.
 
-#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-  //if (sogl_context_supports_legacy_rendering(state)) {
     glRasterPos2f(0, 0);
     glDrawPixels(newsize[0], newsize[1], GL_STENCIL_INDEX, GL_BITMAP,
                  PRIVATE(this)->stereostencilmask);
-  //}
-#else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
-#endif
 
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
     glPopMatrix();
   }
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
 }
 
 /*!
@@ -1647,6 +1801,7 @@ SoRenderManager::setWindowSize(const SbVec2s & newsize)
   SbViewportRegion region = PRIVATE(this)->backendViewport;
   region.setWindowSize(newsize[0], newsize[1]);
   PRIVATE(this)->backendViewport = region;
+  clearBackendFailure(PRIVATE(this));
   PRIVATE(this)->glaction->setViewportRegion(region);
 }
 
@@ -1677,6 +1832,7 @@ SoRenderManager::setSize(const SbVec2s & newsize)
   SbVec2s origin = region.getViewportOriginPixels();
   region.setViewportPixels(origin, newsize);
   PRIVATE(this)->backendViewport = region;
+  clearBackendFailure(PRIVATE(this));
   PRIVATE(this)->glaction->setViewportRegion(region);
 }
 
@@ -1707,6 +1863,7 @@ SoRenderManager::setOrigin(const SbVec2s & newOrigin)
   SbVec2s size = region.getViewportSizePixels();
   region.setViewportPixels(newOrigin, size);
   PRIVATE(this)->backendViewport = region;
+  clearBackendFailure(PRIVATE(this));
   PRIVATE(this)->glaction->setViewportRegion(region);
 }
 
@@ -1733,6 +1890,7 @@ void
 SoRenderManager::setViewportRegion(const SbViewportRegion & newregion)
 {
   PRIVATE(this)->backendViewport = newregion;
+  clearBackendFailure(PRIVATE(this));
   PRIVATE(this)->glaction->setViewportRegion(newregion);
 }
 
@@ -1918,8 +2076,9 @@ SoRenderManager::isAutoRedraw(void) const
 void
 SoRenderManager::setRenderMode(const RenderMode mode)
 {
+  if (PRIVATE(this)->rendermode == mode) return;
   PRIVATE(this)->rendermode = mode;
-  this->scheduleRedraw();
+  this->invalidateScene();
   PRIVATE(this)->dummynode->touch();
 }
 
@@ -1930,6 +2089,24 @@ SoRenderManager::RenderMode
 SoRenderManager::getRenderMode(void) const
 {
   return PRIVATE(this)->rendermode;
+}
+
+void
+SoRenderManager::setLightingMode(const LightingMode mode)
+{
+  if (PRIVATE(this)->lightingmode == mode) return;
+  PRIVATE(this)->lightingmode = mode;
+  if (PRIVATE(this)->renderPipeline == SoRenderManager::RenderPipeline::LEGACY_GL) {
+    PRIVATE(this)->glaction->invalidateState();
+  }
+  this->invalidateScene();
+  PRIVATE(this)->dummynode->touch();
+}
+
+SoRenderManager::LightingMode
+SoRenderManager::getLightingMode(void) const
+{
+  return PRIVATE(this)->lightingmode;
 }
 
 /*!
@@ -1981,6 +2158,8 @@ SoRenderManager::getStereoOffset(void) const
 void
 SoRenderManager::setAntialiasing(const SbBool smoothing, const int numpasses)
 {
+  PRIVATE(this)->lineSmoothing = smoothing;
+  PRIVATE(this)->pointSmoothing = smoothing;
   PRIVATE(this)->glaction->setSmoothing(smoothing);
   PRIVATE(this)->glaction->setNumPasses(numpasses);
   this->scheduleRedraw();
@@ -1996,6 +2175,42 @@ SoRenderManager::getAntialiasing(SbBool & smoothing, int & numpasses) const
 {
   smoothing = PRIVATE(this)->glaction->isSmoothing();
   numpasses = PRIVATE(this)->glaction->getNumPasses();
+}
+
+/*! Enable or disable line primitive smoothing independently of multisampling. */
+void
+SoRenderManager::setLineSmoothing(const SbBool smoothing)
+{
+  if (PRIVATE(this)->lineSmoothing == smoothing) return;
+  PRIVATE(this)->lineSmoothing = smoothing;
+  if (PRIVATE(this)->glaction) {
+    PRIVATE(this)->glaction->setLineSmoothing(smoothing);
+  }
+  this->scheduleRedraw();
+}
+
+SbBool
+SoRenderManager::getLineSmoothing(void) const
+{
+  return PRIVATE(this)->lineSmoothing;
+}
+
+/*! Enable or disable point primitive smoothing independently of multisampling. */
+void
+SoRenderManager::setPointSmoothing(const SbBool smoothing)
+{
+  if (PRIVATE(this)->pointSmoothing == smoothing) return;
+  PRIVATE(this)->pointSmoothing = smoothing;
+  if (PRIVATE(this)->glaction) {
+    PRIVATE(this)->glaction->setPointSmoothing(smoothing);
+  }
+  this->scheduleRedraw();
+}
+
+SbBool
+SoRenderManager::getPointSmoothing(void) const
+{
+  return PRIVATE(this)->pointSmoothing;
 }
 
 /*!
@@ -2024,16 +2239,71 @@ SoRenderManager::setGLRenderAction(SoGLRenderAction * const action)
   if (action && action != PRIVATE(this)->glaction) action->invalidateState();
   PRIVATE(this)->glaction = action;
   PRIVATE(this)->deleteglaction = FALSE;
-  if (PRIVATE(this)->glaction && haveregion)
-    PRIVATE(this)->glaction->setViewportRegion(region);
+  clearBackendFailure(PRIVATE(this));
+  if (PRIVATE(this)->glaction) {
+    PRIVATE(this)->glaction->setLineSmoothing(PRIVATE(this)->lineSmoothing);
+    PRIVATE(this)->glaction->setPointSmoothing(PRIVATE(this)->pointSmoothing);
+    if (haveregion)
+      PRIVATE(this)->glaction->setViewportRegion(region);
+  }
 }
 
 void
 SoRenderManager::setRenderPipeline(RenderPipeline pipeline)
 {
-  if (pipeline == PRIVATE(this)->renderPipeline) return;
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  if (pipeline == RenderPipeline::LEGACY_GL) {
+    SoDebugError::postWarning(
+      "SoRenderManager::setRenderPipeline",
+      "LegacyGL is unavailable in this build; keeping the draw-list pipeline");
+    return;
+  }
+#else
+  if (pipeline == RenderPipeline::LEGACY_GL &&
+      coin_gl_current_context() != NULL &&
+      !sogl_legacy_rendering_available(sogl_current_glue())) {
+    SoDebugError::postWarning(
+      "SoRenderManager::setRenderPipeline",
+      "LegacyGL is unavailable for the active context; keeping the draw-list pipeline");
+    return;
+  }
+#endif
+  if (pipeline == PRIVATE(this)->renderPipeline) {
+    if (pipeline == RenderPipeline::DRAW_LIST) {
+      clearBackendFailure(PRIVATE(this));
+      this->invalidateScene();
+    }
+    return;
+  }
+
+  this->invalidateSharedGLState();
+
+  if (PRIVATE(this)->renderPipeline == RenderPipeline::DRAW_LIST) {
+    this->clearDrawListSelection();
+    this->clearDrawListHighlight();
+  }
+
   PRIVATE(this)->renderPipeline = pipeline;
-  this->scheduleRedraw();
+  if (pipeline == RenderPipeline::DRAW_LIST) {
+    clearBackendFailure(PRIVATE(this));
+    this->invalidateScene();
+  }
+  else {
+    this->scheduleRedraw();
+  }
+}
+
+void
+SoRenderManager::invalidateSharedGLState(void)
+{
+  if (!PRIVATE(this)->glaction) return;
+
+  const uint32_t context = PRIVATE(this)->glaction->getCacheContext();
+  SoGLCacheContextElement::invalidateContextState(context);
+
+  // Keep the manager-owned action immediately ready for a transition while
+  // the generation also covers temporary actions sharing this context.
+  PRIVATE(this)->glaction->invalidateState();
 }
 
 SoRenderManager::RenderPipeline
@@ -2045,6 +2315,7 @@ SoRenderManager::getRenderPipeline(void) const
 void
 SoRenderManager::releaseRenderBackendResources(void)
 {
+  clearBackendFailure(PRIVATE(this));
   SoRenderBackend * backend = PRIVATE(this)->renderBackend;
   if (backend && backend->isInitialized()) {
     backend->shutdown();
@@ -2054,6 +2325,7 @@ SoRenderManager::releaseRenderBackendResources(void)
 void
 SoRenderManager::discardRenderBackendResources(void)
 {
+  clearBackendFailure(PRIVATE(this));
   SoRenderBackend * backend = PRIVATE(this)->renderBackend;
   if (backend && backend->isInitialized()) {
     backend->discard();
@@ -2076,12 +2348,15 @@ void
 SoRenderManager::setRenderLayerRoot(RenderLayer layer, SoNode * root)
 {
   SoNode ** slot = NULL;
+  SoNodeSensor ** sensorSlot = NULL;
   switch (layer) {
   case RENDER_LAYER_BACKGROUND:
     slot = &PRIVATE(this)->renderLayerBackgroundRoot;
+    sensorSlot = &PRIVATE(this)->renderLayerBackgroundSensor;
     break;
   case RENDER_LAYER_FOREGROUND:
     slot = &PRIVATE(this)->renderLayerForegroundRoot;
+    sensorSlot = &PRIVATE(this)->renderLayerForegroundSensor;
     break;
   default:
     assert(0 && "unknown render layer");
@@ -2092,21 +2367,29 @@ SoRenderManager::setRenderLayerRoot(RenderLayer layer, SoNode * root)
     return;
   }
 
+  if (*sensorSlot) {
+    (*sensorSlot)->detach();
+  }
+
   if (*slot) {
     (*slot)->unref();
   }
   *slot = root;
   if (root) {
     root->ref();
+    if (!*sensorSlot) {
+      *sensorSlot = new SoNodeSensor(SoRenderManager::nodesensorCB, this);
+      (*sensorSlot)->setPriority(PRIVATE(this)->redrawpri == 0 ? 0 : 1);
+    }
+    (*sensorSlot)->attach(root);
   }
 
   if (layer == RENDER_LAYER_BACKGROUND) {
-    PRIVATE(this)->sceneGeneration++;
+    this->invalidateScene();
   }
   else {
-    PRIVATE(this)->foregroundGeneration++;
+    this->invalidateForeground();
   }
-  this->scheduleRedraw();
 }
 
 SoNode *
@@ -2260,7 +2543,20 @@ SoRenderManager::assemblePickedPoint(int screenX, int screenY, int pickRadius) c
 void
 SoRenderManager::invalidateDrawList()
 {
+  this->invalidateScene();
+}
+
+void
+SoRenderManager::invalidateScene()
+{
   PRIVATE(this)->sceneGeneration++;
+  PRIVATE(this)->foregroundGeneration++;
+  this->scheduleRedraw();
+}
+
+void
+SoRenderManager::invalidateForeground()
+{
   PRIVATE(this)->foregroundGeneration++;
   this->scheduleRedraw();
 }
@@ -2277,9 +2573,7 @@ SoRenderManager::setDrawListHighlight(uint32_t lutIndex, const SbColor4f & color
   for (int i = 0; i < numCmds; i++) {
     SoRenderCommand & cmd = drawlist.getCommand(i);
     cmd.selection.highlightWholeObject = false;
-    if (cmd.selection.highlightElement != -1) {
-      cmd.selection.highlightElement = -1;
-    }
+    cmd.selection.highlightedElements.clear();
   }
 
   if (lutIndex == 0) return true;  // Just clearing
@@ -2293,8 +2587,10 @@ SoRenderManager::setDrawListHighlight(uint32_t lutIndex, const SbColor4f & color
 
   SoRenderCommand & cmd = drawlist.getCommand(cmdIdx);
   cmd.selection.highlightWholeObject = (entry.elementType == SO_PICK_WHOLE_BODY);
-  cmd.selection.highlightElement =
-    (entry.elementType == SO_PICK_WHOLE_BODY) ? -1 : entry.elementIndex;
+  cmd.selection.highlightedElements.clear();
+  if (entry.elementType != SO_PICK_WHOLE_BODY) {
+    cmd.selection.highlightedElements.push_back(entry.elementIndex);
+  }
   cmd.selection.highlightColor.setValue(color[0], color[1], color[2], color[3]);
   return true;
 }
@@ -2395,7 +2691,9 @@ SoRenderManager::clearDrawListSelection()
 void
 SoRenderManager::setDevicePixelRatio(float dpr)
 {
+  if (PRIVATE(this)->devicePixelRatio == dpr) return;
   PRIVATE(this)->devicePixelRatio = dpr;
+  this->invalidateScene();
 }
 
 float
@@ -2690,6 +2988,28 @@ SoRenderManager::removePostRenderCallback(SoRenderManagerRenderCB * cb, void * d
         "Tried to remove a cb,data tuple which doesn't exist"
         );
   PRIVATE(this)->postRenderCallbacks.erase(findit);
+}
+
+void
+SoRenderManager::addAfterMainSceneCallback(SoRenderManagerStageCB * cb, void * data)
+{
+  PRIVATE(this)->afterMainSceneCallbacks.push_back(
+    SoRenderManagerP::StageCBTouple(cb, data)
+  );
+}
+
+void
+SoRenderManager::removeAfterMainSceneCallback(SoRenderManagerStageCB * cb, void * data)
+{
+  std::vector<SoRenderManagerP::StageCBTouple>::iterator findit =
+    std::find(PRIVATE(this)->afterMainSceneCallbacks.begin(),
+              PRIVATE(this)->afterMainSceneCallbacks.end(),
+              SoRenderManagerP::StageCBTouple(cb, data));
+  assert(
+    (findit != PRIVATE(this)->afterMainSceneCallbacks.end())
+    && "Tried to remove an after-main-scene callback which doesn't exist"
+  );
+  PRIVATE(this)->afterMainSceneCallbacks.erase(findit);
 }
 
 #undef PRIVATE
