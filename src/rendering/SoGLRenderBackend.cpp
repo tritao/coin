@@ -1575,8 +1575,21 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
 void
 SoGLRenderBackend::endFrame()
 {
+#if defined(__APPLE__) && !defined(glBindVertexArray)
+  glBindVertexArrayAPPLE(0);
+#else
   glBindVertexArray(0);
+#endif
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
   glUseProgram(0);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, 0);
+  glDepthMask(GL_TRUE);
+  glDepthFunc(GL_LEQUAL);
+  glDisable(GL_BLEND);
+  glDisable(GL_CULL_FACE);
+  glDisable(GL_POLYGON_OFFSET_FILL);
   gcStaleEntries(this->currentFrame);
 }
 
@@ -1666,8 +1679,8 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
   renderTransparentPass(drawlist, SoRenderStage::AfterMain, viewMat, projMat, params);
   renderSelectionPass(drawlist, SoRenderStage::AfterMain, viewMat, projMat, params);
   renderOverlayPass(drawlist, viewMat, projMat, params);
-  endFrame();
   renderIDBufferPass(drawlist, viewMat, projMat, params);
+  endFrame();
 
   return TRUE;
 }
