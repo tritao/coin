@@ -12,6 +12,7 @@ uniform vec4 u_color;
 uniform float u_useVertexColor;
 uniform float u_renderMode;
 uniform int u_shadingModel;
+uniform int u_twoSidedLighting;
 uniform vec3 u_quadCenter;
 uniform vec2 u_texSize;
 uniform vec2 u_vpSize;
@@ -38,6 +39,9 @@ out float v_lineDistance;
 vec3 computeLitColor(vec3 eyePos, vec3 eyeNormal, vec3 baseColor)
 {
   vec3 N = normalize(eyeNormal);
+  if (u_twoSidedLighting != 0 && dot(N, vec3(0.0, 0.0, 1.0)) < 0.0) {
+    N = -N;
+  }
   vec3 V = normalize(-eyePos);
   vec3 litColor = u_ambientLight * u_materialAmbient;
   float shininess = max(u_materialShininess * 128.0, 0.0);
