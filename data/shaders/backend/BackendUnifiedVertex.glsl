@@ -11,6 +11,8 @@ uniform mat4 u_model;
 uniform vec4 u_color;
 uniform float u_useVertexColor;
 uniform float u_renderMode;
+uniform int u_shadingModel;
+uniform int u_twoSidedLighting;
 uniform vec3 u_quadCenter;
 uniform vec2 u_texSize;
 uniform vec2 u_vpSize;
@@ -28,18 +30,18 @@ uniform vec3 u_materialAmbient;
 uniform vec3 u_materialSpecular;
 uniform float u_materialShininess;
 
-out vec3 v_eyePos;
-out vec3 v_eyeNormal;
 out vec3 v_litColor;
 out vec4 v_color;
+out float v_vertexAlpha;
 out vec2 v_texcoord;
-out vec2 v_winPos;
 out float v_lineDistance;
 
 vec3 computeLitColor(vec3 eyePos, vec3 eyeNormal, vec3 baseColor)
 {
   vec3 N = normalize(eyeNormal);
-  if (dot(N, vec3(0.0, 0.0, 1.0)) < 0.0) N = -N;
+  if (u_twoSidedLighting != 0 && dot(N, vec3(0.0, 0.0, 1.0)) < 0.0) {
+    N = -N;
+  }
   vec3 V = normalize(-eyePos);
   vec3 litColor = u_ambientLight * u_materialAmbient;
   float shininess = max(u_materialShininess * 128.0, 0.0);
@@ -85,7 +87,11 @@ vec3 computeLitColor(vec3 eyePos, vec3 eyeNormal, vec3 baseColor)
 
 void main()
 {
+  // Keep vertex alpha as a separate modulation so material opacity is
+  // composed exactly once in the fragment stage. RGB retains the legacy
+  // vertex-color replacement behavior, including flat overlays.
   v_color = (u_useVertexColor > 0.5) ? a_color : u_color;
+  v_vertexAlpha = (u_useVertexColor > 0.5) ? a_color.a : 1.0;
   v_litColor = vec3(0.0);
   v_texcoord = a_texcoord;
 
@@ -94,9 +100,6 @@ void main()
     vec2 pixelPos = u_pixelTextOrigin + a_texcoord * u_texSize;
     vec2 ndcPos = 2.0 * pixelPos / u_vpSize - 1.0;
     gl_Position = vec4(ndcPos * centerClip.w, centerClip.z, centerClip.w);
-    v_eyePos = vec3(0.0);
-    v_eyeNormal = vec3(0.0, 0.0, 1.0);
-    v_winPos = pixelPos;
     v_lineDistance = 0.0;
   }
   else if (u_renderMode > 1.5 && u_renderMode < 2.5) {
@@ -104,20 +107,17 @@ void main()
     vec2 pixelOffset = (a_texcoord - vec2(0.5)) * u_texSize;
     vec2 ndcOffset = 2.0 * pixelOffset / u_vpSize;
     gl_Position = centerClip + vec4(ndcOffset * centerClip.w, 0.0, 0.0);
-    v_eyePos = vec3(0.0);
-    v_eyeNormal = vec3(0.0, 0.0, 1.0);
-    v_winPos = vec2(0.0);
     v_lineDistance = 0.0;
   }
   else {
     vec4 worldPos = u_model * vec4(a_position, 1.0);
     vec4 eyePos = u_view * worldPos;
-    v_eyePos = eyePos.xyz;
-    v_eyeNormal = mat3(u_view) * mat3(u_model) * a_normal;
+    vec3 eyeNormal = mat3(u_view) * mat3(u_model) * a_normal;
     vec3 baseColor = (u_useVertexColor > 0.5) ? a_color.rgb : u_color.rgb;
-    v_litColor = computeLitColor(v_eyePos, v_eyeNormal, baseColor);
+    v_litColor = u_shadingModel == 0
+      ? baseColor
+      : computeLitColor(eyePos.xyz, eyeNormal, baseColor);
     gl_Position = u_proj * eyePos;
-    v_winPos = (gl_Position.xy / gl_Position.w + 1.0) * 0.5 * u_vpSize;
     v_lineDistance = a_lineDistance;
   }
 }

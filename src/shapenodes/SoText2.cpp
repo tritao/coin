@@ -342,7 +342,11 @@ SoText2::initClass(void)
 void
 SoText2::GLRender(SoGLRenderAction * action)
 {
-  if (!this->shouldGLRender(action)) return;
+  // SoText2 is a custom pixel renderer, not a primitive-cache triangle
+  // producer. Keep normal transparent-object deferral, but render the text
+  // itself during the transparent pass instead of asking SoShape to sort a
+  // nonexistent triangle cache.
+  if (!inherited::shouldGLRender(action, FALSE)) return;
 
   SoState * state = action->getState();
 
@@ -572,10 +576,16 @@ SoText2::render(SoIRRenderAction * action)
   cmd.material.texture.numComponents = 4;
   cmd.material.flags |= SO_MAT_HAS_TEXTURE | SO_MAT_IS_BILLBOARD |
                         SO_MAT_IS_PIXEL_TEXT;
+  cmd.material.textureAlphaIncludesOpacity = true;
+  cmd.state.alphaTest.policy = SO_ALPHA_TEST_POLICY_LEGACY_THRESHOLD;
+  cmd.state.alphaTest.reference = 0.3f;
+  SoRenderIR::ensureMaterialBlendState(cmd.state, cmd.material);
   cmd.pixelText.originX = pixelOrigin[0];
   cmd.pixelText.originY = pixelOrigin[1];
 
-  cmd.pass = SO_RENDERPASS_OPAQUE;
+  cmd.pass = SoRenderIR::isMaterialTransparent(cmd.material)
+    ? SO_RENDERPASS_TRANSPARENT
+    : SO_RENDERPASS_OPAQUE;
   if (!action->isAfterMainStage()
       && SoRenderPlacementElement::getLayer(state) ==
           SoRenderPlacementElement::FOREGROUND) {

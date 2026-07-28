@@ -17,19 +17,27 @@
 #include <Inventor/SoOffscreenRenderer.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoIRRenderAction.h>
+#include <Inventor/elements/SoDepthBufferElement.h>
 #include <Inventor/elements/SoDevicePixelRatioElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
+#include <Inventor/elements/SoLazyElement.h>
 #include <Inventor/nodes/SoCallback.h>
 #include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoFaceSet.h>
 #include <Inventor/nodes/SoLightModel.h>
 #include <Inventor/nodes/SoMaterial.h>
+#include <Inventor/nodes/SoNormal.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
+#include <Inventor/nodes/SoShapeHints.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/rendering/SoRenderIR.h>
+#include <Inventor/system/gl.h>
+
+#include <rendering/SoRenderIRP.h>
 
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 
 class TestDevicePixelRatioElement : public SoDevicePixelRatioElement
 {
@@ -59,6 +67,42 @@ struct StageProbe {
   int calls = 0;
 };
 
+struct RenderStateProbe {
+  SoRenderState standardBlend;
+  SoRenderState separateBlend;
+  bool captured = false;
+};
+
+static void captureBlendAndDepthState(void * userdata, SoAction * action)
+{
+  if (!action->isOfType(SoIRRenderAction::getClassTypeId())) {
+    return;
+  }
+
+  auto * probe = static_cast<RenderStateProbe *>(userdata);
+  SoState * state = action->getState();
+
+  SoLazyElement::enableBlending(state, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  SoRenderIR::fillRenderStateFromState(state, probe->standardBlend);
+
+  // Use GL_ZERO for the alpha source factor: this specifically verifies that
+  // separate blending is represented by state, rather than inferred from a
+  // non-zero alpha factor.
+  SoLazyElement::enableSeparateBlending(state,
+                                        GL_DST_COLOR,
+                                        GL_ONE_MINUS_SRC_COLOR,
+                                        GL_ZERO,
+                                        GL_SRC_ALPHA);
+  SoDepthBufferElement::set(state,
+                            TRUE,
+                            FALSE,
+                            SoDepthBufferElement::GREATER,
+                            SbVec2f(0.1f, 100.0f));
+  SoLazyElement::setAlphaTest(state, GL_GREATER, 0.37f);
+  SoRenderIR::fillRenderStateFromState(state, probe->separateBlend);
+  probe->captured = true;
+}
+
 static void appendIdentifiableIRCommand(void * userdata,
                                         SoRenderManager *,
                                         SoAction * action)
@@ -86,6 +130,55 @@ struct SharedContextRenderProbe {
   int invalidationsBeforeBackend = 0;
   int invalidationsAfterBackend = 0;
 };
+
+static const SoRenderCommand *findGeometryCommand(const SoDrawList & drawlist)
+{
+  for (int i = 0; i < drawlist.getNumCommands(); ++i) {
+    const SoRenderCommand & command = drawlist.getCommand(i);
+    if (command.geometry.vertexCount != 0) {
+      return &command;
+    }
+  }
+  return nullptr;
+}
+
+static SoSeparator *makeShadingModelProbeScene(SoLightModel::Model model,
+                                               bool twoSidedLighting = false)
+{
+  SoSeparator *scene = new SoSeparator;
+  scene->ref();
+
+  SoLightModel *lightModel = new SoLightModel;
+  lightModel->model = model;
+  scene->addChild(lightModel);
+
+  if (twoSidedLighting) {
+    SoShapeHints *shapeHints = new SoShapeHints;
+    shapeHints->vertexOrdering = SoShapeHints::COUNTERCLOCKWISE;
+    shapeHints->shapeType = SoShapeHints::UNKNOWN_SHAPE_TYPE;
+    scene->addChild(shapeHints);
+  }
+
+  SoMaterial *material = new SoMaterial;
+  material->diffuseColor.setValue(0.8f, 0.2f, 0.1f);
+  scene->addChild(material);
+
+  SoCoordinate3 *coordinates = new SoCoordinate3;
+  coordinates->point.set1Value(0, -1.0f, -1.0f, 0.0f);
+  coordinates->point.set1Value(1, 1.0f, -1.0f, 0.0f);
+  coordinates->point.set1Value(2, 1.0f, 1.0f, 0.0f);
+  coordinates->point.set1Value(3, -1.0f, 1.0f, 0.0f);
+  scene->addChild(coordinates);
+
+  SoNormal *normals = new SoNormal;
+  normals->vector.set1Value(0, 0.0f, 0.0f, 1.0f);
+  scene->addChild(normals);
+
+  SoFaceSet *faces = new SoFaceSet;
+  faces->numVertices.setValue(4);
+  scene->addChild(faces);
+  return scene;
+}
 
 static void renderManagerFromCallback(void * userdata, SoAction * action)
 {
@@ -308,6 +401,110 @@ BOOST_AUTO_TEST_CASE(draw_list_invalidates_all_shared_gl_actions)
   BOOST_CHECK(probe.invalidationsAfterBackend > probe.invalidationsBeforeBackend);
 
   outer->unref();
+}
+
+BOOST_AUTO_TEST_CASE(ir_commands_carry_explicit_shading_model)
+{
+  SoIRRenderAction action(SbViewportRegion(32, 32));
+
+  SoSeparator *litScene = makeShadingModelProbeScene(SoLightModel::PHONG);
+  action.apply(litScene);
+  const SoRenderCommand *litCommand = findGeometryCommand(action.getDrawList());
+  BOOST_REQUIRE(litCommand);
+  BOOST_CHECK(litCommand->material.shadingModel == SO_SHADING_LEGACY_GOURAUD);
+  litScene->unref();
+
+  SoSeparator *unlitScene = makeShadingModelProbeScene(SoLightModel::BASE_COLOR);
+  action.apply(unlitScene);
+  const SoRenderCommand *unlitCommand = findGeometryCommand(action.getDrawList());
+  BOOST_REQUIRE(unlitCommand);
+  BOOST_CHECK(unlitCommand->material.shadingModel == SO_SHADING_UNLIT);
+  unlitScene->unref();
+
+  SoSeparator *oneSidedScene = makeShadingModelProbeScene(SoLightModel::PHONG);
+  action.apply(oneSidedScene);
+  const SoRenderCommand *oneSidedCommand = findGeometryCommand(action.getDrawList());
+  BOOST_REQUIRE(oneSidedCommand);
+  BOOST_CHECK(!oneSidedCommand->material.twoSidedLighting);
+  oneSidedScene->unref();
+
+  SoSeparator *twoSidedScene = makeShadingModelProbeScene(SoLightModel::PHONG, true);
+  action.apply(twoSidedScene);
+  const SoRenderCommand *twoSidedCommand = findGeometryCommand(action.getDrawList());
+  BOOST_REQUIRE(twoSidedCommand);
+  BOOST_CHECK(twoSidedCommand->material.twoSidedLighting);
+  twoSidedScene->unref();
+}
+
+BOOST_AUTO_TEST_CASE(ir_captures_semantic_blend_depth_and_alpha_test_state)
+{
+  RenderStateProbe probe;
+  SoCallback * callback = new SoCallback;
+  callback->setCallback(captureBlendAndDepthState, &probe);
+
+  SoSeparator * scene = new SoSeparator;
+  scene->ref();
+  scene->addChild(callback);
+
+  SoIRRenderAction action(SbViewportRegion(1, 1));
+  action.apply(scene);
+
+  BOOST_REQUIRE(probe.captured);
+
+  BOOST_CHECK(probe.standardBlend.blend.enabled);
+  BOOST_CHECK(probe.standardBlend.blend.srcRGBFactor ==
+              SO_BLEND_FACTOR_SRC_ALPHA);
+  BOOST_CHECK(probe.standardBlend.blend.dstRGBFactor ==
+              SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
+  BOOST_CHECK(probe.standardBlend.blend.srcAlphaFactor ==
+              SO_BLEND_FACTOR_SRC_ALPHA);
+  BOOST_CHECK(probe.standardBlend.blend.dstAlphaFactor ==
+              SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
+  BOOST_CHECK(probe.standardBlend.blend.rgbEquation == SO_BLEND_EQUATION_ADD);
+  BOOST_CHECK(probe.standardBlend.blend.alphaEquation == SO_BLEND_EQUATION_ADD);
+
+  BOOST_CHECK(probe.separateBlend.blend.srcRGBFactor ==
+              SO_BLEND_FACTOR_DST_COLOR);
+  BOOST_CHECK(probe.separateBlend.blend.dstRGBFactor ==
+              SO_BLEND_FACTOR_ONE_MINUS_SRC_COLOR);
+  BOOST_CHECK(probe.separateBlend.blend.srcAlphaFactor ==
+              SO_BLEND_FACTOR_ZERO);
+  BOOST_CHECK(probe.separateBlend.blend.dstAlphaFactor ==
+              SO_BLEND_FACTOR_SRC_ALPHA);
+
+  BOOST_CHECK(probe.separateBlend.depth.enabled);
+  BOOST_CHECK(!probe.separateBlend.depth.writeEnabled);
+  BOOST_CHECK(probe.separateBlend.depth.func == SO_DEPTH_GREATER);
+  BOOST_CHECK(probe.separateBlend.alphaTest.policy == SO_ALPHA_TEST_POLICY_EXPLICIT);
+  BOOST_CHECK(probe.separateBlend.alphaTest.function == SO_ALPHA_TEST_GREATER);
+  BOOST_CHECK(std::fabs(probe.separateBlend.alphaTest.reference - 0.37f) < 0.001f);
+
+  scene->unref();
+}
+
+BOOST_AUTO_TEST_CASE(ir_makes_implicit_material_alpha_explicit)
+{
+  SoRenderState state;
+  SoMaterialData material;
+  material.opacity = 0.5f;
+
+  SoRenderIR::ensureMaterialBlendState(state, material);
+  BOOST_CHECK(state.blend.enabled);
+  BOOST_CHECK(state.blend.srcRGBFactor == SO_BLEND_FACTOR_SRC_ALPHA);
+  BOOST_CHECK(state.blend.dstRGBFactor == SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
+
+  SoRenderState texturedState;
+  SoMaterialData texturedMaterial;
+  texturedMaterial.flags = SO_MAT_HAS_TEXTURE;
+  SoRenderIR::ensureMaterialBlendState(texturedState, texturedMaterial);
+  BOOST_CHECK(texturedState.blend.enabled);
+
+  SoRenderState additiveState;
+  additiveState.blend.enabled = TRUE;
+  additiveState.blend.srcRGBFactor = SO_BLEND_FACTOR_SRC_ALPHA;
+  additiveState.blend.dstRGBFactor = SO_BLEND_FACTOR_ONE;
+  SoRenderIR::ensureMaterialBlendState(additiveState, material);
+  BOOST_CHECK(additiveState.blend.dstRGBFactor == SO_BLEND_FACTOR_ONE);
 }
 
 BOOST_AUTO_TEST_CASE(draw_list_initialization_falls_back_to_legacy_gl)

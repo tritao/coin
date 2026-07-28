@@ -440,6 +440,8 @@ public:
 
     SoRenderIR::fillMaterialFromState(state, cmd.material);
     SoRenderIR::fillRenderStateFromState(state, cmd.state);
+    cmd.material.vertexColorAlphaIncludesOpacity =
+      hasPerVertexColor && this->vertexColorAlphaIncludesOpacity;
 
     // Use texture data captured during onTriangle (while state was pushed
     // by SoImage::generatePrimitives). Reading the state here is too late —
@@ -456,8 +458,15 @@ public:
       cmd.material.flags |= SO_MAT_HAS_TEXTURE;
       if (this->useBillboard) {
         cmd.material.flags |= SO_MAT_IS_BILLBOARD;
+        cmd.state.alphaTest.policy = SO_ALPHA_TEST_POLICY_LEGACY_THRESHOLD;
+        cmd.state.alphaTest.reference = 0.3f;
+      } else {
+        // World-space annotation textures must retain antialiased glyph
+        // edges; only fully transparent texels are discarded.
+        cmd.state.alphaTest.policy = SO_ALPHA_TEST_POLICY_PRESERVE_EDGES;
       }
     }
+    SoRenderIR::ensureMaterialBlendState(cmd.state, cmd.material);
 
     // Annotation commands (depth test disabled) render last, on top of
     // all other geometry — matching legacy SoAnnotation::GLRender behavior.
@@ -558,6 +567,8 @@ private:
       float tr = SoLazyElement::getTransparency(st, idx);
       vertex.color.setValue(dc[0], dc[1], dc[2], 1.0f - tr);
       this->capturedPerVertexColor = TRUE;
+      this->vertexColorAlphaIncludesOpacity =
+        this->vertexColorAlphaIncludesOpacity || !SoLazyElement::getInstance(st)->isPacked();
     } else {
       vertex.color.setValue(1.0f, 1.0f, 1.0f, 1.0f);
     }
@@ -614,6 +625,7 @@ private:
   SbBool warnedMixed;
   SbBool useBillboard;
   SbBool capturedPerVertexColor = FALSE;
+  SbBool vertexColorAlphaIncludesOpacity = FALSE;
   SbBool textureCaptured = FALSE;
   unsigned char * texCopy = NULL;
   int texWidth = 0;
@@ -1122,6 +1134,13 @@ SoShape::getComplexityValue(SoAction * action)
 SbBool
 SoShape::shouldGLRender(SoGLRenderAction * action)
 {
+  return this->shouldGLRender(action, TRUE);
+}
+
+SbBool
+SoShape::shouldGLRender(SoGLRenderAction * action,
+                        SbBool sortTransparentTriangles)
+{
   SoState * state = action->getState();
  
   const SoShapeStyleElement * shapestyle = SoShapeStyleElement::get(state);
@@ -1163,7 +1182,8 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
   }
 
   // test if we should sort triangles before rendering
-  if (transparent && (shapestyleflags & SoShapeStyleElement::TRANSP_SORTED_TRIANGLES)) {
+  if (sortTransparentTriangles && transparent &&
+      (shapestyleflags & SoShapeStyleElement::TRANSP_SORTED_TRIANGLES)) {
     if (SoRenderer::isOpenGL()) {
       // lock since pvcache is shared among all threads
       PRIVATE(this)->lock();

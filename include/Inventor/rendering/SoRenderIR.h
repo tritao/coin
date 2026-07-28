@@ -88,6 +88,21 @@ static constexpr uint32_t SO_MAT_IS_PIXEL_TEXT = 0x4; //!< Integer-aligned pixel
 // --- Feature flags (SoMaterialData::featureFlags) ---
 static constexpr uint32_t SO_FEAT_BASE_COLOR = 0x1;   //!< Flat/unlit rendering (BASE_COLOR light model)
 
+/*!
+  \enum SoShadingModel
+  \brief Effective shading contract carried by a render command.
+
+  The legacy-compatible model is the current default. It preserves the
+  fixed-function Coin/GL behavior while the DrawList backend is migrated to
+  an explicit shading model. SO_SHADING_PHONG is reserved for a future
+  per-fragment implementation and is not emitted by the current traversal.
+*/
+enum SoShadingModel : uint8_t {
+  SO_SHADING_UNLIT = 0,
+  SO_SHADING_LEGACY_GOURAUD,
+  SO_SHADING_PHONG
+};
+
 // --- Texture sampler state ---
 // These are semantic sampler modes rather than OpenGL enum values so the IR
 // can be consumed by non-OpenGL backends as well.
@@ -104,6 +119,75 @@ enum SoTextureWrap : uint8_t {
   SO_TEXTURE_WRAP_CLAMP_TO_EDGE = 0,
   SO_TEXTURE_WRAP_REPEAT,
   SO_TEXTURE_WRAP_CLAMP_TO_BORDER
+};
+
+// --- Depth state ---------------------------------------------------------
+
+// Semantic comparison functions. These deliberately do not use GL enum
+// values: the IR is also consumed by backends which do not share GL's enum
+// space.
+enum SoDepthFunction : uint8_t {
+  SO_DEPTH_NEVER = 0,
+  SO_DEPTH_ALWAYS,
+  SO_DEPTH_LESS,
+  SO_DEPTH_LEQUAL,
+  SO_DEPTH_EQUAL,
+  SO_DEPTH_GEQUAL,
+  SO_DEPTH_GREATER,
+  SO_DEPTH_NOTEQUAL
+};
+
+// --- Blend state ---------------------------------------------------------
+
+enum SoBlendFactor : uint8_t {
+  SO_BLEND_FACTOR_ZERO = 0,
+  SO_BLEND_FACTOR_ONE,
+  SO_BLEND_FACTOR_SRC_COLOR,
+  SO_BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
+  SO_BLEND_FACTOR_DST_COLOR,
+  SO_BLEND_FACTOR_ONE_MINUS_DST_COLOR,
+  SO_BLEND_FACTOR_SRC_ALPHA,
+  SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+  SO_BLEND_FACTOR_DST_ALPHA,
+  SO_BLEND_FACTOR_ONE_MINUS_DST_ALPHA,
+  SO_BLEND_FACTOR_CONSTANT_COLOR,
+  SO_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR,
+  SO_BLEND_FACTOR_CONSTANT_ALPHA,
+  SO_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA,
+  SO_BLEND_FACTOR_SRC_ALPHA_SATURATE,
+  SO_BLEND_FACTOR_SRC1_COLOR,
+  SO_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR,
+  SO_BLEND_FACTOR_SRC1_ALPHA,
+  SO_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA
+};
+
+enum SoBlendEquation : uint8_t {
+  SO_BLEND_EQUATION_ADD = 0,
+  SO_BLEND_EQUATION_SUBTRACT,
+  SO_BLEND_EQUATION_REVERSE_SUBTRACT,
+  SO_BLEND_EQUATION_MIN,
+  SO_BLEND_EQUATION_MAX
+};
+
+// --- Alpha-test policy --------------------------------------------------
+
+enum SoAlphaTestFunction : uint8_t {
+  SO_ALPHA_TEST_NONE = 0,
+  SO_ALPHA_TEST_NEVER,
+  SO_ALPHA_TEST_ALWAYS,
+  SO_ALPHA_TEST_LESS,
+  SO_ALPHA_TEST_LEQUAL,
+  SO_ALPHA_TEST_EQUAL,
+  SO_ALPHA_TEST_GEQUAL,
+  SO_ALPHA_TEST_GREATER,
+  SO_ALPHA_TEST_NOTEQUAL
+};
+
+enum SoAlphaTestPolicy : uint8_t {
+  SO_ALPHA_TEST_POLICY_NONE = 0,
+  SO_ALPHA_TEST_POLICY_EXPLICIT,
+  SO_ALPHA_TEST_POLICY_LEGACY_THRESHOLD,
+  SO_ALPHA_TEST_POLICY_PRESERVE_EDGES
 };
 
 // --- Render param flags (SoRenderParams::flags) ---
@@ -143,10 +227,21 @@ struct SoMaterialData {
   SbVec4f  ambient = {0.2f, 0.2f, 0.2f, 1.0f};
   SbVec4f  specular = {0.0f, 0.0f, 0.0f, 1.0f};
   SbVec4f  emissive = {0.0f, 0.0f, 0.0f, 1.0f};
+  SoShadingModel shadingModel = SO_SHADING_LEGACY_GOURAUD;
   float    shininess = 0.2f;
   float    opacity = 1.0f;
 
   SoTextureData texture;  //!< Embedded texture (from SoImage, SoTexture2)
+
+  // Some CPU-rasterized textures (currently SoText2) already multiply their
+  // texel alpha by material opacity. Backends use this to avoid multiplying
+  // that opacity a second time while still composing vertex and texture alpha.
+  bool     textureAlphaIncludesOpacity = false;
+
+  // Material-derived per-vertex colors can already carry the effective
+  // material transparency (for example SoMaterial PER_FACE colors). Packed
+  // SoVertexProperty colors carry independent vertex alpha instead.
+  bool     vertexColorAlphaIncludesOpacity = false;
 
   void *   diffuseTexture = nullptr;
   void *   normalTexture = nullptr;
@@ -157,6 +252,7 @@ struct SoMaterialData {
 
   uint32_t flags = 0;
   uint32_t featureFlags = 0;
+  bool     twoSidedLighting = false;
 };
 
 /*! \struct SoPixelTextData
@@ -174,18 +270,36 @@ struct SoPixelTextData {
 struct SoDepthState {
   SbBool  enabled = TRUE;
   SbBool  writeEnabled = TRUE;
-  uint8_t func = 0; //!< Comparison function (GL-style enum value).
+  SoDepthFunction func = SO_DEPTH_LEQUAL;
 };
 
 /*!
   \struct SoBlendState
-  \brief Blending configuration (GL-style enums encoded as uint8_t).
+  \brief Backend-neutral blending configuration.
 */
 struct SoBlendState {
   SbBool  enabled = FALSE;
-  uint8_t srcFactor = 0;
-  uint8_t dstFactor = 0;
-  uint8_t op = 0;
+  SoBlendFactor srcRGBFactor = SO_BLEND_FACTOR_ONE;
+  SoBlendFactor dstRGBFactor = SO_BLEND_FACTOR_ZERO;
+  SoBlendFactor srcAlphaFactor = SO_BLEND_FACTOR_ONE;
+  SoBlendFactor dstAlphaFactor = SO_BLEND_FACTOR_ZERO;
+
+  // Coin's current LegacyGL state API exposes blend factors but not blend
+  // equations. ADD is therefore the only equation that can be captured
+  // from traversal today; separate fields keep the IR ready for a future
+  // state source without pretending that it is currently preserved.
+  SoBlendEquation rgbEquation = SO_BLEND_EQUATION_ADD;
+  SoBlendEquation alphaEquation = SO_BLEND_EQUATION_ADD;
+};
+
+/*!
+  \struct SoAlphaTestState
+  \brief Explicit fragment alpha policy for a render command.
+*/
+struct SoAlphaTestState {
+  SoAlphaTestPolicy policy = SO_ALPHA_TEST_POLICY_NONE;
+  SoAlphaTestFunction function = SO_ALPHA_TEST_NONE;
+  float reference = 0.5f;
 };
 
 /*!
@@ -218,6 +332,7 @@ struct SoRasterState {
 struct SoRenderState {
   SoDepthState depth;
   SoBlendState blend;
+  SoAlphaTestState alphaTest;
   SoRasterState raster;
   uint32_t opaqueKey = 0;
   uint32_t translucentKey = 0;
