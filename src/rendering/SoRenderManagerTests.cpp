@@ -185,14 +185,33 @@ BOOST_AUTO_TEST_CASE(render_manager_defaults_and_policy_state)
   BOOST_CHECK_EQUAL(manager.getDevicePixelRatio(), 1.0f);
   BOOST_CHECK_EQUAL(manager.getRenderMode(), SoRenderManager::AS_IS);
   BOOST_CHECK_EQUAL(manager.getLightingMode(), SoRenderManager::LIT);
+  BOOST_CHECK_EQUAL(manager.getLineSmoothing(), FALSE);
+  BOOST_CHECK_EQUAL(manager.getPointSmoothing(), FALSE);
+  BOOST_CHECK_EQUAL(manager.getGLRenderAction()->isLineSmoothing(), FALSE);
+  BOOST_CHECK_EQUAL(manager.getGLRenderAction()->isPointSmoothing(), FALSE);
 
   manager.setDevicePixelRatio(2.0f);
   manager.setLightingMode(SoRenderManager::UNLIT);
   manager.setRenderMode(SoRenderManager::WIREFRAME);
+  manager.setLineSmoothing(TRUE);
 
   BOOST_CHECK_EQUAL(manager.getDevicePixelRatio(), 2.0f);
   BOOST_CHECK_EQUAL(manager.getLightingMode(), SoRenderManager::UNLIT);
   BOOST_CHECK_EQUAL(manager.getRenderMode(), SoRenderManager::WIREFRAME);
+  BOOST_CHECK_EQUAL(manager.getLineSmoothing(), TRUE);
+  BOOST_CHECK_EQUAL(manager.getPointSmoothing(), FALSE);
+  BOOST_CHECK_EQUAL(manager.getGLRenderAction()->isLineSmoothing(), TRUE);
+  BOOST_CHECK_EQUAL(manager.getGLRenderAction()->isPointSmoothing(), FALSE);
+
+  manager.setPointSmoothing(TRUE);
+  BOOST_CHECK_EQUAL(manager.getPointSmoothing(), TRUE);
+  BOOST_CHECK_EQUAL(manager.getGLRenderAction()->isPointSmoothing(), TRUE);
+
+  manager.setAntialiasing(FALSE, 1);
+  BOOST_CHECK_EQUAL(manager.getLineSmoothing(), FALSE);
+  BOOST_CHECK_EQUAL(manager.getPointSmoothing(), FALSE);
+  BOOST_CHECK_EQUAL(manager.getGLRenderAction()->isLineSmoothing(), FALSE);
+  BOOST_CHECK_EQUAL(manager.getGLRenderAction()->isPointSmoothing(), FALSE);
 }
 
 BOOST_AUTO_TEST_CASE(render_manager_pipeline_switching)

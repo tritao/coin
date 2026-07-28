@@ -32,6 +32,14 @@ enum SoPrimitiveTopology : uint8_t {
   SO_TOPOLOGY_COUNT
 };
 
+// --- Point rasterization shape ---
+// These are semantic point shapes rather than OpenGL state so every backend
+// can reproduce the same primitive coverage.
+enum SoPointShape : uint8_t {
+  SO_POINT_SHAPE_SQUARE = 0,
+  SO_POINT_SHAPE_ROUND
+};
+
 /*!
   \struct SoGeometryDesc
   \brief Describes vertex/index data for a single draw call.
@@ -177,6 +185,7 @@ struct SoBlendState {
 */
 struct SoRasterState {
   uint8_t fillMode = 0;         // 0=filled, 1=lines (wireframe), 2=points
+  SoPointShape pointShape = SO_POINT_SHAPE_SQUARE;
   uint8_t cullMode = 0;
   SbBool  scissorEnabled = FALSE;
   SbBool  clearDepth = FALSE;

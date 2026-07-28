@@ -837,12 +837,14 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
     float pointSize = std::max(ps, 1.0f) * dpr;
     if (prim == GL_POINTS && this->pointShaderProgram) {
       usePointShader = true;
+      const bool roundPoints =
+        cmd.state.raster.pointShape == SO_POINT_SHAPE_ROUND || params.pointSmoothing;
       this->bindPointShader(cmd,
                             viewMat,
                             projMat,
                             diffuse,
                             entry.colorVBO != 0,
-                            true,
+                            roundPoints,
                             pointSize,
                             coin_command_viewport_size(cmd, params));
     } else {
@@ -1132,6 +1134,12 @@ SoGLRenderBackend::beginFrame(const SoDrawList & drawlist,
   }
   else {
     glDisable(GL_LINE_SMOOTH);
+  }
+  if (params.pointSmoothing) {
+    glEnable(GL_POINT_SMOOTH);
+  }
+  else {
+    glDisable(GL_POINT_SMOOTH);
   }
 #endif
 

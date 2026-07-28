@@ -117,6 +117,8 @@ public:
   SoSearchAction * searchaction;
   SbBool deleteaudiorenderaction;
   SbBool deleteglaction;
+  SbBool lineSmoothing = FALSE;
+  SbBool pointSmoothing = FALSE;
 
   SoRenderManager::StereoMode stereostenciltype;
   SoRenderManager::RenderMode rendermode;

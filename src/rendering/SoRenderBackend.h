@@ -149,7 +149,12 @@ struct SoRenderParams {
     DrawList backends must explicitly mirror this GL state because they run
     after the legacy action has established the context state.
   */
-  bool               lineSmoothing;
+  bool               lineSmoothing = false;
+  /*
+    Whether legacy Coin point smoothing is enabled for this frame. The
+    DrawList point shader uses this to reproduce GL_POINT_SMOOTH semantics.
+  */
+  bool               pointSmoothing = false;
   /*!
     \brief Device pixel ratio for HiDPI scaling (e.g. 2.0 on Retina).
     Line widths and point sizes are scaled by this factor.
