@@ -276,6 +276,12 @@ SoRenderManager::Superimposition::getStateFlags(void) const
   return PRIVATE(this)->stateflags;
 }
 
+SoNode *
+SoRenderManager::Superimposition::getScene(void) const
+{
+  return PRIVATE(this)->scene;
+}
+
 void
 SoRenderManager::Superimposition::render(SoGLRenderAction * action, SbBool clearcolorbuffer)
 {
@@ -377,6 +383,17 @@ SoRenderManagerP::invokePostRenderCallbacks(void)
     this->postRenderCallbacks.begin();
   while (cbit != this->postRenderCallbacks.end()) {
     cbit->first(cbit->second, PUBLIC(this));
+    ++cbit;
+  }
+}
+
+void
+SoRenderManagerP::invokeAfterMainSceneCallbacks(SoAction * action)
+{
+  std::vector<StageCBTouple>::const_iterator cbit =
+    this->afterMainSceneCallbacks.begin();
+  while (cbit != this->afterMainSceneCallbacks.end()) {
+    cbit->first(cbit->second, PUBLIC(this), action);
     ++cbit;
   }
 }

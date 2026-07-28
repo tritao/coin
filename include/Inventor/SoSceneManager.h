@@ -34,6 +34,7 @@
 \**************************************************************************/
 
 #include <Inventor/SbVec2s.h>
+#include <Inventor/SoRenderManager.h>
 
 class SbViewportRegion;
 class SoEvent;

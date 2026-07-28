@@ -39,6 +39,10 @@
 
 #include <vector>
 
+#ifdef COIN_USE_BACKTRACE
+#include <backtrace.h>
+#endif
+
 #ifdef COIN_THREADSAFE
 #include <Inventor/threads/SbMutex.h>
 #endif // COIN_THREADSAFE
@@ -47,11 +51,14 @@
 #include <Inventor/SbColor4f.h>
 #include <Inventor/SoRenderManager.h>
 #include <Inventor/SbViewportRegion.h>
+#include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/elements/SoLazyElement.h>
-#include <Inventor/sensors/SoNodeSensor.h>
 #include <Inventor/misc/SoNotification.h>
+#include <Inventor/sensors/SoNodeSensor.h>
+#include "rendering/SoRenderBackend.h"
 
 class SbMatrix;
+class SoAction;
 class SoNodeSensor;
 class SoInfo;
 class SoNode;
@@ -59,7 +66,6 @@ class SoGetBoundingBoxAction;
 class SoGetMatrixAction;
 class SoSearchAction;
 class SbPList;
-class SoModernRenderAction;
 class SoRenderBackend;
 
 class SoRenderManagerP {
@@ -112,6 +118,8 @@ public:
   SoSearchAction * searchaction;
   SbBool deleteaudiorenderaction;
   SbBool deleteglaction;
+  SbBool lineSmoothing = FALSE;
+  SbBool pointSmoothing = FALSE;
 
   SoRenderManager::StereoMode stereostenciltype;
   SoRenderManager::RenderMode rendermode;
@@ -126,16 +134,46 @@ public:
 
   SbPList * superimpositions;
 
-  SoModernRenderAction * modernAction;
-  SoRenderBackend * modernBackend;
-  SbBool modernEnabled;
-  int modernFrameCounter;
+  SoIRRenderAction * irAction;
+  SoIRRenderAction * foregroundAction;  // Separate action for foreground overlays
+  SoRenderBackend * renderBackend;
+  bool renderBackendFailed = false;
+  void * renderBackendFailedContext = NULL;
+  uint64_t renderBackendFailedGeneration = 0;
+  SoRenderTargetInfo renderBackendFailedTarget = {};
+  bool renderBackendFailureTargetValid = false;
+  SoNode * renderLayerBackgroundRoot = NULL;
+  SoNode * renderLayerForegroundRoot = NULL;
+  SoNodeSensor * renderLayerBackgroundSensor = NULL;
+  SoNodeSensor * renderLayerForegroundSensor = NULL;
+  int backgroundCommandCount = 0;
+  int preForegroundCommandCount = 0;  // bg + main + after-main commands
+  SoIRRenderAction::GeometrySavePoint preForegroundPoolSavePoint;
+  SbViewportRegion backendViewport;  // viewport for the render backend (replaces glaction viewport)
+  int backendFrameCounter;
+
+  // Generation-based draw list caching. Each region tracks its own version.
+  // Only regions whose generation advanced are re-traversed.
+  uint32_t sceneGeneration = 1;        // bg + main scene (structural changes)
+  uint32_t foregroundGeneration = 1;   // NaviCube/overlays (camera changes)
+  uint32_t cachedSceneGen = 0;         // last traversed scene generation
+  uint32_t cachedForegroundGen = 0;    // last traversed foreground generation
+  bool hasCameraDependentShapes = false;
+  float devicePixelRatio = 1.0f;
+  bool pendingCameraChange = false;  // set by notifyCameraChange(), consumed by sensor
+  SbBool interactive = FALSE;
+#ifdef COIN_USE_BACKTRACE
+  struct backtrace_state * btState = nullptr;
+#endif
 
   void invokePreRenderCallbacks(void);
   void invokePostRenderCallbacks(void);
+  void invokeAfterMainSceneCallbacks(SoAction * action);
   typedef std::pair<SoRenderManagerRenderCB *, void *> RenderCBTouple;
   std::vector<RenderCBTouple> preRenderCallbacks;
   std::vector<RenderCBTouple> postRenderCallbacks;
+  typedef std::pair<SoRenderManagerStageCB *, void *> StageCBTouple;
+  std::vector<StageCBTouple> afterMainSceneCallbacks;
 
   // "private" data
   static SbBool touchtimer;
