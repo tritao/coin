@@ -776,6 +776,10 @@ SoText2::render(SoIRRenderAction * action)
       SoRenderPlacementElement::FOREGROUND) {
     cmd.pass = SO_RENDERPASS_OVERLAY;
   }
+  cmd.stage = cmd.pass == SO_RENDERPASS_OVERLAY
+    ? SoRenderStage::Foreground
+    : SoRenderStage::Main;
+  action->applyRenderStage(cmd);
   cmd.lightingHandle = 0;
   cmd.pipelineKey = 0;
   cmd.sortKey = 0;

@@ -117,17 +117,21 @@ private:
                             const SbMat & viewMat, const SbMat & projMat,
                             const SoRenderParams & params);
   void renderOpaquePass(const SoDrawList & drawlist,
+                        SoRenderStage stage,
                         const SbMat & viewMat, const SbMat & projMat,
                         const SoRenderParams & params);
   void renderTransparentPass(const SoDrawList & drawlist,
+                             SoRenderStage stage,
                              const SbMat & viewMat, const SbMat & projMat,
                              const SoRenderParams & params);
   void renderOverlayPass(const SoDrawList & drawlist,
                          const SbMat & viewMat, const SbMat & projMat,
                          const SoRenderParams & params);
   void renderSelectionPass(const SoDrawList & drawlist,
+                           SoRenderStage stage,
                            const SbMat & viewMat, const SbMat & projMat,
                            const SoRenderParams & params);
+  void clearAfterMainDepth(const SoDrawList & drawlist);
   void endFrame();
   void renderIDBufferPass(const SoDrawList & drawlist,
                           const SbMat & viewMat, const SbMat & projMat,
