@@ -1354,8 +1354,8 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
 
   for (int i = 0; i < count; ++i) {
     const SoRenderCommand & cmd = drawlist.getCommand(i);
-    int hlElem = cmd.selection.highlightElement;
-    bool hasHighlight = cmd.selection.highlightWholeObject || (hlElem != -1);
+    bool hasHighlight = cmd.selection.highlightWholeObject
+                     || !cmd.selection.highlightedElements.empty();
     bool hasSelection = cmd.selection.selectWholeObject || !cmd.selection.selectedElements.empty();
     if (!hasHighlight && !hasSelection) continue;
 
@@ -1516,7 +1516,9 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
         drawWholeCommand(cmd, prim);
       }
       else {
-        drawElementRanges(cmd, hlElem, prim);
+        for (int elem : cmd.selection.highlightedElements) {
+          drawElementRanges(cmd, elem, prim);
+        }
       }
     }
 

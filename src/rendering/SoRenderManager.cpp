@@ -2354,9 +2354,7 @@ SoRenderManager::setDrawListHighlight(uint32_t lutIndex, const SbColor4f & color
   for (int i = 0; i < numCmds; i++) {
     SoRenderCommand & cmd = drawlist.getCommand(i);
     cmd.selection.highlightWholeObject = false;
-    if (cmd.selection.highlightElement != -1) {
-      cmd.selection.highlightElement = -1;
-    }
+    cmd.selection.highlightedElements.clear();
   }
 
   if (lutIndex == 0) return true;  // Just clearing
@@ -2370,8 +2368,10 @@ SoRenderManager::setDrawListHighlight(uint32_t lutIndex, const SbColor4f & color
 
   SoRenderCommand & cmd = drawlist.getCommand(cmdIdx);
   cmd.selection.highlightWholeObject = (entry.elementType == SO_PICK_WHOLE_BODY);
-  cmd.selection.highlightElement =
-    (entry.elementType == SO_PICK_WHOLE_BODY) ? -1 : entry.elementIndex;
+  cmd.selection.highlightedElements.clear();
+  if (entry.elementType != SO_PICK_WHOLE_BODY) {
+    cmd.selection.highlightedElements.push_back(entry.elementIndex);
+  }
   cmd.selection.highlightColor.setValue(color[0], color[1], color[2], color[3]);
   return true;
 }
