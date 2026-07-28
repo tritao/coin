@@ -116,6 +116,7 @@
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/elements/SoDecimationPercentageElement.h>
 #include <Inventor/elements/SoDecimationTypeElement.h>
+#include <Inventor/elements/SoDevicePixelRatioElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
 #include <Inventor/elements/SoGLLazyElement.h>
 #include <Inventor/elements/SoGLLightIdElement.h>
@@ -687,6 +688,7 @@ SoGLRenderAction::initClass(void)
 
   SO_ENABLE(SoGLRenderAction, SoDecimationPercentageElement);
   SO_ENABLE(SoGLRenderAction, SoDecimationTypeElement);
+  SO_ENABLE(SoGLRenderAction, SoDevicePixelRatioElement);
   SO_ENABLE(SoGLRenderAction, SoGLLightIdElement);
   SO_ENABLE(SoGLRenderAction, SoGLRenderPassElement);
   SO_ENABLE(SoGLRenderAction, SoGLUpdateAreaElement);

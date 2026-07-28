@@ -23,6 +23,7 @@ set(COIN_ELEMENTS_FILES
 	SoDecimationPercentageElement.cpp
 	SoDecimationTypeElement.cpp
 	SoDepthBufferElement.cpp
+	SoDevicePixelRatioElement.cpp
 	SoDiffuseColorElement.cpp
 	SoDrawStyleElement.cpp
 	SoElement.cpp

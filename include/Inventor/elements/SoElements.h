@@ -77,6 +77,7 @@
 #include <Inventor/elements/SoLineWidthElement.h>
 #include <Inventor/elements/SoGLLineWidthElement.h>
 #include <Inventor/elements/SoPointSizeElement.h>
+#include <Inventor/elements/SoDevicePixelRatioElement.h>
 #include <Inventor/elements/SoGLPointSizeElement.h>
 #include <Inventor/elements/SoTextureQualityElement.h>
 #include <Inventor/elements/SoGLRenderPassElement.h>
