@@ -382,14 +382,14 @@ if(COIN_INSTALL)
 # Install headers
 # ############################################################################
 
-  # Sync SoModernIR.h: single source of truth is src/rendering/SoModernIR.h.
+  # Sync SoRenderIR.h: single source of truth is src/rendering/SoRenderIR.h.
   # Copy to include/ so the installed header always matches the internal one,
   # preventing heap corruption from struct layout drift.
   add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-      ${PROJECT_SOURCE_DIR}/src/rendering/SoModernIR.h
-      ${PROJECT_SOURCE_DIR}/include/Inventor/rendering/SoModernIR.h
-    COMMENT "Syncing SoModernIR.h public header from src/"
+      ${PROJECT_SOURCE_DIR}/src/rendering/SoRenderIR.h
+      ${PROJECT_SOURCE_DIR}/include/Inventor/rendering/SoRenderIR.h
+    COMMENT "Syncing SoRenderIR.h public header from src/"
   )
 
   install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/Inventor/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/Inventor COMPONENT development FILES_MATCHING PATTERN "*.h")
