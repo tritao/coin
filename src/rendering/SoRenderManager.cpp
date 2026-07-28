@@ -2150,14 +2150,21 @@ void
 SoRenderManager::setRenderPipeline(RenderPipeline pipeline)
 {
   if (pipeline == PRIVATE(this)->renderPipeline) return;
-  PRIVATE(this)->renderPipeline = pipeline;
-  this->scheduleRedraw();
-}
 
-SoRenderManager::RenderPipeline
-SoRenderManager::getRenderPipeline(void) const
-{
-  return PRIVATE(this)->renderPipeline;
+  this->invalidateSharedGLState();
+
+  if (PRIVATE(this)->renderPipeline == RenderPipeline::DRAW_LIST) {
+    this->clearDrawListSelection();
+    this->clearDrawListHighlight();
+  }
+
+  PRIVATE(this)->renderPipeline = pipeline;
+  if (pipeline == RenderPipeline::DRAW_LIST) {
+    this->invalidateScene();
+  }
+  else {
+    this->scheduleRedraw();
+  }
 }
 
 void
@@ -2173,6 +2180,13 @@ SoRenderManager::invalidateSharedGLState(void)
   PRIVATE(this)->glaction->invalidateState();
 }
 
+SoRenderManager::RenderPipeline
+SoRenderManager::getRenderPipeline(void) const
+{
+  return PRIVATE(this)->renderPipeline;
+}
+
+void
 SoRenderManager::releaseRenderBackendResources(void)
 {
   SoRenderBackend * backend = PRIVATE(this)->renderBackend;
