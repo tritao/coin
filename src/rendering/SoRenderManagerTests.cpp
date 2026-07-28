@@ -22,6 +22,7 @@
 #include <Inventor/nodes/SoCallback.h>
 #include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoFaceSet.h>
+#include <Inventor/nodes/SoLightModel.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
@@ -140,13 +141,47 @@ static void renderManagerAndSharedAction(void * userdata, SoAction * action)
 
 static bool renderTestsHaveDisplay(void)
 {
-  if (std::getenv("DISPLAY")) {
-    return true;
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  // Core builds intentionally keep SoGLRenderAction inert. The retained
+  // path is covered by the direct-context tests in LegacyBoundaryTests.cpp.
+  return false;
+#else
+  const char * coreprofile = coin_getenv("COIN_EGL_CORE_PROFILE");
+  if (coreprofile && atoi(coreprofile) > 0) {
+    // These tests drive SoRenderManager through an outer legacy action and
+    // are not applicable to a core-profile context.
+    return false;
   }
 
-  std::fprintf(stderr,
-               "[SKIP] SoRenderManager offscreen tests require DISPLAY\n");
-  return false;
+  static const bool available = [] {
+    // Prefer surfaceless EGL for the renderer tests when the test process is
+    // headless. This keeps the tests independent of an X server while still
+    // allowing a caller to select a different context explicitly.
+    if (!std::getenv("DISPLAY") && !coin_getenv("COIN_EGL")) {
+      coin_setenv("COIN_EGL", "1", FALSE);
+      coin_setenv("EGL_PLATFORM", "surfaceless", FALSE);
+    }
+
+    const SbViewportRegion viewport(1, 1);
+    SoGLRenderAction action(viewport);
+    SoOffscreenRenderer renderer(&action);
+    renderer.setViewportRegion(viewport);
+
+    SoSeparator * scene = new SoSeparator;
+    scene->ref();
+    const SbBool rendered = renderer.render(scene);
+    scene->unref();
+    if (rendered) {
+      return true;
+    }
+
+    std::fprintf(stderr,
+                 "[SKIP] SoRenderManager offscreen tests require a usable GL/EGL context\n");
+    return false;
+  }();
+
+  return available;
+#endif
 }
 
 static SbBool renderWithManager(SoRenderManager & manager,
@@ -519,6 +554,9 @@ BOOST_AUTO_TEST_CASE(hidden_line_preserves_explicit_background_layer)
   camera->unref();
 
   SoSeparator * background = new SoSeparator;
+  SoLightModel * backgroundLightModel = new SoLightModel;
+  backgroundLightModel->model = SoLightModel::BASE_COLOR;
+  background->addChild(backgroundLightModel);
   SoSeparator * left = new SoSeparator;
   SoMaterial * leftMaterial = new SoMaterial;
   leftMaterial->diffuseColor.setValue(1.0f, 0.0f, 0.0f);
