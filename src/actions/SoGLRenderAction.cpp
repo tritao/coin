@@ -1081,6 +1081,10 @@ SoGLRenderAction::beginTraversal(SoNode * node)
   if (contextgeneration != PRIVATE(this)->cachecontextgeneration) {
     PRIVATE(this)->cachecontextgeneration = contextgeneration;
     this->invalidateState();
+    // SoAction::apply() creates the state before entering beginTraversal(),
+    // but invalidating it here leaves the action without a state. Recreate it
+    // before any GL traversal code accesses the state directly.
+    (void) this->getState();
   }
 
   if (PRIVATE(this)->cachedprofilingsg == NULL) {

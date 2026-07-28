@@ -22,6 +22,7 @@
 #include <Inventor/nodes/SoCallback.h>
 #include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoFaceSet.h>
+#include <Inventor/nodes/SoLightModel.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
@@ -123,13 +124,34 @@ static void renderManagerAndSharedAction(void * userdata, SoAction * action)
 
 static bool renderTestsHaveDisplay(void)
 {
-  if (std::getenv("DISPLAY")) {
-    return true;
-  }
+  static const bool available = [] {
+    // Prefer surfaceless EGL for the renderer tests when the test process is
+    // headless. This keeps the tests independent of an X server while still
+    // allowing a caller to select a different context explicitly.
+    if (!std::getenv("DISPLAY") && !coin_getenv("COIN_EGL")) {
+      coin_setenv("COIN_EGL", "1", FALSE);
+      coin_setenv("EGL_PLATFORM", "surfaceless", FALSE);
+    }
 
-  std::fprintf(stderr,
-               "[SKIP] SoRenderManager offscreen tests require DISPLAY\n");
-  return false;
+    const SbViewportRegion viewport(1, 1);
+    SoGLRenderAction action(viewport);
+    SoOffscreenRenderer renderer(&action);
+    renderer.setViewportRegion(viewport);
+
+    SoSeparator * scene = new SoSeparator;
+    scene->ref();
+    const SbBool rendered = renderer.render(scene);
+    scene->unref();
+    if (rendered) {
+      return true;
+    }
+
+    std::fprintf(stderr,
+                 "[SKIP] SoRenderManager offscreen tests require a usable GL/EGL context\n");
+    return false;
+  }();
+
+  return available;
 }
 
 static SbBool renderWithManager(SoRenderManager & manager,
@@ -443,6 +465,9 @@ BOOST_AUTO_TEST_CASE(hidden_line_preserves_explicit_background_layer)
   camera->unref();
 
   SoSeparator * background = new SoSeparator;
+  SoLightModel * backgroundLightModel = new SoLightModel;
+  backgroundLightModel->model = SoLightModel::BASE_COLOR;
+  background->addChild(backgroundLightModel);
   SoSeparator * left = new SoSeparator;
   SoMaterial * leftMaterial = new SoMaterial;
   leftMaterial->diffuseColor.setValue(1.0f, 0.0f, 0.0f);
