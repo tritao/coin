@@ -23,6 +23,7 @@ uniform vec3 u_lightPosition[8];
 uniform int u_lightType[8];
 uniform vec3 u_lightAttenuation[8];
 uniform vec2 u_lightSpotParams[8];
+uniform vec2 u_pixelTextOrigin;
 uniform vec3 u_materialAmbient;
 uniform vec3 u_materialSpecular;
 uniform float u_materialShininess;
@@ -81,9 +82,17 @@ vec3 computeLitColor(vec3 eyePos, vec3 eyeNormal, vec3 baseColor)
 void main()
 {
   v_color = (u_useVertexColor > 0.5) ? a_color : u_color;
+  v_litColor = vec3(0.0);
   v_texcoord = a_texcoord;
 
-  if (u_renderMode > 1.5 && u_renderMode < 2.5) {
+  if (u_renderMode > 3.5) {
+    vec4 centerClip = u_proj * u_view * u_model * vec4(u_quadCenter, 1.0);
+    vec2 pixelPos = u_pixelTextOrigin + a_texcoord * u_texSize;
+    vec2 ndcPos = 2.0 * pixelPos / u_vpSize - 1.0;
+    gl_Position = vec4(ndcPos * centerClip.w, centerClip.z, centerClip.w);
+    v_lineDistance = 0.0;
+  }
+  else if (u_renderMode > 1.5 && u_renderMode < 2.5) {
     vec4 centerClip = u_proj * u_view * u_model * vec4(u_quadCenter, 1.0);
     vec2 pixelOffset = (a_texcoord - vec2(0.5)) * u_texSize;
     vec2 ndcOffset = 2.0 * pixelOffset / u_vpSize;
