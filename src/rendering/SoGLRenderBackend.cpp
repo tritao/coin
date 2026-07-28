@@ -820,6 +820,13 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   const SbVec4f & diffuse = cmd.material.diffuse;
   glUniform4f(this->uColorLocation,
               diffuse[0], diffuse[1], diffuse[2], diffuse[3]);
+  const SbVec4f & ambient = cmd.material.ambient;
+  glUniform3f(this->uMaterialAmbientLocation,
+              ambient[0], ambient[1], ambient[2]);
+  const SbVec4f & specular = cmd.material.specular;
+  glUniform3f(this->uMaterialSpecularLocation,
+              specular[0], specular[1], specular[2]);
+  glUniform1f(this->uMaterialShininessLocation, cmd.material.shininess);
   this->applyLighting(drawlist, cmd);
 
   GLenum prim = topologyToGL(cmd.geometry.topology);
@@ -849,10 +856,6 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   // Per-command emissive color (added to lighting result)
   const SbVec4f & ec = cmd.material.emissive;
   glUniform3f(this->uEmissiveColorLocation, ec[0], ec[1], ec[2]);
-
-  // Per-command PBR material
-  glUniform1f(this->uMetalnessLocation, cmd.material.metalness);
-  glUniform1f(this->uRoughnessLocation, cmd.material.roughness);
 
   // Wireframe draw style: render triangles as lines
   uint8_t fillMode = cmd.state.raster.fillMode;
@@ -1188,11 +1191,9 @@ SoGLRenderBackend::beginFrame(const SoDrawList & drawlist,
   glUniformMatrix4fv(this->uViewLocation, 1, GL_FALSE, &viewMat[0][0]);
   glUniformMatrix4fv(this->uProjLocation, 1, GL_FALSE, &projMat[0][0]);
 
-  // Default: lighting enabled, no stipple, dielectric PBR
+  // Default: lighting enabled, no stipple
   glUniform1f(this->uRenderModeLocation, 0.0f);
   glUniform1f(this->uStipplePeriodLocation, 0.0f);
-  glUniform1f(this->uMetalnessLocation, 0.0f);
-  glUniform1f(this->uRoughnessLocation, 0.5f);
   this->uploadLighting(coin_fallback_lighting());
 
   // Viewport size for line stipple derivatives and billboard sizing
@@ -1926,8 +1927,6 @@ SoGLRenderBackend::createShaders()
   this->uTexSizeLocation = glGetUniformLocation(this->shaderProgram, "u_texSize");
   this->uVpSizeLocation = glGetUniformLocation(this->shaderProgram, "u_vpSize");
   this->uStipplePeriodLocation = glGetUniformLocation(this->shaderProgram, "u_stipplePeriod");
-  this->uMetalnessLocation = glGetUniformLocation(this->shaderProgram, "u_metalness");
-  this->uRoughnessLocation = glGetUniformLocation(this->shaderProgram, "u_roughness");
   this->uAmbientLightLocation = glGetUniformLocation(this->shaderProgram, "u_ambientLight");
   this->uLightCountLocation = glGetUniformLocation(this->shaderProgram, "u_lightCount");
   this->uLightTypeLocation = glGetUniformLocation(this->shaderProgram, "u_lightType[0]");
@@ -1936,6 +1935,9 @@ SoGLRenderBackend::createShaders()
   this->uLightPositionLocation = glGetUniformLocation(this->shaderProgram, "u_lightPosition[0]");
   this->uLightAttenuationLocation = glGetUniformLocation(this->shaderProgram, "u_lightAttenuation[0]");
   this->uLightSpotParamsLocation = glGetUniformLocation(this->shaderProgram, "u_lightSpotParams[0]");
+  this->uMaterialAmbientLocation = glGetUniformLocation(this->shaderProgram, "u_materialAmbient");
+  this->uMaterialSpecularLocation = glGetUniformLocation(this->shaderProgram, "u_materialSpecular");
+  this->uMaterialShininessLocation = glGetUniformLocation(this->shaderProgram, "u_materialShininess");
   this->texcoordLoc = glGetAttribLocation(this->shaderProgram, "a_texcoord");
   this->lineDistLoc = glGetAttribLocation(this->shaderProgram, "a_lineDistance");
 

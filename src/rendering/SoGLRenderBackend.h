@@ -199,8 +199,6 @@ private:
   GLint  uTexSizeLocation = -1;
   GLint  uVpSizeLocation = -1;
   GLint  uStipplePeriodLocation = -1;
-  GLint  uMetalnessLocation = -1;
-  GLint  uRoughnessLocation = -1;
   GLint  uAmbientLightLocation = -1;
   GLint  uLightCountLocation = -1;
   GLint  uLightTypeLocation = -1;
@@ -209,6 +207,9 @@ private:
   GLint  uLightPositionLocation = -1;
   GLint  uLightAttenuationLocation = -1;
   GLint  uLightSpotParamsLocation = -1;
+  GLint  uMaterialAmbientLocation = -1;
+  GLint  uMaterialSpecularLocation = -1;
+  GLint  uMaterialShininessLocation = -1;
   GLint posLoc = -1;
   GLint normLoc = -1;
   GLint colorLoc = -1;
