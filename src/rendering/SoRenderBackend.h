@@ -12,7 +12,7 @@
 
 #include <cstdint>
 
-#include "rendering/SoRenderIR.h"
+#include <Inventor/rendering/SoRenderIR.h>
 
 class SoDrawList;
 
@@ -210,6 +210,7 @@ public:
 
   virtual SbBool initialize(const SoRenderBackendInitParams & params) = 0;
   virtual void shutdown() = 0;
+  virtual void discard();
   virtual SbBool render(const SoDrawList & drawlist,
                         const SoRenderParams & params) = 0;
   virtual void resizeTarget(const SoRenderTargetInfo & info);
