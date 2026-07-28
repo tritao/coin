@@ -2021,6 +2021,24 @@ SoRenderManager::getRenderMode(void) const
   return PRIVATE(this)->rendermode;
 }
 
+void
+SoRenderManager::setLightingMode(const LightingMode mode)
+{
+  if (PRIVATE(this)->lightingmode == mode) return;
+  PRIVATE(this)->lightingmode = mode;
+  if (PRIVATE(this)->renderPipeline == SoRenderManager::RenderPipeline::LEGACY_GL) {
+    PRIVATE(this)->glaction->invalidateState();
+  }
+  this->invalidateScene();
+  PRIVATE(this)->dummynode->touch();
+}
+
+SoRenderManager::LightingMode
+SoRenderManager::getLightingMode(void) const
+{
+  return PRIVATE(this)->lightingmode;
+}
+
 /*!
   Sets the stereo mode.
 */
