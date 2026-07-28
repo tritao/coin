@@ -43,6 +43,7 @@
 class SbViewportRegion;
 class SoEvent;
 class SoGLRenderAction;
+class SoIRRenderAction;
 class SoAudioRenderAction;
 class SoNode;
 class SoCamera;
@@ -50,6 +51,7 @@ class SoNodeSensor;
 class SoOneShotSensor;
 class SoSensor;
 class SoRenderManagerP;
+enum class SoRenderStage : uint8_t;
 
 typedef void SoRenderManagerRenderCB(void * userdata, class SoRenderManager * mgr);
 
@@ -77,6 +79,8 @@ public:
     void setTransparencyType(SoGLRenderAction::TransparencyType transparencytype);
 
   private:
+    friend class SoRenderManager;
+    void render(SoIRRenderAction * action, SoRenderStage stage);
     static void changeCB(void * data, SoSensor * sensor);
     class SuperimpositionP * pimpl;
   };
@@ -89,6 +93,11 @@ public:
     HIDDEN_LINE,
     BOUNDING_BOX,
     SHADED_HIDDEN_LINES
+  };
+
+  enum LightingMode {
+    LIT,
+    UNLIT
   };
 
   enum StereoMode {
@@ -109,6 +118,18 @@ public:
     NO_AUTO_CLIPPING,
     FIXED_NEAR_PLANE,
     VARIABLE_NEAR_PLANE
+  };
+
+  /// Scene roots traversed before or after the main scene by renderers
+  /// that support explicit render layer roots.
+  enum RenderLayer {
+    RENDER_LAYER_BACKGROUND,
+    RENDER_LAYER_FOREGROUND
+  };
+
+  enum class RenderPipeline {
+    LEGACY_GL,
+    DRAW_LIST
   };
 
   SoRenderManager(void);
@@ -145,6 +166,8 @@ public:
   SbBool isDoubleBuffer(void) const;
   void setRenderMode(const RenderMode mode);
   RenderMode getRenderMode(void) const;
+  void setLightingMode(const LightingMode mode);
+  LightingMode getLightingMode(void) const;
   void setStereoMode(const StereoMode mode);
   StereoMode getStereoMode(void) const;
   void setStereoOffset(const float offset);
@@ -181,8 +204,8 @@ public:
   void getAntialiasing(SbBool & smoothing, int & numPasses) const;
   void setGLRenderAction(SoGLRenderAction * const action);
   SoGLRenderAction * getGLRenderAction(void) const;
-  void setModernRenderEnabled(SbBool enable);
-  SbBool isModernRenderEnabled(void) const;
+  void setRenderPipeline(RenderPipeline pipeline);
+  RenderPipeline getRenderPipeline(void) const;
 
   /// Release draw-list backend GPU resources for the current context.
   /// The backend object remains available and can be initialized again on

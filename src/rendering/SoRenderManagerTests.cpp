@@ -1,0 +1,849 @@
+/**************************************************************************\
+ * Copyright (c) 2026 The Coin3D contributors                          *
+ *                                                                        *
+ * This file is part of Coin.                                            *
+ *                                                                        *
+ * Coin is free software; you can redistribute it and/or modify it under *
+ * the terms of the GNU General Public License as published by the Free  *
+ * Software Foundation; either version 2 of the License, or (at your      *
+ * option) any later version.                                            *
+\**************************************************************************/
+
+#include <Inventor/SoRenderManager.h>
+
+#ifdef COIN_TEST_SUITE
+
+#include <Inventor/C/tidbits.h>
+#include <Inventor/SoOffscreenRenderer.h>
+#include <Inventor/actions/SoGLRenderAction.h>
+#include <Inventor/actions/SoIRRenderAction.h>
+#include <Inventor/elements/SoDepthBufferElement.h>
+#include <Inventor/elements/SoDevicePixelRatioElement.h>
+#include <Inventor/elements/SoGLCacheContextElement.h>
+#include <Inventor/elements/SoLazyElement.h>
+#include <Inventor/nodes/SoCallback.h>
+#include <Inventor/nodes/SoCoordinate3.h>
+#include <Inventor/nodes/SoFaceSet.h>
+#include <Inventor/nodes/SoLightModel.h>
+#include <Inventor/nodes/SoMaterial.h>
+#include <Inventor/nodes/SoNormal.h>
+#include <Inventor/nodes/SoOrthographicCamera.h>
+#include <Inventor/nodes/SoShapeHints.h>
+#include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/rendering/SoRenderIR.h>
+#include <Inventor/system/gl.h>
+
+#include <rendering/SoRenderIRP.h>
+
+#include <cstdio>
+#include <cstdlib>
+#include <cmath>
+
+class TestDevicePixelRatioElement : public SoDevicePixelRatioElement
+{
+public:
+  float value() const { return this->data; }
+  void setValue(float value) { this->setElt(value); }
+};
+
+class CountingGLRenderAction : public SoGLRenderAction
+{
+public:
+  explicit CountingGLRenderAction(const SbViewportRegion & viewport)
+    : SoGLRenderAction(viewport)
+  {
+  }
+
+  void invalidateState() override
+  {
+    ++this->invalidationCount;
+    SoGLRenderAction::invalidateState();
+  }
+
+  int invalidationCount = 0;
+};
+
+struct StageProbe {
+  int calls = 0;
+};
+
+struct SuperimpositionTraversalProbe {
+  int irCalls = 0;
+  int glCalls = 0;
+};
+
+struct RenderStateProbe {
+  SoRenderState standardBlend;
+  SoRenderState separateBlend;
+  bool captured = false;
+};
+
+static void captureBlendAndDepthState(void * userdata, SoAction * action)
+{
+  if (!action->isOfType(SoIRRenderAction::getClassTypeId())) {
+    return;
+  }
+
+  auto * probe = static_cast<RenderStateProbe *>(userdata);
+  SoState * state = action->getState();
+
+  SoLazyElement::enableBlending(state, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  SoRenderIR::fillRenderStateFromState(state, probe->standardBlend);
+
+  // Use GL_ZERO for the alpha source factor: this specifically verifies that
+  // separate blending is represented by state, rather than inferred from a
+  // non-zero alpha factor.
+  SoLazyElement::enableSeparateBlending(state,
+                                        GL_DST_COLOR,
+                                        GL_ONE_MINUS_SRC_COLOR,
+                                        GL_ZERO,
+                                        GL_SRC_ALPHA);
+  SoDepthBufferElement::set(state,
+                            TRUE,
+                            FALSE,
+                            SoDepthBufferElement::GREATER,
+                            SbVec2f(0.1f, 100.0f));
+  SoLazyElement::setAlphaTest(state, GL_GREATER, 0.37f);
+  SoRenderIR::fillRenderStateFromState(state, probe->separateBlend);
+  probe->captured = true;
+}
+
+static void appendIdentifiableIRCommand(void * userdata,
+                                        SoRenderManager *,
+                                        SoAction * action)
+{
+  if (!action->isOfType(SoIRRenderAction::getClassTypeId())) {
+    return;
+  }
+
+  SoIRRenderAction * irAction = static_cast<SoIRRenderAction *>(action);
+  SoRenderCommand & command = irAction->getMutableDrawList().emplaceCommand();
+  command.userData = userdata;
+  ++static_cast<StageProbe *>(userdata)->calls;
+}
+
+static void recordSuperimpositionTraversal(void * userdata, SoAction * action)
+{
+  auto * probe = static_cast<SuperimpositionTraversalProbe *>(userdata);
+  if (action->isOfType(SoIRRenderAction::getClassTypeId())) {
+    ++probe->irCalls;
+    static_cast<SoIRRenderAction *>(action)->getMutableDrawList().emplaceCommand();
+  }
+  else if (action->isOfType(SoGLRenderAction::getClassTypeId())) {
+    ++probe->glCalls;
+  }
+}
+
+struct ManagerRenderProbe {
+  SoRenderManager * manager = nullptr;
+  int calls = 0;
+};
+
+struct SharedContextRenderProbe {
+  SoRenderManager * manager = nullptr;
+  CountingGLRenderAction * sharedAction = nullptr;
+  SoNode * probeScene = nullptr;
+  uint32_t context = 0;
+  int invalidationsBeforeBackend = 0;
+  int invalidationsAfterBackend = 0;
+};
+
+static const SoRenderCommand *findGeometryCommand(const SoDrawList & drawlist)
+{
+  for (int i = 0; i < drawlist.getNumCommands(); ++i) {
+    const SoRenderCommand & command = drawlist.getCommand(i);
+    if (command.geometry.vertexCount != 0) {
+      return &command;
+    }
+  }
+  return nullptr;
+}
+
+static SoSeparator *makeShadingModelProbeScene(SoLightModel::Model model,
+                                               bool twoSidedLighting = false)
+{
+  SoSeparator *scene = new SoSeparator;
+  scene->ref();
+
+  SoLightModel *lightModel = new SoLightModel;
+  lightModel->model = model;
+  scene->addChild(lightModel);
+
+  if (twoSidedLighting) {
+    SoShapeHints *shapeHints = new SoShapeHints;
+    shapeHints->vertexOrdering = SoShapeHints::COUNTERCLOCKWISE;
+    shapeHints->shapeType = SoShapeHints::UNKNOWN_SHAPE_TYPE;
+    scene->addChild(shapeHints);
+  }
+
+  SoMaterial *material = new SoMaterial;
+  material->diffuseColor.setValue(0.8f, 0.2f, 0.1f);
+  scene->addChild(material);
+
+  SoCoordinate3 *coordinates = new SoCoordinate3;
+  coordinates->point.set1Value(0, -1.0f, -1.0f, 0.0f);
+  coordinates->point.set1Value(1, 1.0f, -1.0f, 0.0f);
+  coordinates->point.set1Value(2, 1.0f, 1.0f, 0.0f);
+  coordinates->point.set1Value(3, -1.0f, 1.0f, 0.0f);
+  scene->addChild(coordinates);
+
+  SoNormal *normals = new SoNormal;
+  normals->vector.set1Value(0, 0.0f, 0.0f, 1.0f);
+  scene->addChild(normals);
+
+  SoFaceSet *faces = new SoFaceSet;
+  faces->numVertices.setValue(4);
+  scene->addChild(faces);
+  return scene;
+}
+
+static void renderManagerFromCallback(void * userdata, SoAction * action)
+{
+  if (!action->isOfType(SoGLRenderAction::getClassTypeId())) {
+    return;
+  }
+
+  ManagerRenderProbe * probe = static_cast<ManagerRenderProbe *>(userdata);
+  ++probe->calls;
+  probe->manager->render();
+}
+
+static void renderManagerAndSharedAction(void * userdata, SoAction * action)
+{
+  if (!action->isOfType(SoGLRenderAction::getClassTypeId())) {
+    return;
+  }
+
+  auto * probe = static_cast<SharedContextRenderProbe *>(userdata);
+  auto * outerAction = static_cast<SoGLRenderAction *>(action);
+  const uint32_t context = SoGLCacheContextElement::get(outerAction->getState());
+  if (probe->context == 0) {
+    probe->context = context;
+    probe->manager->getGLRenderAction()->setCacheContext(context);
+    probe->sharedAction->setCacheContext(context);
+  }
+
+  probe->sharedAction->apply(probe->probeScene);
+  probe->invalidationsBeforeBackend = probe->sharedAction->invalidationCount;
+
+  probe->manager->render();
+
+  probe->sharedAction->apply(probe->probeScene);
+  probe->invalidationsAfterBackend = probe->sharedAction->invalidationCount;
+}
+
+static bool renderTestsHaveDisplay(void)
+{
+#if !defined(COIN_GL_COMPATIBILITY)
+  // Core builds intentionally keep SoGLRenderAction inert. The retained
+  // path is covered by the direct-context tests in LegacyBoundaryTests.cpp.
+  return false;
+#else
+  const char * coreprofile = coin_getenv("COIN_EGL_CORE_PROFILE");
+  if (coreprofile && atoi(coreprofile) > 0) {
+    // These tests drive SoRenderManager through an outer legacy action and
+    // are not applicable to a core-profile context.
+    return false;
+  }
+
+  static const bool available = [] {
+    // Prefer surfaceless EGL for the renderer tests when the test process is
+    // headless. This keeps the tests independent of an X server while still
+    // allowing a caller to select a different context explicitly.
+    if (!std::getenv("DISPLAY") && !coin_getenv("COIN_EGL")) {
+      coin_setenv("COIN_EGL", "1", FALSE);
+      coin_setenv("EGL_PLATFORM", "surfaceless", FALSE);
+    }
+
+    const SbViewportRegion viewport(1, 1);
+    SoGLRenderAction action(viewport);
+    SoOffscreenRenderer renderer(&action);
+    renderer.setViewportRegion(viewport);
+
+    SoSeparator * scene = new SoSeparator;
+    scene->ref();
+    const SbBool rendered = renderer.render(scene);
+    scene->unref();
+    if (rendered) {
+      return true;
+    }
+
+    std::fprintf(stderr,
+                 "[SKIP] SoRenderManager offscreen tests require a usable GL/EGL context\n");
+    return false;
+  }();
+
+  return available;
+#endif
+}
+
+static SbBool renderWithManager(SoRenderManager & manager,
+                                SoSeparator * outer)
+{
+  const SbViewportRegion viewport(32, 32);
+  manager.setViewportRegion(viewport);
+  SoGLRenderAction outerAction(viewport);
+  SoOffscreenRenderer renderer(&outerAction);
+  renderer.setViewportRegion(viewport);
+  return renderer.render(outer);
+}
+
+BOOST_AUTO_TEST_CASE(device_pixel_ratio_defaults_to_one)
+{
+  TestDevicePixelRatioElement element;
+  element.init(nullptr);
+
+  BOOST_CHECK(SoDevicePixelRatioElement::getClassStackIndex() >= 0);
+  BOOST_CHECK_EQUAL(element.value(), 1.0f);
+  element.setValue(2.0f);
+  BOOST_CHECK_EQUAL(element.value(), 2.0f);
+}
+
+BOOST_AUTO_TEST_CASE(render_manager_defaults_and_policy_state)
+{
+  SoRenderManager manager;
+
+#if defined(COIN_GL_COMPATIBILITY)
+  BOOST_CHECK(manager.getRenderPipeline() ==
+              SoRenderManager::RenderPipeline::LEGACY_GL);
+#else
+  BOOST_CHECK(manager.getRenderPipeline() ==
+              SoRenderManager::RenderPipeline::DRAW_LIST);
+#endif
+  BOOST_CHECK_EQUAL(manager.getDevicePixelRatio(), 1.0f);
+  BOOST_CHECK_EQUAL(manager.getRenderMode(), SoRenderManager::AS_IS);
+  BOOST_CHECK_EQUAL(manager.getLightingMode(), SoRenderManager::LIT);
+  BOOST_CHECK_EQUAL(manager.getLineSmoothing(), FALSE);
+  BOOST_CHECK_EQUAL(manager.getPointSmoothing(), FALSE);
+  BOOST_CHECK_EQUAL(manager.getGLRenderAction()->isLineSmoothing(), FALSE);
+  BOOST_CHECK_EQUAL(manager.getGLRenderAction()->isPointSmoothing(), FALSE);
+
+  manager.setDevicePixelRatio(2.0f);
+  manager.setLightingMode(SoRenderManager::UNLIT);
+  manager.setRenderMode(SoRenderManager::WIREFRAME);
+  manager.setLineSmoothing(TRUE);
+
+  BOOST_CHECK_EQUAL(manager.getDevicePixelRatio(), 2.0f);
+  BOOST_CHECK_EQUAL(manager.getLightingMode(), SoRenderManager::UNLIT);
+  BOOST_CHECK_EQUAL(manager.getRenderMode(), SoRenderManager::WIREFRAME);
+  BOOST_CHECK_EQUAL(manager.getLineSmoothing(), TRUE);
+  BOOST_CHECK_EQUAL(manager.getPointSmoothing(), FALSE);
+  BOOST_CHECK_EQUAL(manager.getGLRenderAction()->isLineSmoothing(), TRUE);
+  BOOST_CHECK_EQUAL(manager.getGLRenderAction()->isPointSmoothing(), FALSE);
+
+  manager.setPointSmoothing(TRUE);
+  BOOST_CHECK_EQUAL(manager.getPointSmoothing(), TRUE);
+  BOOST_CHECK_EQUAL(manager.getGLRenderAction()->isPointSmoothing(), TRUE);
+
+  manager.setAntialiasing(FALSE, 1);
+  BOOST_CHECK_EQUAL(manager.getLineSmoothing(), FALSE);
+  BOOST_CHECK_EQUAL(manager.getPointSmoothing(), FALSE);
+  BOOST_CHECK_EQUAL(manager.getGLRenderAction()->isLineSmoothing(), FALSE);
+  BOOST_CHECK_EQUAL(manager.getGLRenderAction()->isPointSmoothing(), FALSE);
+}
+
+BOOST_AUTO_TEST_CASE(render_manager_pipeline_switching)
+{
+  SoRenderManager manager;
+  CountingGLRenderAction action(SbViewportRegion(1, 1));
+  manager.setGLRenderAction(&action);
+  const uint32_t context = SoGLCacheContextElement::getUniqueCacheContext();
+  action.setCacheContext(context);
+  const uint64_t initialgeneration =
+    SoGLCacheContextElement::getContextStateGeneration(context);
+  action.invalidationCount = 0;
+
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+  BOOST_CHECK(manager.getRenderPipeline() ==
+              SoRenderManager::RenderPipeline::DRAW_LIST);
+
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::LEGACY_GL);
+#if defined(COIN_GL_COMPATIBILITY)
+  BOOST_CHECK(manager.getRenderPipeline() ==
+              SoRenderManager::RenderPipeline::LEGACY_GL);
+  BOOST_CHECK_EQUAL(action.invalidationCount, 2);
+  BOOST_CHECK_EQUAL(
+    SoGLCacheContextElement::getContextStateGeneration(context), initialgeneration + 2);
+#else
+  BOOST_CHECK(manager.getRenderPipeline() ==
+              SoRenderManager::RenderPipeline::DRAW_LIST);
+  BOOST_CHECK_EQUAL(action.invalidationCount, 0);
+  BOOST_CHECK_EQUAL(
+    SoGLCacheContextElement::getContextStateGeneration(context), initialgeneration);
+#endif
+}
+
+BOOST_AUTO_TEST_CASE(shared_context_state_generation)
+{
+  const uint32_t context = SoGLCacheContextElement::getUniqueCacheContext();
+  const uint64_t before = SoGLCacheContextElement::getContextStateGeneration(context);
+
+  SoGLCacheContextElement::invalidateContextState(context);
+
+  BOOST_CHECK_EQUAL(
+    SoGLCacheContextElement::getContextStateGeneration(context), before + 1);
+}
+
+BOOST_AUTO_TEST_CASE(draw_list_invalidates_all_shared_gl_actions)
+{
+  if (!renderTestsHaveDisplay()) {
+    return;
+  }
+
+  SoRenderManager manager;
+  CountingGLRenderAction managerAction(SbViewportRegion(32, 32));
+  CountingGLRenderAction sharedAction(SbViewportRegion(32, 32));
+  manager.setGLRenderAction(&managerAction);
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+
+  SoSeparator * scene = new SoSeparator;
+  scene->ref();
+
+  SoOrthographicCamera * camera = new SoOrthographicCamera;
+  camera->position.setValue(0.0f, 0.0f, 0.0f);
+  camera->nearDistance.setValue(0.1f);
+  camera->farDistance.setValue(10.0f);
+  camera->height.setValue(2.0f);
+  camera->ref();
+  scene->addChild(camera);
+  manager.setCamera(camera);
+  camera->unref();
+
+  SoMaterial * material = new SoMaterial;
+  material->diffuseColor.setValue(0.8f, 0.2f, 0.1f);
+  scene->addChild(material);
+
+  SoCoordinate3 * coordinates = new SoCoordinate3;
+  coordinates->point.set1Value(0, -0.8f, -0.8f, -1.0f);
+  coordinates->point.set1Value(1, 0.8f, -0.8f, -1.0f);
+  coordinates->point.set1Value(2, 0.8f, 0.8f, -1.0f);
+  coordinates->point.set1Value(3, -0.8f, 0.8f, -1.0f);
+  scene->addChild(coordinates);
+
+  SoFaceSet * faces = new SoFaceSet;
+  faces->numVertices.setValue(4);
+  scene->addChild(faces);
+
+  manager.setSceneGraph(scene);
+  scene->unref();
+
+  SoSeparator * outer = new SoSeparator;
+  outer->ref();
+
+  SharedContextRenderProbe probe;
+  probe.manager = &manager;
+  probe.sharedAction = &sharedAction;
+  probe.probeScene = scene;
+
+  SoCallback * callback = new SoCallback;
+  callback->setCallback(renderManagerAndSharedAction, &probe);
+  outer->addChild(callback);
+
+  BOOST_REQUIRE(renderWithManager(manager, outer));
+  BOOST_CHECK(probe.context != 0);
+  BOOST_CHECK(probe.invalidationsAfterBackend > probe.invalidationsBeforeBackend);
+
+  outer->unref();
+}
+
+BOOST_AUTO_TEST_CASE(ir_commands_carry_explicit_shading_model)
+{
+  SoIRRenderAction action(SbViewportRegion(32, 32));
+
+  SoSeparator *litScene = makeShadingModelProbeScene(SoLightModel::PHONG);
+  action.apply(litScene);
+  const SoRenderCommand *litCommand = findGeometryCommand(action.getDrawList());
+  BOOST_REQUIRE(litCommand);
+  BOOST_CHECK(litCommand->material.shadingModel == SO_SHADING_LEGACY_GOURAUD);
+  litScene->unref();
+
+  SoSeparator *unlitScene = makeShadingModelProbeScene(SoLightModel::BASE_COLOR);
+  action.apply(unlitScene);
+  const SoRenderCommand *unlitCommand = findGeometryCommand(action.getDrawList());
+  BOOST_REQUIRE(unlitCommand);
+  BOOST_CHECK(unlitCommand->material.shadingModel == SO_SHADING_UNLIT);
+  unlitScene->unref();
+
+  SoSeparator *oneSidedScene = makeShadingModelProbeScene(SoLightModel::PHONG);
+  action.apply(oneSidedScene);
+  const SoRenderCommand *oneSidedCommand = findGeometryCommand(action.getDrawList());
+  BOOST_REQUIRE(oneSidedCommand);
+  BOOST_CHECK(!oneSidedCommand->material.twoSidedLighting);
+  oneSidedScene->unref();
+
+  SoSeparator *twoSidedScene = makeShadingModelProbeScene(SoLightModel::PHONG, true);
+  action.apply(twoSidedScene);
+  const SoRenderCommand *twoSidedCommand = findGeometryCommand(action.getDrawList());
+  BOOST_REQUIRE(twoSidedCommand);
+  BOOST_CHECK(twoSidedCommand->material.twoSidedLighting);
+  twoSidedScene->unref();
+}
+
+BOOST_AUTO_TEST_CASE(ir_captures_semantic_blend_depth_and_alpha_test_state)
+{
+  RenderStateProbe probe;
+  SoCallback * callback = new SoCallback;
+  callback->setCallback(captureBlendAndDepthState, &probe);
+
+  SoSeparator * scene = new SoSeparator;
+  scene->ref();
+  scene->addChild(callback);
+
+  SoIRRenderAction action(SbViewportRegion(1, 1));
+  action.apply(scene);
+
+  BOOST_REQUIRE(probe.captured);
+
+  BOOST_CHECK(probe.standardBlend.blend.enabled);
+  BOOST_CHECK(probe.standardBlend.blend.srcRGBFactor ==
+              SO_BLEND_FACTOR_SRC_ALPHA);
+  BOOST_CHECK(probe.standardBlend.blend.dstRGBFactor ==
+              SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
+  BOOST_CHECK(probe.standardBlend.blend.srcAlphaFactor ==
+              SO_BLEND_FACTOR_SRC_ALPHA);
+  BOOST_CHECK(probe.standardBlend.blend.dstAlphaFactor ==
+              SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
+  BOOST_CHECK(probe.standardBlend.blend.rgbEquation == SO_BLEND_EQUATION_ADD);
+  BOOST_CHECK(probe.standardBlend.blend.alphaEquation == SO_BLEND_EQUATION_ADD);
+
+  BOOST_CHECK(probe.separateBlend.blend.srcRGBFactor ==
+              SO_BLEND_FACTOR_DST_COLOR);
+  BOOST_CHECK(probe.separateBlend.blend.dstRGBFactor ==
+              SO_BLEND_FACTOR_ONE_MINUS_SRC_COLOR);
+  BOOST_CHECK(probe.separateBlend.blend.srcAlphaFactor ==
+              SO_BLEND_FACTOR_ZERO);
+  BOOST_CHECK(probe.separateBlend.blend.dstAlphaFactor ==
+              SO_BLEND_FACTOR_SRC_ALPHA);
+
+  BOOST_CHECK(probe.separateBlend.depth.enabled);
+  BOOST_CHECK(!probe.separateBlend.depth.writeEnabled);
+  BOOST_CHECK(probe.separateBlend.depth.func == SO_DEPTH_GREATER);
+  BOOST_CHECK(probe.separateBlend.alphaTest.policy == SO_ALPHA_TEST_POLICY_EXPLICIT);
+  BOOST_CHECK(probe.separateBlend.alphaTest.function == SO_ALPHA_TEST_GREATER);
+  BOOST_CHECK(std::fabs(probe.separateBlend.alphaTest.reference - 0.37f) < 0.001f);
+
+  scene->unref();
+}
+
+BOOST_AUTO_TEST_CASE(ir_makes_implicit_material_alpha_explicit)
+{
+  SoRenderState state;
+  SoMaterialData material;
+  material.opacity = 0.5f;
+
+  SoRenderIR::ensureMaterialBlendState(state, material);
+  BOOST_CHECK(state.blend.enabled);
+  BOOST_CHECK(state.blend.srcRGBFactor == SO_BLEND_FACTOR_SRC_ALPHA);
+  BOOST_CHECK(state.blend.dstRGBFactor == SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
+
+  SoRenderState texturedState;
+  SoMaterialData texturedMaterial;
+  texturedMaterial.flags = SO_MAT_HAS_TEXTURE;
+  SoRenderIR::ensureMaterialBlendState(texturedState, texturedMaterial);
+  BOOST_CHECK(texturedState.blend.enabled);
+
+  SoRenderState additiveState;
+  additiveState.blend.enabled = TRUE;
+  additiveState.blend.srcRGBFactor = SO_BLEND_FACTOR_SRC_ALPHA;
+  additiveState.blend.dstRGBFactor = SO_BLEND_FACTOR_ONE;
+  SoRenderIR::ensureMaterialBlendState(additiveState, material);
+  BOOST_CHECK(additiveState.blend.dstRGBFactor == SO_BLEND_FACTOR_ONE);
+}
+
+BOOST_AUTO_TEST_CASE(draw_list_initialization_falls_back_to_legacy_gl)
+{
+  if (!renderTestsHaveDisplay()) {
+    return;
+  }
+
+  SoRenderManager manager;
+  SoSeparator * scene = new SoSeparator;
+  scene->ref();
+  manager.setSceneGraph(scene);
+  scene->unref();
+
+  SoSeparator * outer = new SoSeparator;
+  outer->ref();
+  ManagerRenderProbe probe;
+  probe.manager = &manager;
+  SoCallback * callback = new SoCallback;
+  callback->setCallback(renderManagerFromCallback, &probe);
+  outer->addChild(callback);
+
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+  coin_setenv("COIN_TEST_FAIL_DRAW_LIST_INITIALIZATION", "1", TRUE);
+  const SbBool rendered = renderWithManager(manager, outer);
+  coin_unsetenv("COIN_TEST_FAIL_DRAW_LIST_INITIALIZATION");
+
+  BOOST_REQUIRE(rendered);
+  BOOST_CHECK(manager.getRenderPipeline() ==
+              SoRenderManager::RenderPipeline::LEGACY_GL);
+  outer->unref();
+}
+
+BOOST_AUTO_TEST_CASE(scene_invalidation_does_not_invalidate_legacy_action_state)
+{
+  SoRenderManager manager;
+  CountingGLRenderAction action(SbViewportRegion(1, 1));
+  manager.setGLRenderAction(&action);
+  action.invalidationCount = 0;
+
+  manager.invalidateScene();
+
+  BOOST_CHECK_EQUAL(action.invalidationCount, 0);
+}
+
+BOOST_AUTO_TEST_CASE(after_main_commands_survive_foreground_rebuild)
+{
+  SoIRRenderAction action(SbViewportRegion(1, 1));
+  StageProbe probe;
+
+  action.getMutableDrawList().emplaceCommand();
+  appendIdentifiableIRCommand(&probe, nullptr, &action);
+  const int afterMainCheckpoint = action.getDrawList().getNumCommands();
+
+  action.getMutableDrawList().emplaceCommand();
+  action.getMutableDrawList().truncate(afterMainCheckpoint);
+
+  BOOST_CHECK_EQUAL(action.getDrawList().getNumCommands(), 2);
+  BOOST_CHECK(action.getDrawList().getCommand(1).userData == &probe);
+  BOOST_CHECK_EQUAL(probe.calls, 1);
+}
+
+BOOST_AUTO_TEST_CASE(after_main_stage_has_depth_barrier_and_order)
+{
+  SoIRRenderAction action(SbViewportRegion(1, 1));
+  int mainTag = 1;
+  int afterMainTag = 2;
+  int secondAfterMainTag = 3;
+  int foregroundTag = 4;
+
+  SoRenderCommand & mainCommand = action.getMutableDrawList().emplaceCommand();
+  mainCommand.userData = &mainTag;
+
+  {
+    SoIRRenderStageScope stageScope(action, SoRenderStage::AfterMain);
+    SoRenderCommand & afterMainCommand = action.getMutableDrawList().emplaceCommand();
+    afterMainCommand.userData = &afterMainTag;
+    action.applyRenderStage(afterMainCommand);
+
+    SoRenderCommand & secondAfterMainCommand = action.getMutableDrawList().emplaceCommand();
+    secondAfterMainCommand.userData = &secondAfterMainTag;
+    secondAfterMainCommand.pass = SO_RENDERPASS_TRANSPARENT;
+    action.applyRenderStage(secondAfterMainCommand);
+  }
+
+  SoRenderCommand & foregroundCommand = action.getMutableDrawList().emplaceCommand();
+  foregroundCommand.userData = &foregroundTag;
+  foregroundCommand.stage = SoRenderStage::Foreground;
+  foregroundCommand.pass = SO_RENDERPASS_OVERLAY;
+
+  BOOST_CHECK_EQUAL(action.getDrawList().getNumCommands(), 4);
+  BOOST_CHECK(action.getDrawList().getCommand(0).userData == &mainTag);
+  BOOST_CHECK(action.getDrawList().getCommand(1).userData == &afterMainTag);
+  BOOST_CHECK(action.getDrawList().getCommand(2).userData == &secondAfterMainTag);
+  BOOST_CHECK(action.getDrawList().getCommand(3).userData == &foregroundTag);
+  BOOST_CHECK(action.getDrawList().getCommand(1).stage == SoRenderStage::AfterMain);
+  BOOST_CHECK_EQUAL(action.getDrawList().getCommand(1).pass, SO_RENDERPASS_OPAQUE);
+  BOOST_CHECK(action.getDrawList().getCommand(1).state.raster.clearDepth);
+  BOOST_CHECK(action.getDrawList().getCommand(2).stage == SoRenderStage::AfterMain);
+  BOOST_CHECK_EQUAL(action.getDrawList().getCommand(2).pass, SO_RENDERPASS_TRANSPARENT);
+  BOOST_CHECK(!action.getDrawList().getCommand(2).state.raster.clearDepth);
+  BOOST_CHECK(action.getDrawList().getCommand(3).stage == SoRenderStage::Foreground);
+  BOOST_CHECK_EQUAL(action.getDrawList().getCommand(3).pass, SO_RENDERPASS_OVERLAY);
+}
+
+BOOST_AUTO_TEST_CASE(draw_list_superimpositions_use_retained_traversal)
+{
+  if (!renderTestsHaveDisplay()) {
+    return;
+  }
+
+  SoRenderManager manager;
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+
+  SoSeparator * scene = new SoSeparator;
+  scene->ref();
+  manager.setSceneGraph(scene);
+  scene->unref();
+
+  SuperimpositionTraversalProbe probe;
+  SoSeparator * overlay = new SoSeparator;
+  overlay->ref();
+  SoCallback * callback = new SoCallback;
+  callback->setCallback(recordSuperimpositionTraversal, &probe);
+  overlay->addChild(callback);
+  manager.addSuperimposition(overlay, SoRenderManager::Superimposition::BACKGROUND);
+  overlay->unref();
+
+  SoSeparator * outer = new SoSeparator;
+  outer->ref();
+  SoCallback * renderCallback = new SoCallback;
+  ManagerRenderProbe renderProbe;
+  renderProbe.manager = &manager;
+  renderCallback->setCallback(renderManagerFromCallback, &renderProbe);
+  outer->addChild(renderCallback);
+
+  BOOST_REQUIRE(renderWithManager(manager, outer));
+  BOOST_CHECK_EQUAL(probe.irCalls, 1);
+  BOOST_CHECK_EQUAL(probe.glCalls, 0);
+  BOOST_REQUIRE(manager.getIRRenderAction());
+  BOOST_CHECK(manager.getIRRenderAction()->getDrawList().getNumCommands() > 0);
+
+  outer->unref();
+}
+
+BOOST_AUTO_TEST_CASE(manager_after_main_callback_survives_foreground_rebuild)
+{
+  if (!renderTestsHaveDisplay()) {
+    return;
+  }
+
+  SoRenderManager manager;
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+
+  SoSeparator * scene = new SoSeparator;
+  scene->ref();
+  manager.setSceneGraph(scene);
+  scene->unref();
+
+  SoOrthographicCamera * camera = new SoOrthographicCamera;
+  camera->position.setValue(0.0f, 0.0f, 0.0f);
+  camera->ref();
+  manager.setCamera(camera);
+  camera->unref();
+
+  SoSeparator * outer = new SoSeparator;
+  outer->ref();
+  outer->addChild(manager.getCamera());
+
+  ManagerRenderProbe renderProbe;
+  renderProbe.manager = &manager;
+  SoCallback * renderCallback = new SoCallback;
+  renderCallback->setCallback(renderManagerFromCallback, &renderProbe);
+  outer->addChild(renderCallback);
+
+  StageProbe stageProbe;
+  manager.addAfterMainSceneCallback(appendIdentifiableIRCommand, &stageProbe);
+
+  SbBool rendered = renderWithManager(manager, outer);
+  BOOST_REQUIRE(rendered);
+  BOOST_REQUIRE(manager.getIRRenderAction());
+  const int firstCommandCount = manager.getIRRenderAction()->getDrawList().getNumCommands();
+
+  manager.invalidateForeground();
+  rendered = renderWithManager(manager, outer);
+  BOOST_REQUIRE(rendered);
+
+  BOOST_CHECK_EQUAL(renderProbe.calls, 2);
+  BOOST_CHECK_EQUAL(stageProbe.calls, 1);
+  BOOST_CHECK_EQUAL(manager.getIRRenderAction()->getDrawList().getNumCommands(),
+                    firstCommandCount);
+
+  outer->unref();
+}
+
+BOOST_AUTO_TEST_CASE(hidden_line_preserves_explicit_background_layer)
+{
+  if (!renderTestsHaveDisplay()) {
+    return;
+  }
+
+  SoRenderManager manager;
+  manager.setRenderMode(SoRenderManager::HIDDEN_LINE);
+  manager.setLightingMode(SoRenderManager::UNLIT);
+
+  SoSeparator * scene = new SoSeparator;
+  scene->ref();
+  manager.setSceneGraph(scene);
+  scene->unref();
+
+  SoOrthographicCamera * camera = new SoOrthographicCamera;
+  camera->position.setValue(0.0f, 0.0f, 0.0f);
+  camera->ref();
+  manager.setCamera(camera);
+  camera->unref();
+
+  SoSeparator * background = new SoSeparator;
+  SoLightModel * backgroundLightModel = new SoLightModel;
+  backgroundLightModel->model = SoLightModel::BASE_COLOR;
+  background->addChild(backgroundLightModel);
+  SoSeparator * left = new SoSeparator;
+  SoMaterial * leftMaterial = new SoMaterial;
+  leftMaterial->diffuseColor.setValue(1.0f, 0.0f, 0.0f);
+  SoCoordinate3 * leftCoordinates = new SoCoordinate3;
+  leftCoordinates->point.set1Value(0, -1.0f, -1.0f, -1.0f);
+  leftCoordinates->point.set1Value(1, 0.0f, -1.0f, -1.0f);
+  leftCoordinates->point.set1Value(2, 0.0f, 1.0f, -1.0f);
+  leftCoordinates->point.set1Value(3, -1.0f, 1.0f, -1.0f);
+  SoFaceSet * leftFaces = new SoFaceSet;
+  leftFaces->numVertices.setValue(4);
+  left->addChild(leftMaterial);
+  left->addChild(leftCoordinates);
+  left->addChild(leftFaces);
+
+  SoSeparator * right = new SoSeparator;
+  SoMaterial * rightMaterial = new SoMaterial;
+  rightMaterial->diffuseColor.setValue(0.0f, 1.0f, 0.0f);
+  SoCoordinate3 * rightCoordinates = new SoCoordinate3;
+  rightCoordinates->point.set1Value(0, 0.0f, -1.0f, -1.0f);
+  rightCoordinates->point.set1Value(1, 1.0f, -1.0f, -1.0f);
+  rightCoordinates->point.set1Value(2, 1.0f, 1.0f, -1.0f);
+  rightCoordinates->point.set1Value(3, 0.0f, 1.0f, -1.0f);
+  SoFaceSet * rightFaces = new SoFaceSet;
+  rightFaces->numVertices.setValue(4);
+  right->addChild(rightMaterial);
+  right->addChild(rightCoordinates);
+  right->addChild(rightFaces);
+
+  background->addChild(left);
+  background->addChild(right);
+  background->ref();
+  manager.setRenderLayerRoot(SoRenderManager::RENDER_LAYER_BACKGROUND, background);
+  background->unref();
+
+  SoSeparator * outer = new SoSeparator;
+  outer->ref();
+  outer->addChild(manager.getCamera());
+  ManagerRenderProbe renderProbe;
+  renderProbe.manager = &manager;
+  SoCallback * renderCallback = new SoCallback;
+  renderCallback->setCallback(renderManagerFromCallback, &renderProbe);
+  outer->addChild(renderCallback);
+
+  const SbViewportRegion viewport(32, 32);
+  manager.setViewportRegion(viewport);
+  SoGLRenderAction outerAction(viewport);
+  SoOffscreenRenderer renderer(&outerAction);
+  renderer.setViewportRegion(viewport);
+  SbBool rendered = renderer.render(outer);
+  BOOST_REQUIRE(rendered);
+  const unsigned char * pixels = renderer.getBuffer();
+  BOOST_CHECK(pixels);
+
+  const unsigned char * leftPixel = pixels + ((16 * 32) + 8) * 3;
+  const unsigned char * rightPixel = pixels + ((16 * 32) + 24) * 3;
+  BOOST_CHECK(leftPixel[0] > leftPixel[1]);
+  BOOST_CHECK(rightPixel[1] > rightPixel[0]);
+
+  outer->unref();
+}
+
+BOOST_AUTO_TEST_CASE(highlight_storage_supports_multiple_elements)
+{
+  SoSelectionData selection;
+  selection.setHighlightedElement(4);
+  BOOST_CHECK_EQUAL(selection.highlightedElements.size(), size_t(1));
+  BOOST_CHECK_EQUAL(selection.highlightedElements[0], 4);
+
+  selection.highlightedElements.push_back(17);
+  selection.highlightedElements.push_back(29);
+  BOOST_CHECK_EQUAL(selection.highlightedElements.size(), size_t(3));
+  BOOST_CHECK_EQUAL(selection.highlightedElements[1], 17);
+  BOOST_CHECK_EQUAL(selection.highlightedElements[2], 29);
+
+  selection.setHighlightedElement(-1);
+  BOOST_CHECK(selection.highlightedElements.empty());
+}
+
+#endif // COIN_TEST_SUITE

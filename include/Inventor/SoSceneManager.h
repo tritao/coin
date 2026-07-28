@@ -98,8 +98,8 @@ public:
   SoAudioRenderAction * getAudioRenderAction(void) const;
   void setHandleEventAction(SoHandleEventAction * hea);
   SoHandleEventAction * getHandleEventAction(void) const;
-  void setModernRenderEnabled(SbBool enable);
-  SbBool isModernRenderEnabled(void) const;
+  void setRenderPipeline(SoRenderManager::RenderPipeline mode);
+  SoRenderManager::RenderPipeline getRenderPipeline(void) const;
 
   static uint32_t getDefaultRedrawPriority(void);
   static void enableRealTimeUpdate(const SbBool flag);
