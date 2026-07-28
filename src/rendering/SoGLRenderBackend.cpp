@@ -988,8 +988,10 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   bool isTextured = (entry.textureId != 0 && entry.texcoordVBO != 0);
   if (isTextured) {
     bool isBillboard = (cmd.material.flags & SO_MAT_IS_BILLBOARD) != 0;
-    // renderMode: 2=billboard, 3=world-space textured
-    glUniform1f(this->uRenderModeLocation, isBillboard ? 2.0f : 3.0f);
+    bool isPixelText = (cmd.material.flags & SO_MAT_IS_PIXEL_TEXT) != 0;
+    // renderMode: 2=billboard, 3=world-space textured, 4=pixel text
+    glUniform1f(this->uRenderModeLocation,
+                isPixelText ? 4.0f : (isBillboard ? 2.0f : 3.0f));
 
     if (isBillboard) {
       // Compute quad center from vertex positions (average of all vertices)
@@ -1012,6 +1014,11 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
       glUniform2f(this->uVpSizeLocation,
                   static_cast<float>(vpSz[0]),
                   static_cast<float>(vpSz[1]));
+      if (isPixelText) {
+        glUniform2f(this->uPixelTextOriginLocation,
+                    static_cast<float>(cmd.pixelText.originX),
+                    static_cast<float>(cmd.pixelText.originY));
+      }
     }
 
     glActiveTexture(GL_TEXTURE0);
@@ -1926,6 +1933,7 @@ SoGLRenderBackend::createShaders()
   this->uQuadCenterLocation = glGetUniformLocation(this->shaderProgram, "u_quadCenter");
   this->uTexSizeLocation = glGetUniformLocation(this->shaderProgram, "u_texSize");
   this->uVpSizeLocation = glGetUniformLocation(this->shaderProgram, "u_vpSize");
+  this->uPixelTextOriginLocation = glGetUniformLocation(this->shaderProgram, "u_pixelTextOrigin");
   this->uStipplePeriodLocation = glGetUniformLocation(this->shaderProgram, "u_stipplePeriod");
   this->uAmbientLightLocation = glGetUniformLocation(this->shaderProgram, "u_ambientLight");
   this->uLightCountLocation = glGetUniformLocation(this->shaderProgram, "u_lightCount");
