@@ -51,6 +51,7 @@
 #include "SoDecimationPercentageElement.cpp"
 #include "SoDecimationTypeElement.cpp"
 #include "SoDepthBufferElement.cpp"
+#include "SoDevicePixelRatioElement.cpp"
 #include "SoDiffuseColorElement.cpp"
 #include "SoDrawStyleElement.cpp"
 #include "SoElement.cpp"

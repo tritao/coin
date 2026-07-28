@@ -413,6 +413,7 @@ SoElement::initElements(void)
   SoLineWidthElement::initClass();
   SoGLLineWidthElement::initClass();
   SoPointSizeElement::initClass();
+  SoDevicePixelRatioElement::initClass();
   SoGLPointSizeElement::initClass();
   SoTextureQualityElement::initClass();
   SoGLRenderPassElement::initClass();
