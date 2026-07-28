@@ -211,6 +211,11 @@ public:
   void setRenderPipeline(RenderPipeline pipeline);
   RenderPipeline getRenderPipeline(void) const;
 
+  /// Notify Coin that the shared GL context was modified outside the
+  /// current render action. The next action using the context will rebuild
+  /// its cached state before traversing.
+  void invalidateSharedGLState(void);
+
   /// Release render-backend GPU resources for the current OpenGL context.
   /// The backend object remains alive and will be reinitialized lazily on the
   /// next render.

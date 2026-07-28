@@ -835,6 +835,7 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   params.devicePixelRatio = PRIVATE(this)->devicePixelRatio;
 
   backend->render(list, params);
+  this->invalidateSharedGLState();
 
   // Render FOREGROUND superimpositions via the legacy action.
   // The NaviCube's internal scene graph uses Coin nodes (SoTexture2 etc.)
@@ -850,11 +851,16 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
-    glaction->invalidateState();
     for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
       Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
       if (!(s->getStateFlags() & Superimposition::BACKGROUND)) {
+        SoState * state = glaction->getState();
+        state->push();
+        setCommonTraversalState(state,
+                                PRIVATE(this)->dummynode,
+                                PRIVATE(this)->devicePixelRatio);
         s->render(glaction);
+        state->pop();
       }
     }
   }
@@ -2155,6 +2161,18 @@ SoRenderManager::getRenderPipeline(void) const
 }
 
 void
+SoRenderManager::invalidateSharedGLState(void)
+{
+  if (!PRIVATE(this)->glaction) return;
+
+  const uint32_t context = PRIVATE(this)->glaction->getCacheContext();
+  SoGLCacheContextElement::invalidateContextState(context);
+
+  // Keep the manager-owned action immediately ready for a transition while
+  // the generation also covers temporary actions sharing this context.
+  PRIVATE(this)->glaction->invalidateState();
+}
+
 SoRenderManager::releaseRenderBackendResources(void)
 {
   SoRenderBackend * backend = PRIVATE(this)->renderBackend;
