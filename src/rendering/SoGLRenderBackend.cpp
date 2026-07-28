@@ -27,6 +27,7 @@ void glDeleteVertexArrays(GLsizei n, const GLuint * arrays);
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/SbMatrix.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -53,8 +54,7 @@ static constexpr float DIFFUSE_COEFF  = 0.85f;
 static constexpr float SPECULAR_COEFF = 0.12f;
 static constexpr float DEFAULT_SHININESS = 64.0f;
 
-// Alpha thresholds for selection/highlight overlays
-static constexpr float HIGHLIGHT_ALPHA = 0.6f;
+// Alpha thresholds for selection overlays
 static constexpr float SELECTION_ALPHA = 0.5f;
 
 // Texture alpha discard threshold (shader-side)
@@ -1484,8 +1484,8 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
   for (int i = 0; i < count; ++i) {
     const SoRenderCommand & cmd = drawlist.getCommand(i);
     if (cmd.stage != stage) continue;
-    int hlElem = cmd.selection.highlightElement;
-    bool hasHighlight = cmd.selection.highlightWholeObject || (hlElem != -1);
+    bool hasHighlight = cmd.selection.highlightWholeObject
+                     || !cmd.selection.highlightedElements.empty();
     bool hasSelection = cmd.selection.selectWholeObject || !cmd.selection.selectedElements.empty();
     if (!hasHighlight && !hasSelection) continue;
 
@@ -1503,6 +1503,7 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
 
     GLenum prim = topologyToGL(cmd.geometry.topology);
     bool pointShaderActive = false;
+    bool lineShaderActive = false;
 
     if (prim == GL_POINTS) {
       float pointSize = cmd.state.raster.pointSize;
@@ -1531,7 +1532,8 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
       // This matches the legacy renderer which replaces the edge color.
       glDepthFunc(GL_ALWAYS);
       float edgeWidth = std::max(cmd.state.raster.lineWidth, 1.0f) * params.devicePixelRatio;
-      if (this->lineShaderProgram && edgeWidth > 1.0f) {
+      if (this->shouldUseWideLineShader(edgeWidth)) {
+        lineShaderActive = true;
         glUseProgram(this->lineShaderProgram);
         glUniformMatrix4fv(this->lineUModelLocation, 1, GL_FALSE, &modelMat[0][0]);
         glUniformMatrix4fv(this->lineUViewLocation, 1, GL_FALSE, &viewMat[0][0]);
@@ -1542,6 +1544,8 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
         glUniform1f(this->lineULineWidthLocation, edgeWidth);
         glUniform1f(this->lineUStipplePeriodLocation, 0.0f);
         glUniform1f(this->lineUUseVertexColorLocation, 0.0f);
+      } else {
+        glLineWidth(edgeWidth);
       }
     }
 
@@ -1553,7 +1557,6 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
     // For edges, use opaque color (replaces the edge, not overlays).
     bool isEdge = (prim == GL_LINES || prim == GL_LINE_STRIP);
     bool isPoint = (prim == GL_POINTS);
-    bool lineShaderActive = isEdge && this->lineShaderProgram;
     auto setSelColor = [&](float r, float g, float b, float a) {
       float alpha = (isEdge || isPoint) ? 1.0f : a;  // opaque for edges/points
       if (lineShaderActive) {
@@ -1636,7 +1639,8 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
 
     if (hasHighlight) {
       const SbVec4f & hc = cmd.selection.highlightColor;
-      setSelColor(hc[0], hc[1], hc[2], HIGHLIGHT_ALPHA);
+      const float highlightAlpha = std::max(0.0f, std::min(hc[3], 1.0f));
+      setSelColor(hc[0], hc[1], hc[2], highlightAlpha);
       if (prim == GL_POINTS) {
         // Match the legacy point overlay path: committed selection respects
         // depth, while the live highlight renders on top.
@@ -1646,7 +1650,9 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
         drawWholeCommand(cmd, prim);
       }
       else {
-        drawElementRanges(cmd, hlElem, prim);
+        for (int elem : cmd.selection.highlightedElements) {
+          drawElementRanges(cmd, elem, prim);
+        }
       }
     }
 
@@ -1659,9 +1665,11 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
     }
     if (prim == GL_LINES || prim == GL_LINE_STRIP) {
       glDepthFunc(GL_LEQUAL);
-      if (this->lineShaderProgram) {
+      if (lineShaderActive) {
         glUseProgram(this->shaderProgram);
         glUniform1f(this->uRenderModeLocation, 1.0f);
+      } else {
+        glLineWidth(1.0f);
       }
     }
   }
