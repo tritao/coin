@@ -1,9 +1,9 @@
 // src/rendering/SoRenderIR.cpp
 
-#include "rendering/SoRenderIR.h"
+#include "rendering/SoRenderIRP.h"
 #include "CoinTracyConfig.h"
 
-#include <Inventor/actions/SoIRRenderAction.h>
+#include <Inventor/C/tidbits.h>
 #include <Inventor/caches/SoPrimitiveVertexCache.h>
 #include <Inventor/elements/SoDepthBufferElement.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
@@ -70,6 +70,23 @@ lightingEqual(const SoLightingData & lhs, const SoLightingData & rhs)
 
 } // namespace
 
+SbBool
+coin_render_ir_trace_enabled()
+{
+  static int initialized = 0;
+  static SbBool enabled = FALSE;
+  if (!initialized) {
+    enabled = coin_getenv("COIN_DEBUG_RENDER_IR") ? TRUE : FALSE;
+    initialized = 1;
+  }
+  return enabled;
+}
+
+struct SoIRRenderAction::GeometrySavePoint::Data {
+  std::vector<size_t> chunkCursors;
+  size_t totalAllocated = 0;
+};
+
 SoIRBuffer::SoIRBuffer()
 {
 }
@@ -88,27 +105,32 @@ SoIRBuffer::clear()
   this->totalAllocated = 0;
 }
 
-SoIRBuffer::SavePoint
+SoIRRenderAction::GeometrySavePoint
 SoIRBuffer::save() const
 {
-  SavePoint sp;
-  sp.totalAllocated = this->totalAllocated;
-  sp.chunkCursors.reserve(this->chunks.size());
+  auto data = std::make_shared<SoIRRenderAction::GeometrySavePoint::Data>();
+  data->totalAllocated = this->totalAllocated;
+  data->chunkCursors.reserve(this->chunks.size());
   for (const auto & chunk : this->chunks) {
-    sp.chunkCursors.push_back(chunk->cursor);
+    data->chunkCursors.push_back(chunk->cursor);
   }
-  return sp;
+  return SoIRRenderAction::GeometrySavePoint(data);
 }
 
 void
-SoIRBuffer::rewindTo(const SavePoint & sp)
+SoIRBuffer::rewindTo(const SoIRRenderAction::GeometrySavePoint & sp)
 {
-  this->totalAllocated = sp.totalAllocated;
-  for (size_t i = 0; i < sp.chunkCursors.size() && i < this->chunks.size(); ++i) {
-    this->chunks[i]->cursor = sp.chunkCursors[i];
+  if (!sp.data) {
+    this->clear();
+    return;
+  }
+
+  this->totalAllocated = sp.data->totalAllocated;
+  for (size_t i = 0; i < sp.data->chunkCursors.size() && i < this->chunks.size(); ++i) {
+    this->chunks[i]->cursor = sp.data->chunkCursors[i];
   }
   // Reset any chunks beyond the save point
-  for (size_t i = sp.chunkCursors.size(); i < this->chunks.size(); ++i) {
+  for (size_t i = sp.data->chunkCursors.size(); i < this->chunks.size(); ++i) {
     this->chunks[i]->cursor = 0;
   }
 }
@@ -164,7 +186,7 @@ SoDrawList::SoDrawList()
 void
 SoDrawList::clear()
 {
-  this->commands.truncate(0);
+  this->commands.clear();
   this->lightingSetups.clear();
   this->pickLUT.clear();
   this->sortedOrder.clear();
@@ -174,8 +196,8 @@ SoDrawList::clear()
 void
 SoDrawList::truncate(int count)
 {
-  if (count < this->commands.getLength()) {
-    this->commands.truncate(count);
+  if (count < static_cast<int>(this->commands.size())) {
+    this->commands.resize(static_cast<size_t>(count));
     // Pick LUT and sorted order are rebuilt after traversal, no need to
     // truncate them here — they'll be fully rebuilt by buildPickLUT()
     // and buildSortedOrder().
@@ -185,39 +207,38 @@ SoDrawList::truncate(int count)
 void
 SoDrawList::reserve(int count)
 {
-  this->commands.ensureCapacity(count);
+  this->commands.reserve(static_cast<size_t>(count));
 }
 
 void
 SoDrawList::addCommand(const SoRenderCommand & cmd)
 {
-  this->commands.append(cmd);
+  this->commands.push_back(cmd);
 }
 
 SoRenderCommand &
 SoDrawList::emplaceCommand()
 {
-  const int idx = this->commands.getLength();
-  this->commands.append(SoRenderCommand());
-  return this->commands[idx];
+  this->commands.emplace_back();
+  return this->commands.back();
 }
 
 int
 SoDrawList::getNumCommands() const
 {
-  return this->commands.getLength();
+  return static_cast<int>(this->commands.size());
 }
 
 SoRenderCommand &
 SoDrawList::getCommand(int i)
 {
-  return this->commands[i];
+  return this->commands[static_cast<size_t>(i)];
 }
 
 const SoRenderCommand &
 SoDrawList::getCommand(int i) const
 {
-  return *(this->commands.getArrayPtr() + i);
+  return this->commands[static_cast<size_t>(i)];
 }
 
 SoLightingHandle
@@ -248,41 +269,37 @@ SoDrawList::getLighting(SoLightingHandle handle) const
 SoRenderCommand *
 SoDrawList::begin()
 {
-  return this->commands.getLength() ?
-         const_cast<SoRenderCommand *>(this->commands.getArrayPtr()) : nullptr;
+  return this->commands.empty() ? nullptr : this->commands.data();
 }
 
 SoRenderCommand *
 SoDrawList::end()
 {
-  return this->commands.getLength() ?
-         const_cast<SoRenderCommand *>(this->commands.getArrayPtr()) + this->commands.getLength() : nullptr;
+  return this->commands.empty() ? nullptr : this->commands.data() + this->commands.size();
 }
 
 const SoRenderCommand *
 SoDrawList::begin() const
 {
-  return this->commands.getLength() ?
-         this->commands.getArrayPtr() : nullptr;
+  return this->commands.empty() ? nullptr : this->commands.data();
 }
 
 const SoRenderCommand *
 SoDrawList::end() const
 {
-  return this->commands.getLength() ?
-         this->commands.getArrayPtr() + this->commands.getLength() : nullptr;
+  return this->commands.empty() ? nullptr : this->commands.data() + this->commands.size();
 }
 
 void
 SoDrawList::buildSortedOrder(const SbMatrix & viewMatrix)
 {
   ZoneScopedN("buildSortedOrder");
-  int n = this->commands.getLength();
+  int n = static_cast<int>(this->commands.size());
   sortedOrder.resize(n);
   for (int i = 0; i < n; i++) sortedOrder[i] = i;
   if (n <= 1) return;
 
-  SoRenderCommand * arr = const_cast<SoRenderCommand *>(this->commands.getArrayPtr());
+  SoRenderCommand * arr = this->commands.data();
 
   // Compute camera-space depth for each command using the model matrix origin.
   SbMat v;
@@ -427,6 +444,10 @@ renderpass_name(SoRenderPassType pass)
 void
 SoIRDumpSummary(const SoDrawList & drawlist)
 {
+  if (!coin_render_ir_trace_enabled()) {
+    return;
+  }
+
   int counts[SO_RENDERPASS_COUNT] = { 0 };
   uint32_t minVerts = UINT32_MAX;
   uint32_t maxVerts = 0;
@@ -456,17 +477,37 @@ SoIRDumpSummary(const SoDrawList & drawlist)
 void
 SoIRDumpFirstN(const SoDrawList & drawlist, int count)
 {
+  if (!coin_render_ir_trace_enabled()) {
+    return;
+  }
+
   const int num = drawlist.getNumCommands();
   const int limit = std::min(num, count);
   for (int i = 0; i < limit; ++i) {
     const SoRenderCommand & cmd = drawlist.getCommand(i);
+    const SbVec4f & diffuse = cmd.material.diffuse;
+    const SoLightingData * lighting = drawlist.getLighting(cmd.lightingHandle);
+    int numlights = lighting ? static_cast<int>(lighting->lights.size()) : -1;
+    SbVec3f ambient(0.0f, 0.0f, 0.0f);
+    if (lighting) {
+      ambient = lighting->ambient;
+    }
     SoDebugError::postInfo("SoDrawList",
-                           "[%d] pass=%s topo=%d verts=%u idx=%u pipeline=0x%016" PRIx64,
+                           "[%d] pass=%s topo=%d verts=%u idx=%u colors=%p diffuse=(%.3f, %.3f, %.3f, %.3f) lights=%d ambient=(%.3f, %.3f, %.3f) pipeline=0x%016" PRIx64,
                            i,
                            renderpass_name(cmd.pass),
                            static_cast<int>(cmd.geometry.topology),
                            cmd.geometry.vertexCount,
                            cmd.geometry.indexCount,
+                           cmd.geometry.colors,
+                           diffuse[0],
+                           diffuse[1],
+                           diffuse[2],
+                           diffuse[3],
+                           numlights,
+                           ambient[0],
+                           ambient[1],
+                           ambient[2],
                            static_cast<uint64_t>(cmd.pipelineKey));
   }
 }
