@@ -853,10 +853,13 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   }
   bool useLineShader = false;
-  if (prim == GL_LINES || prim == GL_LINE_STRIP || fillMode == 1) {
+  const bool linePrimitive = prim == GL_LINES || prim == GL_LINE_STRIP;
+  if (linePrimitive || fillMode == 1) {
     float lw = std::max(cmd.state.raster.lineWidth, 1.0f) * dpr;
-    if (this->lineShaderProgram && lw > 1.0f) {
-      // Switch to line shader with geometry-based width expansion
+    if (linePrimitive && this->lineShaderProgram && lw > 1.0f) {
+      // Switch actual line primitives to the geometry-based width expansion
+      // shader. Wireframe triangle commands stay on the regular triangle
+      // path: the wide-line shader accepts GL_LINES input only.
       useLineShader = true;
       glUseProgram(this->lineShaderProgram);
       SbMat modelMat2;
@@ -1122,6 +1125,15 @@ SoGLRenderBackend::beginFrame(const SoDrawList & drawlist,
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LEQUAL);
   glDepthMask(GL_TRUE);
+
+#if defined(COIN_GL_COMPATIBILITY)
+  if (params.lineSmoothing) {
+    glEnable(GL_LINE_SMOOTH);
+  }
+  else {
+    glDisable(GL_LINE_SMOOTH);
+  }
+#endif
 
   glUseProgram(this->shaderProgram);
   coin_apply_default_viewport(params);

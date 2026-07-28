@@ -144,6 +144,12 @@ struct SoRenderParams {
     clears the depth buffer before rendering the main scene.
   */
   int                bgCommandCount;
+  /*
+    Whether legacy Coin line smoothing is enabled for this frame.
+    DrawList backends must explicitly mirror this GL state because they run
+    after the legacy action has established the context state.
+  */
+  bool               lineSmoothing;
   /*!
     \brief Device pixel ratio for HiDPI scaling (e.g. 2.0 on Retina).
     Line widths and point sizes are scaled by this factor.
