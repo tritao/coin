@@ -470,7 +470,6 @@ glglue_allow_newer_opengl(const cc_glglue * w)
   return TRUE;
 }
 
-
 /* Returns whether or not COIN_GLGLUE_SILENCE_DRIVER_WARNINGS is set
    to a value > 0. If so, all known driver bugs will just be silently
    accepted and attempted worked around. */
@@ -547,6 +546,7 @@ coin_glglue_trident_warning(void)
   /* Note the inversion of the envvar value versus the return value. */
   return (d > 0) ? 0 : 1;
 }
+
 
 /* Return value of COIN_DEBUG_GLGLUE environment variable. */
 int
@@ -704,6 +704,10 @@ glglue_set_glVersion(cc_glglue * w)
   w->version.minor = 0;
   w->version.release = 0;
 
+#if defined(__EMSCRIPTEN__)
+  glGetIntegerv(GL_MAJOR_VERSION, (GLint *)&w->version.major);
+  glGetIntegerv(GL_MINOR_VERSION, (GLint *)&w->version.minor);
+#else
   (void)strncpy(buffer, (const char *)w->versionstr, 255);
   buffer[255] = '\0'; /* strncpy() will not null-terminate if strlen > 255 */
   dotptr = strchr(buffer, '.');
@@ -733,6 +737,7 @@ glglue_set_glVersion(cc_glglue * w)
       w->version.minor = atoi(start);
     }
   }
+#endif
 
   if (coin_glglue_debug()) {
     cc_debugerror_postinfo("glglue_set_glVersion",
@@ -760,7 +765,6 @@ cc_glglue_glversion(const cc_glglue * w,
     *release = w->version.release;
   }
 }
-
 
 SbBool
 cc_glglue_glversion_matches_at_least(const cc_glglue * w,
@@ -1318,6 +1322,7 @@ glglue_resolve_symbols(cc_glglue * w)
   }
 #endif /* GL_VERSION_1_5 */
 
+#if !defined(__EMSCRIPTEN__)
 #if defined(GL_ARB_vertex_buffer_object)
   if ((w->glBindBuffer == NULL) && cc_glglue_glext_supported(w, "GL_ARB_vertex_buffer_object")) {
     w->glBindBuffer = (COIN_PFNGLBINDBUFFERPROC) PROC(w, glBindBufferARB);
@@ -1404,6 +1409,7 @@ glglue_resolve_symbols(cc_glglue * w)
       }
     }
   }
+#endif
 
   /* GL_NV_register_combiners */
   w->glCombinerParameterfvNV = NULL;
@@ -2258,6 +2264,12 @@ static void check_egl()
 #endif
 }
 
+#ifdef COIN_DEBUG
+static void APIENTRY coin_gldebug_report(GLenum source, GLenum type, GLuint id,
+                            GLenum severity, GLsizei length,
+                            const GLchar *msg, const void *data);
+#endif
+
 /* We're basically using the Singleton pattern to instantiate and
    return OpenGL-glue "object structs". We're constructing one
    instance for each OpenGL context, though.  */
@@ -2306,9 +2318,13 @@ cc_glglue_instance(int contextid)
     */
     static int chk = -1;
     if (chk == -1) {
+#if defined(__EMSCRIPTEN__)
+      chk = 0;
+#else
       /* Note: don't change envvar name without updating the assert
          text below. */
       chk = coin_getenv("COIN_GL_NO_CURRENT_CONTEXT_CHECK") ? 0 : 1;
+#endif
     }
     if (chk) {
       const void * current_ctx = coin_gl_current_context();
@@ -2439,6 +2455,22 @@ cc_glglue_instance(int contextid)
                                    "version: %s, vendor: %s", gi->versionstr, gi->vendorstr);
       }
     }
+
+    /* setup debug mode */
+#ifdef COIN_DEBUG
+    if (cc_glglue_glext_supported(gi, "KHR_debug") ||
+        cc_glglue_glversion_matches_at_least(gi, 4, 3, 0)) {
+      glEnable(GL_DEBUG_OUTPUT);
+      glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+
+      COIN_PFNGLDEBUGMESSAGECALLBACKPROC glDebugMessageCallback = NULL;
+      glDebugMessageCallback = (COIN_PFNGLDEBUGMESSAGECALLBACKPROC)cc_glglue_getprocaddress(gi,
+        "glDebugMessageCallback");
+      if (glDebugMessageCallback != NULL) {
+        glDebugMessageCallback(coin_gldebug_report, nullptr);
+      }
+    }
+#endif
 
     /* read some limits */
 
@@ -2587,6 +2619,74 @@ cc_glglue_isdirect(const cc_glglue * w)
   return w->glx.isdirect;
 }
 
+static SbBool
+glglue_detect_profile_compat(const cc_glglue * glue)
+{
+  unsigned int major, minor, release;
+  cc_glglue_glversion(glue, &major, &minor, &release);
+
+  if (major < 2 || (major == 2 && minor <= 1)) {
+    return TRUE;
+  }
+
+  if (major == 3 && minor == 0) {
+    GLint flags;
+    glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
+    return (flags & GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT) == 0;
+  }
+
+  if (major == 3 && minor == 1) {
+    if (glue->glGetStringi != NULL) {
+      GLint extensionsNum = 0;
+      glGetIntegerv(GL_NUM_EXTENSIONS, &extensionsNum);
+      for (GLint i = 0; i < extensionsNum; ++i) {
+        const auto extensionName =
+          reinterpret_cast<const char *>(glue->glGetStringi(GL_EXTENSIONS, i));
+        if (extensionName &&
+            strcmp(extensionName, "GL_ARB_compatibility") == 0) {
+          return TRUE;
+        }
+      }
+      return FALSE;
+    }
+    if (glue->extensionsstr != NULL) {
+      return strstr(glue->extensionsstr, "GL_ARB_compatibility") != NULL;
+    }
+    return FALSE;
+  }
+
+  GLint profile;
+  glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &profile);
+
+#if COIN_DEBUG
+  cc_string str;
+  cc_string_construct(&str);
+  const unsigned int errs = coin_catch_gl_errors(&str);
+  if (errs > 0) {
+    cc_debugerror_postinfo("cc_glglue_glprofile_compat",
+          "glGetError()s => '%s'", cc_string_get_text(&str));
+    cc_string_clean(&str);
+    return FALSE;
+  }
+  cc_string_clean(&str);
+#endif // COIN_DEBUG
+
+  return (profile & GL_CONTEXT_CORE_PROFILE_BIT) == 0;
+}
+
+/*
+   Returns TRUE if the underlying OpenGL supports the compatibility
+   profile.
+*/
+SbBool cc_glglue_glprofile_compat(const cc_glglue * glue)
+{
+  if (!glue->glprofile_compat_cached) {
+    cc_glglue * mutable_glue = const_cast<cc_glglue *>(glue);
+    mutable_glue->glprofile_is_compat = glglue_detect_profile_compat(glue);
+    mutable_glue->glprofile_compat_cached = TRUE;
+  }
+  return glue->glprofile_is_compat;
+}
 
 /*!
   Whether glPolygonOffset() is available or not: either we're on OpenGL
@@ -5237,6 +5337,93 @@ coin_catch_gl_errors(cc_string * str)
   }
   return errs;
 }
+
+#ifdef COIN_DEBUG
+static void APIENTRY coin_gldebug_report(GLenum source, GLenum type, GLuint id,
+                            GLenum severity, GLsizei length,
+                            const GLchar *msg, const void *data)
+{
+    const char* _source;
+    const char* _type;
+    const char* _severity;
+
+    switch (source) {
+        case GL_DEBUG_SOURCE_API:
+        _source = "API";
+        break;
+        case GL_DEBUG_SOURCE_WINDOW_SYSTEM:
+        _source = "WINDOW SYSTEM";
+        break;
+        case GL_DEBUG_SOURCE_SHADER_COMPILER:
+        _source = "SHADER COMPILER";
+        break;
+        case GL_DEBUG_SOURCE_THIRD_PARTY:
+        _source = "THIRD PARTY";
+        break;
+        case GL_DEBUG_SOURCE_APPLICATION:
+        _source = "APPLICATION";
+        break;
+        case GL_DEBUG_SOURCE_OTHER:
+        _source = "OTHER";
+        break;
+        default:
+        _source = "UNKNOWN";
+        break;
+    }
+
+    switch (type) {
+        case GL_DEBUG_TYPE_ERROR:
+        _type = "ERROR";
+        break;
+        case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR:
+        _type = "DEPRECATED BEHAVIOR";
+        break;
+        case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:
+        _type = "UDEFINED BEHAVIOR";
+        break;
+        case GL_DEBUG_TYPE_PORTABILITY:
+        _type = "PORTABILITY";
+        break;
+        case GL_DEBUG_TYPE_PERFORMANCE:
+        _type = "PERFORMANCE";
+        break;
+        case GL_DEBUG_TYPE_OTHER:
+        _type = "OTHER";
+        break;
+        case GL_DEBUG_TYPE_MARKER:
+        _type = "MARKER";
+        break;
+        default:
+        _type = "UNKNOWN";
+        break;
+    }
+
+    switch (severity) {
+        case GL_DEBUG_SEVERITY_HIGH:
+        _severity = "HIGH";
+        break;
+        case GL_DEBUG_SEVERITY_MEDIUM:
+        _severity = "MEDIUM";
+        break;
+        case GL_DEBUG_SEVERITY_LOW:
+        _severity = "LOW";
+        break;
+        case GL_DEBUG_SEVERITY_NOTIFICATION:
+        _severity = "NOTIFICATION";
+        break;
+        default:
+        _severity = "UNKNOWN";
+        break;
+    }
+
+    // ignore note about VBO static draw being in video memory
+    if (id == 131185)
+      return;
+
+    cc_debugerror_postwarning("coin_gldebug_report", "%d: %s of %s severity, raised from %s: %s\n",
+            id, _type, _severity, _source, msg);
+}
+#endif
 
 /* ********************************************************************** */
 

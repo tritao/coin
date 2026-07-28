@@ -566,6 +566,10 @@ typedef void (APIENTRY * COIN_PFNGLGENERATEMIPMAPPROC)(GLenum target);
 
 typedef GLubyte* (APIENTRY * COIN_PFNGLGETSTRINGIPROC) (GLenum target, GLuint idx);
 
+/* Typedef for new debug methods */
+
+typedef void (APIENTRY * COIN_GLDEBUGPROC)(GLenum source,GLenum type,GLuint id,GLenum severity,GLsizei length,const GLchar *message,const void *userParam);
+typedef void (APIENTRY * COIN_PFNGLDEBUGMESSAGECALLBACKPROC)(COIN_GLDEBUGPROC callback, const void *userParam);
 
 /* ********************************************************************** */
 
@@ -870,6 +874,8 @@ struct cc_glglue {
 
   SbBool vbo_in_displaylist_ok;
   SbBool non_power_of_two_textures;
+  SbBool glprofile_compat_cached;
+  SbBool glprofile_is_compat;
   int max_lights;
   float line_width_range[2];
   float point_size_range[2];

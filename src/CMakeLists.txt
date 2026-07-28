@@ -18,6 +18,17 @@ configure_file(setup.h.cmake.in setup.h)
 
 add_compile_options(-DHAVE_CONFIG_H -DCOIN_INTERNAL -DCOIN_DEBUG=$<CONFIG:Debug>)
 
+# Tracy profiling support (symbols resolve from host app at load time)
+if (COIN_USE_TRACY)
+  add_definitions(-DTRACY_ENABLE -DCOIN_USE_TRACY)
+  if (COIN_TRACY_INCLUDE_DIR)
+    include_directories(${COIN_TRACY_INCLUDE_DIR})
+  endif()
+  if (APPLE)
+    add_link_options(-undefined dynamic_lookup)
+  endif()
+endif()
+
 include_directories(BEFORE
   "${PROJECT_BINARY_DIR}/include"
   "${PROJECT_SOURCE_DIR}/include"
@@ -51,6 +62,9 @@ foreach(_subdir ${SUBDIRS})
   add_subdirectory(${_subdir})
 endforeach()
 add_subdirectory(doc)
+
+include_directories(BEFORE SYSTEM ${PROJECT_SOURCE_DIR}/src/glad/include)
+add_subdirectory(glad)
 
 # Adding source groups for IDE's (Visual Studio, XCode, Qt Creator, etc.)
 source_group("Header Files\\Inventor"                            REGULAR_EXPRESSION ".*/include/Inventor/.*[.]h")
@@ -239,7 +253,7 @@ if(WIN32)
   )
 elseif(APPLE)
   if(COIN_BUILD_MAC_FRAMEWORK)
-    # Set the framework target properties just to make sure the relevant links inside the framework 
+    # Set the framework target properties just to make sure the relevant links inside the framework
     # are created.  Because the default framework name differs from the project name we change the
     # output name property.
     set_target_properties(${PROJECT_NAME} PROPERTIES
@@ -318,17 +332,17 @@ if(COIN_BUILD_MAC_FRAMEWORK)
 # ############################################################################
 
   if(COIN_BUILD_DOCUMENTATION)
-    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD 
+    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${PROJECT_NAME}>/Documentation
       COMMAND ${CMAKE_COMMAND} -E create_symlink ./Versions/Current/Documentation $<TARGET_FILE_DIR:${PROJECT_NAME}>/../../Documentation
       COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/html $<TARGET_FILE_DIR:${PROJECT_NAME}>/Documentation/html)
     if(COIN_BUILD_DOCUMENTATION_QTHELP)
-      add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD 
+      add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E remove $<TARGET_FILE_DIR:${PROJECT_NAME}>/Documentation/html/${PROJECT_NAME}-${PROJECT_VERSION_MAJOR}.qch
         COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_BINARY_DIR}/html/${PROJECT_NAME}-${PROJECT_VERSION_MAJOR}.qch $<TARGET_FILE_DIR:${PROJECT_NAME}>/Documentation)
     endif()
     if(COIN_BUILD_DOCUMENTATION_MAN)
-      add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD 
+      add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_BINARY_DIR}/man/man3 $<TARGET_FILE_DIR:${PROJECT_NAME}>/Documentation/man)
     endif()
   endif()
@@ -337,7 +351,7 @@ if(COIN_BUILD_MAC_FRAMEWORK)
 # Add framework links
 # ############################################################################
 
-  add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD 
+  add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${PROJECT_NAME}>/Libraries
     COMMAND ${CMAKE_COMMAND} -E create_symlink ./Versions/Current/Libraries $<TARGET_FILE_DIR:${PROJECT_NAME}>/../../Libraries
     COMMAND ${CMAKE_COMMAND} -E create_symlink ../${COIN_MAC_FRAMEWORK_NAME} $<TARGET_FILE_DIR:${PROJECT_NAME}>/Libraries/${CMAKE_SHARED_LIBRARY_PREFIX}${PROJECT_NAME}${COIN_SO_VERSION}.${PROJECT_VERSION_MINOR}.${PROJECT_VERSION_PATCH}${CMAKE_SHARED_LIBRARY_SUFFIX}
@@ -368,6 +382,16 @@ if(COIN_INSTALL)
 # Install headers
 # ############################################################################
 
+  # Sync SoModernIR.h: single source of truth is src/rendering/SoModernIR.h.
+  # Copy to include/ so the installed header always matches the internal one,
+  # preventing heap corruption from struct layout drift.
+  add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+      ${PROJECT_SOURCE_DIR}/src/rendering/SoModernIR.h
+      ${PROJECT_SOURCE_DIR}/include/Inventor/rendering/SoModernIR.h
+    COMMENT "Syncing SoModernIR.h public header from src/"
+  )
+
   install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/Inventor/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/Inventor COMPONENT development FILES_MATCHING PATTERN "*.h")
   install(DIRECTORY ${CMAKE_BINARY_DIR}/include/Inventor/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/Inventor COMPONENT development FILES_MATCHING PATTERN "*.h")
   install(FILES ${PROJECT_SOURCE_DIR}/include/SoWinEnterScope.h ${PROJECT_SOURCE_DIR}/include/SoWinLeaveScope.h ${PROJECT_SOURCE_DIR}/include/SoDebug.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT development)
@@ -377,7 +401,7 @@ if(COIN_INSTALL)
 # ############################################################################
 
   install(DIRECTORY ${PROJECT_SOURCE_DIR}/data/ DESTINATION ${CMAKE_INSTALL_DATADIR} COMPONENT development FILES_MATCHING PATTERN [cep]*.xml PATTERN *.iv PATTERN *.glsl)
-  
+
 # ############################################################################
 # Install target
 # ############################################################################

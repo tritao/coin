@@ -1439,7 +1439,7 @@ SoGLImageP::resizeImage(SoState * state, unsigned char *& imageptr,
   }
   else {
     GLint maxr;
-    glGetIntegerv(GL_MAX_RECTANGLE_TEXTURE_SIZE_EXT, &maxr);
+    glGetIntegerv(GL_MAX_RECTANGLE_TEXTURE_SIZE_ARB, &maxr);
     maxrectsize = (uint32_t) maxr;
   }
 
@@ -1652,7 +1652,7 @@ SoGLImageP::createGLDisplayList(SoState *state)
     }
     else {
       dl->setTextureTarget((int) ((this->flags & SoGLImage::RECTANGLE) ?
-                                  GL_TEXTURE_RECTANGLE_EXT : GL_TEXTURE_2D));
+                                  GL_TEXTURE_RECTANGLE_ARB : GL_TEXTURE_2D));
     }
   }
 
@@ -1738,7 +1738,7 @@ void
 SoGLImageP::reallyBindPBuffer(SoState * state)
 {
   GLenum target = this->flags & SoGLImage::RECTANGLE ?
-    GL_TEXTURE_RECTANGLE_EXT : GL_TEXTURE_2D;
+    GL_TEXTURE_RECTANGLE_ARB : GL_TEXTURE_2D;
 
   glTexParameteri(target, GL_TEXTURE_WRAP_S,
                   translate_wrap(state, this->wraps));
@@ -1823,33 +1823,38 @@ SoGLImageP::reallyCreateTexture(SoState *state,
     SbBool generatemipmap = FALSE;
 
     GLenum target = this->flags & SoGLImage::RECTANGLE ?
-      GL_TEXTURE_RECTANGLE_EXT : GL_TEXTURE_2D;
+      GL_TEXTURE_RECTANGLE_ARB : GL_TEXTURE_2D;
 
     glTexParameteri(target, GL_TEXTURE_WRAP_S,
                     translate_wrap(state, this->wraps));
     glTexParameteri(target, GL_TEXTURE_WRAP_T,
                     translate_wrap(state, this->wrapt));
 
-    if (mipmap && (this->flags & SoGLImage::RECTANGLE)) {
-      mipmapimage = FALSE;
-      if (SoGLDriverDatabase::isSupported(glw, "GL_SGIS_generate_mipmap")) {
-        glTexParameteri(target, GL_GENERATE_MIPMAP_SGIS, GL_TRUE);
+    if (sogl_compatibility_profile(state))
+    {
+      if (mipmap && (this->flags & SoGLImage::RECTANGLE)) {
+        mipmapimage = FALSE;
+        if (SoGLDriverDatabase::isSupported(glw, "GL_SGIS_generate_mipmap")) {
+          glTexParameteri(target, GL_GENERATE_MIPMAP_SGIS, GL_TRUE);
+        }
+        else mipmapfilter = FALSE;
       }
-      else mipmapfilter = FALSE;
+      // prefer GL_SGIS_generate_mipmap to glGenerateMipmap. It seems to
+      // be better supported in drivers.
+      else if (mipmap && SoGLDriverDatabase::isSupported(glw, "GL_SGIS_generate_mipmap")) {
+        glTexParameteri(target, GL_GENERATE_MIPMAP_SGIS, GL_TRUE);
+        mipmapimage = FALSE;
+      }
     }
-    // prefer GL_SGIS_generate_mipmap to glGenerateMipmap. It seems to
-    // be better supported in drivers.
-    else if (mipmap && SoGLDriverDatabase::isSupported(glw, "GL_SGIS_generate_mipmap")) {
-      glTexParameteri(target, GL_GENERATE_MIPMAP_SGIS, GL_TRUE);
-      mipmapimage = FALSE;
-    }
-    // using glGenerateMipmap() while creating a display list is not
-    // supported (even if the display list is never used). This is
-    // probably because the OpenGL driver creates each mipmap level by
-    // rendering it using normal OpenGL calls.
-    else if (mipmap && SoGLDriverDatabase::isSupported(glw, SO_GL_GENERATE_MIPMAP) && !state->isCacheOpen()) {
-      mipmapimage = FALSE;
-      generatemipmap = TRUE; // delay until after the texture image is set up
+    if (mipmapimage) {
+      // using glGenerateMipmap() while creating a display list is not
+      // supported (even if the display list is never used). This is
+      // probably because the OpenGL driver creates each mipmap level by
+      // rendering it using normal OpenGL calls.
+      if (mipmap && SoGLDriverDatabase::isSupported(glw, SO_GL_GENERATE_MIPMAP) && !state->isCacheOpen()) {
+        mipmapimage = FALSE;
+        generatemipmap = TRUE; // delay until after the texture image is set up
+      }
     }
     if ((this->quality > COIN_TEX2_ANISOTROPIC_LIMIT) &&
         SoGLDriverDatabase::isSupported(glw, SO_GL_ANISOTROPIC_FILTERING)) {
@@ -1997,7 +2002,7 @@ SoGLImageP::applyFilter(const SbBool ismipmap)
   if (size[2] >= 1) target = GL_TEXTURE_3D;
   else {
     target = this->flags & SoGLImage::RECTANGLE ?
-      GL_TEXTURE_RECTANGLE_EXT : GL_TEXTURE_2D;
+      GL_TEXTURE_RECTANGLE_ARB : GL_TEXTURE_2D;
   }
   if (this->flags & SoGLImage::USE_QUALITY_VALUE) {
     if (this->quality < COIN_TEX2_LINEAR_LIMIT) {

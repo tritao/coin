@@ -600,8 +600,10 @@ public:
   void eyeLinearTexgen();
 
   // NVIDIA specific methods for sorted layers blend
+#if defined(COIN_GL_COMPATIBILITY)
   void setupRegisterCombinersNV();
   void renderSortedLayersNV(const SoState * state);
+#endif
 
   // ARB_fragment_program specific methods for sorted layers blend
   void setupFragmentProgram();
@@ -644,15 +646,15 @@ SoGLRenderAction::initClass(void)
 
   SO_ENABLE(SoGLRenderAction, SoDecimationPercentageElement);
   SO_ENABLE(SoGLRenderAction, SoDecimationTypeElement);
-  SO_ENABLE(SoGLRenderAction, SoGLLightIdElement);
-  SO_ENABLE(SoGLRenderAction, SoGLRenderPassElement);
-  SO_ENABLE(SoGLRenderAction, SoGLUpdateAreaElement);
+  SO_ENABLE_GL(SoGLRenderAction, SoGLLightIdElement);
+  SO_ENABLE_GL(SoGLRenderAction, SoGLRenderPassElement);
+  SO_ENABLE_GL(SoGLRenderAction, SoGLUpdateAreaElement);
   SO_ENABLE(SoGLRenderAction, SoLazyElement);
   SO_ENABLE(SoGLRenderAction, SoOverrideElement);
   SO_ENABLE(SoGLRenderAction, SoTextureOverrideElement);
   SO_ENABLE(SoGLRenderAction, SoWindowElement);
-  SO_ENABLE(SoGLRenderAction, SoGLViewportRegionElement);
-  SO_ENABLE(SoGLRenderAction, SoGLCacheContextElement);
+  SO_ENABLE_GL(SoGLRenderAction, SoGLViewportRegionElement);
+  SO_ENABLE_GL(SoGLRenderAction, SoGLCacheContextElement);
 
   const char * env = coin_getenv("COIN_GLBBOX");
   if (env) {
@@ -1072,6 +1074,7 @@ SoGLRenderAction::beginTraversal(SoNode * node)
   if (COIN_GLBBOX) {
     PRIVATE(this)->bboxaction->apply(node);
   }
+
   int err_before_init = GL_NO_ERROR;
 
   if (sogl_glerror_debugging()) {
@@ -1080,10 +1083,14 @@ SoGLRenderAction::beginTraversal(SoNode * node)
   if (PRIVATE(this)->needglinit) {
     PRIVATE(this)->needglinit = FALSE;
 
-    // we are always using GL_COLOR_MATERIAL in Coin
-    glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);
-    glEnable(GL_COLOR_MATERIAL);
-    glEnable(GL_NORMALIZE);
+#if defined(COIN_GL_COMPATIBILITY)
+    if (sogl_compatibility_profile(this->state)) {
+      // we are always using GL_COLOR_MATERIAL in Coin
+      glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);
+      glEnable(GL_COLOR_MATERIAL);
+      glEnable(GL_NORMALIZE);
+    }
+#endif
 
     // initialize the depth function to the default Coin/Inventor
     // value.  SoGLDepthBufferElement doesn't check for this, it just
@@ -1094,12 +1101,16 @@ SoGLRenderAction::beginTraversal(SoNode * node)
     glDepthFunc(GL_LEQUAL);
 
     if (PRIVATE(this)->smoothing) {
-      glEnable(GL_POINT_SMOOTH);
-      glEnable(GL_LINE_SMOOTH);
+      if (sogl_compatibility_profile(this->state)) {
+        glEnable(GL_POINT_SMOOTH);
+        glEnable(GL_LINE_SMOOTH);
+      }
     }
     else {
-      glDisable(GL_POINT_SMOOTH);
-      glDisable(GL_LINE_SMOOTH);
+      if (sogl_compatibility_profile(this->state)) {
+        glDisable(GL_POINT_SMOOTH);
+        glDisable(GL_LINE_SMOOTH);
+      }
     }
   }
 
@@ -1222,12 +1233,17 @@ SoGLRenderAction::handleTransparency(SbBool istransparent)
       SoProjectionMatrixElement::get(thestate);
 
     if (!SoMultiTextureEnabledElement::get(thestate, 0)) {
+      SbBool combinersetup = FALSE;
       if (glue->has_arb_fragment_program && !PRIVATE(this)->usenvidiaregistercombiners) {
         PRIVATE(this)->setupFragmentProgram();
+        combinersetup = TRUE;
       }
-      else {
+#if defined(COIN_GL_COMPATIBILITY)
+      if (!combinersetup) {
         PRIVATE(this)->setupRegisterCombinersNV();
+        combinersetup = TRUE;
       }
+#endif
     }
 
     // Must always return FALSE as everything must be rendered to the
@@ -1783,6 +1799,8 @@ SoGLRenderActionP::renderMulti(SoNode * node)
   this->currentpass = 0;
   this->renderSingle(node);
   if (this->action->hasTerminated()) return;
+
+#if defined(COIN_GL_COMPATIBILITY)
   glAccum(GL_LOAD, fraction);
 
   for (int i = 1; i < this->numpasses; i++) {
@@ -1802,6 +1820,9 @@ SoGLRenderActionP::renderMulti(SoNode * node)
   }
   this->currentpass = storedpass;
   glAccum(GL_RETURN, 1.0f);
+#else
+  assert(0 && "Not implemented yet");
+#endif
 }
 
 //
@@ -1853,7 +1874,6 @@ SoGLRenderActionP::renderSingle(SoNode * node)
       this->transparencytype = SoGLRenderAction::SORTED_OBJECT_BLEND;
       render(node); // Render again using the fallback transparency type.
     }
-
     return;
   }
 
@@ -2066,11 +2086,13 @@ SoGLRenderActionP::doSortedLayersBlendRendering(const SoState * state, SoNode * 
 
   }
 
+#if defined(COIN_GL_COMPATIBILITY)
   // Blend together the acquired RGBA layers
   if (glue->has_arb_fragment_program && !this->usenvidiaregistercombiners)
     renderSortedLayersFP(state);
   else
     renderSortedLayersNV(state);
+#endif
 
 }
 
@@ -2095,22 +2117,26 @@ SoGLRenderActionP::texgenEnable(SbBool enable)
 void
 SoGLRenderActionP::eyeLinearTexgen()
 {
+#if defined(COIN_GL_COMPATIBILITY)
+  if (sogl_compatibility_profile(action->getState())) {
+    const float col1[] = { 1, 0, 0, 0 };
+    const float col2[] = { 0, 1, 0, 0 };
+    const float col3[] = { 0, 0, 1, 0 };
+    const float col4[] = { 0, 0, 0, 1 };
 
-  const float col1[] = { 1, 0, 0, 0 };
-  const float col2[] = { 0, 1, 0, 0 };
-  const float col3[] = { 0, 0, 1, 0 };
-  const float col4[] = { 0, 0, 0, 1 };
+    glTexGenfv(GL_S,GL_EYE_PLANE, col1);
+    glTexGenfv(GL_T,GL_EYE_PLANE, col2);
+    glTexGenfv(GL_R,GL_EYE_PLANE, col3);
+    glTexGenfv(GL_Q,GL_EYE_PLANE, col4);
 
-  glTexGenfv(GL_S,GL_EYE_PLANE, col1);
-  glTexGenfv(GL_T,GL_EYE_PLANE, col2);
-  glTexGenfv(GL_R,GL_EYE_PLANE, col3);
-  glTexGenfv(GL_Q,GL_EYE_PLANE, col4);
-
-  glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-  glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-  glTexGeni(GL_R, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-  glTexGeni(GL_Q, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-
+    glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+    glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+    glTexGeni(GL_R, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+    glTexGeni(GL_Q, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+  }
+#else
+  assert(0 && "Not implemented for non-compatibility GL renderer");
+#endif
 }
 
 void
@@ -2147,25 +2173,25 @@ SoGLRenderActionP::renderOneBlendLayer(const SoState * state,
     if (glue->has_arb_fragment_program && !this->usenvidiaregistercombiners) {
       // Fragment program cleanup
       glDisable(GL_FRAGMENT_PROGRAM_ARB);
-      glDisable(GL_TEXTURE_RECTANGLE_EXT);
+      glDisable(GL_TEXTURE_RECTANGLE_ARB);
       glDisable(GL_ALPHA_TEST);
 
       cc_glglue_glActiveTexture(glue, GL_TEXTURE3);
-      glDisable(GL_TEXTURE_RECTANGLE_EXT);
+      glDisable(GL_TEXTURE_RECTANGLE_ARB);
       this->texgenEnable(FALSE);
 
       glMatrixMode(GL_TEXTURE);
       glLoadIdentity();
       glMatrixMode(GL_MODELVIEW);
       cc_glglue_glActiveTexture(glue, GL_TEXTURE0);
-      glDisable(GL_TEXTURE_RECTANGLE_EXT);
+      glDisable(GL_TEXTURE_RECTANGLE_ARB);
       glDisable(GL_ALPHA_TEST);
 
     }
     else {
       // Regular NViDIA register combiner cleanup
       cc_glglue_glActiveTexture(glue, GL_TEXTURE3);
-      glDisable(GL_TEXTURE_RECTANGLE_EXT);
+      glDisable(GL_TEXTURE_RECTANGLE_ARB);
       this->texgenEnable(FALSE);
 
       glMatrixMode(GL_TEXTURE);
@@ -2186,14 +2212,14 @@ SoGLRenderActionP::renderOneBlendLayer(const SoState * state,
   // to be a performance hit for large canvases. (20031127 handegar)
 
   // copy the RGBA of the layer to a texture
-  glEnable(GL_TEXTURE_RECTANGLE_EXT);
-  glBindTexture(GL_TEXTURE_RECTANGLE_EXT, this->rgbatextureids[this->sortedlayersblendcounter]);
-  glCopyTexSubImage2D(GL_TEXTURE_RECTANGLE_EXT, 0, 0, 0, 0, 0,
+  glEnable(GL_TEXTURE_RECTANGLE_ARB);
+  glBindTexture(GL_TEXTURE_RECTANGLE_ARB, this->rgbatextureids[this->sortedlayersblendcounter]);
+  glCopyTexSubImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, 0, 0, 0, 0,
                       this->viewportwidth, this->viewportheight);
 
   if (updatedepthtexture) {
-    glBindTexture(GL_TEXTURE_RECTANGLE_EXT, this->depthtextureid);
-    glCopyTexSubImage2D(GL_TEXTURE_RECTANGLE_EXT, 0, 0, 0, 0, 0,
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, this->depthtextureid);
+    glCopyTexSubImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, 0, 0, 0, 0,
                         this->viewportwidth, this->viewportheight);
   }
 
@@ -2294,7 +2320,7 @@ SoGLRenderActionP::setupFragmentProgram()
 
 }
 
-
+#if defined(COIN_GL_COMPATIBILITY)
 void
 SoGLRenderActionP::setupRegisterCombinersNV()
 {
@@ -2437,6 +2463,7 @@ SoGLRenderActionP::setupRegisterCombinersNV()
 
   glMatrixMode(GL_MODELVIEW);
 }
+#endif
 
 void
 SoGLRenderActionP::setupSortedLayersBlendTextures(const SoState * state)
@@ -2465,21 +2492,21 @@ SoGLRenderActionP::setupSortedLayersBlendTextures(const SoState * state)
     // FIXME: the texture id must be bound to the current rendering
     // context, and deallocated when it is destructed. 20040718 mortene.
     glGenTextures(1, &this->depthtextureid);
-    glBindTexture(GL_TEXTURE_RECTANGLE_EXT, this->depthtextureid);
-    glTexImage2D(GL_TEXTURE_RECTANGLE_EXT, 0, GL_DEPTH_COMPONENT24, canvassize[0], canvassize[1],
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, this->depthtextureid);
+    glTexImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, GL_DEPTH_COMPONENT24, canvassize[0], canvassize[1],
                  0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
-    glTexParameteri(GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     if (glue->has_arb_fragment_program && !this->usenvidiaregistercombiners) {
       // Not disabled as default by NVIDIA when using fragment programs (according to spec.)
-      glTexParameteri(GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+      glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_COMPARE_MODE, GL_NONE);
     }
     else {
-      glTexParameteri(GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_R_TO_TEXTURE);
-      glTexParameteri(GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+      glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_R_TO_TEXTURE);
+      glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
     }
 
     // The "register combiner"-way if explicitly chosen or FP is unavailable
@@ -2508,10 +2535,10 @@ SoGLRenderActionP::setupSortedLayersBlendTextures(const SoState * state)
     // context, and deallocated when it is destructed. 20040718 mortene.
     glGenTextures(this->sortedlayersblendpasses, this->rgbatextureids.get());
     for (int i=0;i<sortedlayersblendpasses;++i) {
-      glBindTexture(GL_TEXTURE_RECTANGLE_EXT, this->rgbatextureids[i]);
-      glCopyTexImage2D(GL_TEXTURE_RECTANGLE_EXT, 0, GL_RGBA8, 0, 0, canvassize[0], canvassize[1], 0);
-      glTexParameteri(GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-      glTexParameteri(GL_TEXTURE_RECTANGLE_EXT, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+      glBindTexture(GL_TEXTURE_RECTANGLE_ARB, this->rgbatextureids[i]);
+      glCopyTexImage2D(GL_TEXTURE_RECTANGLE_ARB, 0, GL_RGBA8, 0, 0, canvassize[0], canvassize[1], 0);
+      glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+      glTexParameteri(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     }
 
     this->viewportwidth = canvassize[0];
@@ -2550,10 +2577,10 @@ SoGLRenderActionP::renderSortedLayersFP(const SoState * state)
   glEnable(GL_BLEND);
   glDisable(GL_LIGHTING);
   glColor3f(1.0f,1.0f,1.0f);
-  glEnable(GL_TEXTURE_RECTANGLE_EXT);
+  glEnable(GL_TEXTURE_RECTANGLE_ARB);
 
   for(int i=this->sortedlayersblendpasses-1;i>=0;--i) {
-    glBindTexture(GL_TEXTURE_RECTANGLE_EXT, this->rgbatextureids[i]);
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, this->rgbatextureids[i]);
     glBegin(GL_QUADS);
     glTexCoord2f(0, 0);
     glVertex2f(0, 0);
@@ -2566,7 +2593,7 @@ SoGLRenderActionP::renderSortedLayersFP(const SoState * state)
     glEnd();
   }
 
-  glDisable(GL_TEXTURE_RECTANGLE_EXT);
+  glDisable(GL_TEXTURE_RECTANGLE_ARB);
 
   glDisable(GL_BLEND);
   glEnable(GL_DEPTH_TEST);
@@ -2579,6 +2606,7 @@ SoGLRenderActionP::renderSortedLayersFP(const SoState * state)
 
 }
 
+ #if defined(COIN_GL_COMPATIBILITY)
 void
 SoGLRenderActionP::renderSortedLayersNV(const SoState * state)
 {
@@ -2650,10 +2678,10 @@ SoGLRenderActionP::renderSortedLayersNV(const SoState * state)
                                GL_UNSIGNED_IDENTITY_NV, GL_ALPHA);
 
   glEnable(GL_REGISTER_COMBINERS_NV);
-  glEnable(GL_TEXTURE_RECTANGLE_EXT);
+  glEnable(GL_TEXTURE_RECTANGLE_ARB);
 
   for(int i=this->sortedlayersblendpasses-1;i>=0;--i) {
-    glBindTexture(GL_TEXTURE_RECTANGLE_EXT, this->rgbatextureids[i]);
+    glBindTexture(GL_TEXTURE_RECTANGLE_ARB, this->rgbatextureids[i]);
     glBegin(GL_QUADS);
     glTexCoord2f(0, 0);
     glVertex2f(0, 0);
@@ -2667,7 +2695,7 @@ SoGLRenderActionP::renderSortedLayersNV(const SoState * state)
   }
 
   glDisable(GL_REGISTER_COMBINERS_NV);
-  glDisable(GL_TEXTURE_RECTANGLE_EXT);
+  glDisable(GL_TEXTURE_RECTANGLE_ARB);
 
   glDisable(GL_BLEND);
   glEnable(GL_DEPTH_TEST);
@@ -2676,6 +2704,7 @@ SoGLRenderActionP::renderSortedLayersNV(const SoState * state)
     glEnable(GL_CULL_FACE);
 
 }
+#endif // COIN_GL_COMPATIBILITY
 
 // *************************************************************************
 
