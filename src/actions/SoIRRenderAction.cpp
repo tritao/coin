@@ -40,6 +40,7 @@
 #include <Inventor/elements/SoProfileElement.h>
 #include <Inventor/elements/SoProfileCoordinateElement.h>
 #include <Inventor/elements/SoTextureQualityElement.h>
+#include <Inventor/elements/SoTextureUnitElement.h>
 #include <Inventor/elements/SoSwitchElement.h>
 #include <Inventor/elements/SoUnitsElement.h>
 #include <Inventor/elements/SoShapeHintsElement.h>
@@ -134,6 +135,7 @@ SoIRRenderAction::initClass(void)
   SO_ENABLE(SoIRRenderAction, SoProfileElement);
   SO_ENABLE(SoIRRenderAction, SoProfileCoordinateElement);
   SO_ENABLE(SoIRRenderAction, SoTextureQualityElement);
+  SO_ENABLE(SoIRRenderAction, SoTextureUnitElement);
   SO_ENABLE(SoIRRenderAction, SoSwitchElement);
   SO_ENABLE(SoIRRenderAction, SoUnitsElement);
 
