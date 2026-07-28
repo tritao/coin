@@ -271,7 +271,16 @@ public:
   float getGpuPickPointSize() const;
 
   /// Force the render-backend path to re-traverse the scene graph on the next frame.
+  /// This compatibility entry point is equivalent to invalidateScene().
+  ///
+  /// @deprecated Use invalidateScene() or invalidateForeground() instead.
   void invalidateDrawList();
+
+  /// Invalidate the main scene and all explicit render layers.
+  void invalidateScene();
+
+  /// Invalidate only the foreground render layer.
+  void invalidateForeground();
 
   /// Directly set preselection highlight on a draw list command by pick LUT index.
   /// Avoids scene graph traversal. Returns true if highlight was applied.

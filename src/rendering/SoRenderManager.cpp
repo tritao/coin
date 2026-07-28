@@ -425,6 +425,8 @@ SoRenderManager::~SoRenderManager()
   if (PRIVATE(this)->deleteglaction) delete PRIVATE(this)->glaction;
   if (PRIVATE(this)->deleteaudiorenderaction) delete PRIVATE(this)->audiorenderaction;
   delete PRIVATE(this)->rootsensor;
+  delete PRIVATE(this)->renderLayerBackgroundSensor;
+  delete PRIVATE(this)->renderLayerForegroundSensor;
   delete PRIVATE(this)->redrawshot;
 
   if (PRIVATE(this)->superimpositions != NULL) {
@@ -529,10 +531,19 @@ SoRenderManager::nodesensorCB(void * data, SoSensor * sensor)
   SoRenderManager * self = static_cast<SoRenderManager *>(data);
   SoNodeSensor * ns = static_cast<SoNodeSensor *>(sensor);
 
+  if (ns == PRIVATE(self)->renderLayerBackgroundSensor) {
+    self->invalidateScene();
+    return;
+  }
+  if (ns == PRIVATE(self)->renderLayerForegroundSensor) {
+    self->invalidateForeground();
+    return;
+  }
+
   // Determine if the draw list needs rebuilding.
   SoNode * trigger = ns->getTriggerNode();
 
-  if (PRIVATE(self)->rendererMode == SoRenderManager::RENDERER_RENDER_BACKEND) {
+  if (PRIVATE(self)->renderPipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
     bool isCameraChange = (trigger && trigger == PRIVATE(self)->camera);
 
     // Consume the pending camera change flag (set by notifyCameraChange()
@@ -1995,8 +2006,9 @@ SoRenderManager::isAutoRedraw(void) const
 void
 SoRenderManager::setRenderMode(const RenderMode mode)
 {
+  if (PRIVATE(this)->rendermode == mode) return;
   PRIVATE(this)->rendermode = mode;
-  this->scheduleRedraw();
+  this->invalidateScene();
   PRIVATE(this)->dummynode->touch();
 }
 
@@ -2153,12 +2165,15 @@ void
 SoRenderManager::setRenderLayerRoot(RenderLayer layer, SoNode * root)
 {
   SoNode ** slot = NULL;
+  SoNodeSensor ** sensorSlot = NULL;
   switch (layer) {
   case RENDER_LAYER_BACKGROUND:
     slot = &PRIVATE(this)->renderLayerBackgroundRoot;
+    sensorSlot = &PRIVATE(this)->renderLayerBackgroundSensor;
     break;
   case RENDER_LAYER_FOREGROUND:
     slot = &PRIVATE(this)->renderLayerForegroundRoot;
+    sensorSlot = &PRIVATE(this)->renderLayerForegroundSensor;
     break;
   default:
     assert(0 && "unknown render layer");
@@ -2169,21 +2184,29 @@ SoRenderManager::setRenderLayerRoot(RenderLayer layer, SoNode * root)
     return;
   }
 
+  if (*sensorSlot) {
+    (*sensorSlot)->detach();
+  }
+
   if (*slot) {
     (*slot)->unref();
   }
   *slot = root;
   if (root) {
     root->ref();
+    if (!*sensorSlot) {
+      *sensorSlot = new SoNodeSensor(SoRenderManager::nodesensorCB, this);
+      (*sensorSlot)->setPriority(PRIVATE(this)->redrawpri == 0 ? 0 : 1);
+    }
+    (*sensorSlot)->attach(root);
   }
 
   if (layer == RENDER_LAYER_BACKGROUND) {
-    PRIVATE(this)->sceneGeneration++;
+    this->invalidateScene();
   }
   else {
-    PRIVATE(this)->foregroundGeneration++;
+    this->invalidateForeground();
   }
-  this->scheduleRedraw();
 }
 
 SoNode *
@@ -2337,7 +2360,20 @@ SoRenderManager::assemblePickedPoint(int screenX, int screenY, int pickRadius) c
 void
 SoRenderManager::invalidateDrawList()
 {
+  this->invalidateScene();
+}
+
+void
+SoRenderManager::invalidateScene()
+{
   PRIVATE(this)->sceneGeneration++;
+  PRIVATE(this)->foregroundGeneration++;
+  this->scheduleRedraw();
+}
+
+void
+SoRenderManager::invalidateForeground()
+{
   PRIVATE(this)->foregroundGeneration++;
   this->scheduleRedraw();
 }
@@ -2472,7 +2508,9 @@ SoRenderManager::clearDrawListSelection()
 void
 SoRenderManager::setDevicePixelRatio(float dpr)
 {
+  if (PRIVATE(this)->devicePixelRatio == dpr) return;
   PRIVATE(this)->devicePixelRatio = dpr;
+  this->invalidateScene();
 }
 
 float
