@@ -27,6 +27,7 @@ void glDeleteVertexArrays(GLsizei n, const GLuint * arrays);
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/SbMatrix.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -53,8 +54,7 @@ static constexpr float DIFFUSE_COEFF  = 0.85f;
 static constexpr float SPECULAR_COEFF = 0.12f;
 static constexpr float DEFAULT_SHININESS = 64.0f;
 
-// Alpha thresholds for selection/highlight overlays
-static constexpr float HIGHLIGHT_ALPHA = 0.6f;
+// Alpha thresholds for selection overlays
 static constexpr float SELECTION_ALPHA = 0.5f;
 
 // Texture alpha discard threshold (shader-side)
@@ -1676,7 +1676,8 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
 
     if (hasHighlight) {
       const SbVec4f & hc = cmd.selection.highlightColor;
-      setSelColor(hc[0], hc[1], hc[2], HIGHLIGHT_ALPHA);
+      const float highlightAlpha = std::max(0.0f, std::min(hc[3], 1.0f));
+      setSelColor(hc[0], hc[1], hc[2], highlightAlpha);
       if (prim == GL_POINTS) {
         // Match the legacy point overlay path: committed selection respects
         // depth, while the live highlight renders on top.

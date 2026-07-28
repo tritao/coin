@@ -52,7 +52,10 @@ void main()
 
   if (u_renderMode > 2.5) {
     vec4 c = texture(u_texture, v_texcoord);
-    if (c.a < 0.3) discard;
+    // World-space textured annotations (e.g. SoDatumLabel) use normal
+    // blending, so preserve their antialiased glyph edge pixels. Billboard
+    // text above retains the legacy alpha-test threshold.
+    if (c.a <= 0.0) discard;
     fragColor = c * u_texModColor;
     return;
   }
