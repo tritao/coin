@@ -20,8 +20,9 @@ void main()
   vec2 dir = normalize(ndc1 - ndc0);
   vec2 perp = vec2(-dir.y, dir.x);
   // u_lineWidth is the full requested width; the geometry shader needs the
-  // half-width on either side of the line center.
-  vec2 offset = perp * (0.5 * u_lineWidth) / u_vpSize;
+  // half-width on either side of the line center. Add a half-pixel coverage
+  // margin so the quad follows legacy GL line rasterization at integer widths.
+  vec2 offset = perp * (0.5 * (u_lineWidth + 1.0)) / u_vpSize;
 
   v_color = vs_color[0];
   v_lineDistance = vs_lineDistance[0];
