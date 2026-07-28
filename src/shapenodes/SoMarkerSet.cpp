@@ -1430,6 +1430,9 @@ SoMarkerSet::render(SoIRRenderAction * action)
     cmd.material.texture.height = mh;
     cmd.material.texture.numComponents = 4;
     cmd.material.flags |= SO_MAT_HAS_TEXTURE | SO_MAT_IS_BILLBOARD;
+    cmd.state.alphaTest.policy = SO_ALPHA_TEST_POLICY_LEGACY_THRESHOLD;
+    cmd.state.alphaTest.reference = 0.3f;
+    SoRenderIR::ensureMaterialBlendState(cmd.state, cmd.material);
 
     cmd.pass = SO_RENDERPASS_OPAQUE;
     if (!action->isAfterMainStage()

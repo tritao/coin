@@ -572,6 +572,10 @@ SoText2::render(SoIRRenderAction * action)
   cmd.material.texture.numComponents = 4;
   cmd.material.flags |= SO_MAT_HAS_TEXTURE | SO_MAT_IS_BILLBOARD |
                         SO_MAT_IS_PIXEL_TEXT;
+  cmd.material.textureAlphaIncludesOpacity = true;
+  cmd.state.alphaTest.policy = SO_ALPHA_TEST_POLICY_LEGACY_THRESHOLD;
+  cmd.state.alphaTest.reference = 0.3f;
+  SoRenderIR::ensureMaterialBlendState(cmd.state, cmd.material);
   cmd.pixelText.originX = pixelOrigin[0];
   cmd.pixelText.originY = pixelOrigin[1];
 
