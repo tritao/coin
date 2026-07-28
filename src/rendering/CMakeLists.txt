@@ -30,7 +30,7 @@ set(COIN_RENDERING_INTERNAL_FILES
 	SoGL.cpp
 	SoGLNurbs.h
 	SoGLNurbs.cpp
-	SoRenderIR.h
+	SoRenderIRP.h
 	SoRenderBackend.h
 	SoGLRenderBackend.h
 	SoIDPickBuffer.h
