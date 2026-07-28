@@ -135,9 +135,11 @@ public:
   SoRenderBackend * renderBackend;
   SoNode * renderLayerBackgroundRoot = NULL;
   SoNode * renderLayerForegroundRoot = NULL;
+  SoNodeSensor * renderLayerBackgroundSensor = NULL;
+  SoNodeSensor * renderLayerForegroundSensor = NULL;
   int backgroundCommandCount = 0;
-  int mainSceneCommandCount = 0;  // bg + main scene commands (excludes foreground)
-  SoIRRenderAction::GeometrySavePoint poolSavePoint;  // geometry pool state after main scene traversal
+  int preForegroundCommandCount = 0;  // bg + main + after-main commands
+  SoIRRenderAction::GeometrySavePoint preForegroundPoolSavePoint;
   SbViewportRegion backendViewport;  // viewport for the render backend (replaces glaction viewport)
   int backendFrameCounter;
 

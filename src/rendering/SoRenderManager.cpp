@@ -618,7 +618,7 @@ SoRenderManager::detachRootSensor(void)
 }
 
 void
-SoRenderManager::renderWithBackend(const SbBool clearwindow,
+SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
                                    const SbBool clearzbuffer)
 {
   if (!PRIVATE(this)->scene) return;
@@ -632,7 +632,13 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
     for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
       Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
       if (s->getStateFlags() & Superimposition::BACKGROUND) {
+        SoState * state = glaction->getState();
+        state->push();
+        setCommonTraversalState(state,
+                                PRIVATE(this)->dummynode,
+                                PRIVATE(this)->devicePixelRatio);
         s->render(glaction, clearwindow_tmp);
+        state->pop();
         clearwindow_tmp = FALSE;
       }
     }
@@ -667,6 +673,9 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
   action->setViewportRegion(vp);
   action->setCamera(PRIVATE(this)->camera);
 
+  SoState * traversalState = action->getState();
+  SoNode * traversalNode = PRIVATE(this)->dummynode;
+
   bool sceneChanged = (PRIVATE(this)->cachedSceneGen != PRIVATE(this)->sceneGeneration);
   bool fgChanged = (PRIVATE(this)->cachedForegroundGen != PRIVATE(this)->foregroundGeneration);
 
@@ -686,27 +695,50 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
     // Traverse background root first (gradient, grid)
     PRIVATE(this)->backgroundCommandCount = 0;
     if (PRIVATE(this)->renderLayerBackgroundRoot) {
+      traversalState->push();
+      setCommonTraversalState(traversalState,
+                              traversalNode,
+                              PRIVATE(this)->devicePixelRatio);
       action->apply(PRIVATE(this)->renderLayerBackgroundRoot);
+      traversalState->pop();
       PRIVATE(this)->backgroundCommandCount = action->getDrawList().getNumCommands();
     }
 
     // Traverse main scene — appends after background
+    traversalState->push();
+    setCommonTraversalState(traversalState,
+                            traversalNode,
+                            PRIVATE(this)->devicePixelRatio);
+    setMainScenePolicy(traversalState,
+                       traversalNode,
+                       normalizeDrawListRenderMode(PRIVATE(this)->rendermode),
+                       PRIVATE(this)->lightingmode);
     if (PRIVATE(this)->backgroundCommandCount > 0) {
       action->traverseAdditionalRoot(PRIVATE(this)->scene);
-    } else {
+    }
+    else {
       action->apply(PRIVATE(this)->scene);
     }
+    traversalState->pop();
 
-    PRIVATE(this)->mainSceneCommandCount = action->getDrawList().getNumCommands();
+    // After-main callbacks are retained scene content.  Keep both their
+    // commands and geometry in the checkpoint so foreground-only rebuilds
+    // do not truncate them away.
+    PRIVATE(this)->preForegroundCommandCount = action->getDrawList().getNumCommands();
 
     // Save geometry pool state so partial rebuilds can rewind to this
     // point, re-allocating foreground geometry at the same addresses
     // for stable VBO cache keys.
-    PRIVATE(this)->poolSavePoint = action->saveGeometryPool();
+    PRIVATE(this)->preForegroundPoolSavePoint = action->saveGeometryPool();
 
     // Traverse foreground root (NaviCube, overlays)
     if (PRIVATE(this)->renderLayerForegroundRoot) {
+      traversalState->push();
+      setCommonTraversalState(traversalState,
+                              traversalNode,
+                              PRIVATE(this)->devicePixelRatio);
       action->traverseAdditionalRoot(PRIVATE(this)->renderLayerForegroundRoot);
+      traversalState->pop();
     }
 
     PRIVATE(this)->cachedSceneGen = PRIVATE(this)->sceneGeneration;
@@ -727,11 +759,16 @@ SoRenderManager::renderWithBackend(const SbBool clearwindow,
     // Rewind the geometry pool to the save point after main scene traversal
     // so foreground geometry re-allocates at the same addresses — VBO cache
     // hits automatically.
-    action->getMutableDrawList().truncate(PRIVATE(this)->mainSceneCommandCount);
-    action->rewindGeometryPool(PRIVATE(this)->poolSavePoint);
+    action->getMutableDrawList().truncate(PRIVATE(this)->preForegroundCommandCount);
+    action->rewindGeometryPool(PRIVATE(this)->preForegroundPoolSavePoint);
 
     if (PRIVATE(this)->renderLayerForegroundRoot) {
+      traversalState->push();
+      setCommonTraversalState(traversalState,
+                              traversalNode,
+                              PRIVATE(this)->devicePixelRatio);
       action->traverseAdditionalRoot(PRIVATE(this)->renderLayerForegroundRoot);
+      traversalState->pop();
     }
 
     PRIVATE(this)->cachedForegroundGen = PRIVATE(this)->foregroundGeneration;
@@ -996,8 +1033,8 @@ SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
       SoAudioDevice::instance()->isEnabled())
     PRIVATE(this)->audiorenderaction->apply(PRIVATE(this)->scene);
 
-  if (PRIVATE(this)->rendererMode == SoRenderManager::RENDERER_RENDER_BACKEND) {
-    this->renderWithBackend(clearwindow, clearzbuffer);
+  if (PRIVATE(this)->renderPipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
+    this->renderDrawListPipeline(clearwindow, clearzbuffer);
     return;
   }
 
@@ -1063,27 +1100,67 @@ SoRenderManager::render(SoGLRenderAction * action,
                         const SbBool clearzbuffer)
 {
   SbBool clearwindow_tmp = clearwindow; // make sure we only clear the color buffer once
+  SbBool clearzbuffer_tmp = clearzbuffer;
   PRIVATE(this)->invokePreRenderCallbacks();
 
   if (PRIVATE(this)->superimpositions) {
     for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
       Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
       if (s->getStateFlags() & Superimposition::BACKGROUND) {
+        SoState * state = action->getState();
+        state->push();
+        setCommonTraversalState(state,
+                                PRIVATE(this)->dummynode,
+                                PRIVATE(this)->devicePixelRatio);
         s->render(action, clearwindow_tmp);
+        state->pop();
         clearwindow_tmp = FALSE;
       }
     }
   }
 
+  if (PRIVATE(this)->renderLayerBackgroundRoot) {
+    SoState * state = action->getState();
+    state->push();
+    setCommonTraversalState(state,
+                            PRIVATE(this)->dummynode,
+                            PRIVATE(this)->devicePixelRatio);
+    uint32_t clearmask = 0;
+    if (clearwindow_tmp) clearmask |= GL_COLOR_BUFFER_BIT;
+    if (clearzbuffer_tmp) clearmask |= GL_DEPTH_BUFFER_BIT;
+    this->renderScene(action,
+                      PRIVATE(this)->renderLayerBackgroundRoot,
+                      clearmask);
+    state->pop();
+    clearwindow_tmp = FALSE;
+    clearzbuffer_tmp = FALSE;
+  }
+
   (this->getStereoMode() == SoRenderManager::MONO) ?
-    this->renderSingle(action, initmatrices, clearwindow_tmp, clearzbuffer):
-    this->renderStereo(action, initmatrices, clearwindow_tmp, clearzbuffer);
+    this->renderSingle(action, initmatrices, clearwindow_tmp, clearzbuffer_tmp):
+    this->renderStereo(action, initmatrices, clearwindow_tmp, clearzbuffer_tmp);
+
+  if (PRIVATE(this)->renderLayerForegroundRoot) {
+    SoState * state = action->getState();
+    state->push();
+    setCommonTraversalState(state,
+                            PRIVATE(this)->dummynode,
+                            PRIVATE(this)->devicePixelRatio);
+    action->apply(PRIVATE(this)->renderLayerForegroundRoot);
+    state->pop();
+  }
 
   if (PRIVATE(this)->superimpositions) {
     for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
       Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
       if (!(s->getStateFlags() & Superimposition::BACKGROUND)) {
+        SoState * state = action->getState();
+        state->push();
+        setCommonTraversalState(state,
+                                PRIVATE(this)->dummynode,
+                                PRIVATE(this)->devicePixelRatio);
         s->render(action);
+        state->pop();
       }
     }
   }
@@ -1381,7 +1458,7 @@ SoRenderManager::renderStereo(SoGLRenderAction * action,
 {
   if (!PRIVATE(this)->camera) return;
   if (SoRenderer::isOpenGL()) {
-    this->clearBuffers(TRUE, TRUE);
+    this->clearBuffers(FALSE, TRUE);
     PRIVATE(this)->camera->setStereoAdjustment(PRIVATE(this)->stereooffset);
 
     SbBool stenciltestenabled = glIsEnabled(GL_STENCIL_TEST);

@@ -339,7 +339,7 @@ protected:
                     SbBool initmatrices,
                     SbBool clearwindow,
                     SbBool clearzbuffer);
-  void renderWithBackend(const SbBool clearwindow,
+  void renderDrawListPipeline(const SbBool clearwindow,
                     const SbBool clearzbuffer);
 
   void renderStereo(SoGLRenderAction * action,
