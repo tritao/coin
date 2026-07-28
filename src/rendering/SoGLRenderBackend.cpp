@@ -820,6 +820,13 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   const SbVec4f & diffuse = cmd.material.diffuse;
   glUniform4f(this->uColorLocation,
               diffuse[0], diffuse[1], diffuse[2], diffuse[3]);
+  const SbVec4f & ambient = cmd.material.ambient;
+  glUniform3f(this->uMaterialAmbientLocation,
+              ambient[0], ambient[1], ambient[2]);
+  const SbVec4f & specular = cmd.material.specular;
+  glUniform3f(this->uMaterialSpecularLocation,
+              specular[0], specular[1], specular[2]);
+  glUniform1f(this->uMaterialShininessLocation, cmd.material.shininess);
   this->applyLighting(drawlist, cmd);
 
   GLenum prim = topologyToGL(cmd.geometry.topology);
@@ -985,8 +992,10 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   bool isTextured = (entry.textureId != 0 && entry.texcoordVBO != 0);
   if (isTextured) {
     bool isBillboard = (cmd.material.flags & SO_MAT_IS_BILLBOARD) != 0;
-    // renderMode: 2=billboard, 3=world-space textured
-    glUniform1f(this->uRenderModeLocation, isBillboard ? 2.0f : 3.0f);
+    bool isPixelText = (cmd.material.flags & SO_MAT_IS_PIXEL_TEXT) != 0;
+    // renderMode: 2=billboard, 3=world-space textured, 4=pixel text
+    glUniform1f(this->uRenderModeLocation,
+                isPixelText ? 4.0f : (isBillboard ? 2.0f : 3.0f));
 
     if (isBillboard) {
       // Compute quad center from vertex positions (average of all vertices)
@@ -1009,6 +1018,11 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
       glUniform2f(this->uVpSizeLocation,
                   static_cast<float>(vpSz[0]),
                   static_cast<float>(vpSz[1]));
+      if (isPixelText) {
+        glUniform2f(this->uPixelTextOriginLocation,
+                    static_cast<float>(cmd.pixelText.originX),
+                    static_cast<float>(cmd.pixelText.originY));
+      }
     }
 
     glActiveTexture(GL_TEXTURE0);
@@ -1925,6 +1939,7 @@ SoGLRenderBackend::createShaders()
   this->uQuadCenterLocation = glGetUniformLocation(this->shaderProgram, "u_quadCenter");
   this->uTexSizeLocation = glGetUniformLocation(this->shaderProgram, "u_texSize");
   this->uVpSizeLocation = glGetUniformLocation(this->shaderProgram, "u_vpSize");
+  this->uPixelTextOriginLocation = glGetUniformLocation(this->shaderProgram, "u_pixelTextOrigin");
   this->uStipplePeriodLocation = glGetUniformLocation(this->shaderProgram, "u_stipplePeriod");
   this->uMetalnessLocation = glGetUniformLocation(this->shaderProgram, "u_metalness");
   this->uRoughnessLocation = glGetUniformLocation(this->shaderProgram, "u_roughness");
@@ -1936,6 +1951,9 @@ SoGLRenderBackend::createShaders()
   this->uLightPositionLocation = glGetUniformLocation(this->shaderProgram, "u_lightPosition[0]");
   this->uLightAttenuationLocation = glGetUniformLocation(this->shaderProgram, "u_lightAttenuation[0]");
   this->uLightSpotParamsLocation = glGetUniformLocation(this->shaderProgram, "u_lightSpotParams[0]");
+  this->uMaterialAmbientLocation = glGetUniformLocation(this->shaderProgram, "u_materialAmbient");
+  this->uMaterialSpecularLocation = glGetUniformLocation(this->shaderProgram, "u_materialSpecular");
+  this->uMaterialShininessLocation = glGetUniformLocation(this->shaderProgram, "u_materialShininess");
   this->texcoordLoc = glGetAttribLocation(this->shaderProgram, "a_texcoord");
   this->lineDistLoc = glGetAttribLocation(this->shaderProgram, "a_lineDistance");
 
