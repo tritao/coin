@@ -119,7 +119,8 @@ public:
 
   SoRenderManager::StereoMode stereostenciltype;
   SoRenderManager::RenderMode rendermode;
-  SoRenderManager::RendererMode rendererMode;
+  SoRenderManager::LightingMode lightingmode;
+  SoRenderManager::RenderPipeline renderPipeline;
   SoRenderManager::StereoMode stereomode;
   SoRenderManager::AutoClippingStrategy autoclipping;
 

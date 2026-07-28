@@ -52,6 +52,7 @@
 #include <Inventor/elements/SoLineWidthElement.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
 #include <Inventor/elements/SoLightModelElement.h>
+#include <Inventor/elements/SoDevicePixelRatioElement.h>
 #include <Inventor/elements/SoMaterialBindingElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
 #include <Inventor/elements/SoOverrideElement.h>
@@ -98,6 +99,7 @@
 #include <Inventor/fields/SoSFTime.h>
 #include <Inventor/misc/SoAudioDevice.h>
 #include <Inventor/SoDB.h>
+#include <Inventor/errors/SoDebugError.h>
 
 #include "coindefs.h"
 #include "tidbitsp.h"
@@ -281,6 +283,65 @@
 #define PRIVATE(p) (p->pimpl)
 #define PUBLIC(p) (p->publ)
 
+namespace {
+
+void
+setCommonTraversalState(SoState * state,
+                        SoNode * node,
+                        float devicePixelRatio)
+{
+  SoDevicePixelRatioElement::set(state, node, devicePixelRatio);
+}
+
+SoRenderManager::RenderMode
+normalizeDrawListRenderMode(SoRenderManager::RenderMode renderMode)
+{
+  if (renderMode != SoRenderManager::AS_IS
+      && renderMode != SoRenderManager::WIREFRAME
+      && renderMode != SoRenderManager::POINTS) {
+    static bool warnedUnsupportedMode = false;
+    if (!warnedUnsupportedMode) {
+      warnedUnsupportedMode = true;
+      SoDebugError::postWarning(
+        "SoRenderManager::renderDrawListPipeline",
+        "Render mode %d is not supported by the draw-list pipeline; rendering AS_IS",
+        static_cast<int>(renderMode));
+    }
+    return SoRenderManager::AS_IS;
+  }
+  return renderMode;
+}
+
+void
+setMainScenePolicy(SoState * state,
+                   SoNode * node,
+                   SoRenderManager::RenderMode renderMode,
+                   SoRenderManager::LightingMode lightingMode)
+{
+  if (renderMode == SoRenderManager::WIREFRAME) {
+    SoDrawStyleElement::set(state, node, SoDrawStyleElement::LINES);
+    SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
+    SoOverrideElement::setDrawStyleOverride(state, node, TRUE);
+    SoOverrideElement::setLightModelOverride(state, node, TRUE);
+  }
+  else if (renderMode == SoRenderManager::POINTS) {
+    SoDrawStyleElement::set(state, node, SoDrawStyleElement::POINTS);
+    SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
+    SoOverrideElement::setDrawStyleOverride(state, node, TRUE);
+    SoOverrideElement::setLightModelOverride(state, node, TRUE);
+  }
+  else if (lightingMode == SoRenderManager::UNLIT) {
+    SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
+    SoOverrideElement::setLightModelOverride(state, node, TRUE);
+  }
+  else {
+    SoLightModelElement::set(state, node, SoLightModelElement::PHONG);
+    SoOverrideElement::setLightModelOverride(state, node, FALSE);
+  }
+}
+
+} // namespace
+
 /*!
   Constructor.
 */
@@ -304,7 +365,7 @@ SoRenderManager::SoRenderManager(void)
   PRIVATE(this)->irAction = NULL;
   PRIVATE(this)->foregroundAction = NULL;
   PRIVATE(this)->renderBackend = NULL;
-  PRIVATE(this)->rendererMode = SoRenderManager::RENDERER_LEGACY_GL;
+  PRIVATE(this)->renderPipeline = SoRenderManager::RenderPipeline::LEGACY_GL;
 
   PRIVATE(this)->doublebuffer = TRUE;
   PRIVATE(this)->deleteaudiorenderaction = TRUE;
@@ -323,13 +384,14 @@ SoRenderManager::SoRenderManager(void)
 #ifdef COIN_USE_BACKTRACE
   PRIVATE(this)->btState = backtrace_create_state(NULL, 0, NULL, NULL);
 #endif
-  const char * backendenv = coin_getenv("COIN_USE_RENDER_BACKEND");
+  const char * backendenv = coin_getenv("COIN_USE_DRAW_LIST");
   if (backendenv && backendenv[0] != '0' && backendenv[0] != '\0') {
-    PRIVATE(this)->rendererMode = SoRenderManager::RENDERER_RENDER_BACKEND;
+    PRIVATE(this)->renderPipeline = SoRenderManager::RenderPipeline::DRAW_LIST;
   }
 
   PRIVATE(this)->stereostenciltype = SoRenderManager::MONO;
   PRIVATE(this)->rendermode = SoRenderManager::AS_IS;
+  PRIVATE(this)->lightingmode = SoRenderManager::LIT;
   PRIVATE(this)->stereomode = SoRenderManager::MONO;
   PRIVATE(this)->autoclipping = SoRenderManager::NO_AUTO_CLIPPING;
   PRIVATE(this)->redrawpri = SoRenderManager::getDefaultRedrawPriority();
@@ -1160,6 +1222,16 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
 
   SoNode * node = PRIVATE(this)->dummynode;
 
+  setCommonTraversalState(state, node, PRIVATE(this)->devicePixelRatio);
+  const RenderMode renderMode = this->getRenderMode();
+  const bool drawListMode = renderMode == SoRenderManager::AS_IS
+                         || renderMode == SoRenderManager::WIREFRAME
+                         || renderMode == SoRenderManager::POINTS;
+  setMainScenePolicy(state,
+                     node,
+                     drawListMode ? renderMode : SoRenderManager::AS_IS,
+                     PRIVATE(this)->lightingmode);
+
   if (!this->isTexturesEnabled()) {
     SoTextureQualityElement::set(state, node, 0.0f);
     SoTextureOverrideElement::setQualityOverride(state, TRUE);
@@ -1169,23 +1241,15 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
     this->actuallyRender(action, initmatrices, clearwindow, clearzbuffer);
     break;
   case SoRenderManager::WIREFRAME:
-    SoDrawStyleElement::set(state, node, SoDrawStyleElement::LINES);
-    SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
-    SoOverrideElement::setDrawStyleOverride(state, node, TRUE);
-    SoOverrideElement::setLightModelOverride(state, node, TRUE);
     this->actuallyRender(action, initmatrices, clearwindow, clearzbuffer);
     break;
   case SoRenderManager::POINTS:
-    SoDrawStyleElement::set(state, node, SoDrawStyleElement::POINTS);
-    SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
-    SoOverrideElement::setDrawStyleOverride(state, node, TRUE);
-    SoOverrideElement::setLightModelOverride(state, node, TRUE);
     this->actuallyRender(action, initmatrices, clearwindow, clearzbuffer);
     break;
   case SoRenderManager::HIDDEN_LINE:
     {
       // must clear before setting draw mask
-      this->clearBuffers(TRUE, TRUE);
+      this->clearBuffers(FALSE, TRUE);
 
       // only draw into depth buffer
       if (SoRenderer::isOpenGL()) {
@@ -1965,17 +2029,17 @@ SoRenderManager::setGLRenderAction(SoGLRenderAction * const action)
 }
 
 void
-SoRenderManager::setRendererMode(RendererMode mode)
+SoRenderManager::setRenderPipeline(RenderPipeline pipeline)
 {
-  if (mode == PRIVATE(this)->rendererMode) return;
-  PRIVATE(this)->rendererMode = mode;
+  if (pipeline == PRIVATE(this)->renderPipeline) return;
+  PRIVATE(this)->renderPipeline = pipeline;
   this->scheduleRedraw();
 }
 
-SoRenderManager::RendererMode
-SoRenderManager::getRendererMode(void) const
+SoRenderManager::RenderPipeline
+SoRenderManager::getRenderPipeline(void) const
 {
-  return PRIVATE(this)->rendererMode;
+  return PRIVATE(this)->renderPipeline;
 }
 
 void

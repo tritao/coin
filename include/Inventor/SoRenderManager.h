@@ -93,6 +93,11 @@ public:
     SHADED_HIDDEN_LINES
   };
 
+  enum LightingMode {
+    LIT,
+    UNLIT
+  };
+
   enum StereoMode {
     MONO,
     ANAGLYPH,
@@ -120,9 +125,9 @@ public:
     RENDER_LAYER_FOREGROUND
   };
 
-  enum RendererMode {
-    RENDERER_LEGACY_GL,
-    RENDERER_RENDER_BACKEND
+  enum class RenderPipeline {
+    LEGACY_GL,
+    DRAW_LIST
   };
 
   SoRenderManager(void);
@@ -159,6 +164,8 @@ public:
   SbBool isDoubleBuffer(void) const;
   void setRenderMode(const RenderMode mode);
   RenderMode getRenderMode(void) const;
+  void setLightingMode(const LightingMode mode);
+  LightingMode getLightingMode(void) const;
   void setStereoMode(const StereoMode mode);
   StereoMode getStereoMode(void) const;
   void setStereoOffset(const float offset);
@@ -197,8 +204,8 @@ public:
   void getAntialiasing(SbBool & smoothing, int & numPasses) const;
   void setGLRenderAction(SoGLRenderAction * const action);
   SoGLRenderAction * getGLRenderAction(void) const;
-  void setRendererMode(RendererMode mode);
-  RendererMode getRendererMode(void) const;
+  void setRenderPipeline(RenderPipeline pipeline);
+  RenderPipeline getRenderPipeline(void) const;
 
   /// Release render-backend GPU resources for the current OpenGL context.
   /// The backend object remains alive and will be reinitialized lazily on the

@@ -606,15 +606,15 @@ SoSceneManager::setHandleEventAction(SoHandleEventAction * hea)
 }
 
 void
-SoSceneManager::setRendererMode(SoRenderManager::RendererMode mode)
+SoSceneManager::setRenderPipeline(SoRenderManager::RenderPipeline mode)
 {
-  PRIVATE(this)->rendermanager->setRendererMode(mode);
+  PRIVATE(this)->rendermanager->setRenderPipeline(mode);
 }
 
-SoRenderManager::RendererMode
-SoSceneManager::getRendererMode(void) const
+SoRenderManager::RenderPipeline
+SoSceneManager::getRenderPipeline(void) const
 {
-  return PRIVATE(this)->rendermanager->getRendererMode();
+  return PRIVATE(this)->rendermanager->getRenderPipeline();
 }
 
 /*!
