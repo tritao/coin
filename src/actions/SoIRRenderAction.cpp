@@ -341,10 +341,26 @@ SoIRRenderAction::applyRenderStage(SoRenderCommand & command)
     return;
   }
 
-  command.pass = SO_RENDERPASS_AFTER_MAIN;
+  command.stage = SoRenderStage::AfterMain;
   if (this->afterMainDepthClearPending) {
     command.state.raster.clearDepth = TRUE;
     this->afterMainDepthClearPending = false;
+  }
+}
+
+SoIRRenderStageScope::SoIRRenderStageScope(SoIRRenderAction & action,
+                                           SoRenderStage stage)
+  : action(&action), active(stage == SoRenderStage::AfterMain)
+{
+  if (this->active) {
+    this->action->beginAfterMainStage();
+  }
+}
+
+SoIRRenderStageScope::~SoIRRenderStageScope()
+{
+  if (this->active) {
+    this->action->endAfterMainStage();
   }
 }
 

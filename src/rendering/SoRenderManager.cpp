@@ -635,6 +635,35 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
 {
   if (!PRIVATE(this)->scene) return;
 
+  SoRenderBackend * backend = PRIVATE(this)->renderBackend;
+  if (!backend) {
+    backend = new SoGLRenderBackend();
+    PRIVATE(this)->renderBackend = backend;
+  }
+  if (!backend->isInitialized()) {
+    SoRenderBackendInitParams initparams = {};
+    SbVec2s size = PRIVATE(this)->backendViewport.getViewportSizePixels();
+    initparams.targetInfo.size = size;
+    initparams.targetInfo.samples = 1;
+    initparams.targetInfo.colorFormat = 0;
+    initparams.targetInfo.depthFormat = 0;
+    initparams.targetInfo.targetId = 0;
+    initparams.sharedContext = NULL;
+    if (!backend->initialize(initparams)) {
+      SoDebugError::postWarning(
+        "SoRenderManager::renderDrawListPipeline",
+        "DrawList backend initialization failed; falling back to LegacyGL"
+      );
+      backend->shutdown();
+      delete backend;
+      PRIVATE(this)->renderBackend = NULL;
+      PRIVATE(this)->renderPipeline = SoRenderManager::RenderPipeline::LEGACY_GL;
+      this->invalidateSharedGLState();
+      this->render(clearwindow, clearzbuffer);
+      return;
+    }
+  }
+
   SoGLRenderAction * glaction = PRIVATE(this)->glaction;
   PRIVATE(this)->invokePreRenderCallbacks();
 
@@ -660,23 +689,6 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   if (!action) {
     action = new SoIRRenderAction(PRIVATE(this)->backendViewport);
     PRIVATE(this)->irAction = action;
-  }
-
-  SoRenderBackend * backend = PRIVATE(this)->renderBackend;
-  if (!backend) {
-    backend = new SoGLRenderBackend();
-    PRIVATE(this)->renderBackend = backend;
-  }
-  if (!backend->isInitialized()) {
-    SoRenderBackendInitParams initparams = {};
-    SbVec2s size = PRIVATE(this)->backendViewport.getViewportSizePixels();
-    initparams.targetInfo.size = size;
-    initparams.targetInfo.samples = 1;
-    initparams.targetInfo.colorFormat = 0;
-    initparams.targetInfo.depthFormat = 0;
-    initparams.targetInfo.targetId = 0;
-    initparams.sharedContext = NULL;
-    backend->initialize(initparams);
   }
 
   this->clearBuffers(clearwindow_tmp, clearzbuffer);

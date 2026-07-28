@@ -203,4 +203,21 @@ private:
   bool             afterMainDepthClearPending = false;
 };
 
+/*!
+  \class SoIRRenderStageScope
+  \brief RAII guard for an action-local render-stage traversal.
+*/
+class COIN_DLL_API SoIRRenderStageScope {
+public:
+  SoIRRenderStageScope(SoIRRenderAction & action, SoRenderStage stage);
+  ~SoIRRenderStageScope();
+
+  SoIRRenderStageScope(const SoIRRenderStageScope &) = delete;
+  SoIRRenderStageScope & operator=(const SoIRRenderStageScope &) = delete;
+
+private:
+  SoIRRenderAction * action;
+  bool active;
+};
+
 #endif // COIN_SOIRRENDERACTION_H

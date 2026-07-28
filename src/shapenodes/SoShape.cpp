@@ -432,10 +432,14 @@ public:
         SO_RENDERPASS_TRANSPARENT : SO_RENDERPASS_OPAQUE;
     }
     cmd.pass = defaultPass;
-    if (SoRenderPlacementElement::getLayer(state) ==
-        SoRenderPlacementElement::FOREGROUND) {
+    if (!action->isAfterMainStage()
+        && SoRenderPlacementElement::getLayer(state) ==
+            SoRenderPlacementElement::FOREGROUND) {
       cmd.pass = SO_RENDERPASS_OVERLAY;
     }
+    cmd.stage = cmd.pass == SO_RENDERPASS_OVERLAY
+      ? SoRenderStage::Foreground
+      : SoRenderStage::Main;
     this->action->applyRenderStage(cmd);
     cmd.lightingHandle = SoRenderIR::fillLightingFromState(
       state, this->action->getMutableDrawList());

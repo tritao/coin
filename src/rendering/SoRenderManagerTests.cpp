@@ -13,6 +13,7 @@
 
 #ifdef COIN_TEST_SUITE
 
+#include <Inventor/C/tidbits.h>
 #include <Inventor/SoOffscreenRenderer.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoIRRenderAction.h>
@@ -267,6 +268,37 @@ BOOST_AUTO_TEST_CASE(draw_list_invalidates_all_shared_gl_actions)
   outer->unref();
 }
 
+BOOST_AUTO_TEST_CASE(draw_list_initialization_falls_back_to_legacy_gl)
+{
+  if (!renderTestsHaveDisplay()) {
+    return;
+  }
+
+  SoRenderManager manager;
+  SoSeparator * scene = new SoSeparator;
+  scene->ref();
+  manager.setSceneGraph(scene);
+  scene->unref();
+
+  SoSeparator * outer = new SoSeparator;
+  outer->ref();
+  ManagerRenderProbe probe;
+  probe.manager = &manager;
+  SoCallback * callback = new SoCallback;
+  callback->setCallback(renderManagerFromCallback, &probe);
+  outer->addChild(callback);
+
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+  coin_setenv("COIN_TEST_FAIL_DRAW_LIST_INITIALIZATION", "1", TRUE);
+  const SbBool rendered = renderWithManager(manager, outer);
+  coin_unsetenv("COIN_TEST_FAIL_DRAW_LIST_INITIALIZATION");
+
+  BOOST_REQUIRE(rendered);
+  BOOST_CHECK(manager.getRenderPipeline() ==
+              SoRenderManager::RenderPipeline::LEGACY_GL);
+  outer->unref();
+}
+
 BOOST_AUTO_TEST_CASE(scene_invalidation_does_not_invalidate_legacy_action_state)
 {
   SoRenderManager manager;
@@ -307,29 +339,36 @@ BOOST_AUTO_TEST_CASE(after_main_stage_has_depth_barrier_and_order)
   SoRenderCommand & mainCommand = action.getMutableDrawList().emplaceCommand();
   mainCommand.userData = &mainTag;
 
-  action.beginAfterMainStage();
-  SoRenderCommand & afterMainCommand = action.getMutableDrawList().emplaceCommand();
-  afterMainCommand.userData = &afterMainTag;
-  action.applyRenderStage(afterMainCommand);
+  {
+    SoIRRenderStageScope stageScope(action, SoRenderStage::AfterMain);
+    SoRenderCommand & afterMainCommand = action.getMutableDrawList().emplaceCommand();
+    afterMainCommand.userData = &afterMainTag;
+    action.applyRenderStage(afterMainCommand);
 
-  SoRenderCommand & secondAfterMainCommand = action.getMutableDrawList().emplaceCommand();
-  secondAfterMainCommand.userData = &secondAfterMainTag;
-  action.applyRenderStage(secondAfterMainCommand);
-  action.endAfterMainStage();
+    SoRenderCommand & secondAfterMainCommand = action.getMutableDrawList().emplaceCommand();
+    secondAfterMainCommand.userData = &secondAfterMainTag;
+    secondAfterMainCommand.pass = SO_RENDERPASS_TRANSPARENT;
+    action.applyRenderStage(secondAfterMainCommand);
+  }
 
   SoRenderCommand & foregroundCommand = action.getMutableDrawList().emplaceCommand();
   foregroundCommand.userData = &foregroundTag;
+  foregroundCommand.stage = SoRenderStage::Foreground;
+  foregroundCommand.pass = SO_RENDERPASS_OVERLAY;
 
   BOOST_CHECK_EQUAL(action.getDrawList().getNumCommands(), 4);
   BOOST_CHECK(action.getDrawList().getCommand(0).userData == &mainTag);
   BOOST_CHECK(action.getDrawList().getCommand(1).userData == &afterMainTag);
   BOOST_CHECK(action.getDrawList().getCommand(2).userData == &secondAfterMainTag);
   BOOST_CHECK(action.getDrawList().getCommand(3).userData == &foregroundTag);
-  BOOST_CHECK_EQUAL(action.getDrawList().getCommand(1).pass, SO_RENDERPASS_AFTER_MAIN);
+  BOOST_CHECK(action.getDrawList().getCommand(1).stage == SoRenderStage::AfterMain);
+  BOOST_CHECK_EQUAL(action.getDrawList().getCommand(1).pass, SO_RENDERPASS_OPAQUE);
   BOOST_CHECK(action.getDrawList().getCommand(1).state.raster.clearDepth);
-  BOOST_CHECK_EQUAL(action.getDrawList().getCommand(2).pass, SO_RENDERPASS_AFTER_MAIN);
+  BOOST_CHECK(action.getDrawList().getCommand(2).stage == SoRenderStage::AfterMain);
+  BOOST_CHECK_EQUAL(action.getDrawList().getCommand(2).pass, SO_RENDERPASS_TRANSPARENT);
   BOOST_CHECK(!action.getDrawList().getCommand(2).state.raster.clearDepth);
-  BOOST_CHECK_EQUAL(action.getDrawList().getCommand(3).pass, SO_RENDERPASS_OPAQUE);
+  BOOST_CHECK(action.getDrawList().getCommand(3).stage == SoRenderStage::Foreground);
+  BOOST_CHECK_EQUAL(action.getDrawList().getCommand(3).pass, SO_RENDERPASS_OVERLAY);
 }
 
 BOOST_AUTO_TEST_CASE(manager_after_main_callback_survives_foreground_rebuild)

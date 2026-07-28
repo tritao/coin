@@ -434,10 +434,20 @@ renderpass_name(SoRenderPassType pass)
   switch (pass) {
   case SO_RENDERPASS_OPAQUE: return "opaque";
   case SO_RENDERPASS_TRANSPARENT: return "transparent";
-  case SO_RENDERPASS_AFTER_MAIN: return "after-main";
   case SO_RENDERPASS_OVERLAY: return "overlay";
   case SO_RENDERPASS_SHADOW: return "shadow";
   case SO_RENDERPASS_CUSTOM: return "custom";
+  default: return "unknown";
+  }
+}
+
+static const char *
+renderstage_name(SoRenderStage stage)
+{
+  switch (stage) {
+  case SoRenderStage::Main: return "main";
+  case SoRenderStage::AfterMain: return "after-main";
+  case SoRenderStage::Foreground: return "foreground";
   default: return "unknown";
   }
 }
@@ -464,11 +474,10 @@ SoIRDumpSummary(const SoDrawList & drawlist)
   }
 
   SoDebugError::postInfo("SoDrawList",
-                         "commands=%d opaque=%d transparent=%d after-main=%d overlay=%d shadow=%d custom=%d minVerts=%u maxVerts=%u",
+                         "commands=%d opaque=%d transparent=%d overlay=%d shadow=%d custom=%d minVerts=%u maxVerts=%u",
                          num,
                          counts[SO_RENDERPASS_OPAQUE],
                          counts[SO_RENDERPASS_TRANSPARENT],
-                         counts[SO_RENDERPASS_AFTER_MAIN],
                          counts[SO_RENDERPASS_OVERLAY],
                          counts[SO_RENDERPASS_SHADOW],
                          counts[SO_RENDERPASS_CUSTOM],
@@ -495,9 +504,11 @@ SoIRDumpFirstN(const SoDrawList & drawlist, int count)
       ambient = lighting->ambient;
     }
     SoDebugError::postInfo("SoDrawList",
-                           "[%d] pass=%s topo=%d verts=%u idx=%u colors=%p diffuse=(%.3f, %.3f, %.3f, %.3f) lights=%d ambient=(%.3f, %.3f, %.3f) pipeline=0x%016" PRIx64,
+                           "[%d] stage=%s pass=%s depth=%d topo=%d verts=%u idx=%u colors=%p diffuse=(%.3f, %.3f, %.3f, %.3f) lights=%d ambient=(%.3f, %.3f, %.3f) pipeline=0x%016" PRIx64,
                            i,
+                           renderstage_name(cmd.stage),
                            renderpass_name(cmd.pass),
+                           cmd.state.depth.enabled,
                            static_cast<int>(cmd.geometry.topology),
                            cmd.geometry.vertexCount,
                            cmd.geometry.indexCount,
@@ -872,10 +883,14 @@ appendCacheDrawCommands(const SoPrimitiveVertexCache * cache,
     defaultPass = transparent ? SO_RENDERPASS_TRANSPARENT : SO_RENDERPASS_OPAQUE;
   }
   cmd.pass = defaultPass;
-  if (SoRenderPlacementElement::getLayer(state) ==
-      SoRenderPlacementElement::FOREGROUND) {
+  if (!action->isAfterMainStage()
+      && SoRenderPlacementElement::getLayer(state) ==
+          SoRenderPlacementElement::FOREGROUND) {
     cmd.pass = SO_RENDERPASS_OVERLAY;
   }
+  cmd.stage = cmd.pass == SO_RENDERPASS_OVERLAY
+    ? SoRenderStage::Foreground
+    : SoRenderStage::Main;
   action->applyRenderStage(cmd);
   cmd.lightingHandle = SoRenderIR::fillLightingFromState(state,
                                                          action->getMutableDrawList());

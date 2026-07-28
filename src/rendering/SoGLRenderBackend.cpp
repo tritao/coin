@@ -265,6 +265,15 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
   this->storedparams = params;
   this->setInitParams(params);
 
+  // Fault injection for the Coin render-manager fallback test. This is
+  // intentionally an environment hook so the test can exercise the real
+  // backend initialization boundary without exposing a test-only API.
+  const char * failInit = coin_getenv("COIN_TEST_FAIL_DRAW_LIST_INITIALIZATION");
+  if (failInit && failInit[0] != '0' && failInit[0] != '\0') {
+    this->emitError("forced DrawList backend initialization failure");
+    return FALSE;
+  }
+
   char buffer[128];
   std::snprintf(buffer, sizeof(buffer),
                 "target=%dx%d samples=%d id=%u",
@@ -298,9 +307,6 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
 void
 SoGLRenderBackend::shutdown()
 {
-  if (!this->isInitialized()) {
-    return;
-  }
   pickBuffer.reset();
 
   // Destroy all cached GPU resources
@@ -1194,6 +1200,7 @@ SoGLRenderBackend::renderBackgroundPass(const SoDrawList & drawlist,
 
 void
 SoGLRenderBackend::renderOpaquePass(const SoDrawList & drawlist,
+                                    SoRenderStage stage,
                                     const SbMat & viewMat,
                                     const SbMat & projMat,
                                     const SoRenderParams & params)
@@ -1209,6 +1216,7 @@ SoGLRenderBackend::renderOpaquePass(const SoDrawList & drawlist,
     int ci = (si < static_cast<int>(order.size())) ? order[si] : si;
     if (ci < bgCount) continue;
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
+    if (cmd.stage != stage) continue;
     if (cmd.pass != SO_RENDERPASS_OPAQUE) continue;
     drawCommand(drawlist, cmd, viewMat, projMat, params);
   }
@@ -1216,6 +1224,7 @@ SoGLRenderBackend::renderOpaquePass(const SoDrawList & drawlist,
 
 void
 SoGLRenderBackend::renderTransparentPass(const SoDrawList & drawlist,
+                                         SoRenderStage stage,
                                          const SbMat & viewMat,
                                          const SbMat & projMat,
                                          const SoRenderParams & params)
@@ -1232,6 +1241,7 @@ SoGLRenderBackend::renderTransparentPass(const SoDrawList & drawlist,
     int ci = (si < static_cast<int>(order.size())) ? order[si] : si;
     if (ci < bgCount) continue;
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
+    if (cmd.stage != stage) continue;
     if (cmd.pass != SO_RENDERPASS_TRANSPARENT) continue;
     drawCommand(drawlist, cmd, viewMat, projMat, params);
   }
@@ -1242,29 +1252,21 @@ SoGLRenderBackend::renderTransparentPass(const SoDrawList & drawlist,
 }
 
 void
-SoGLRenderBackend::renderAfterMainPass(const SoDrawList & drawlist,
-                                       const SbMat & viewMat,
-                                       const SbMat & projMat,
-                                       const SoRenderParams & params)
+SoGLRenderBackend::clearAfterMainDepth(const SoDrawList & drawlist)
 {
   const int count = drawlist.getNumCommands();
 
-  // After-main commands retain traversal order and use the main camera. The
-  // first command carries the stage barrier recorded by SoIRRenderAction.
-  glEnable(GL_DEPTH_TEST);
-  glDepthFunc(GL_LEQUAL);
-  glDepthMask(GL_TRUE);
-  glDisable(GL_BLEND);
-
   for (int i = 0; i < count; ++i) {
     const SoRenderCommand & cmd = drawlist.getCommand(i);
-    if (cmd.pass != SO_RENDERPASS_AFTER_MAIN) {
+    if (cmd.stage != SoRenderStage::AfterMain) {
       continue;
     }
     if (cmd.state.raster.clearDepth) {
+      glEnable(GL_DEPTH_TEST);
+      glDepthMask(GL_TRUE);
       glClear(GL_DEPTH_BUFFER_BIT);
     }
-    drawCommand(drawlist, cmd, viewMat, projMat, params);
+    return;
   }
 }
 
@@ -1286,6 +1288,7 @@ SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
     int ci = (si < static_cast<int>(order.size())) ? order[si] : si;
     if (ci < bgCount) continue;
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
+    if (cmd.stage != SoRenderStage::Foreground) continue;
     if (cmd.pass != SO_RENDERPASS_OVERLAY) continue;
     // 3D overlays have their own camera (viewMatrix differs from main scene)
     if (cmd.viewMatrix != mainView) {
@@ -1330,13 +1333,15 @@ SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
 
 void
 SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
+                                       SoRenderStage stage,
                                        const SbMat & viewMat,
                                        const SbMat & projMat,
                                        const SoRenderParams & params)
 {
   const int count = drawlist.getNumCommands();
 
-  // Selection/highlight overlays — emissive flat color on top
+  // Selection/highlight overlays are depth-tested, but must not change depth.
+  glEnable(GL_DEPTH_TEST);
   glDepthMask(GL_FALSE);
   glDepthFunc(GL_LEQUAL);
   glEnable(GL_BLEND);
@@ -1381,6 +1386,7 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
 
   for (int i = 0; i < count; ++i) {
     const SoRenderCommand & cmd = drawlist.getCommand(i);
+    if (cmd.stage != stage) continue;
     bool hasHighlight = cmd.selection.highlightWholeObject
                      || !cmd.selection.highlightedElements.empty();
     bool hasSelection = cmd.selection.selectWholeObject || !cmd.selection.selectedElements.empty();
@@ -1671,10 +1677,13 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
   beginFrame(drawlist, params);
   updateGeometryCache(drawlist);
   renderBackgroundPass(drawlist, viewMat, projMat, params);
-  renderOpaquePass(drawlist, viewMat, projMat, params);
-  renderTransparentPass(drawlist, viewMat, projMat, params);
-  renderAfterMainPass(drawlist, viewMat, projMat, params);
-  renderSelectionPass(drawlist, viewMat, projMat, params);
+  renderOpaquePass(drawlist, SoRenderStage::Main, viewMat, projMat, params);
+  renderTransparentPass(drawlist, SoRenderStage::Main, viewMat, projMat, params);
+  renderSelectionPass(drawlist, SoRenderStage::Main, viewMat, projMat, params);
+  clearAfterMainDepth(drawlist);
+  renderOpaquePass(drawlist, SoRenderStage::AfterMain, viewMat, projMat, params);
+  renderTransparentPass(drawlist, SoRenderStage::AfterMain, viewMat, projMat, params);
+  renderSelectionPass(drawlist, SoRenderStage::AfterMain, viewMat, projMat, params);
   renderOverlayPass(drawlist, viewMat, projMat, params);
   renderIDBufferPass(drawlist, viewMat, projMat, params);
   endFrame();
