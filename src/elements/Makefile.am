@@ -59,6 +59,7 @@ RegularSources = \
 	SoProfileCoordinateElement.cpp \
 	SoProfileElement.cpp \
 	SoProjectionMatrixElement.cpp \
+	SoRenderPlacementElement.cpp \
 	SoReplacedElement.cpp \
 	SoShapeHintsElement.cpp \
 	SoShapeStyleElement.cpp \
@@ -94,6 +95,7 @@ PublicHeaders =
 PrivateHeaders = \
 	SoTextureScalePolicyElement.h \
 	SoTextureScaleQualityElement.h \
+	SoRenderPlacementElement.h \
 	SoVertexAttributeData.h \
 	SoVertexAttributeElement.cpp
 
