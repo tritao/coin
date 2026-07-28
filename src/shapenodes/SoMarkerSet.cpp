@@ -79,7 +79,7 @@
 #include <Inventor/SoPrimitiveVertex.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoIRRenderAction.h>
-#include <Inventor/rendering/SoRenderIR.h>
+#include "rendering/SoRenderIRP.h"
 #include <Inventor/nodes/SoVertexProperty.h>
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
 #include <Inventor/elements/SoGLCoordinateElement.h>
