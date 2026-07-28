@@ -611,6 +611,7 @@ fillMaterialFromState(SoState * state, SoMaterialData & material)
   material.shadingModel = baseColor
     ? SO_SHADING_UNLIT
     : SO_SHADING_LEGACY_GOURAUD;
+  material.twoSidedLighting = SoLazyElement::getTwoSidedLighting(mutableState) != FALSE;
   material.featureFlags = baseColor ? SO_FEAT_BASE_COLOR : 0;
   material.ambient.setValue(ambient[0], ambient[1], ambient[2], 1.0f);
   material.specular.setValue(specular[0], specular[1], specular[2], 1.0f);

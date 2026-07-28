@@ -28,6 +28,7 @@
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoNormal.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
+#include <Inventor/nodes/SoShapeHints.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/rendering/SoRenderIR.h>
 #include <Inventor/system/gl.h>
@@ -141,7 +142,8 @@ static const SoRenderCommand *findGeometryCommand(const SoDrawList & drawlist)
   return nullptr;
 }
 
-static SoSeparator *makeShadingModelProbeScene(SoLightModel::Model model)
+static SoSeparator *makeShadingModelProbeScene(SoLightModel::Model model,
+                                               bool twoSidedLighting = false)
 {
   SoSeparator *scene = new SoSeparator;
   scene->ref();
@@ -149,6 +151,13 @@ static SoSeparator *makeShadingModelProbeScene(SoLightModel::Model model)
   SoLightModel *lightModel = new SoLightModel;
   lightModel->model = model;
   scene->addChild(lightModel);
+
+  if (twoSidedLighting) {
+    SoShapeHints *shapeHints = new SoShapeHints;
+    shapeHints->vertexOrdering = SoShapeHints::COUNTERCLOCKWISE;
+    shapeHints->shapeType = SoShapeHints::UNKNOWN_SHAPE_TYPE;
+    scene->addChild(shapeHints);
+  }
 
   SoMaterial *material = new SoMaterial;
   material->diffuseColor.setValue(0.8f, 0.2f, 0.1f);
@@ -411,6 +420,20 @@ BOOST_AUTO_TEST_CASE(ir_commands_carry_explicit_shading_model)
   BOOST_REQUIRE(unlitCommand);
   BOOST_CHECK(unlitCommand->material.shadingModel == SO_SHADING_UNLIT);
   unlitScene->unref();
+
+  SoSeparator *oneSidedScene = makeShadingModelProbeScene(SoLightModel::PHONG);
+  action.apply(oneSidedScene);
+  const SoRenderCommand *oneSidedCommand = findGeometryCommand(action.getDrawList());
+  BOOST_REQUIRE(oneSidedCommand);
+  BOOST_CHECK(!oneSidedCommand->material.twoSidedLighting);
+  oneSidedScene->unref();
+
+  SoSeparator *twoSidedScene = makeShadingModelProbeScene(SoLightModel::PHONG, true);
+  action.apply(twoSidedScene);
+  const SoRenderCommand *twoSidedCommand = findGeometryCommand(action.getDrawList());
+  BOOST_REQUIRE(twoSidedCommand);
+  BOOST_CHECK(twoSidedCommand->material.twoSidedLighting);
+  twoSidedScene->unref();
 }
 
 BOOST_AUTO_TEST_CASE(ir_captures_semantic_blend_depth_and_alpha_test_state)

@@ -252,6 +252,7 @@ struct SoMaterialData {
 
   uint32_t flags = 0;
   uint32_t featureFlags = 0;
+  bool     twoSidedLighting = false;
 };
 
 /*! \struct SoPixelTextData

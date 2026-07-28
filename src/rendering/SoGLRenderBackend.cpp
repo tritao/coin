@@ -900,6 +900,8 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
               cmd.material.vertexColorAlphaIncludesOpacity ? 1.0f : 0.0f);
   glUniform1i(this->uShadingModelLocation,
               static_cast<GLint>(cmd.material.shadingModel));
+  glUniform1i(this->uTwoSidedLightingLocation,
+              cmd.material.twoSidedLighting ? 1 : 0);
   const SbVec4f & ambient = cmd.material.ambient;
   glUniform3f(this->uMaterialAmbientLocation,
               ambient[0], ambient[1], ambient[2]);
@@ -2006,6 +2008,8 @@ SoGLRenderBackend::createShaders()
   this->uColorLocation = glGetUniformLocation(this->shaderProgram, "u_color");
   this->uRenderModeLocation = glGetUniformLocation(this->shaderProgram, "u_renderMode");
   this->uShadingModelLocation = glGetUniformLocation(this->shaderProgram, "u_shadingModel");
+  this->uTwoSidedLightingLocation =
+    glGetUniformLocation(this->shaderProgram, "u_twoSidedLighting");
   this->uEmissiveColorLocation = glGetUniformLocation(this->shaderProgram, "u_emissiveColor");
   this->uUseVertexColorLocation = glGetUniformLocation(this->shaderProgram, "u_useVertexColor");
   this->uTextureLocation = glGetUniformLocation(this->shaderProgram, "u_texture");
