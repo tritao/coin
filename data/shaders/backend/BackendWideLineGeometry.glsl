@@ -19,7 +19,9 @@ void main()
   vec2 ndc1 = p1.xy / p1.w;
   vec2 dir = normalize(ndc1 - ndc0);
   vec2 perp = vec2(-dir.y, dir.x);
-  vec2 offset = perp * u_lineWidth / u_vpSize;
+  // u_lineWidth is the full requested width; the geometry shader needs the
+  // half-width on either side of the line center.
+  vec2 offset = perp * (0.5 * u_lineWidth) / u_vpSize;
 
   v_color = vs_color[0];
   v_lineDistance = vs_lineDistance[0];
