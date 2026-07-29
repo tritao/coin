@@ -47,6 +47,55 @@
 
 #include <Inventor/system/gl.h>
 
+/* These are GLU protocol values, not fixed-function OpenGL entry points.
+   Keep their definitions available when Coin is built against core OpenGL
+   headers, which intentionally do not include the GLU headers. */
+#ifndef GLU_VERSION
+#define GLU_VERSION 100800
+#endif
+#ifndef GLU_EXTENSIONS
+#define GLU_EXTENSIONS 100801
+#endif
+#ifndef GLU_TESS_BEGIN
+#define GLU_TESS_BEGIN 100100
+#endif
+#ifndef GLU_TESS_VERTEX
+#define GLU_TESS_VERTEX 100101
+#endif
+#ifndef GLU_TESS_END
+#define GLU_TESS_END 100102
+#endif
+#ifndef GLU_TESS_ERROR
+#define GLU_TESS_ERROR 100103
+#endif
+#ifndef GLU_TESS_COMBINE
+#define GLU_TESS_COMBINE 100105
+#endif
+#ifndef GLU_TESS_BEGIN_DATA
+#define GLU_TESS_BEGIN_DATA 100106
+#endif
+#ifndef GLU_TESS_VERTEX_DATA
+#define GLU_TESS_VERTEX_DATA 100107
+#endif
+#ifndef GLU_TESS_ERROR_DATA
+#define GLU_TESS_ERROR_DATA 100109
+#endif
+#ifndef GLU_TESS_MISSING_BEGIN_POLYGON
+#define GLU_TESS_MISSING_BEGIN_POLYGON 100151
+#endif
+#ifndef GLU_TESS_MISSING_END_POLYGON
+#define GLU_TESS_MISSING_END_POLYGON 100154
+#endif
+#ifndef GLU_TESS_MISSING_BEGIN_CONTOUR
+#define GLU_TESS_MISSING_BEGIN_CONTOUR 100152
+#endif
+#ifndef GLU_TESS_MISSING_END_CONTOUR
+#define GLU_TESS_MISSING_END_CONTOUR 100153
+#endif
+#ifndef GLU_TESS_NEED_COMBINE_CALLBACK
+#define GLU_TESS_NEED_COMBINE_CALLBACK 100156
+#endif
+
 /* Under Win32, we need to make sure we use the correct calling method
    by using the APIENTRY define for the function signature types (or
    else we'll get weird stack errors). On other platforms, just define
