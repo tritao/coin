@@ -244,6 +244,8 @@
 #include <cstring>
 #include <climits> /* SHRT_MAX */
 
+#include <Inventor/C/glue/gl.h>
+
 #ifdef HAVE_AGL
 #include <AGL/agl.h>
 #endif /* HAVE_AGL */
@@ -264,8 +266,6 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #endif /* HAVE_EGL */
-
-#include <Inventor/C/glue/gl.h>
 
 #include <Inventor/C/errors/debugerror.h>
 #include <Inventor/C/glue/dl.h>

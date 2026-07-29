@@ -1111,7 +1111,6 @@ cc_flwft_get_vector_glyph(void * font, unsigned int glyphindex, float complexity
   cc_ftglue_FT_Done_Glyph((FT_Glyph) g);
 
   return new_vector_glyph;
-
 }
 
 static void
