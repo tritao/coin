@@ -102,6 +102,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 
 #include <memory>
 
@@ -573,6 +574,8 @@
 */
 
 // *************************************************************************
+
+#if defined(COIN_GL_COMPATIBILITY)
 
 class SoGLRenderActionP {
 public:
@@ -1193,14 +1196,10 @@ SoGLRenderAction::beginTraversal(SoNode * node)
   if (PRIVATE(this)->needglinit) {
     PRIVATE(this)->needglinit = FALSE;
 
-#if defined(COIN_GL_COMPATIBILITY)
-    if (sogl_compatibility_profile(this->state)) {
-      // we are always using GL_COLOR_MATERIAL in Coin
-      glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);
-      glEnable(GL_COLOR_MATERIAL);
-      glEnable(GL_NORMALIZE);
-    }
-#endif
+    // We are always using GL_COLOR_MATERIAL in Coin.
+    glColorMaterial(GL_FRONT_AND_BACK, GL_DIFFUSE);
+    glEnable(GL_COLOR_MATERIAL);
+    glEnable(GL_NORMALIZE);
 
     // initialize the depth function to the default Coin/Inventor
     // value.  SoGLDepthBufferElement doesn't check for this, it just
@@ -1210,22 +1209,18 @@ SoGLRenderAction::beginTraversal(SoNode * node)
     // well).
     glDepthFunc(GL_LEQUAL);
 
-#if defined(COIN_GL_COMPATIBILITY)
-    if (sogl_compatibility_profile(this->state)) {
-      if (PRIVATE(this)->pointSmoothing) {
-        glEnable(GL_POINT_SMOOTH);
-      }
-      else {
-        glDisable(GL_POINT_SMOOTH);
-      }
-      if (PRIVATE(this)->lineSmoothing) {
-        glEnable(GL_LINE_SMOOTH);
-      }
-      else {
-        glDisable(GL_LINE_SMOOTH);
-      }
+    if (PRIVATE(this)->pointSmoothing) {
+      glEnable(GL_POINT_SMOOTH);
     }
-#endif
+    else {
+      glDisable(GL_POINT_SMOOTH);
+    }
+    if (PRIVATE(this)->lineSmoothing) {
+      glEnable(GL_LINE_SMOOTH);
+    }
+    else {
+      glDisable(GL_LINE_SMOOTH);
+    }
   }
 
   int err_after_init = GL_NO_ERROR;
@@ -2233,26 +2228,20 @@ SoGLRenderActionP::texgenEnable(SbBool enable)
 void
 SoGLRenderActionP::eyeLinearTexgen()
 {
-#if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(action->getState())) {
-    const float col1[] = { 1, 0, 0, 0 };
-    const float col2[] = { 0, 1, 0, 0 };
-    const float col3[] = { 0, 0, 1, 0 };
-    const float col4[] = { 0, 0, 0, 1 };
+  const float col1[] = { 1, 0, 0, 0 };
+  const float col2[] = { 0, 1, 0, 0 };
+  const float col3[] = { 0, 0, 1, 0 };
+  const float col4[] = { 0, 0, 0, 1 };
 
-    glTexGenfv(GL_S,GL_EYE_PLANE, col1);
-    glTexGenfv(GL_T,GL_EYE_PLANE, col2);
-    glTexGenfv(GL_R,GL_EYE_PLANE, col3);
-    glTexGenfv(GL_Q,GL_EYE_PLANE, col4);
+  glTexGenfv(GL_S,GL_EYE_PLANE, col1);
+  glTexGenfv(GL_T,GL_EYE_PLANE, col2);
+  glTexGenfv(GL_R,GL_EYE_PLANE, col3);
+  glTexGenfv(GL_Q,GL_EYE_PLANE, col4);
 
-    glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-    glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-    glTexGeni(GL_R, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-    glTexGeni(GL_Q, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
-  }
-#else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
-#endif
+  glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+  glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+  glTexGeni(GL_R, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
+  glTexGeni(GL_Q, GL_TEXTURE_GEN_MODE, GL_EYE_LINEAR);
 }
 
 void
@@ -2822,6 +2811,104 @@ SoGLRenderActionP::renderSortedLayersNV(const SoState * state)
 }
 #endif // COIN_GL_COMPATIBILITY
 
-// *************************************************************************
+#else // !COIN_GL_COMPATIBILITY
+
+// Core-profile and GLES builds retain the public action type for source and
+// ABI compatibility, but the fixed-function traversal itself is unavailable.
+// Keeping this small stub here makes that boundary explicit: applications
+// must use SoIRRenderAction/SoRenderManager's draw-list pipeline.
+
+class SoGLRenderActionP {
+public:
+  SbViewportRegion viewport;
+  SbVec2f updateorigin;
+  SbVec2f updatesize;
+  SoGLRenderAction::SoGLRenderAbortCB * abortcallback = NULL;
+  void * abortcallbackdata = NULL;
+  SoGLRenderAction::TransparencyType transparencytype = SoGLRenderAction::BLEND;
+  SoGLRenderAction::TransparentDelayedObjectRenderType delayedrendertype =
+    SoGLRenderAction::ONE_PASS;
+  SbBool smoothing = FALSE;
+  SbBool lineSmoothing = FALSE;
+  SbBool pointSmoothing = FALSE;
+  int numpasses = 1;
+  SbBool passupdate = FALSE;
+  SoGLRenderPassCB * passcallback = NULL;
+  void * passcallbackdata = NULL;
+  uint32_t cachecontext = 0;
+  int currentpass = 0;
+  SbBool renderingisremote = FALSE;
+  int sortedlayersblendpasses = 4;
+  SbBool delayedobjdepthwrite = FALSE;
+};
+
+#define PRIVATE(obj) ((obj)->pimpl)
+
+SO_ACTION_SOURCE(SoGLRenderAction);
+
+void SoGLRenderAction::initClass(void)
+{
+  SO_ACTION_INTERNAL_INIT_CLASS(SoGLRenderAction, SoAction);
+}
+
+SoGLRenderAction::SoGLRenderAction(const SbViewportRegion & viewportregion)
+{
+  SO_ACTION_CONSTRUCTOR(SoGLRenderAction);
+  PRIVATE(this) = new SoGLRenderActionP;
+  PRIVATE(this)->viewport = viewportregion;
+  PRIVATE(this)->updateorigin.setValue(0.0f, 0.0f);
+  PRIVATE(this)->updatesize.setValue(1.0f, 1.0f);
+}
+
+SoGLRenderAction::~SoGLRenderAction() = default;
+void SoGLRenderAction::setViewportRegion(const SbViewportRegion & region) { PRIVATE(this)->viewport = region; }
+const SbViewportRegion & SoGLRenderAction::getViewportRegion(void) const { return PRIVATE(this)->viewport; }
+void SoGLRenderAction::setUpdateArea(const SbVec2f & origin, const SbVec2f & size) { PRIVATE(this)->updateorigin = origin; PRIVATE(this)->updatesize = size; }
+void SoGLRenderAction::getUpdateArea(SbVec2f & origin, SbVec2f & size) const { origin = PRIVATE(this)->updateorigin; size = PRIVATE(this)->updatesize; }
+void SoGLRenderAction::setAbortCallback(SoGLRenderAbortCB * const func, void * const userdata) { PRIVATE(this)->abortcallback = func; PRIVATE(this)->abortcallbackdata = userdata; }
+void SoGLRenderAction::getAbortCallback(SoGLRenderAbortCB * & func, void * & userdata) const { func = PRIVATE(this)->abortcallback; userdata = PRIVATE(this)->abortcallbackdata; }
+void SoGLRenderAction::setTransparencyType(const TransparencyType type) { PRIVATE(this)->transparencytype = type; }
+SoGLRenderAction::TransparencyType SoGLRenderAction::getTransparencyType(void) const { return PRIVATE(this)->transparencytype; }
+void SoGLRenderAction::setTransparentDelayedObjectRenderType(const TransparentDelayedObjectRenderType type) { PRIVATE(this)->delayedrendertype = type; }
+SoGLRenderAction::TransparentDelayedObjectRenderType SoGLRenderAction::getTransparentDelayedObjectRenderType(void) const { return PRIVATE(this)->delayedrendertype; }
+void SoGLRenderAction::setSmoothing(const SbBool smooth) { PRIVATE(this)->smoothing = smooth; PRIVATE(this)->lineSmoothing = smooth; PRIVATE(this)->pointSmoothing = smooth; }
+SbBool SoGLRenderAction::isSmoothing(void) const { return PRIVATE(this)->smoothing; }
+void SoGLRenderAction::setLineSmoothing(const SbBool smooth) { PRIVATE(this)->lineSmoothing = smooth; }
+SbBool SoGLRenderAction::isLineSmoothing(void) const { return PRIVATE(this)->lineSmoothing; }
+void SoGLRenderAction::setPointSmoothing(const SbBool smooth) { PRIVATE(this)->pointSmoothing = smooth; }
+SbBool SoGLRenderAction::isPointSmoothing(void) const { return PRIVATE(this)->pointSmoothing; }
+void SoGLRenderAction::setNumPasses(const int num) { PRIVATE(this)->numpasses = std::max(1, num); }
+int SoGLRenderAction::getNumPasses(void) const { return PRIVATE(this)->numpasses; }
+void SoGLRenderAction::setPassUpdate(const SbBool flag) { PRIVATE(this)->passupdate = flag; }
+SbBool SoGLRenderAction::isPassUpdate(void) const { return PRIVATE(this)->passupdate; }
+void SoGLRenderAction::setPassCallback(SoGLRenderPassCB * const func, void * const userdata) { PRIVATE(this)->passcallback = func; PRIVATE(this)->passcallbackdata = userdata; }
+void SoGLRenderAction::setCacheContext(const uint32_t context) { PRIVATE(this)->cachecontext = context; }
+uint32_t SoGLRenderAction::getCacheContext(void) const { return PRIVATE(this)->cachecontext; }
+void SoGLRenderAction::addDelayedPath(SoPath * COIN_UNUSED_ARG(path)) { }
+SbBool SoGLRenderAction::isRenderingDelayedPaths(void) const { return FALSE; }
+SbBool SoGLRenderAction::handleTransparency(SbBool COIN_UNUSED_ARG(istransparent)) { return FALSE; }
+void SoGLRenderAction::setCurPass(const int passnum, const int passes) { PRIVATE(this)->currentpass = passnum; PRIVATE(this)->numpasses = std::max(1, passes); }
+int SoGLRenderAction::getCurPass(void) const { return PRIVATE(this)->currentpass; }
+SbBool SoGLRenderAction::abortNow(void) { return TRUE; }
+void SoGLRenderAction::setRenderingIsRemote(SbBool remote) { PRIVATE(this)->renderingisremote = remote; }
+SbBool SoGLRenderAction::getRenderingIsRemote(void) const { return PRIVATE(this)->renderingisremote; }
+void SoGLRenderAction::invalidateState(void) { inherited::invalidateState(); }
+void SoGLRenderAction::addPreRenderCallback(SoGLPreRenderCB *, void *) { }
+void SoGLRenderAction::removePreRenderCallback(SoGLPreRenderCB *, void *) { }
+void SoGLRenderAction::setSortedLayersNumPasses(int num) { PRIVATE(this)->sortedlayersblendpasses = std::max(1, num); }
+int SoGLRenderAction::getSortedLayersNumPasses(void) const { return PRIVATE(this)->sortedlayersblendpasses; }
+void SoGLRenderAction::setSortedObjectOrderStrategy(const SortedObjectOrderStrategy, SoGLSortedObjectOrderCB *, void *) { }
+void SoGLRenderAction::setDelayedObjDepthWrite(SbBool write) { PRIVATE(this)->delayedobjdepthwrite = write; }
+SbBool SoGLRenderAction::getDelayedObjDepthWrite(void) const { return PRIVATE(this)->delayedobjdepthwrite; }
+SbBool SoGLRenderAction::isRenderingTranspPaths(void) const { return FALSE; }
+SbBool SoGLRenderAction::isRenderingTranspBackfaces(void) const { return FALSE; }
+void SoGLRenderAction::beginTraversal(SoNode * COIN_UNUSED_ARG(node))
+{
+  SoDebugError::postWarning("SoGLRenderAction::beginTraversal", "legacy OpenGL traversal is unavailable in this build; use DrawList");
+  this->setTerminated(TRUE);
+}
+void SoGLRenderAction::endTraversal(SoNode * COIN_UNUSED_ARG(node)) { }
 
 #undef PRIVATE
+
+#endif // COIN_GL_COMPATIBILITY
