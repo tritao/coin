@@ -129,6 +129,61 @@ COIN_DLL_API SbBool cc_glglue_isdirect(const cc_glglue * w);
 /* Returns TRUE if the current OpenGL context supports legacy rendering. */
 COIN_DLL_API SbBool cc_glglue_context_supports_legacy_rendering(const cc_glglue * glue);
 
+/* Standard-facing GLSL operations.  The implementation resolves the
+   standard entry point first and falls back to ARB_shader_objects when
+   that is the API exposed by an older implementation. */
+COIN_DLL_API GLuint cc_glglue_glCreateShader(const cc_glglue * glue, GLenum type);
+COIN_DLL_API void cc_glglue_glShaderSource(const cc_glglue * glue, GLuint shader,
+                                           GLsizei count, const char * const * string,
+                                           const GLint * length);
+COIN_DLL_API void cc_glglue_glCompileShader(const cc_glglue * glue, GLuint shader);
+COIN_DLL_API void cc_glglue_glGetShaderiv(const cc_glglue * glue, GLuint shader,
+                                          GLenum pname, GLint * params);
+COIN_DLL_API void cc_glglue_glGetShaderInfoLog(const cc_glglue * glue, GLuint shader,
+                                               GLsizei maxLength, GLsizei * length,
+                                               char * infoLog);
+COIN_DLL_API void cc_glglue_glDeleteShader(const cc_glglue * glue, GLuint shader);
+COIN_DLL_API void cc_glglue_glAttachShader(const cc_glglue * glue, GLuint program,
+                                           GLuint shader);
+COIN_DLL_API void cc_glglue_glDetachShader(const cc_glglue * glue, GLuint program,
+                                           GLuint shader);
+COIN_DLL_API GLint cc_glglue_glGetUniformLocation(const cc_glglue * glue, GLuint program,
+                                                  const char * name);
+COIN_DLL_API void cc_glglue_glGetActiveUniform(const cc_glglue * glue, GLuint program,
+                                               GLuint index, GLsizei maxLength,
+                                               GLsizei * length, GLint * size,
+                                               GLenum * type, char * name);
+COIN_DLL_API void cc_glglue_glUniform1f(const cc_glglue * glue, GLint location, GLfloat v0);
+COIN_DLL_API void cc_glglue_glUniform2f(const cc_glglue * glue, GLint location, GLfloat v0, GLfloat v1);
+COIN_DLL_API void cc_glglue_glUniform3f(const cc_glglue * glue, GLint location, GLfloat v0, GLfloat v1, GLfloat v2);
+COIN_DLL_API void cc_glglue_glUniform4f(const cc_glglue * glue, GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3);
+COIN_DLL_API void cc_glglue_glUniform1fv(const cc_glglue * glue, GLint location, GLsizei count, const GLfloat * value);
+COIN_DLL_API void cc_glglue_glUniform2fv(const cc_glglue * glue, GLint location, GLsizei count, const GLfloat * value);
+COIN_DLL_API void cc_glglue_glUniform3fv(const cc_glglue * glue, GLint location, GLsizei count, const GLfloat * value);
+COIN_DLL_API void cc_glglue_glUniform4fv(const cc_glglue * glue, GLint location, GLsizei count, const GLfloat * value);
+COIN_DLL_API void cc_glglue_glUniform1i(const cc_glglue * glue, GLint location, GLint v0);
+COIN_DLL_API void cc_glglue_glUniform2i(const cc_glglue * glue, GLint location, GLint v0, GLint v1);
+COIN_DLL_API void cc_glglue_glUniform3i(const cc_glglue * glue, GLint location, GLint v0, GLint v1, GLint v2);
+COIN_DLL_API void cc_glglue_glUniform4i(const cc_glglue * glue, GLint location, GLint v0, GLint v1, GLint v2, GLint v3);
+COIN_DLL_API void cc_glglue_glUniform1iv(const cc_glglue * glue, GLint location, GLsizei count, const GLint * value);
+COIN_DLL_API void cc_glglue_glUniform2iv(const cc_glglue * glue, GLint location, GLsizei count, const GLint * value);
+COIN_DLL_API void cc_glglue_glUniform3iv(const cc_glglue * glue, GLint location, GLsizei count, const GLint * value);
+COIN_DLL_API void cc_glglue_glUniform4iv(const cc_glglue * glue, GLint location, GLsizei count, const GLint * value);
+COIN_DLL_API void cc_glglue_glUniformMatrix4fv(const cc_glglue * glue, GLint location,
+                                               GLsizei count, GLboolean transpose,
+                                               const GLfloat * value);
+COIN_DLL_API GLuint cc_glglue_glCreateProgram(const cc_glglue * glue);
+COIN_DLL_API void cc_glglue_glLinkProgram(const cc_glglue * glue, GLuint program);
+COIN_DLL_API void cc_glglue_glUseProgram(const cc_glglue * glue, GLuint program);
+COIN_DLL_API void cc_glglue_glDeleteProgram(const cc_glglue * glue, GLuint program);
+COIN_DLL_API void cc_glglue_glGetGLSLProgramiv(const cc_glglue * glue, GLuint program,
+                                               GLenum pname, GLint * params);
+COIN_DLL_API void cc_glglue_glGetProgramInfoLog(const cc_glglue * glue, GLuint program,
+                                                GLsizei maxLength, GLsizei * length,
+                                                char * infoLog);
+COIN_DLL_API void cc_glglue_glProgramParameteri(const cc_glglue * glue, GLuint program,
+                                                GLenum pname, GLint value);
+
 
 /*** Wrapped OpenGL 1.1+ features and extensions. *********************/
 

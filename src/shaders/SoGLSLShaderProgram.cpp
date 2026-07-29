@@ -42,6 +42,16 @@
 
 // *************************************************************************
 
+static void
+soglshaderprogram_append_source_hint(SbString & result, const SbString & sourceHint)
+{
+  if (sourceHint.getLength() == 0) return;
+  if (result.getLength() > 0) result += ", ";
+  result += sourceHint;
+}
+
+// *************************************************************************
+
 // FIXME: no checking is done to see whether "shader objects" (as for
 // GL_ARB_shader_objects) are actually supported or not. 20050124 mortene.
 
@@ -114,17 +124,11 @@ SoGLSLShaderProgram::enable(const cc_glglue * g)
 
   if (this->isExecutable) {
     COIN_GLhandle programhandle = this->getProgramHandle(g, TRUE);
-#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-    if (cc_glglue_context_supports_legacy_rendering(g)) {
-      g->glUseProgramObjectARB(programhandle);
-    } else
-#endif
-    {
-      glUseProgram(programhandle);
-    }
+    cc_glglue_glUseProgram(g, (GLuint) programhandle);
 
     if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::enable")) {
-      SoGLSLShaderObject::printInfoLog(g, programhandle, 0);
+      SoGLSLShaderProgram::printInfoLog(g, programhandle,
+                                        this->getSourceHint(), FALSE);
     }
   }
 }
@@ -133,33 +137,22 @@ void
 SoGLSLShaderProgram::disable(const cc_glglue * g)
 {
   if (this->isExecutable) {
-#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-    if (cc_glglue_context_supports_legacy_rendering(g)) {
-      g->glUseProgramObjectARB(0);
-    } else
-#endif
-    {
-      glUseProgram(0);
-    }
+    cc_glglue_glUseProgram(g, 0);
   }
 }
 
-#if defined(SOURCE_HINT)
 SbString
 SoGLSLShaderProgram::getSourceHint(void) const
 {
   SbString result;
-  for (int i=0; i<this->shaderObjects.size(); i++) {
+  for (int i=0; i<this->shaderObjects.getLength(); i++) {
     SoGLSLShaderObject *shader = this->shaderObjects[i];
     if (shader && shader->isActive()) {
-      SbString str = shader->sourceHint;
-      if (str.getLength() > 0) str += " ";
-      result += str;
+      soglshaderprogram_append_source_hint(result, shader->sourceHint);
     }
   }
   return result;
 }
-#endif
 
 void
 SoGLSLShaderProgram::ensureLinking(const cc_glglue * g)
@@ -183,35 +176,25 @@ SoGLSLShaderProgram::ensureLinking(const cc_glglue * g)
   if (cnt > 0) {
     int i;
     GLint didLink = 0;
+    const SbString sourceHint = this->getSourceHint();
 
     for (i = 0; i < cnt; i++) {
       this->shaderObjects[i]->attach(programHandle);
     }
 
     for (i = 0; i < this->programParameters.getLength(); i += 2) {
-      g->glProgramParameteriEXT(programHandle,
-                                (GLenum) this->programParameters[i],
-                                this->programParameters[i+1]);
+      cc_glglue_glProgramParameteri(g, (GLuint) programHandle,
+                                    (GLenum) this->programParameters[i],
+                                    this->programParameters[i+1]);
 
     }
 
-    if (cc_glglue_context_supports_legacy_rendering(g)) {
-      g->glLinkProgramARB(programHandle);
+    cc_glglue_glLinkProgram(g, (GLuint) programHandle);
+    cc_glglue_glGetGLSLProgramiv(g, (GLuint) programHandle, GL_LINK_STATUS, &didLink);
 
-      if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::ensureLinking")) {
-        SoGLSLShaderObject::printInfoLog(g, programHandle, 0);
-      }
-
-      g->glGetObjectParameterivARB(programHandle,
-                                  GL_OBJECT_LINK_STATUS_ARB, &didLink);
-    } else {
-      glLinkProgram(programHandle);
-      glGetProgramiv(programHandle, GL_LINK_STATUS, &didLink);
-
-      if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::ensureLinking")
-        || !didLink) {
-        printInfoLog(g, programHandle);
-      }
+    if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::ensureLinking")
+      || !didLink) {
+      printInfoLog(g, programHandle, sourceHint, !didLink);
     }
 
     this->isExecutable = didLink;
@@ -220,20 +203,41 @@ SoGLSLShaderProgram::ensureLinking(const cc_glglue * g)
 }
 
 void
-SoGLSLShaderProgram::printInfoLog(const cc_glglue * g, COIN_GLhandle handle)
+SoGLSLShaderProgram::printInfoLog(const cc_glglue * g,
+                                  COIN_GLhandle handle,
+                                  const SbString & sourceHint,
+                                  const SbBool failed)
 {
   GLint length = 0;
-  glGetProgramiv(handle, GL_INFO_LOG_LENGTH, &length);
+  cc_glglue_glGetGLSLProgramiv(g, (GLuint) handle, GL_INFO_LOG_LENGTH, &length);
+
+  const char * sourceName = sourceHint.getLength() > 0 ?
+    sourceHint.getString() : "<unnamed>";
 
   if (length > 1) {
     COIN_GLchar *infoLog = new COIN_GLchar[length];
     GLsizei charsWritten = 0;
-    glGetProgramInfoLog(handle, length, &charsWritten, infoLog);
+    cc_glglue_glGetProgramInfoLog(g, (GLuint) handle, length, &charsWritten,
+                                  (char *) infoLog);
 
-    SoDebugError::postInfo("SoGLSLShaderProgram::printInfoLog",
-                           "program log: '%s'",
-                           infoLog);
+    if (failed) {
+      SoDebugError::postWarning("SoGLSLShaderProgram::printInfoLog",
+                                "program [%s] failed to link: %s",
+                                sourceName,
+                                infoLog);
+    }
+    else {
+      SoDebugError::postInfo("SoGLSLShaderProgram::printInfoLog",
+                             "program [%s] log: %s",
+                             sourceName,
+                             infoLog);
+    }
     delete [] infoLog;
+  }
+  else if (failed) {
+    SoDebugError::postWarning("SoGLSLShaderProgram::printInfoLog",
+                              "program [%s] failed to link with no linker log",
+                              sourceName);
   }
 }
 
@@ -261,11 +265,7 @@ SoGLSLShaderProgram::getProgramHandle(const cc_glglue * g, const SbBool create)
 {
   COIN_GLhandle handle = 0;
   if (!this->programHandles.get(g->contextid, handle) && create) {
-    if (cc_glglue_context_supports_legacy_rendering(g)) {
-      handle = g->glCreateProgramObjectARB();
-    } else {
-      handle = glCreateProgram();
-    }
+    handle = (COIN_GLhandle) cc_glglue_glCreateProgram(g);
     this->programHandles.put(g->contextid, handle);
   }
   return handle;
@@ -286,7 +286,7 @@ SoGLSLShaderProgram::context_destruction_cb(uint32_t cachecontext, void * userda
   if (thisp->programHandles.get(cachecontext, glhandle)) {
     // just delete immediately. The context is current
     const cc_glglue * glue = cc_glglue_instance(cachecontext);
-    glue->glDeleteObjectARB(glhandle);
+    cc_glglue_glDeleteProgram(glue, (GLuint) glhandle);
     thisp->programHandles.erase(cachecontext);
   }
 }
@@ -299,7 +299,7 @@ SoGLSLShaderProgram::really_delete_object(void * closure, uint32_t contextid)
   COIN_GLhandle glhandle = (COIN_GLhandle) tmp;
 
   const cc_glglue * glue = cc_glglue_instance(contextid);
-  glue->glDeleteObjectARB(glhandle);
+  cc_glglue_glDeleteProgram(glue, (GLuint) glhandle);
 }
 
 void

@@ -269,7 +269,12 @@ SoGeometryShader::isSupported(SourceType sourceType)
     return FALSE;
   }
   else if (sourceType == GLSL_PROGRAM) {
-    return SoGLDriverDatabase::isSupported(glue, SO_GL_ARB_SHADER_OBJECT);
+    const SbBool shaderObjects =
+      cc_glglue_glversion_matches_at_least(glue, 2, 0, 0) ||
+      SoGLDriverDatabase::isSupported(glue, SO_GL_ARB_SHADER_OBJECT);
+    return shaderObjects &&
+      (cc_glglue_glversion_matches_at_least(glue, 3, 2, 0) ||
+       SoGLDriverDatabase::isSupported(glue, "GL_EXT_geometry_shader4"));
   }
   // AFAIK Cg has no support for geometry shaders (yet).
   // pederb, 20070410

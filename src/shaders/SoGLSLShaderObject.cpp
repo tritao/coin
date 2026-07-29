@@ -31,20 +31,76 @@
 \**************************************************************************/
 
 #include "shaders/SoGLSLShaderObject.h"
+#include <Inventor/C/tidbits.h>
 #include "Inventor/C/glue/gl.h"
 #include "coindefs.h"
 
-#include <GL/glext.h>
+#include <Inventor/system/gl.h>
 #include <cassert>
+#include <cstring>
 #include <cstdio>
 #include <Inventor/errors/SoDebugError.h>
-#include <Inventor/system/gl.h>
+
+// GL 3.2+ shader types not in macOS legacy GL headers
+#ifdef __APPLE__
+#ifndef GL_GEOMETRY_SHADER
+#define GL_GEOMETRY_SHADER 0x8DD9
+#endif
+#endif
 
 #include "glue/glp.h"
 #include "rendering/SoGL.h"
 #include "shaders/SoGLSLShaderParameter.h"
 
 static int32_t soglshaderobject_idcounter = 1;
+
+static const char *
+soglshaderobject_stage_name(SoGLShaderObject::ShaderType type)
+{
+  switch (type) {
+  case SoGLShaderObject::VERTEX:
+    return "vertex shader";
+  case SoGLShaderObject::FRAGMENT:
+    return "fragment shader";
+  case SoGLShaderObject::GEOMETRY:
+    return "geometry shader";
+  default:
+    return "shader";
+  }
+}
+
+static SbBool
+soglshaderobject_use_line_directives(void)
+{
+  // Keep line directives opt-in. Driver support has historically been uneven.
+  const char * env = coin_getenv("COIN_GLSL_LINE_DIRECTIVES");
+  return env != NULL && env[0] != '\0' &&
+         !(env[0] == '0' && env[1] == '\0');
+}
+
+static SbString
+soglshaderobject_prepare_source(const char * srcStr)
+{
+  if (srcStr == NULL) return SbString("");
+  if (!soglshaderobject_use_line_directives()) return SbString(srcStr);
+
+  const char * body = srcStr;
+  SbString prepared;
+
+  if (std::strncmp(srcStr, "#version", 8) == 0) {
+    while (*body != '\0' && *body != '\n') {
+      ++body;
+    }
+    if (*body == '\n') {
+      ++body;
+    }
+    prepared = SbString(srcStr, 0, int(body - srcStr) - 1);
+  }
+
+  prepared += "#line 1\n";
+  prepared += body;
+  return prepared;
+}
 
 // *************************************************************************
 
@@ -83,11 +139,6 @@ SoGLSLShaderObject::isLoaded(void) const
 void
 SoGLSLShaderObject::load(const char* srcStr)
 {
-  if (cc_glglue_context_supports_legacy_rendering(this->glctx)) {
-    loadARB(srcStr);
-    return;
-  }
-
   this->unload();
   this->setParametersDirty(TRUE);
 
@@ -110,23 +161,30 @@ SoGLSLShaderObject::load(const char* srcStr)
 
   SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::load() : previous errors");
 
-  this->shaderHandle = glCreateShader(sType);
+  this->shaderHandle = (COIN_GLhandle) cc_glglue_glCreateShader(this->glctx, sType);
   this->programid = 0;
 
   if (this->shaderHandle == 0) return;
   this->programid = soglshaderobject_idcounter++;
 
-  glShaderSource(this->shaderHandle, 1, (const COIN_GLchar **)&srcStr, NULL);
-  glCompileShader(this->shaderHandle);
+  const SbString preparedSource = soglshaderobject_prepare_source(srcStr);
+  const char * preparedSourcePtr = preparedSource.getString();
+  cc_glglue_glShaderSource(this->glctx, (GLuint) this->shaderHandle, 1,
+                           &preparedSourcePtr, NULL);
+  cc_glglue_glCompileShader(this->glctx, (GLuint) this->shaderHandle);
 
   if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::load()")) {
     this->shaderHandle = 0;
     return;
   }
 
-  glGetShaderiv(this->shaderHandle, GL_COMPILE_STATUS, &flag);
-  SoGLSLShaderObject::printInfoLog(this->GLContext(), this->shaderHandle,
-                                   this->getShaderType());
+  cc_glglue_glGetShaderiv(this->glctx, (GLuint) this->shaderHandle,
+                          GL_COMPILE_STATUS, &flag);
+  SoGLSLShaderObject::printInfoLog(this->GLContext(),
+                                   this->shaderHandle,
+                                   this->getShaderType(),
+                                   this->sourceHint,
+                                   !flag);
 
   if (!flag) {
     this->shaderHandle = 0;
@@ -134,58 +192,12 @@ SoGLSLShaderObject::load(const char* srcStr)
 }
 
 void
-SoGLSLShaderObject::loadARB(const char* srcStr)
-{
-  this->unload();
-  this->setParametersDirty(TRUE);
-
-  GLint flag;
-  GLenum sType;
-
-  switch (this->getShaderType()) {
-  default:
-    assert(0 &&" unknown shader type");
-  case VERTEX:
-    sType = GL_VERTEX_SHADER_ARB;
-    break;
-  case FRAGMENT:
-    sType = GL_FRAGMENT_SHADER_ARB;
-    break;
-  case GEOMETRY:
-    sType = GL_GEOMETRY_SHADER_EXT;
-    break;
-  }
-
-  SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::loadARB() : previous errors");
-
-  this->shaderHandle = this->glctx->glCreateShaderObjectARB(sType);
-  this->programid = 0;
-
-  if (this->shaderHandle == 0) return;
-  this->programid = soglshaderobject_idcounter++;
-
-  this->glctx->glShaderSourceARB(this->shaderHandle, 1, (const COIN_GLchar **)&srcStr, NULL);
-  this->glctx->glCompileShaderARB(this->shaderHandle);
-
-  if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::load()")) {
-    this->shaderHandle = 0;
-    return;
-  }
-
-  this->glctx->glGetObjectParameterivARB(this->shaderHandle,
-                                         GL_OBJECT_COMPILE_STATUS_ARB,
-                                         &flag);
-  SoGLSLShaderObject::printInfoLog(this->GLContext(), this->shaderHandle,
-                                   this->getShaderType());
-
-  if (!flag) this->shaderHandle = 0;
-}
-
-void
 SoGLSLShaderObject::unload(void)
 {
   this->detach();
-  if (this->shaderHandle) { this->glctx->glDeleteObjectARB(this->shaderHandle); }
+  if (this->shaderHandle) {
+    cc_glglue_glDeleteShader(this->glctx, (GLuint) this->shaderHandle);
+  }
   this->shaderHandle = 0;
   this->programHandle = 0;
   this->programid = 0;
@@ -208,11 +220,9 @@ SoGLSLShaderObject::attach(COIN_GLhandle programHandle)
 
   if (this->shaderHandle) {
     this->programHandle = programHandle;
-    if (cc_glglue_context_supports_legacy_rendering(this->glctx)) {
-      this->glctx->glAttachObjectARB(this->programHandle, this->shaderHandle);
-    } else {
-      glAttachShader(this->programHandle, this->shaderHandle);
-    }
+    cc_glglue_glAttachShader(this->glctx,
+                             (GLuint) this->programHandle,
+                             (GLuint) this->shaderHandle);
     this->isattached = TRUE;
   }
 }
@@ -221,7 +231,9 @@ void
 SoGLSLShaderObject::detach(void)
 {
   if (this->isattached && this->programHandle && this->shaderHandle) {
-    this->glctx->glDetachObjectARB(this->programHandle, this->shaderHandle);
+    cc_glglue_glDetachShader(this->glctx,
+                             (GLuint) this->programHandle,
+                             (GLuint) this->shaderHandle);
     this->isattached = FALSE;
     this->programHandle = 0;
   }
@@ -234,35 +246,46 @@ SoGLSLShaderObject::isAttached(void) const
 }
 
 void
-SoGLSLShaderObject::printInfoLog(const cc_glglue * g, COIN_GLhandle handle, int objType)
+SoGLSLShaderObject::printInfoLog(const cc_glglue * g,
+                                 COIN_GLhandle handle,
+                                 const ShaderType shaderType,
+                                 const SbString & sourceHint,
+                                 const SbBool failed)
 {
   GLint length = 0;
 
-  if (cc_glglue_context_supports_legacy_rendering(g)) {
-    g->glGetObjectParameterivARB(handle, GL_OBJECT_INFO_LOG_LENGTH_ARB, &length);
-  } else {
-    glGetShaderiv(handle, GL_INFO_LOG_LENGTH, &length);
-  }
+  cc_glglue_glGetShaderiv(g, (GLuint) handle, GL_INFO_LOG_LENGTH, &length);
+
+  const char * sourceName = sourceHint.getLength() > 0 ?
+    sourceHint.getString() : "<unnamed>";
 
   if (length > 1) {
     COIN_GLchar *infoLog = new COIN_GLchar[length];
     GLsizei charsWritten = 0;
-    if (cc_glglue_context_supports_legacy_rendering(g)) {
-      g->glGetInfoLogARB(handle, length, &charsWritten, infoLog);
-    } else {
-      glGetShaderInfoLog(handle, length, &charsWritten, infoLog);
+    cc_glglue_glGetShaderInfoLog(g, (GLuint) handle, length, &charsWritten,
+                                 (char *) infoLog);
+
+    if (failed) {
+      SoDebugError::postWarning("SoGLSLShaderObject::printInfoLog",
+                                "%s '%s' failed to compile: %s",
+                                soglshaderobject_stage_name(shaderType),
+                                sourceName,
+                                infoLog);
     }
-    SbString s("GLSL");
-    switch (objType) {
-    case 0: s += "vertexShader "; break;
-    case 1: s += "fragmentShader "; break;
-    case 2: s += "geometryShader "; break;
-    default: ;// do nothing
+    else {
+      SoDebugError::postInfo("SoGLSLShaderObject::printInfoLog",
+                             "%s '%s' log: %s",
+                             soglshaderobject_stage_name(shaderType),
+                             sourceName,
+                             infoLog);
     }
-    SoDebugError::postInfo("SoGLSLShaderObject::printInfoLog",
-                           "%s log: '%s'",
-                           s.getString(), infoLog);
     delete [] infoLog;
+  }
+  else if (failed) {
+    SoDebugError::postWarning("SoGLSLShaderObject::printInfoLog",
+                              "%s '%s' failed to compile with no compiler log",
+                              soglshaderobject_stage_name(shaderType),
+                              sourceName);
   }
 }
 
@@ -316,14 +339,8 @@ SoGLSLShaderObject::updateCoinParameter(SoState * COIN_UNUSED_ARG(state), const 
       if (p->value.getValue() != value) p->value = value;
     }
     else {
-      GLint location;
-      if (sogl_context_supports_legacy_rendering(state)) {
-        location = glue->glGetUniformLocationARB(pHandle,
-                                                    (const COIN_GLchar *)name.getString());
-      } else {
-        location = glGetUniformLocation(pHandle,
-                                              (const COIN_GLchar *)name.getString());
-      }
+      GLint location = cc_glglue_glGetUniformLocation(
+        glue, (GLuint) pHandle, name.getString());
 
 #if 0
       fprintf(stderr,"action: %s, name: %s, loc: %d, handle: %p\n",
@@ -331,11 +348,7 @@ SoGLSLShaderObject::updateCoinParameter(SoState * COIN_UNUSED_ARG(state), const 
               name.getString(), location, pHandle);
 #endif
       if (location >= 0) {
-        if (sogl_context_supports_legacy_rendering(state)) {
-          glue->glUniform1iARB(location, value);
-        } else {
-          glUniform1i(location, value);
-        }
+        cc_glglue_glUniform1i(glue, location, value);
       }
     }
   }
