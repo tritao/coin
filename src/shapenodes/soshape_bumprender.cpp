@@ -72,6 +72,8 @@
 
 // *************************************************************************
 
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
+
 // Fragment program for bumpmapping
 static const char * bumpspecfpprogram =
 "!!ARBfp1.0\n"
@@ -883,3 +885,32 @@ soshape_bumprender::getLightVec(const SbVec3f & v) const
   }
   else return this->lightvec;
 }
+
+#else
+
+soshape_bumprender::soshape_bumprender(void) = default;
+soshape_bumprender::~soshape_bumprender() = default;
+
+void
+soshape_bumprender::calcTangentSpace(const SoPrimitiveVertexCache *)
+{
+}
+
+void
+soshape_bumprender::renderBump(SoState *, const SoPrimitiveVertexCache *,
+                               SoLight *, const SbMatrix &)
+{
+}
+
+void
+soshape_bumprender::renderBumpSpecular(SoState *, const SoPrimitiveVertexCache *,
+                                       SoLight *, const SbMatrix &)
+{
+}
+
+void
+soshape_bumprender::renderNormal(SoState *, const SoPrimitiveVertexCache *)
+{
+}
+
+#endif // COIN_BUILD_LEGACY_GL_RENDERER

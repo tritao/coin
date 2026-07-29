@@ -346,6 +346,7 @@ static SbBool qmeshNormalize(SbVec3f & v, float toLength2)
   return FALSE;
 }
 
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
 namespace { namespace SoGL { namespace QuadMesh {
 
 #define IDX(r,c) ((r)*rowsize+(c))
@@ -623,11 +624,10 @@ namespace { namespace SoGL { namespace QuadMesh {
             // tb->send(?curridx?, cc, nc) was replaced by
             // glTexCoord for center vertex
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-            //if (sogl_context_supports_legacy_rendering(state)) {
-              glTexCoord4fv((const GLfloat*)&tc);
-            //}
+            glTexCoord4fv((const GLfloat*)&tc);
 #else
-            assert(0 && "Not implemented for non-compatibility GL renderer");
+            // The compatibility-only primitive path is not available in a
+            // core/GLES build.
 #endif
           }
           if (is3d) {
@@ -789,6 +789,8 @@ namespace { namespace SoGL { namespace QuadMesh {
 
 } } } // namespace
 
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
+
 /*!
   \copydetails SoNode::initClass(void)
 */
@@ -801,6 +803,7 @@ SoQuadMesh::initClass(void)
     precompWeights[pc] = precalculateWeight(pc);
 }
 
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
 // -----
 
 #define SOGL_QUADMESH_GLRENDER_CALL_FUNC(normalbinding, materialbinding, texturing, args) \
@@ -853,11 +856,16 @@ SoQuadMesh::initClass(void)
 
 #define SOGL_QUADMESH_GLRENDER(normalbinding, materialbinding, texturing, args) \
   SOGL_QUADMESH_GLRENDER_RESOLVE_ARG1(normalbinding, materialbinding, texturing, args)
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
 
 // Documented in superclass.
 void
 SoQuadMesh::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  (void)action;
+  return;
+#else
   SoState * state = action->getState();
   SbBool didpush = FALSE;
 
@@ -985,6 +993,9 @@ SoQuadMesh::GLRender(SoGLRenderAction * action)
   }
 
   if (didpush) state->pop();
+
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
+
 }
 
 #undef SOGL_QUADMESH_GLRENDER_CALL_FUNC

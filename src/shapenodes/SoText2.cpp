@@ -342,6 +342,10 @@ SoText2::initClass(void)
 void
 SoText2::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  (void)action;
+  return;
+#else
   // SoText2 is a custom pixel renderer, not a primitive-cache triangle
   // producer. Keep normal transparent-object deferral, but render the text
   // itself during the transparent pass instead of asking SoShape to sort a
@@ -395,12 +399,10 @@ SoText2::GLRender(SoGLRenderAction * action)
         SoGLMultiTextureEnabledElement::disableAll(state);
 
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-        if (sogl_context_supports_legacy_rendering(state)) {
-          glPushAttrib(GL_ENABLE_BIT | GL_PIXEL_MODE_BIT | GL_COLOR_BUFFER_BIT);
-          glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
-        }
+        glPushAttrib(GL_ENABLE_BIT | GL_PIXEL_MODE_BIT | GL_COLOR_BUFFER_BIT);
+        glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
 #else
-        assert(0 && "Not implemented for non-compatibility GL renderer");
+        (void)state;
 #endif
 
         glMatrixMode(GL_MODELVIEW);
@@ -421,13 +423,11 @@ SoText2::GLRender(SoGLRenderAction * action)
                                  (GLfloat)pixelOrigin[1], pixelDepth);
 
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-        if (sogl_context_supports_legacy_rendering(state)) {
-          glDrawPixels(pixelSize[0], pixelSize[1], GL_RGBA,
-                       GL_UNSIGNED_BYTE,
-                       (const GLubyte *)PRIVATE(this)->pixel_buffer);
-        }
+        glDrawPixels(pixelSize[0], pixelSize[1], GL_RGBA,
+                     GL_UNSIGNED_BYTE,
+                     (const GLubyte *)PRIVATE(this)->pixel_buffer);
 #else
-        assert(0 && "Not implemented for non-compatibility GL renderer");
+        (void)state;
 #endif
 
         glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
@@ -437,12 +437,10 @@ SoText2::GLRender(SoGLRenderAction * action)
         glPopMatrix();
 
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-        if (sogl_context_supports_legacy_rendering(state)) {
-          glPopClientAttrib();
-          glPopAttrib();
-        }
+        glPopClientAttrib();
+        glPopAttrib();
 #else
-        assert(0 && "Not implemented for non-compatibility GL renderer");
+        (void)state;
 #endif
         state->pop();
       }
@@ -456,6 +454,8 @@ SoText2::GLRender(SoGLRenderAction * action)
   // don't auto cache SoText2 nodes.
   SoGLCacheContextElement::shouldAutoCache(action->getState(),
                                            SoGLCacheContextElement::DONT_AUTO_CACHE);
+
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
 }
 
 // **************************************************************************
@@ -1135,12 +1135,15 @@ SoText2P::setRasterPos3f(GLfloat x, GLfloat y, GLfloat z)
   float offsety = y >= 0 ? 0 : y;
 
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-  //if (sogl_context_supports_legacy_rendering(state)) {
-    glRasterPos3f(rpx,rpy,z);
-    if (offvp) { glBitmap(0, 0, 0, 0,offsetx,offsety, NULL); }
-  //}
+  glRasterPos3f(rpx,rpy,z);
+  if (offvp) { glBitmap(0, 0, 0, 0,offsetx,offsety, NULL); }
 #else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+  (void)rpx;
+  (void)rpy;
+  (void)z;
+  (void)offvp;
+  (void)offsetx;
+  (void)offsety;
 #endif
 }
 

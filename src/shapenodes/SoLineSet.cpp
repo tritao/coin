@@ -222,6 +222,7 @@ SoLineSet::findNormalBinding(SoState * const state) const
   return binding;
 }
 
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
 namespace { namespace SoGL { namespace LineSet {
 
   enum AttributeBinding {
@@ -370,6 +371,8 @@ namespace { namespace SoGL { namespace LineSet {
 
 } } } // namespace
 
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
+
 /*!
   \copydetails SoNode::initClass(void)
 */
@@ -379,6 +382,7 @@ SoLineSet::initClass(void)
   SO_NODE_INTERNAL_INIT_CLASS(SoLineSet, SO_FROM_INVENTOR_1);
 }
 
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
 #define SOGL_LINESET_GLRENDER_CALL_FUNC(normalbinding, materialbinding, texturing, args) \
   SoGL::LineSet::GLRender<normalbinding, materialbinding, texturing> args
 
@@ -429,11 +433,16 @@ SoLineSet::initClass(void)
 
 #define SOGL_LINESET_GLRENDER(normalbinding, materialbinding, texturing, args) \
   SOGL_LINESET_GLRENDER_RESOLVE_ARG1(normalbinding, materialbinding, texturing, args)
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
 
 // doc from parent
 void
 SoLineSet::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  (void)action;
+  return;
+#else
   SoState * state = action->getState();
   SbBool didpush = FALSE;
 
@@ -512,6 +521,9 @@ SoLineSet::GLRender(SoGLRenderAction * action)
   // send approx number of lines for autocache handling
   sogl_autocache_update(state, numv ?
                         (this->numVertices[0]-1)*numv : 0, FALSE);
+
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
+
 }
 
 #undef SOGL_LINESET_GLRENDER_CALL_FUNC

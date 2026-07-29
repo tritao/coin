@@ -83,7 +83,6 @@
 #include <Inventor/elements/SoMultiTextureCoordinateElement.h>
 #include <Inventor/elements/SoShapeStyleElement.h>
 #include <Inventor/misc/SoState.h>
-#include <Inventor/system/renderer.h>
 
 #include "nodes/SoSubNodeP.h"
 #include "rendering/SoGL.h"
@@ -152,8 +151,7 @@ SoCube::GLRender(SoGLRenderAction * action)
     return SoShape::GLRender(action);
   }
 
-  if (SoRenderer::isOpenGL()) {
-    SoMaterialBindingElement::Binding binding =
+  SoMaterialBindingElement::Binding binding =
       SoMaterialBindingElement::get(state);
 
     SbBool materialPerPart =
@@ -193,12 +191,11 @@ SoCube::GLRender(SoGLRenderAction * action)
     else if (do3DTextures) flags |= SOGL_NEED_3DTEXCOORDS;
     if (sendNormals) flags |= SOGL_NEED_NORMALS;
 
-    sogl_render_cube(width.getValue(),
-                    height.getValue(),
-                    depth.getValue(),
-                    &mb,
-                    flags, state);
-  }
+  sogl_render_cube(width.getValue(),
+                  height.getValue(),
+                  depth.getValue(),
+                  &mb,
+                  flags, state);
 }
 
 // Doc in parent.

@@ -424,6 +424,10 @@ SoIndexedFaceSet::notify(SoNotList * list)
 void
 SoIndexedFaceSet::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  (void)action;
+  return;
+#else
   if (this->coordIndex.getNum() < 3) return;
   SoState * state = action->getState();
 
@@ -660,6 +664,9 @@ SoIndexedFaceSet::GLRender(SoGLRenderAction * action)
   }
   // send approx number of triangles for autocache handling
   sogl_autocache_update(state, this->coordIndex.getNum() / 4, didrenderasvbo);
+
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
+
 }
 
   // this macro actually makes the code below more readable  :-)

@@ -368,7 +368,11 @@ public:
     // glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxtexsize);
     // if (maxtexsize < maxsize) maxsize = maxtexsize;
 
+ #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
     GLenum internalformat = GL_RGBA16F_ARB;
+ #else
+    GLenum internalformat = GL_RGBA16F;
+ #endif
     GLenum format = GL_RGBA;
     GLenum type = GL_FLOAT;
 
