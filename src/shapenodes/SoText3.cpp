@@ -479,6 +479,10 @@ SoText3::getCharacterBounds(SoState * COIN_UNUSED_ARG(state), int COIN_UNUSED_AR
 void
 SoText3::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  return;
+#else
   if (!this->shouldGLRender(action))
     return;
 
@@ -538,6 +542,7 @@ SoText3::GLRender(SoGLRenderAction * action)
     SoGLCacheContextElement::incNumShapes(state);
   }
   PRIVATE(this)->unlock();
+#endif // COIN_GL_COMPATIBILITY
 }
 
 // doc in parent
@@ -597,6 +602,12 @@ void
 SoText3P::render(SoState * state, const cc_font_specification * fontspec,
                  unsigned int part)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)state;
+  (void)fontspec;
+  (void)part;
+  return;
+#else
   int i, n = this->widths.getLength();
 
   int firstprofile = -1;
@@ -981,6 +992,7 @@ SoText3P::render(SoState * state, const cc_font_specification * fontspec,
     }
     ypos -= fontspec->size * PUBLIC(this)->spacing.getValue();
   }
+#endif // COIN_GL_COMPATIBILITY
 }
 
 // render text geometry

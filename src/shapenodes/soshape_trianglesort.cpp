@@ -106,6 +106,11 @@ compare_triangles(const void * ptr1, const void * ptr2)
 void
 soshape_trianglesort::endShape(SoState * state, SoMaterialBundle & mb)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)state;
+  (void)mb;
+  return;
+#else
   int i, n = this->pvlist->getLength() / 3;
   if (n == 0) return;
 
@@ -210,4 +215,5 @@ soshape_trianglesort::endShape(SoState * state, SoMaterialBundle & mb)
     glVertex3fv(v->getPoint().getValue());
   }
   glEnd();
+#endif // COIN_GL_COMPATIBILITY
 }

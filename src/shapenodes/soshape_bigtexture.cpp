@@ -150,13 +150,12 @@ soshape_bigtexture::endShape(SoState * state,
   this->clip_triangles(state);
 
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
-    // clear texture matrix. We've already calculated the world space
-    // texture coordinates.
-    glMatrixMode(GL_TEXTURE);
-    glPushMatrix();
-    glLoadIdentity();
-    glMatrixMode(GL_MODELVIEW);
+  // Clear texture matrix. We've already calculated the world space
+  // texture coordinates.
+  glMatrixMode(GL_TEXTURE);
+  glPushMatrix();
+  glLoadIdentity();
+  glMatrixMode(GL_MODELVIEW);
 
     // disable texgen functions, we always supply texture coordinates
     glPushAttrib(GL_ENABLE_BIT);
@@ -207,10 +206,11 @@ soshape_bigtexture::endShape(SoState * state,
     // restore texture matrix
     glMatrixMode(GL_TEXTURE);
     glPopMatrix();
-    glMatrixMode(GL_MODELVIEW);
-  }
+  glMatrixMode(GL_MODELVIEW);
 #else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+  (void)state;
+  (void)shape;
+  (void)mb;
 #endif
 
   // return TRUE if all textures were created in the correct resolution

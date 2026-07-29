@@ -318,7 +318,11 @@ SoAsciiText::initClass(void)
 // Doc in parent.
 void
 SoAsciiText::GLRender(SoGLRenderAction * action)
-{  
+{
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  return;
+#else
   if (!this->shouldGLRender(action)) 
     return;
 
@@ -465,6 +469,7 @@ SoAsciiText::GLRender(SoGLRenderAction * action)
     SoGLCacheContextElement::shouldAutoCache(state, SoGLCacheContextElement::DO_AUTO_CACHE);
     SoGLCacheContextElement::incNumShapes(state);
   }
+#endif // COIN_GL_COMPATIBILITY
 }
 
 // Doc in parent.

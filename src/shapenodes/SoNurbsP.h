@@ -10,6 +10,7 @@ template<class Master>
 class SoNurbsP
 {
  public:
+#if defined(COIN_GL_COMPATIBILITY)
   //
   // used only for GLU callbacks
   //
@@ -32,9 +33,16 @@ class SoNurbsP
   static void APIENTRY tessNormal(float * normal, void * data);
   static void APIENTRY tessVertex(float * vertex, void * data);
   static void APIENTRY tessEnd(void * data);
+#else
+  class coin_nurbs_cbdata {
+  public:
+    coin_nurbs_cbdata(SoAction *, Master *, bool) {}
+  };
+#endif
 
 };
 
+#if defined(COIN_GL_COMPATIBILITY)
 template<class Master>
 void APIENTRY
 SoNurbsP<Master>::tessTexCoord(float * texcoord, void * data)
@@ -147,6 +155,8 @@ SoNurbsP<Master>::tessBegin(int type, void * data)
   }
   cbdata->thisp->beginShape(cbdata->action, shapetype, NULL);
 }
+
+#endif // COIN_GL_COMPATIBILITY
 
 
 #endif //COIN_SOSHAPE_SONURBSP_H

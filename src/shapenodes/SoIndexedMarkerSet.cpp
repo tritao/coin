@@ -150,6 +150,10 @@ SoIndexedMarkerSet::initClass(void)
 void
 SoIndexedMarkerSet::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  return;
+#else
   int32_t numpts = this->coordIndex.getNum();
   if (numpts == 0) return;
 
@@ -296,13 +300,12 @@ SoIndexedMarkerSet::GLRender(SoGLRenderAction * action)
     //alignment from outside the SoMarkerSet class though. 20090424 wiesener
     int align = (marker >= SoMarkerSet::NUM_MARKERS) ? 1 : 4;
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
-    glPixelStorei(GL_UNPACK_ALIGNMENT, align);
-    glRasterPos3f(point[0], point[1], -point[2]);
-    glBitmap(size[0], size[1], 0, 0, 0, 0, bytes);
-  }
+  glPixelStorei(GL_UNPACK_ALIGNMENT, align);
+  glRasterPos3f(point[0], point[1], -point[2]);
+  glBitmap(size[0], size[1], 0, 0, 0, 0, bytes);
 #else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+  (void)align;
+  (void)bytes;
 #endif
   }
 
@@ -325,4 +328,7 @@ SoIndexedMarkerSet::GLRender(SoGLRenderAction * action)
   // send approx number of points for autocache handling. Divide
   // by three so that three points is the same as one triangle.
   sogl_autocache_update(state, numindices/3, FALSE);
+
+#endif // COIN_GL_COMPATIBILITY
+
 }

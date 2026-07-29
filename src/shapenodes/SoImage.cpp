@@ -173,8 +173,6 @@
 #include <Inventor/lists/SbStringList.h>
 #include <Inventor/misc/SoGLImage.h>
 #include <Inventor/misc/SoState.h>
-#include <Inventor/nodes/SoShaderProgram.h>
-#include <Inventor/nodes/SoVertexShader.h>
 #include <Inventor/sensors/SoFieldSensor.h>
 #include <Inventor/system/gl.h>
 #include <Inventor/threads/SbMutex.h>
@@ -182,8 +180,6 @@
 #include "rendering/SoGL.h"
 #include "glue/GLUWrapper.h"
 #include "glue/simage_wrapper.h"
-#include "misc/SoShaderGenerator.h"
-#include "shaders/SoShader.h"
 
 /*!
   \enum SoImage::VertAlignment
@@ -259,7 +255,6 @@ class SoImageP {
 public:
   SoGLImage * glimage;
   SbBool glimagevalid;
-  SoShaderProgram * program;
   static SbMutex * mutex;
 
   static void cleanup(void) {
@@ -311,7 +306,6 @@ SoImage::SoImage(void)
 
   PRIVATE(this)->glimage = NULL;
   PRIVATE(this)->glimagevalid = FALSE;
-  PRIVATE(this)->program = NULL;
 
   this->readstatus = TRUE;
   this->transparency = FALSE;
@@ -332,7 +326,6 @@ SoImage::SoImage(void)
 */
 SoImage::~SoImage()
 {
-  if (PRIVATE(this)->program) PRIVATE(this)->program->unref();
   if (PRIVATE(this)->glimage) PRIVATE(this)->glimage->unref(NULL);
   delete this->resizedimage;
   delete this->filenamesensor;
@@ -345,33 +338,6 @@ void
 SoImage::initClass(void)
 {
   SO_NODE_INTERNAL_INIT_CLASS(SoImage, SO_FROM_INVENTOR_2_5|SO_FROM_COIN_1_0);
-}
-
-SoShaderProgram * SoImage::createShader()
-{
-  auto program = new SoShaderProgram();
-  program->ref();
-
-  // Vertex shader
-  SoShaderGenerator vgen;
-  vgen.reset(FALSE);
-  vgen.setVersion("#version 120");
-  //vgen.addDeclaration("varying vec3 light_vec;", FALSE);
-  vgen.addMainStatement("gl_Position = ftransform();");
-
-  SoVertexShader * vshader = new SoVertexShader;
-  vshader->sourceProgram = vgen.getShaderProgram();
-  vshader->sourceType= SoShaderObject::GLSL_PROGRAM;
-
-  //SoShader::getNamedScript(SbName("images/Image"), SoShader::GLSL_SHADER)
-
-  // Fragment shader
-  SoShaderGenerator fgen;
-
-  program->shaderObject.set1Value(0, vshader);
-  //program->shaderObject.set1Value(0, fshader);
-
-  return program;
 }
 
 // doc from parent
@@ -399,62 +365,22 @@ SoImage::computeBBox(SoAction * action,
 void
 SoImage::GLRender(SoGLRenderAction * action)
 {
-  SoState *state = action->getState();
-
-  if (SoRenderer::isOpenGL()) {
-    if (sogl_compatibility_profile(state)) {
-      GLRenderCompat(action);
-      return;
-    }
-
-    SbVec2s size, orgsize;
-    int nc;
-    size = this->getSize();
-    if (size == SbVec2s(0,0)) return;
-
-    const unsigned char * dataptr = this->image.getValue(orgsize, nc);
-    if (dataptr == NULL) return; // no image
-
-    SoShapeStyleElement::setVertexArrayRendering(state, true);
-    if (!this->shouldGLRender(action)) return;
-
-    if (!PRIVATE(this)->program) {
-      PRIVATE(this)->program = this->createShader();
-    }
-
-    LOCK_GLIMAGE(this);
-
-    if (!PRIVATE(this)->glimagevalid) {
-      if (PRIVATE(this)->glimage) PRIVATE(this)->glimage->unref(state);
-      PRIVATE(this)->glimage = new SoGLImage();
-
-      float quality = SoTextureQualityElement::get(state);
-      PRIVATE(this)->glimage->setData(dataptr, size, nc,
-                              SoGLImage::CLAMP,
-                              SoGLImage::CLAMP,
-                              quality, 0, state);
-
-      PRIVATE(this)->glimagevalid = TRUE;
-
-      // don't cache while creating a texture object
-      SoCacheElement::setInvalid(TRUE);
-      if (state->isCacheOpen()) {
-        SoCacheElement::invalidate(state);
-      }
-    }
-
-    UNLOCK_GLIMAGE(this);
-
-    PRIVATE(this)->program->GLRender(action);
-
-    SoShape::GLRender(action);
-  }
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  return;
+#else
+  GLRenderLegacy(action);
+#endif // COIN_GL_COMPATIBILITY
 }
 
 // doc from parent
 void
-SoImage::GLRenderCompat(SoGLRenderAction * action)
+SoImage::GLRenderLegacy(SoGLRenderAction * action)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  return;
+#else
   SbVec2s size, orgsize;
   int nc;
   size = this->getSize();
@@ -585,14 +511,7 @@ SoImage::GLRenderCompat(SoGLRenderAction * action)
     zx = float(size[0]) / float(orgsize[0]);
     zy = float(size[1]) / float(orgsize[1]);
 
-#if defined(COIN_GL_COMPATIBILITY)
-    if (sogl_compatibility_profile(state)) {
-      // update GL
-      glPixelZoom(zx, zy);
-    }
-#else
-    assert(0 && "Not implemented for non-compatibility GL renderer");
-#endif
+    glPixelZoom(zx, zy);
 
     // adjust glDrawPixels and glPixelStorage parameters to account for zoom
     srcw = (int) (srcw / zx);
@@ -618,13 +537,7 @@ SoImage::GLRenderCompat(SoGLRenderAction * action)
   offvp = offvp || ypos < 0 ? TRUE : FALSE;
   GLfloat offsety = ypos >= 0 ? 0.0f : ypos;
 
-#if defined(COIN_GL_COMPATIBILITY)
-    if (sogl_compatibility_profile(state)) {
-      glRasterPos3f(rpx, rpy, -nilpoint[2]);
-    }
-#else
-    assert(0 && "Not implemented for non-compatibility GL renderer");
-#endif
+  glRasterPos3f(rpx, rpy, -nilpoint[2]);
 
   if (offvp) { glBitmap(0,0,0,0,offsetx,offsety,NULL); }
 
@@ -635,14 +548,8 @@ SoImage::GLRenderCompat(SoGLRenderAction * action)
   glPixelStorei(GL_PACK_ALIGNMENT, 1);
   glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-#if defined(COIN_GL_COMPATIBILITY)
-    if (sogl_compatibility_profile(state)) {
-      glDrawPixels(srcw, srch, format, GL_UNSIGNED_BYTE,
-                  (const GLvoid*) dataptr);
-    }
-#else
-    assert(0 && "Not implemented for non-compatibility GL renderer");
-#endif
+  glDrawPixels(srcw, srch, format, GL_UNSIGNED_BYTE,
+               (const GLvoid*) dataptr);
 
   glMatrixMode(GL_PROJECTION);
   glPopMatrix();
@@ -650,14 +557,8 @@ SoImage::GLRenderCompat(SoGLRenderAction * action)
   glPopMatrix();
 
   if (orgsize != size) {
-#if defined(COIN_GL_COMPATIBILITY)
-    if (sogl_compatibility_profile(state)) {
-      // restore zoom
-      glPixelZoom(oldzx, oldzy);
-    }
-#else
-    assert(0 && "Not implemented for non-compatibility GL renderer");
-#endif
+    // restore zoom
+    glPixelZoom(oldzx, oldzy);
   }
 
   // restore to default values
@@ -671,6 +572,7 @@ SoImage::GLRenderCompat(SoGLRenderAction * action)
   // don't auto cache Image nodes.
   SoGLCacheContextElement::shouldAutoCache(action->getState(),
                                            SoGLCacheContextElement::DONT_AUTO_CACHE);
+#endif // COIN_GL_COMPATIBILITY
 }
 
 void
@@ -1007,8 +909,13 @@ SoImage::getImage(SbVec2s & size, int & nc)
         GLenum format;
         switch (nc) {
         default: // avoid compiler warnings
+#if defined(COIN_GL_COMPATIBILITY)
         case 1: format = GL_LUMINANCE; break;
         case 2: format = GL_LUMINANCE_ALPHA; break;
+#else
+        case 1: format = GL_RED; break;
+        case 2: format = GL_RG; break;
+#endif
         case 3: format = GL_RGB; break;
         case 4: format = GL_RGBA; break;
         }

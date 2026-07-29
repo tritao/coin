@@ -1141,6 +1141,10 @@ convert_bitmaps(void)
 void
 SoMarkerSet::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  return;
+#else
   // FIXME: the marker bitmaps are toggled off when the leftmost pixel
   // is outside the left border, and ditto for the bottommost pixel
   // versus the bottom border. They should be drawn partially until they
@@ -1261,13 +1265,11 @@ SoMarkerSet::GLRender(SoGLRenderAction * action)
     point[1] = point[1] - (tmp->height - 1) / 2;
 
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
-    glPixelStorei(GL_UNPACK_ALIGNMENT, tmp->align);
-    glRasterPos3f(point[0], point[1], -point[2]);
-    glBitmap(tmp->width, tmp->height, 0, 0, 0, 0, tmp->data);
-  }
+  glPixelStorei(GL_UNPACK_ALIGNMENT, tmp->align);
+  glRasterPos3f(point[0], point[1], -point[2]);
+  glBitmap(tmp->width, tmp->height, 0, 0, 0, 0, tmp->data);
 #else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+  (void)tmp;
 #endif
   }
 
@@ -1286,6 +1288,9 @@ SoMarkerSet::GLRender(SoGLRenderAction * action)
   glPopMatrix();
 
   state->pop(); // we pushed, remember
+
+#endif // COIN_GL_COMPATIBILITY
+
 }
 
 // ----------------------------------------------------------------------------------------------------

@@ -229,6 +229,10 @@ SoIndexedPointSet::findTextureBinding(SoState * const state) const
 void
 SoIndexedPointSet::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  return;
+#else
   int32_t numpts = this->coordIndex.getNum();
   if (numpts == 0) return;
 
@@ -412,6 +416,9 @@ SoIndexedPointSet::GLRender(SoGLRenderAction * action)
   // send approx number of points for autocache handling. Divide
   // by three so that three points is the same as one triangle.
   sogl_autocache_update(state, numindices/3, didrenderasvbo);
+
+#endif // COIN_GL_COMPATIBILITY
+
 }
 
 // Documented in superclass.

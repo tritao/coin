@@ -33,7 +33,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 \**************************************************************************/
 
-#include "Inventor/nodes/SoShaderProgram.h"
 #include <Inventor/nodes/SoSubNode.h>
 #include <Inventor/nodes/SoShape.h>
 #include <Inventor/fields/SoSFInt32.h>
@@ -75,7 +74,7 @@ public:
   SoSFString filename;
 
   virtual void GLRender(SoGLRenderAction * action);
-  virtual void GLRenderCompat(SoGLRenderAction * action);
+  virtual void GLRenderLegacy(SoGLRenderAction * action);
   virtual void render(SoIRRenderAction * action);
 
   virtual void rayPick(SoRayPickAction * action);
@@ -84,7 +83,6 @@ public:
 protected:
   virtual ~SoImage();
 
-  virtual SoShaderProgram * createShader();
   virtual void generatePrimitives(SoAction * action);
   virtual void computeBBox(SoAction * action, SbBox3f & box, SbVec3f & center);
 
