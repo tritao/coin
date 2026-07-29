@@ -74,8 +74,38 @@ create_file_test("models/io/incorrect" "testIncorrectFile" true "(bug039|bug055-
 # Include all extracted '*Tests.cpp' files in the target.
 FILE(GLOB COIN_TEST_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/*Test.cpp")
 
+if(WIN32)
+	find_file(COIN_TEST_FONT_FILE
+		NAMES arial.ttf
+		PATHS "$ENV{WINDIR}/Fonts" "C:/Windows/Fonts")
+	set(COIN_TEST_FONT_NAME "Arial")
+elseif(APPLE)
+	find_file(COIN_TEST_FONT_FILE
+		NAMES Arial.ttf Arial.ttc
+		PATHS /System/Library/Fonts/Supplemental /Library/Fonts)
+	set(COIN_TEST_FONT_NAME "Arial")
+else()
+	find_file(COIN_TEST_FONT_FILE
+		NAMES DejaVuSans.ttf LiberationSans-Regular.ttf
+		PATHS /usr/share/fonts/truetype/dejavu /usr/share/fonts/truetype/liberation2)
+	if(COIN_TEST_FONT_FILE)
+		get_filename_component(COIN_TEST_FONT_NAME "${COIN_TEST_FONT_FILE}" NAME)
+	else()
+		set(COIN_TEST_FONT_NAME "")
+	endif()
+endif()
+
+if(COIN_TEST_FONT_FILE)
+	get_filename_component(COIN_TEST_FONT_DIR "${COIN_TEST_FONT_FILE}" DIRECTORY)
+	set(COIN_TEST_FONT_AVAILABLE 1)
+else()
+	set(COIN_TEST_FONT_DIR "")
+	set(COIN_TEST_FONT_AVAILABLE 0)
+endif()
+configure_file(RendererTestConfig.h.in RendererTestConfig.h @ONLY)
+
 add_executable(CoinTests TestSuiteMain.cpp TestSuiteUtils.cpp TestSuiteMisc.cpp
-	LegacyBoundaryTests.cpp ${COIN_TEST_SOURCES})
+	RendererGeometryTests.cpp LegacyBoundaryTests.cpp ${COIN_TEST_SOURCES})
 set_target_properties(CoinTests PROPERTIES DEBUG_POSTFIX "${CMAKE_DEBUG_POSTFIX}")
 target_link_libraries(CoinTests Coin ${COIN_TARGET_LINK_LIBRARIES})
 if(HAVE_EGL)
@@ -83,6 +113,7 @@ if(HAVE_EGL)
 endif()
 target_include_directories(CoinTests PRIVATE
 	${CMAKE_CURRENT_SOURCE_DIR}
+	${CMAKE_CURRENT_BINARY_DIR}
 	${PROJECT_SOURCE_DIR}/include
 	${PROJECT_SOURCE_DIR}/include/Inventor/annex
 	${PROJECT_BINARY_DIR}/include
