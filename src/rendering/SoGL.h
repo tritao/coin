@@ -68,6 +68,11 @@ class SbVec2f;
 // pointer.
 const cc_glglue * sogl_glue_instance(const SoState * state);
 
+// Return the glue instance for the context current on this thread. This is
+// independent of action state so pipeline selection can happen before
+// SoAction has constructed its SoState.
+const cc_glglue * sogl_current_glue(void);
+
 
 // render
 void sogl_render_cone(const float bottomRadius,
@@ -171,7 +176,14 @@ sogl_render_pointset(const SoGLCoordinateElement * coords,
 
 SbBool sogl_glerror_debugging(void);
 
+// Reports raw runtime context capability. It does not include the
+// COIN_BUILD_LEGACY_GL_RENDERER build option.
 SbBool sogl_context_supports_legacy_rendering(const SoState * state);
+
+// Authoritative capability boundary for the legacy fixed-function pipeline.
+// A compatibility-enabled build still has to check the active context: a
+// compatibility build may be used with a core-profile context.
+SbBool sogl_legacy_rendering_available(const cc_glglue * glue);
 
 void sogl_autocache_update(SoState * state, const int numprimitives, 
                            SbBool didusevbo);
