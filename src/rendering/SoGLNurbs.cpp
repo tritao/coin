@@ -59,6 +59,8 @@
 
 #include <cstdlib>
 
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
+
 SbBool
 sogl_calculate_nurbs_normals()
 {
@@ -1398,3 +1400,47 @@ sogl_render_nurbs_curve(SoAction * action, SoShape * shape,
     cc_string_clean(&str);
   }
 }
+
+#else // !COIN_BUILD_LEGACY_GL_RENDERER
+
+SbBool
+sogl_calculate_nurbs_normals()
+{
+  return FALSE;
+}
+
+void
+sogl_render_nurbs_surface(SoAction * action, SoShape * shape,
+                           void * nurbsrenderer,
+                           const int numuctrlpts, const int numvctrlpts,
+                           const float * uknotvec, const float * vknotvec,
+                           const int numuknot, const int numvknot,
+                           const int numsctrlpts, const int numtctrlpts,
+                           const float * sknotvec, const float * tknotvec,
+                           const int numsknot, const int numtknot,
+                           const SbBool glrender,
+                           const int numcoordindex, const int32_t * coordindex,
+                           const int numtexcoordindex, const int32_t * texcoordindex)
+{
+  (void)action; (void)shape; (void)nurbsrenderer;
+  (void)numuctrlpts; (void)numvctrlpts; (void)uknotvec; (void)vknotvec;
+  (void)numuknot; (void)numvknot; (void)numsctrlpts; (void)numtctrlpts;
+  (void)sknotvec; (void)tknotvec; (void)numsknot; (void)numtknot;
+  (void)glrender; (void)numcoordindex; (void)coordindex;
+  (void)numtexcoordindex; (void)texcoordindex;
+}
+
+void
+sogl_render_nurbs_curve(SoAction * action, SoShape * shape,
+                        void * nurbsrenderer,
+                        const int numctrlpts, const float * knotvec,
+                        const int numknots, const SbBool glrender,
+                        const SbBool drawaspoints,
+                        const int numcoordindex, const int32_t * coordindex)
+{
+  (void)action; (void)shape; (void)nurbsrenderer;
+  (void)numctrlpts; (void)knotvec; (void)numknots; (void)glrender;
+  (void)drawaspoints; (void)numcoordindex; (void)coordindex;
+}
+
+#endif // COIN_BUILD_LEGACY_GL_RENDERER

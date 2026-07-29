@@ -329,8 +329,13 @@ SoGLCubeMapImage::getGLDisplayList(SoState * state)
           GLenum format;
           switch (numcomponents) {
           default: // avoid compiler warnings
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
           case 1: format = GL_LUMINANCE; break;
           case 2: format = GL_LUMINANCE_ALPHA; break;
+#else
+          case 1: format = GL_RED; break;
+          case 2: format = GL_RG; break;
+#endif
           case 3: format = GL_RGB; break;
           case 4: format = GL_RGBA; break;
           }

@@ -235,9 +235,15 @@ SoGeometryShader::GLRender(SoGLRenderAction * action)
       SoGLShaderProgram * shaderProgram = SoGLShaderProgramElement::get(action->getState());
       assert(shaderProgram);
 
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
       shaderProgram->addProgramParameter(GL_GEOMETRY_INPUT_TYPE_EXT, input);
       shaderProgram->addProgramParameter(GL_GEOMETRY_OUTPUT_TYPE_EXT, output);
       shaderProgram->addProgramParameter(GL_GEOMETRY_VERTICES_OUT_EXT, this->maxEmit.getValue());
+#else
+      shaderProgram->addProgramParameter(GL_GEOMETRY_INPUT_TYPE_ARB, input);
+      shaderProgram->addProgramParameter(GL_GEOMETRY_OUTPUT_TYPE_ARB, output);
+      shaderProgram->addProgramParameter(GL_GEOMETRY_VERTICES_OUT_ARB, this->maxEmit.getValue());
+#endif
     }
   }
   inherited::GLRender(action);

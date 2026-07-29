@@ -296,8 +296,10 @@ SoShaderProgram::GLRender(SoGLRenderAction * action)
 void
 SoShaderProgram::render(SoIRRenderAction * action)
 {
-  if (!action) return;
-  PRIVATE(this)->render(action->getState());
+  (void)action;
+  // Custom SoShaderProgram nodes describe the legacy GL shader API. The
+  // retained renderer owns its shader programs and deliberately does not
+  // expose that API through the backend-neutral traversal state.
 }
 
 void

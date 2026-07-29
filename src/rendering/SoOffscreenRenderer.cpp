@@ -746,6 +746,7 @@ SoOffscreenRendererP::renderFromBase(SoBase * base)
   this->renderaction->setCacheContext(newcontext);
 
   if (CoinOffscreenGLCanvas::debug()) {
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
     GLint colbits[4];
     glGetIntegerv(GL_RED_BITS, &colbits[0]);
     glGetIntegerv(GL_GREEN_BITS, &colbits[1]);
@@ -755,6 +756,7 @@ SoOffscreenRendererP::renderFromBase(SoBase * base)
                            "GL context GL_[RED|GREEN|BLUE|ALPHA]_BITS=="
                            "[%d, %d, %d, %d]",
                            colbits[0], colbits[1], colbits[2], colbits[3]);
+#endif
   }
 
   glEnable(GL_DEPTH_TEST);

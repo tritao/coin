@@ -52,12 +52,20 @@ SoGLARBShaderObject::~SoGLARBShaderObject()
 SbBool
 SoGLARBShaderObject::isLoaded(void) const
 {
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  return FALSE;
+#else
   return cc_glglue_glIsProgram(this->glctx, this->arbProgramID);
+#endif
 }
 
 void
 SoGLARBShaderObject::load(const char * srcStr)
 {
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  (void)srcStr;
+  return;
+#else
   const size_t len = strlen(srcStr);
   
   this->target = this->getShaderType() == VERTEX 
@@ -84,17 +92,22 @@ SoGLARBShaderObject::load(const char * srcStr)
   }
 
   glDisable(this->target);
+#endif
 }
 
 void
 SoGLARBShaderObject::unload(void)
 {
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  return;
+#else
   if (cc_glglue_glIsProgram(this->glctx, this->arbProgramID)) {
     // FIXME: make sure this is only called when in the correct, valid
     // GL context. 20050120 mortene.
     cc_glglue_glDeletePrograms(this->glctx, 1, &this->arbProgramID);
     this->arbProgramID = 0;
   }
+#endif
 }
 
 SoShader::Type
@@ -112,14 +125,22 @@ SoGLARBShaderObject::getNewParameter(void) const
 void
 SoGLARBShaderObject::enable(void)
 {
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  return;
+#else
   if (this->isActive()) {
     cc_glglue_glBindProgram(this->glctx, this->target, this->arbProgramID);
     glEnable(this->target);
   }
+#endif
 }
 
 void
 SoGLARBShaderObject::disable(void)
 {
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  return;
+#else
   if (this->isActive()) glDisable(this->target);
+#endif
 }

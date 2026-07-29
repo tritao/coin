@@ -37,7 +37,6 @@
 #error this is a private header file
 #endif /* !COIN_INTERNAL */
 
-#include <Inventor/system/renderer.h>
 #include <Inventor/system/gl.h>
 #include <Inventor/C/glue/gl.h>
 
