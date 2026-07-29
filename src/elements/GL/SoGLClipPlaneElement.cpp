@@ -92,9 +92,13 @@ SoGLClipPlaneElement::pop(SoState * state,
   const SoGLClipPlaneElement * prev = (const SoGLClipPlaneElement*)
     prevTopElement;
 
+#if defined(COIN_GL_COMPATIBILITY)
   // disable used planes
   for (int i = prev->startIndex; i < prev->getNum(); i++)
     glDisable((GLenum)((int)GL_CLIP_PLANE0 + i));
+#else
+  (void) prev;
+#endif
 
   inherited::pop(state, prevTopElement);
 }
@@ -115,6 +119,7 @@ SoGLClipPlaneElement::getMaxGLPlanes(void)
                             "this function does not know which context this "
                             "information is requested for.");
 
+#if defined(COIN_GL_COMPATIBILITY)
   GLint val;
   glGetIntegerv(GL_MAX_CLIP_PLANES, &val);
 
@@ -123,6 +128,9 @@ SoGLClipPlaneElement::getMaxGLPlanes(void)
          "GL error when calling glGetInteger() -- no current GL context?");
 
   return (int)val;
+#else
+  return 0;
+#endif
 }
 
 //! FIXME: write doc.
@@ -139,6 +147,11 @@ SoGLClipPlaneElement::addToElt(const SbPlane & plane,
   equation[1] = norm[1];
   equation[2] = norm[2];
   equation[3] = - plane.getDistanceFromOrigin();
+#if defined(COIN_GL_COMPATIBILITY)
   glClipPlane((GLenum)((int)GL_CLIP_PLANE0 + idxadd), equation);
   glEnable((GLenum)((int)GL_CLIP_PLANE0 + idxadd));
+#else
+  (void) idxadd;
+  (void) equation;
+#endif
 }

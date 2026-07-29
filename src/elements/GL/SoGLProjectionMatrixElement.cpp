@@ -115,9 +115,7 @@ SoGLProjectionMatrixElement::updategl(void)
 #if 0 // debug
   SoDebugError::postInfo("SoGLProjectionMatrixElement::updategl", "");
 #endif // debug
-  if (sogl_compatibility_profile(state)) {
-    glMatrixMode(GL_PROJECTION);
-    glLoadMatrixf((float*)this->projectionMatrix);
-    glMatrixMode(GL_MODELVIEW);
-  }
+  glMatrixMode(GL_PROJECTION);
+  glLoadMatrixf((float*)this->projectionMatrix);
+  glMatrixMode(GL_MODELVIEW);
 }

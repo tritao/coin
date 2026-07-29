@@ -83,6 +83,8 @@
 
 // *************************************************************************
 
+#if defined(COIN_GL_COMPATIBILITY)
+
 // Convenience function for access to OpenGL wrapper from an SoState
 // pointer.
 const cc_glglue *
@@ -110,6 +112,13 @@ sogl_glue_instance(const SoState * state)
   // that much unless multiple contexts on multiple displays are used.
   return cc_glglue_instance(1);
 #endif // workaround version
+}
+
+const cc_glglue *
+sogl_current_glue(void)
+{
+  void * context = coin_gl_current_context();
+  return context ? cc_glglue_instance_from_context_ptr(context) : NULL;
 }
 
 
@@ -576,11 +585,7 @@ sogl_render_sphere(const float radius,
     }
     else if (flags & SOGL_NEED_3DTEXCOORDS) {
 #if defined(COIN_GL_COMPATIBILITY)
-        if (sogl_compatibility_profile(state)) {
-          glTexCoord3fv((const GLfloat*) &texcoords[j-1]);
-        }
-#else
-        assert(0 && "Not implemented for non-compatibility GL renderer");
+        glTexCoord3fv((const GLfloat*) &texcoords[j-1]);
 #endif
     }
     if (flags & SOGL_NEED_MULTITEXCOORDS) {
@@ -608,12 +613,8 @@ sogl_render_sphere(const float radius,
     }
     else if (flags & SOGL_NEED_3DTEXCOORDS) {
 #if defined(COIN_GL_COMPATIBILITY)
-      if (sogl_compatibility_profile(state)) {
-        texcoords[j] = tmp/2 + SbVec3f(0.5f,0.5f,0.5f);
-        glTexCoord3fv((const GLfloat*) &texcoords[j]);
-      }
-#else
-      assert(0 && "Not implemented for non-compatibility GL renderer");
+      texcoords[j] = tmp/2 + SbVec3f(0.5f,0.5f,0.5f);
+      glTexCoord3fv((const GLfloat*) &texcoords[j]);
 #endif
     }
     if (flags & SOGL_NEED_MULTITEXCOORDS) {
@@ -643,11 +644,7 @@ sogl_render_sphere(const float radius,
       }
       else if (flags & SOGL_NEED_3DTEXCOORDS) {
 #if defined(COIN_GL_COMPATIBILITY)
-        if (sogl_compatibility_profile(state)) {
-          glTexCoord3fv((const GLfloat*) &texcoords[j]);
-        }
-#else
-        assert(0 && "Not implemented for non-compatibility GL renderer");
+        glTexCoord3fv((const GLfloat*) &texcoords[j]);
 #endif
       }
       if (flags & SOGL_NEED_MULTITEXCOORDS) {
@@ -669,12 +666,8 @@ sogl_render_sphere(const float radius,
       }
       else if (flags & SOGL_NEED_3DTEXCOORDS) {
 #if defined(COIN_GL_COMPATIBILITY)
-        if (sogl_compatibility_profile(state)) {
-          texcoords[j] = tmp/2 + SbVec3f(0.5f,0.5f,0.5f);
-          glTexCoord3fv((const GLfloat*) &texcoords[j]);
-        }
-#else
-        assert(0 && "Not implemented for non-compatibility GL renderer");
+        texcoords[j] = tmp/2 + SbVec3f(0.5f,0.5f,0.5f);
+        glTexCoord3fv((const GLfloat*) &texcoords[j]);
 #endif
       }
       if (flags & SOGL_NEED_MULTITEXCOORDS) {
@@ -704,11 +697,7 @@ sogl_render_sphere(const float radius,
     }
     else if (flags & SOGL_NEED_3DTEXCOORDS) {
 #if defined(COIN_GL_COMPATIBILITY)
-      if (sogl_compatibility_profile(state)) {
-        glTexCoord3fv((const GLfloat*) &texcoords[j]);
-      }
-#else
-      assert(0 && "Not implemented for non-compatibility GL renderer");
+      glTexCoord3fv((const GLfloat*) &texcoords[j]);
 #endif
     }
     if (flags & SOGL_NEED_MULTITEXCOORDS) {
@@ -744,11 +733,7 @@ sogl_render_sphere(const float radius,
     }
     else if (flags & SOGL_NEED_3DTEXCOORDS) {
 #if defined(COIN_GL_COMPATIBILITY)
-      if (sogl_compatibility_profile(state)) {
-        glTexCoord3fv((const GLfloat*) &texcoords[j+1]);
-      }
-#else
-      assert(0 && "Not implemented for non-compatibility GL renderer");
+      glTexCoord3fv((const GLfloat*) &texcoords[j+1]);
 #endif
     }
     if (flags & SOGL_NEED_MULTITEXCOORDS) {
@@ -862,11 +847,9 @@ sogl_render_cube(const float width,
                          width * 0.5f,
                          height * 0.5f,
                          depth * 0.5f);
-  if (SoRenderer::isOpenGL()) {
-    if (sogl_compatibility_profile(state)) {
-      glBegin(GL_QUADS);
-      int *iptr = sogl_cube_vindices;
-      int u;
+  glBegin(GL_QUADS);
+  int *iptr = sogl_cube_vindices;
+  int u;
 
       for (int i = 0; i < 6; i++) { // 6 quads
         if (flags & SOGL_NEED_NORMALS)
@@ -876,11 +859,7 @@ sogl_render_cube(const float width,
         for (int j = 0; j < 4; j++) {
           if (flags & SOGL_NEED_3DTEXCOORDS) {
 #if defined(COIN_GL_COMPATIBILITY)
-            if (sogl_compatibility_profile(state)) {
-              glTexCoord3fv(sogl_cube_3dtexcoords[*iptr]);
-            }
-#else
-            assert(0 && "Not implemented for non-compatibility GL renderer");
+            glTexCoord3fv(sogl_cube_3dtexcoords[*iptr]);
 #endif
           }
           else if (flags & SOGL_NEED_TEXCOORDS) {
@@ -897,13 +876,7 @@ sogl_render_cube(const float width,
           glVertex3fv((const GLfloat*)&varray[*iptr++]);
         }
       }
-      glEnd();
-    } else {
-      SoDebugError::post("SoGL::sogl_render_cube",
-        "Immediate mode rendering is not available, use primitive vertex cache mode."
-      );
-    }
-  }
+  glEnd();
 
   if (state) {
     // always encourage auto caching for cubes
@@ -2406,6 +2379,20 @@ sogl_compatibility_profile(const SoState * state)
   return cc_glglue_glprofile_compat(glue);
 }
 
+// Keep the pipeline decision in one place. COIN_GL_COMPATIBILITY controls
+// whether legacy sources are compiled, while the active context decides
+// whether that pipeline is usable for this traversal.
+SbBool
+sogl_legacy_rendering_available(const cc_glglue * glue)
+{
+#if defined(COIN_GL_COMPATIBILITY)
+  return glue != NULL && cc_glglue_glprofile_compat(glue);
+#else
+  COIN_UNUSED_ARG(glue);
+  return FALSE;
+#endif
+}
+
 static int SOGL_AUTOCACHE_REMOTE_MIN = 500000;
 static int SOGL_AUTOCACHE_REMOTE_MAX = 5000000;
 static int SOGL_AUTOCACHE_LOCAL_MIN = 100000;
@@ -2506,3 +2493,119 @@ sogl_offscreencontext_callback(void (*cb)(void *, SoAction*),
   offscreencallback->setCallback(cb, closure);
   offscreenrenderer->render(offscreencallback);
 }
+
+#else // !COIN_GL_COMPATIBILITY
+
+// The fixed-function rendering helpers remain part of the private ABI, but
+// are deliberately inert in a core-profile/GLES build.  Legacy traversal is
+// rejected at its action boundary, so these entry points must not attempt to
+// emulate compatibility rendering with a partial set of modern calls.
+const cc_glglue *
+sogl_glue_instance(const SoState * state)
+{
+  (void)state;
+  return NULL;
+}
+
+const cc_glglue *
+sogl_current_glue(void)
+{
+  return NULL;
+}
+
+void
+sogl_render_cone(const float, const float, const int,
+                 SoMaterialBundle * const, const unsigned int, SoState *)
+{
+}
+
+void
+sogl_render_cylinder(const float, const float, const int,
+                     SoMaterialBundle * const, const unsigned int, SoState *)
+{
+}
+
+void
+sogl_render_sphere(const float, const int, const int,
+                   SoMaterialBundle * const, const unsigned int, SoState *)
+{
+}
+
+void
+sogl_render_cube(const float, const float, const float,
+                 SoMaterialBundle * const, const unsigned int, SoState *)
+{
+}
+
+void
+sogl_offscreencontext_callback(void (*)(void *, SoAction*), void *)
+{
+}
+
+void
+sogl_render_faceset(const SoGLCoordinateElement * const,
+                    const int32_t *, int,
+                    const SbVec3f *, const int32_t *,
+                    SoMaterialBundle * const, const int32_t *,
+                    SoTextureCoordinateBundle * const, const int32_t *,
+                    SoVertexAttributeBundle * const, const int, const int,
+                    const int, const int, const int)
+{
+}
+
+void
+sogl_render_tristrip(const SoGLCoordinateElement * const,
+                     const int32_t *, int,
+                     const SbVec3f *, const int32_t *,
+                     SoMaterialBundle * const, const int32_t *,
+                     const SoTextureCoordinateBundle * const, const int32_t *,
+                     const int, const int, const int)
+{
+}
+
+void
+sogl_render_lineset(const SoGLCoordinateElement * const,
+                    const int32_t *, int,
+                    const SbVec3f *, const int32_t *,
+                    SoMaterialBundle * const, const int32_t *,
+                    const SoTextureCoordinateBundle * const, const int32_t *,
+                    int, int, const int, const int)
+{
+}
+
+void
+sogl_render_pointset(const SoGLCoordinateElement *, const SbVec3f *,
+                     SoMaterialBundle *, const SoTextureCoordinateBundle *,
+                     int32_t, int32_t)
+{
+}
+
+SbBool
+sogl_glerror_debugging(void)
+{
+  return FALSE;
+}
+
+SbBool
+sogl_compatibility_profile(const SoState * state)
+{
+  (void)state;
+  return FALSE;
+}
+
+SbBool
+sogl_legacy_rendering_available(const cc_glglue * glue)
+{
+  (void)glue;
+  return FALSE;
+}
+
+void
+sogl_autocache_update(SoState * state, const int numprimitives, SbBool didusevbo)
+{
+  (void)state;
+  (void)numprimitives;
+  (void)didusevbo;
+}
+
+#endif // COIN_GL_COMPATIBILITY

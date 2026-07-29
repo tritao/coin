@@ -215,12 +215,10 @@ SoGLLazyElement::getInstance(const SoState *state)
 inline void
 SoGLLazyElement::sendPackedDiffuse(const uint32_t col) const
 {
-  if (sogl_compatibility_profile(this->state)) {
-    glColor4ub((unsigned char)((col>>24)&0xff),
-                (unsigned char)((col>>16)&0xff),
-                (unsigned char)((col>>8)&0xff),
-                (unsigned char)(col&0xff));
-  }
+  glColor4ub((unsigned char)((col>>24)&0xff),
+             (unsigned char)((col>>16)&0xff),
+             (unsigned char)((col>>8)&0xff),
+             (unsigned char)(col&0xff));
   this->glstate.diffuse = col;
   this->cachebitmask |= DIFFUSE_MASK;
 }
@@ -228,10 +226,8 @@ SoGLLazyElement::sendPackedDiffuse(const uint32_t col) const
 inline void
 SoGLLazyElement::sendLightModel(const int32_t model) const
 {
-  if (sogl_compatibility_profile(this->state)) {
-    if (model == PHONG) glEnable(GL_LIGHTING);
-    else glDisable(GL_LIGHTING);
-  }
+  if (model == PHONG) glEnable(GL_LIGHTING);
+  else glDisable(GL_LIGHTING);
   this->glstate.lightmodel = model;
   this->cachebitmask |= LIGHT_MODEL_MASK;
 }
@@ -239,10 +235,8 @@ SoGLLazyElement::sendLightModel(const int32_t model) const
 inline void
 SoGLLazyElement::sendFlatshading(const SbBool onoff) const
 {
-  if (sogl_compatibility_profile(this->state)) {
-    if (onoff) glShadeModel(GL_FLAT);
-    else glShadeModel(GL_SMOOTH);
-  }
+  if (onoff) glShadeModel(GL_FLAT);
+  else glShadeModel(GL_SMOOTH);
   this->glstate.flatshading = (int32_t) onoff;
   this->cachebitmask |= SHADE_MODEL_MASK;
 }
@@ -250,14 +244,12 @@ SoGLLazyElement::sendFlatshading(const SbBool onoff) const
 inline void
 SoGLLazyElement::sendAlphaTest(int func, float value) const
 {
-  if (sogl_compatibility_profile(this->state)) {
-    if (func) {
-      glAlphaFunc((GLenum) func, value);
-      glEnable(GL_ALPHA_TEST);
-    }
-    else {
-      glDisable(GL_ALPHA_TEST);
-    }
+  if (func) {
+    glAlphaFunc((GLenum) func, value);
+    glEnable(GL_ALPHA_TEST);
+  }
+  else {
+    glDisable(GL_ALPHA_TEST);
   }
   this->cachebitmask |= ALPHATEST_MASK;
   this->glstate.alphatestfunc = func;
@@ -277,11 +269,7 @@ inline void
 SoGLLazyElement::sendTwosideLighting(const SbBool onoff) const
 {
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
-    glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, onoff ? GL_TRUE : GL_FALSE);
-  }
-#else
-  //assert(0 && "Not implemented for non-compatibility GL renderer");
+  glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, onoff ? GL_TRUE : GL_FALSE);
 #endif
   this->glstate.twoside = (int32_t) onoff;
   this->cachebitmask |= TWOSIDE_MASK;
@@ -290,10 +278,8 @@ SoGLLazyElement::sendTwosideLighting(const SbBool onoff) const
 inline void
 SoGLLazyElement::sendBackfaceCulling(const SbBool onoff) const
 {
-  if (sogl_compatibility_profile(this->state)) {
-    if (onoff) glEnable(GL_CULL_FACE);
-    else glDisable(GL_CULL_FACE);
-  }
+  if (onoff) glEnable(GL_CULL_FACE);
+  else glDisable(GL_CULL_FACE);
   this->glstate.culling = onoff;
   this->cachebitmask |= CULLING_MASK;
 }
@@ -305,11 +291,7 @@ send_gl_material(SoState* state, GLenum pname, const SbColor & color)
   color.getValue(col[0], col[1], col[2]);
   col[3] = 1.0f;
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
-    glMaterialfv(GL_FRONT_AND_BACK, pname, col);
-  }
-#else
-  //assert(0 && "Not implemented for non-compatibility GL renderer");
+  glMaterialfv(GL_FRONT_AND_BACK, pname, col);
 #endif
 }
 
@@ -342,11 +324,7 @@ inline void
 SoGLLazyElement::sendShininess(const float shine) const
 {
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
-    glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shine*128.0f);
-  }
-#else
-  //assert(0 && "Not implemented for non-compatibility GL renderer");
+  glMaterialf(GL_FRONT_AND_BACK, GL_SHININESS, shine*128.0f);
 #endif
   this->glstate.shininess = shine;
   this->cachebitmask |= SHININESS_MASK;
@@ -356,17 +334,13 @@ inline void
 SoGLLazyElement::sendTransparency(const int stipplenum) const
 {
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
-    if (stipplenum == 0) {
-      glDisable(GL_POLYGON_STIPPLE);
-    }
-    else {
-      if (this->glstate.stipplenum <= 0) glEnable(GL_POLYGON_STIPPLE);
-      glPolygonStipple(stipple_patterns[stipplenum]);
-    }
+  if (stipplenum == 0) {
+    glDisable(GL_POLYGON_STIPPLE);
   }
-#else
-  //assert(0 && "Not implemented for non-compatibility GL renderer");
+  else {
+    if (this->glstate.stipplenum <= 0) glEnable(GL_POLYGON_STIPPLE);
+    glPolygonStipple(stipple_patterns[stipplenum]);
+  }
 #endif
   this->glstate.stipplenum = stipplenum;
   this->cachebitmask |= TRANSPARENCY_MASK;
@@ -460,22 +434,14 @@ SoGLLazyElement::init(SoState * stateptr)
   // a cache though.
   this->cachebitmask = 0;
 
-  if (SoRenderer::isOpenGL()) {
 #if defined(COIN_GL_COMPATIBILITY)
-    if (sogl_compatibility_profile(this->state)) {
-      glDisable(GL_POLYGON_STIPPLE);
-    }
-
-    if (sogl_compatibility_profile(this->state)) {
-      GLboolean rgba;
-      glGetBooleanv(GL_RGBA_MODE, &rgba);
-      if (!rgba) this->colorindex = TRUE;
-    }
-    else {
-      this->sendPackedDiffuse(0xccccccff);
-    }
-#endif
+  if (sogl_legacy_rendering_available(sogl_current_glue())) {
+    glDisable(GL_POLYGON_STIPPLE);
+    GLboolean rgba;
+    glGetBooleanv(GL_RGBA_MODE, &rgba);
+    if (!rgba) this->colorindex = TRUE;
   }
+#endif
 }
 
 void
@@ -563,15 +529,12 @@ SoGLLazyElement::sendDiffuseByIndex(const int index) const
   }
 #endif // COIN_DEBUG
 
-  if (SoRenderer::isOpenGL()) {
-    if (this->colorindex) {
+  if (this->colorindex) {
 #if defined(COIN_GL_COMPATIBILITY)
-      if (sogl_compatibility_profile(this->state)) {
-        glIndexi((GLint)this->coinstate.colorindexarray[safeindex]);
-      } else
+      glIndexi((GLint)this->coinstate.colorindexarray[safeindex]);
 #endif
       {
-        assert(0 && "Not implemented for non-compatibility GL renderer");
+        // Color-index rendering is only available in compatibility builds.
       }
     } else {
       uint32_t col = this->packedpointer[safeindex] | this->transpmask;
@@ -580,7 +543,6 @@ SoGLLazyElement::sendDiffuseByIndex(const int index) const
       // an nVIDIA bug
       // if (col != this->glstate.diffuse)
       this->sendPackedDiffuse(col);
-    }
   }
 }
 
@@ -634,15 +596,11 @@ SoGLLazyElement::send(const SoState * stateptr, uint32_t mask) const
           // we always send the first diffuse color for the first
           // material in an open cache
           if (this->colorindex) {
-            if (SoRenderer::isOpenGL()) {
 #if defined(COIN_GL_COMPATIBILITY)
-              if (sogl_compatibility_profile(this->state)) {
-                glIndexi((GLint)this->coinstate.colorindexarray[0]);
-              }
+              glIndexi((GLint)this->coinstate.colorindexarray[0]);
 #else
-              assert(0 && "Not implemented for non-compatibility GL renderer");
+              // Color-index rendering is only available in compatibility builds.
 #endif
-            }
           }
           else {
             this->sendPackedDiffuse(this->packedpointer[0]|this->transpmask);

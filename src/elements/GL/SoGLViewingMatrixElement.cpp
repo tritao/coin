@@ -148,9 +148,7 @@ SoGLViewingMatrixElement::updategl(void)
   if (!this->mmidentity) {
     mat.multRight(this->modelmatrix);
   }
-  if (sogl_compatibility_profile(this->state)) {
-    glLoadMatrixf((float*)mat);
-  }
+  glLoadMatrixf((float*)mat);
 }
 
 /*!
