@@ -517,6 +517,16 @@ SoDragger::callback(SoCallbackAction * action)
 // Doc in superclass. Overridden to initialize some elements before
 // traversing children.
 void
+SoDragger::doAction(SoAction * action)
+{
+  SoState * state = action->getState();
+  state->push();
+  this->updateElements(state);
+  inherited::doAction(action);
+  state->pop();
+}
+
+void
 SoDragger::GLRender(SoGLRenderAction * action)
 {
   SoState * state = action->getState();
@@ -1707,7 +1717,12 @@ SoDragger::handleEvent(SoHandleEventAction * action)
       PRIVATE(this)->pickedpath->ref();
 
       PRIVATE(this)->startlocaterpos = event->getPosition();
-      PRIVATE(this)->isgrabbing = FALSE;
+      // Set grabber immediately on activation so that parent nodes
+      // (e.g. SoFCUnifiedSelection) forward subsequent motion events
+      // to this dragger instead of consuming them for preselection.
+      PRIVATE(this)->eventaction = action;
+      this->grabEventsSetup();
+      PRIVATE(this)->isgrabbing = TRUE;
       this->saveStartParameters();
       PRIVATE(this)->startCB.invokeCallbacks(this);
     }

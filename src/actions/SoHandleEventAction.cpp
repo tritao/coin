@@ -51,6 +51,7 @@
 
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/events/SoEvent.h>
+#include <Inventor/events/SoMouseButtonEvent.h>
 #include <Inventor/elements/SoSwitchElement.h>
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
@@ -59,6 +60,9 @@
 #include <Inventor/nodes/SoInfo.h>
 #include <Inventor/actions/SoRayPickAction.h>
 #include <Inventor/misc/SoState.h>
+#include <Inventor/SoPickedPoint.h>
+#include <Inventor/lists/SoPickedPointList.h>
+#include <Inventor/SoRenderManager.h>
 
 #include "actions/SoSubActionP.h"
 
@@ -76,6 +80,7 @@ public:
     , didpickall(FALSE)
     , pickaction(NULL)
     , owner(NULL)
+    , renderManager(NULL)
   { }
   ~SoHandleEventActionP()
   {
@@ -99,6 +104,10 @@ public:
   SoRayPickAction * pickaction;
 
   SoHandleEventAction * owner;
+
+  // GPU pick support
+  SoRenderManager * renderManager;
+  SoPickedPointList gpuPickedPointList;  // Owns GPU-allocated picked points
 };
 
 #define PRIVATE(obj) ((obj)->pimpl)
@@ -337,12 +346,35 @@ SoHandleEventAction::getPickRadius(void) const
 }
 
 /*!
+  Set the render manager for GPU-accelerated picking.
+*/
+void
+SoHandleEventAction::setRenderManager(SoRenderManager * manager)
+{
+  PRIVATE(this)->renderManager = manager;
+}
+
+/*!
   Returns the SoPickedPoint information for the intersection point
   below the cursor.
 */
 const SoPickedPoint *
 SoHandleEventAction::getPickedPoint(void)
 {
+  // Try GPU pick for hover/preselection when the render backend is active.
+  // Skip GPU pick for mouse button presses — draggers need deep paths
+  // from ray pick (GPU pick only returns identity-level paths).
+  // Skip GPU pick for getPickedPoint entirely. The render backend's
+  // hover preselection uses gpuPick + resolveGpuPickIdentity directly
+  // in SoFCUnifiedSelection, bypassing this method. Mouse button events
+  // need ray pick for deep paths (dragger interaction). Returning NULL
+  // here falls through to the ray pick below, which always works.
+  //
+  // Previously this created SoPickedPoint objects from GPU pick results,
+  // but their SoPath copies contained stale node references after scene
+  // rebuilds, causing memory leaks (couldn't delete) and potential crashes.
+
+  // Legacy ray pick fallback
   SoRayPickAction * ra = PRIVATE(this)->getPickAction();
   if (!PRIVATE(this)->pickvalid || PRIVATE(this)->didpickall) {
     ra->setPickAll(FALSE);
@@ -357,6 +389,10 @@ SoHandleEventAction::getPickedPoint(void)
 const SoPickedPointList &
 SoHandleEventAction::getPickedPointList(void)
 {
+  // Try GPU pick first when the render backend is active
+  // No GPU pick path for getPickedPointList — same reasoning as
+  // getPickedPoint above. Fall through to ray pick.
+
   SoRayPickAction * ra = PRIVATE(this)->getPickAction();
   if (!PRIVATE(this)->pickvalid || !PRIVATE(this)->didpickall) {
     ra->setPickAll(TRUE);

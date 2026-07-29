@@ -56,12 +56,31 @@
 
 #include <Inventor/nodes/SoEnvironment.h>
 
+#include <Inventor/actions/SoAction.h>
 #include <Inventor/actions/SoCallbackAction.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/elements/SoGLEnvironmentElement.h>
 #include <Inventor/elements/SoLightAttenuationElement.h>
 
 #include "nodes/SoSubNodeP.h"
+
+namespace {
+
+void
+soenvironment_apply(SoEnvironment * env, SoState * state)
+{
+  SoLightAttenuationElement::set(state, env, env->attenuation.getValue());
+  SoEnvironmentElement::set(state,
+                            env,
+                            env->ambientIntensity.getValue(),
+                            env->ambientColor.getValue(),
+                            env->attenuation.getValue(),
+                            static_cast<int32_t>(env->fogType.getValue()),
+                            env->fogColor.getValue(),
+                            env->fogVisibility.getValue());
+}
+
+} // namespace
 
 // *************************************************************************
 
@@ -192,30 +211,19 @@ SoEnvironment::initClass(void)
 void
 SoEnvironment::GLRender(SoGLRenderAction * action)
 {
-  SoLightAttenuationElement::set(action->getState(), this,
-                                 this->attenuation.getValue());
-  SoEnvironmentElement::set(action->getState(),
-                            this,
-                            this->ambientIntensity.getValue(),
-                            this->ambientColor.getValue(),
-                            this->attenuation.getValue(),
-                            (int32_t)fogType.getValue(),
-                            this->fogColor.getValue(),
-                            this->fogVisibility.getValue());
+  this->doAction(action);
+}
+
+// Doc from superclass.
+void
+SoEnvironment::doAction(SoAction * action)
+{
+  soenvironment_apply(this, action->getState());
 }
 
 // Doc from superclass.
 void
 SoEnvironment::callback(SoCallbackAction *action)
 {
-  SoLightAttenuationElement::set(action->getState(), this,
-                                 this->attenuation.getValue());
-  SoEnvironmentElement::set(action->getState(),
-                            this,
-                            this->ambientIntensity.getValue(),
-                            this->ambientColor.getValue(),
-                            this->attenuation.getValue(),
-                            (int32_t)fogType.getValue(),
-                            this->fogColor.getValue(),
-                            this->fogVisibility.getValue());
+  this->doAction(action);
 }
