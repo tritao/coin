@@ -142,8 +142,7 @@ SoVRMLDirectionalLight::GLRender(SoGLRenderAction * action)
   }
 
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(action->getState())) {
-    GLenum light = (GLenum) (idx + GL_LIGHT0);
+  GLenum light = (GLenum) (idx + GL_LIGHT0);
 
     SbColor4f lightcolor(0.0f, 0.0f, 0.0f, 1.0f);
     lightcolor.setRGB(this->color.getValue());
@@ -169,9 +168,8 @@ SoVRMLDirectionalLight::GLRender(SoGLRenderAction * action)
     glLightf(light, GL_CONSTANT_ATTENUATION, 1);
     glLightf(light, GL_LINEAR_ATTENUATION, 0);
     glLightf(light, GL_QUADRATIC_ATTENUATION, 0);
-  }
 #else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+  (void)action;
 #endif
 }
 

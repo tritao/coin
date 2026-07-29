@@ -536,6 +536,10 @@ SoVRMLExtrusion::~SoVRMLExtrusion()
 void
 SoVRMLExtrusion::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  return;
+#else
   if (!this->shouldGLRender(action)) return;
 
   SoState * state = action->getState();
@@ -678,6 +682,7 @@ SoVRMLExtrusion::GLRender(SoGLRenderAction * action)
   // send approx number of triangles for autocache handling
   sogl_autocache_update(state, PRIVATE(this)->idx.getLength() / 4,
                         vbo);
+#endif // COIN_GL_COMPATIBILITY
 }
 
 // Doc in parent

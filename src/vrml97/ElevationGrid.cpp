@@ -380,6 +380,10 @@ SoVRMLElevationGrid::~SoVRMLElevationGrid(void)
 void
 SoVRMLElevationGrid::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  return;
+#else
   const int xdim = this->xDimension.getValue();
   const int zdim = this->zDimension.getValue();
   if (xdim < 2 || zdim < 2) return;
@@ -626,6 +630,7 @@ SoVRMLElevationGrid::GLRender(SoGLRenderAction * action)
 
   if (normalcache) PRIVATE(this)->readUnlockNormalCache();
   state->pop();
+#endif // COIN_GL_COMPATIBILITY
 }
 
 // Doc in parent

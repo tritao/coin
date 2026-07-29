@@ -416,6 +416,10 @@ SoVRMLInline::callback(SoCallbackAction * action)
 void
 SoVRMLInline::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  return;
+#else
   BboxVisibility vis = sovrmlinline_bboxvisibility;
   SbVec3f size = this->bboxSize.getValue();
   SoNode * child = this->getChildData();
@@ -474,6 +478,7 @@ SoVRMLInline::GLRender(SoGLRenderAction * action)
     state->pop();
   }
   SoVRMLInline::doAction(action);
+#endif // COIN_GL_COMPATIBILITY
 }
 
 // Doc in parent
