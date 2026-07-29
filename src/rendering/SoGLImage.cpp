@@ -1439,7 +1439,11 @@ SoGLImageP::resizeImage(SoState * state, unsigned char *& imageptr,
   }
   else {
     GLint maxr;
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
     glGetIntegerv(GL_MAX_RECTANGLE_TEXTURE_SIZE_ARB, &maxr);
+#else
+    glGetIntegerv(GL_MAX_RECTANGLE_TEXTURE_SIZE, &maxr);
+#endif
     maxrectsize = (uint32_t) maxr;
   }
 
@@ -1652,7 +1656,11 @@ SoGLImageP::createGLDisplayList(SoState *state)
     }
     else {
       dl->setTextureTarget((int) ((this->flags & SoGLImage::RECTANGLE) ?
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
                                   GL_TEXTURE_RECTANGLE_ARB : GL_TEXTURE_2D));
+#else
+                                  GL_TEXTURE_RECTANGLE : GL_TEXTURE_2D));
+#endif
     }
   }
 
@@ -1722,6 +1730,10 @@ translate_wrap(SoState *state, const SoGLImage::Wrap wrap)
 {
   if (wrap == SoGLImage::REPEAT) return (GLenum) GL_REPEAT;
   if (wrap == SoGLImage::CLAMP_TO_BORDER) return (GLenum) GL_CLAMP_TO_BORDER;
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  (void)state;
+  return (GLenum) GL_CLAMP_TO_EDGE;
+#else
   if (COIN_ENABLE_CONFORMANT_GL_CLAMP) {
     if (wrap == SoGLImage::CLAMP_TO_EDGE) {
       const cc_glglue * glw = sogl_glue_instance(state);
@@ -1732,13 +1744,18 @@ translate_wrap(SoState *state, const SoGLImage::Wrap wrap)
   const cc_glglue * glw = sogl_glue_instance(state);
   if (SoGLDriverDatabase::isSupported(glw, SO_GL_TEXTURE_EDGE_CLAMP)) return (GLenum) GL_CLAMP_TO_EDGE;
   return (GLenum) GL_CLAMP;
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
 }
 
 void
 SoGLImageP::reallyBindPBuffer(SoState * state)
 {
   GLenum target = this->flags & SoGLImage::RECTANGLE ?
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
     GL_TEXTURE_RECTANGLE_ARB : GL_TEXTURE_2D;
+#else
+    GL_TEXTURE_RECTANGLE : GL_TEXTURE_2D;
+#endif
 
   glTexParameteri(target, GL_TEXTURE_WRAP_S,
                   translate_wrap(state, this->wraps));
@@ -1823,29 +1840,39 @@ SoGLImageP::reallyCreateTexture(SoState *state,
     SbBool generatemipmap = FALSE;
 
     GLenum target = this->flags & SoGLImage::RECTANGLE ?
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
       GL_TEXTURE_RECTANGLE_ARB : GL_TEXTURE_2D;
+#else
+      GL_TEXTURE_RECTANGLE : GL_TEXTURE_2D;
+#endif
 
     glTexParameteri(target, GL_TEXTURE_WRAP_S,
                     translate_wrap(state, this->wraps));
     glTexParameteri(target, GL_TEXTURE_WRAP_T,
                     translate_wrap(state, this->wrapt));
 
-    if (sogl_context_supports_legacy_rendering(state))
-    {
-      if (mipmap && (this->flags & SoGLImage::RECTANGLE)) {
-        mipmapimage = FALSE;
-        if (SoGLDriverDatabase::isSupported(glw, "GL_SGIS_generate_mipmap")) {
-          glTexParameteri(target, GL_GENERATE_MIPMAP_SGIS, GL_TRUE);
-        }
-        else mipmapfilter = FALSE;
-      }
-      // prefer GL_SGIS_generate_mipmap to glGenerateMipmap. It seems to
-      // be better supported in drivers.
-      else if (mipmap && SoGLDriverDatabase::isSupported(glw, "GL_SGIS_generate_mipmap")) {
+    SbBool generatedByLegacyPath = FALSE;
+    if (mipmap && (this->flags & SoGLImage::RECTANGLE)) {
+      mipmapimage = FALSE;
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
+      if (sogl_context_supports_legacy_rendering(state) &&
+          SoGLDriverDatabase::isSupported(glw, "GL_SGIS_generate_mipmap")) {
         glTexParameteri(target, GL_GENERATE_MIPMAP_SGIS, GL_TRUE);
-        mipmapimage = FALSE;
+        generatedByLegacyPath = TRUE;
       }
+#endif
+      if (!generatedByLegacyPath) mipmapfilter = FALSE;
     }
+    // Prefer the SGIS path only in a compatibility context. Standard
+    // glGenerateMipmap() remains available to core and modern contexts.
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
+    else if (mipmap && sogl_context_supports_legacy_rendering(state) &&
+             SoGLDriverDatabase::isSupported(glw, "GL_SGIS_generate_mipmap")) {
+      glTexParameteri(target, GL_GENERATE_MIPMAP_SGIS, GL_TRUE);
+      mipmapimage = FALSE;
+      generatedByLegacyPath = TRUE;
+    }
+#endif
     if (mipmapimage) {
       // using glGenerateMipmap() while creating a display list is not
       // supported (even if the display list is never used). This is
@@ -1858,7 +1885,12 @@ SoGLImageP::reallyCreateTexture(SoState *state,
     }
     if ((this->quality > COIN_TEX2_ANISOTROPIC_LIMIT) &&
         SoGLDriverDatabase::isSupported(glw, SO_GL_ANISOTROPIC_FILTERING)) {
-      glTexParameterf(target, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+      glTexParameterf(target,
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
+                      GL_TEXTURE_MAX_ANISOTROPY_EXT,
+#else
+                      GL_TEXTURE_MAX_ANISOTROPY,
+#endif
                       cc_glglue_get_max_anisotropy(glw));
     }
     if (!mipmapimage) {
@@ -2002,7 +2034,11 @@ SoGLImageP::applyFilter(const SbBool ismipmap)
   if (size[2] >= 1) target = GL_TEXTURE_3D;
   else {
     target = this->flags & SoGLImage::RECTANGLE ?
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
       GL_TEXTURE_RECTANGLE_ARB : GL_TEXTURE_2D;
+#else
+      GL_TEXTURE_RECTANGLE : GL_TEXTURE_2D;
+#endif
   }
   if (this->flags & SoGLImage::USE_QUALITY_VALUE) {
     if (this->quality < COIN_TEX2_LINEAR_LIMIT) {
