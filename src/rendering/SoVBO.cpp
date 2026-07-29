@@ -315,8 +315,7 @@ SoVBO::bindBuffer(uint32_t contextid, uint8_t stream)
     return;
   }
 
-  if (SoRenderer::isOpenGL()) {
-    const cc_glglue * glue = cc_glglue_instance((int) contextid);
+  const cc_glglue * glue = cc_glglue_instance((int) contextid);
 
     GLuint buffer;
     if (!this->vbohash.get(contextid, buffer)) {
@@ -333,7 +332,6 @@ SoVBO::bindBuffer(uint32_t contextid, uint8_t stream)
       // buffer already exists, bind it
       cc_glglue_glBindBuffer(glue, this->target, buffer);
     }
-  }
 
 #if COIN_DEBUG
   if (vbo_debug) {

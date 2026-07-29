@@ -1439,7 +1439,11 @@ SoGLImageP::resizeImage(SoState * state, unsigned char *& imageptr,
   }
   else {
     GLint maxr;
+#if defined(COIN_GL_COMPATIBILITY)
     glGetIntegerv(GL_MAX_RECTANGLE_TEXTURE_SIZE_ARB, &maxr);
+#else
+    glGetIntegerv(GL_MAX_RECTANGLE_TEXTURE_SIZE, &maxr);
+#endif
     maxrectsize = (uint32_t) maxr;
   }
 
@@ -1652,7 +1656,11 @@ SoGLImageP::createGLDisplayList(SoState *state)
     }
     else {
       dl->setTextureTarget((int) ((this->flags & SoGLImage::RECTANGLE) ?
+#if defined(COIN_GL_COMPATIBILITY)
                                   GL_TEXTURE_RECTANGLE_ARB : GL_TEXTURE_2D));
+#else
+                                  GL_TEXTURE_RECTANGLE : GL_TEXTURE_2D));
+#endif
     }
   }
 
@@ -1722,6 +1730,10 @@ translate_wrap(SoState *state, const SoGLImage::Wrap wrap)
 {
   if (wrap == SoGLImage::REPEAT) return (GLenum) GL_REPEAT;
   if (wrap == SoGLImage::CLAMP_TO_BORDER) return (GLenum) GL_CLAMP_TO_BORDER;
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)state;
+  return (GLenum) GL_CLAMP_TO_EDGE;
+#else
   if (COIN_ENABLE_CONFORMANT_GL_CLAMP) {
     if (wrap == SoGLImage::CLAMP_TO_EDGE) {
       const cc_glglue * glw = sogl_glue_instance(state);
@@ -1732,13 +1744,18 @@ translate_wrap(SoState *state, const SoGLImage::Wrap wrap)
   const cc_glglue * glw = sogl_glue_instance(state);
   if (SoGLDriverDatabase::isSupported(glw, SO_GL_TEXTURE_EDGE_CLAMP)) return (GLenum) GL_CLAMP_TO_EDGE;
   return (GLenum) GL_CLAMP;
+#endif // COIN_GL_COMPATIBILITY
 }
 
 void
 SoGLImageP::reallyBindPBuffer(SoState * state)
 {
   GLenum target = this->flags & SoGLImage::RECTANGLE ?
+#if defined(COIN_GL_COMPATIBILITY)
     GL_TEXTURE_RECTANGLE_ARB : GL_TEXTURE_2D;
+#else
+    GL_TEXTURE_RECTANGLE : GL_TEXTURE_2D;
+#endif
 
   glTexParameteri(target, GL_TEXTURE_WRAP_S,
                   translate_wrap(state, this->wraps));
@@ -1823,7 +1840,11 @@ SoGLImageP::reallyCreateTexture(SoState *state,
     SbBool generatemipmap = FALSE;
 
     GLenum target = this->flags & SoGLImage::RECTANGLE ?
+#if defined(COIN_GL_COMPATIBILITY)
       GL_TEXTURE_RECTANGLE_ARB : GL_TEXTURE_2D;
+#else
+      GL_TEXTURE_RECTANGLE : GL_TEXTURE_2D;
+#endif
 
     glTexParameteri(target, GL_TEXTURE_WRAP_S,
                     translate_wrap(state, this->wraps));
@@ -1834,17 +1855,23 @@ SoGLImageP::reallyCreateTexture(SoState *state,
     {
       if (mipmap && (this->flags & SoGLImage::RECTANGLE)) {
         mipmapimage = FALSE;
+#if defined(COIN_GL_COMPATIBILITY)
         if (SoGLDriverDatabase::isSupported(glw, "GL_SGIS_generate_mipmap")) {
           glTexParameteri(target, GL_GENERATE_MIPMAP_SGIS, GL_TRUE);
         }
         else mipmapfilter = FALSE;
+#else
+        mipmapfilter = FALSE;
+#endif
       }
       // prefer GL_SGIS_generate_mipmap to glGenerateMipmap. It seems to
       // be better supported in drivers.
+#if defined(COIN_GL_COMPATIBILITY)
       else if (mipmap && SoGLDriverDatabase::isSupported(glw, "GL_SGIS_generate_mipmap")) {
         glTexParameteri(target, GL_GENERATE_MIPMAP_SGIS, GL_TRUE);
         mipmapimage = FALSE;
       }
+#endif
     }
     if (mipmapimage) {
       // using glGenerateMipmap() while creating a display list is not
@@ -1856,11 +1883,13 @@ SoGLImageP::reallyCreateTexture(SoState *state,
         generatemipmap = TRUE; // delay until after the texture image is set up
       }
     }
+#if defined(COIN_GL_COMPATIBILITY)
     if ((this->quality > COIN_TEX2_ANISOTROPIC_LIMIT) &&
         SoGLDriverDatabase::isSupported(glw, SO_GL_ANISOTROPIC_FILTERING)) {
       glTexParameterf(target, GL_TEXTURE_MAX_ANISOTROPY_EXT,
                       cc_glglue_get_max_anisotropy(glw));
     }
+#endif
     if (!mipmapimage) {
       // Create only level 0 texture. Mimpamps might be created by glGenerateMipmap
       glTexImage2D(target, 0, internalFormat, w, h,
@@ -2002,7 +2031,11 @@ SoGLImageP::applyFilter(const SbBool ismipmap)
   if (size[2] >= 1) target = GL_TEXTURE_3D;
   else {
     target = this->flags & SoGLImage::RECTANGLE ?
+#if defined(COIN_GL_COMPATIBILITY)
       GL_TEXTURE_RECTANGLE_ARB : GL_TEXTURE_2D;
+#else
+      GL_TEXTURE_RECTANGLE : GL_TEXTURE_2D;
+#endif
   }
   if (this->flags & SoGLImage::USE_QUALITY_VALUE) {
     if (this->quality < COIN_TEX2_LINEAR_LIMIT) {

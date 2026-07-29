@@ -1,6 +1,7 @@
 // src/rendering/SoGLRenderBackend.cpp
 
 #include "rendering/SoGLRenderBackend.h"
+#include "rendering/SoGL.h"
 #include "rendering/SoRenderIRP.h"
 #include "rendering/SoVBO.h"
 #include "CoinTracyConfig.h"
@@ -1236,17 +1237,19 @@ SoGLRenderBackend::beginFrame(const SoDrawList & drawlist,
   glDepthMask(GL_TRUE);
 
 #if defined(COIN_GL_COMPATIBILITY)
-  if (params.lineSmoothing) {
-    glEnable(GL_LINE_SMOOTH);
-  }
-  else {
-    glDisable(GL_LINE_SMOOTH);
-  }
-  if (params.pointSmoothing) {
-    glEnable(GL_POINT_SMOOTH);
-  }
-  else {
-    glDisable(GL_POINT_SMOOTH);
+  if (sogl_legacy_rendering_available(sogl_current_glue())) {
+    if (params.lineSmoothing) {
+      glEnable(GL_LINE_SMOOTH);
+    }
+    else {
+      glDisable(GL_LINE_SMOOTH);
+    }
+    if (params.pointSmoothing) {
+      glEnable(GL_POINT_SMOOTH);
+    }
+    else {
+      glDisable(GL_POINT_SMOOTH);
+    }
   }
 #endif
 

@@ -206,7 +206,11 @@ SoGLSLShaderProgram::ensureLinking(const cc_glglue * g)
     if (cc_glglue_glprofile_compat(g)) {
       g->glLinkProgramARB(programHandle);
       g->glGetObjectParameterivARB(programHandle,
+#if defined(COIN_GL_COMPATIBILITY)
                                   GL_OBJECT_LINK_STATUS_ARB, &didLink);
+#else
+                                  GL_LINK_STATUS, &didLink);
+#endif
 
       if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderProgram::ensureLinking")
         || !didLink) {
@@ -235,7 +239,13 @@ SoGLSLShaderProgram::printInfoLog(const cc_glglue * g,
 {
   GLint length = 0;
   if (cc_glglue_glprofile_compat(g)) {
-    g->glGetObjectParameterivARB(handle, GL_OBJECT_INFO_LOG_LENGTH_ARB, &length);
+    g->glGetObjectParameterivARB(handle,
+#if defined(COIN_GL_COMPATIBILITY)
+                                 GL_OBJECT_INFO_LOG_LENGTH_ARB,
+#else
+                                 GL_INFO_LOG_LENGTH,
+#endif
+                                 &length);
   } else {
     glGetProgramiv(handle, GL_INFO_LOG_LENGTH, &length);
   }

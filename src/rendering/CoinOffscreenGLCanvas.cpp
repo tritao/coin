@@ -332,8 +332,8 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
                                   unsigned int nrcomponents) const
 {
 #if defined(COIN_GL_COMPATIBILITY)
-  //if (sogl_compatibility_profile(state)) {
-    glPushAttrib(GL_ALL_ATTRIB_BITS);
+  glPushAttrib(GL_ALL_ATTRIB_BITS);
+#endif
 
     // First reset all settings that can influence the result of a
     // glReadPixels() call, to make sure we get the actual contents of
@@ -353,6 +353,7 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
   //   glPixelStorei(GL_PACK_ALIGNMENT, 4);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
 
+#if defined(COIN_GL_COMPATIBILITY)
     glPixelTransferi(GL_MAP_COLOR, 0);
     glPixelTransferi(GL_MAP_STENCIL, 0);
     glPixelTransferi(GL_INDEX_SHIFT, 0);
@@ -380,6 +381,7 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
     glPixelMapfv(GL_PIXEL_MAP_G_TO_G, 1, &f);
     glPixelMapfv(GL_PIXEL_MAP_B_TO_B, 1, &f);
     glPixelMapfv(GL_PIXEL_MAP_A_TO_A, 1, &f);
+#endif
 
     // The flushing of the OpenGL pipeline before and after the
     // glReadPixels() call is done as a work-around for a reported
@@ -431,10 +433,8 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
     }
     glFlush(); glFinish();
 
+#if defined(COIN_GL_COMPATIBILITY)
     glPopAttrib();
-  //}
-#else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
 #endif
 }
 

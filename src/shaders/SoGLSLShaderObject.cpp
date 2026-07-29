@@ -208,13 +208,25 @@ SoGLSLShaderObject::loadARB(const char* srcStr)
   default:
     assert(0 &&" unknown shader type");
   case VERTEX:
+#if defined(COIN_GL_COMPATIBILITY)
     sType = GL_VERTEX_SHADER_ARB;
+#else
+    sType = GL_VERTEX_SHADER;
+#endif
     break;
   case FRAGMENT:
+#if defined(COIN_GL_COMPATIBILITY)
     sType = GL_FRAGMENT_SHADER_ARB;
+#else
+    sType = GL_FRAGMENT_SHADER;
+#endif
     break;
   case GEOMETRY:
+#if defined(COIN_GL_COMPATIBILITY)
     sType = GL_GEOMETRY_SHADER_EXT;
+#else
+    sType = GL_GEOMETRY_SHADER;
+#endif
     break;
   }
 
@@ -238,7 +250,11 @@ SoGLSLShaderObject::loadARB(const char* srcStr)
   }
 
   this->glctx->glGetObjectParameterivARB(this->shaderHandle,
+#if defined(COIN_GL_COMPATIBILITY)
                                          GL_OBJECT_COMPILE_STATUS_ARB,
+#else
+                                         GL_COMPILE_STATUS,
+#endif
                                          &flag);
   SoGLSLShaderObject::printInfoLog(this->GLContext(),
                                    this->shaderHandle,
@@ -311,7 +327,13 @@ SoGLSLShaderObject::printInfoLog(const cc_glglue * g,
   GLint length = 0;
 
   if (cc_glglue_glprofile_compat(g)) {
-    g->glGetObjectParameterivARB(handle, GL_OBJECT_INFO_LOG_LENGTH_ARB, &length);
+    g->glGetObjectParameterivARB(handle,
+#if defined(COIN_GL_COMPATIBILITY)
+                                 GL_OBJECT_INFO_LOG_LENGTH_ARB,
+#else
+                                 GL_INFO_LOG_LENGTH,
+#endif
+                                 &length);
   } else {
     glGetShaderiv(handle, GL_INFO_LOG_LENGTH, &length);
   }
