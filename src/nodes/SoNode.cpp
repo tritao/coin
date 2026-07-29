@@ -965,8 +965,7 @@ SoNode::GLRenderS(SoAction * action, SoNode * node)
     }
   }
 
-  if (SoRenderer::isOpenGL()) {
-    if (COIN_DEBUG) {
+  if (COIN_DEBUG) {
       // Note: debugging code like this is also present in
       // SoSeparator::GLRenderBelowPath() and SoState::lazyEvaluate(),
       // but they are default disabled -- even when COIN_DEBUG=1 (due to
@@ -989,7 +988,6 @@ SoNode::GLRenderS(SoAction * action, SoNode * node)
                           "and re-run to get more information)");
       }
       cc_string_clean(&str);
-    }
   }
 }
 

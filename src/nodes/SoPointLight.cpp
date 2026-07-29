@@ -136,8 +136,7 @@ SoPointLight::GLRender(SoGLRenderAction * action)
                       SoViewingMatrixElement::get(state));
 
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
-    GLenum light = (GLenum) (idx + GL_LIGHT0);
+  GLenum light = (GLenum) (idx + GL_LIGHT0);
 
     SbVec3f attenuation = SoEnvironmentElement::getLightAttenuation(state);
     glLightf(light, GL_QUADRATIC_ATTENUATION, attenuation[0]);
@@ -163,8 +162,7 @@ SoPointLight::GLRender(SoGLRenderAction * action)
     // turning off spot light properties for ordinary lights
     glLightf(light, GL_SPOT_EXPONENT, 0.0);
     glLightf(light, GL_SPOT_CUTOFF, 180.0);
-  }
 #else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+  (void)state;
 #endif
 }

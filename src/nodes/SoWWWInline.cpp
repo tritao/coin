@@ -446,6 +446,10 @@ SoWWWInline::getReadAsSoFile(void)
 void
 SoWWWInline::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  return;
+#else
   if (this->getChildData()) {
     SoWWWInline::doAction(action);
     if (SoWWWInline::bboxvisibility == UNTIL_LOADED) return;
@@ -506,6 +510,7 @@ SoWWWInline::GLRender(SoGLRenderAction * action)
   glEnd();
 
   state->pop(); // restore state
+#endif // COIN_GL_COMPATIBILITY
 }
 
 // doc in super

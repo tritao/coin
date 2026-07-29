@@ -224,7 +224,11 @@ uint32_t
 SoTextureUnit::getMaxTextureUnit(void)
 {
   GLint tmp;
+#if defined(COIN_GL_COMPATIBILITY)
   glGetIntegerv(GL_MAX_TEXTURE_UNITS, &tmp);
+#else
+  glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &tmp);
+#endif // COIN_GL_COMPATIBILITY
 
   return (uint32_t) tmp;
 }

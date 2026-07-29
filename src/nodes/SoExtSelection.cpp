@@ -1138,6 +1138,10 @@ SoExtSelection::handleEvent(SoHandleEventAction * action)
 void
 SoExtSelection::draw(SoGLRenderAction *action)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  return;
+#else
   const cc_glglue * glw = cc_glglue_instance(action->getCacheContext());
   pimpl->has3DTextures = SoGLDriverDatabase::isSupported(glw, SO_GL_3D_TEXTURES);
 
@@ -1219,12 +1223,17 @@ SoExtSelection::draw(SoGLRenderAction *action)
 
   // Due to a Mesa 3.4.2 bug
   glColor3fv(currentColor);
+#endif // COIN_GL_COMPATIBILITY
 }
 
 // Documented in superclass.
 void
 SoExtSelection::GLRenderBelowPath(SoGLRenderAction * action)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  return;
+#else
   // Overridden to render lasso.
 
   inherited::GLRenderBelowPath(action);
@@ -1245,6 +1254,7 @@ SoExtSelection::GLRenderBelowPath(SoGLRenderAction * action)
     }
   }
   state->pop();
+#endif // COIN_GL_COMPATIBILITY
 }
 
 /*!
@@ -1861,6 +1871,14 @@ SoExtSelectionP::addTriangleToOffscreenBuffer(SoCallbackAction * action,
                                               const SoPrimitiveVertex * v3,
                                               SbBool renderAsBlack)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  (void)v1;
+  (void)v2;
+  (void)v3;
+  (void)renderAsBlack;
+  return;
+#else
   // FIXME: there is a likely major optimization that can be done when
   // rendering: use the NVidia occlusion culling extension, if
   // available. That most likely needs to be done on a shape basis (or
@@ -1922,6 +1940,7 @@ SoExtSelectionP::addTriangleToOffscreenBuffer(SoCallbackAction * action,
   glVertex3fv(v3->getPoint().getValue());
   glEnd();
 
+#endif // COIN_GL_COMPATIBILITY
 }
 
 
@@ -2054,6 +2073,13 @@ SoExtSelectionP::addLineToOffscreenBuffer(SoCallbackAction * action,
                                           const SoPrimitiveVertex * v2,
                                           SbBool renderAsBlack)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  (void)v1;
+  (void)v2;
+  (void)renderAsBlack;
+  return;
+#else
   assert(!this->applyonlyonselectedtriangles);
 
   if(primcbdata.allshapes)
@@ -2088,6 +2114,7 @@ SoExtSelectionP::addLineToOffscreenBuffer(SoCallbackAction * action,
   glVertex3fv(v2->getPoint().getValue());
   glEnd();
 
+#endif // COIN_GL_COMPATIBILITY
 }
 
 
@@ -2204,6 +2231,12 @@ SoExtSelectionP::addPointToOffscreenBuffer(SoCallbackAction * action,
                                            const SoPrimitiveVertex * v1,
                                            SbBool renderAsBlack)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)action;
+  (void)v1;
+  (void)renderAsBlack;
+  return;
+#else
   assert(!this->applyonlyonselectedtriangles);
 
   if(primcbdata.allshapes)
@@ -2238,6 +2271,7 @@ SoExtSelectionP::addPointToOffscreenBuffer(SoCallbackAction * action,
   glVertex3fv(v1->getPoint().getValue());
   glEnd();
 
+#endif // COIN_GL_COMPATIBILITY
 }
 
 
@@ -2295,6 +2329,13 @@ SoExtSelectionP::selectPaths(void)
 void
 SoExtSelectionP::offscreenLassoTesselatorCallback(void * v0, void * v1, void * v2, void * userdata)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)v0;
+  (void)v1;
+  (void)v2;
+  (void)userdata;
+  return;
+#else
   SoExtSelectionP * pimpl = (SoExtSelectionP *) userdata;
 
   // Set flag indicating that a callback was executed.
@@ -2311,11 +2352,17 @@ SoExtSelectionP::offscreenLassoTesselatorCallback(void * v0, void * v1, void * v
    glVertex2f(vec2->getValue()[0],vec2->getValue()[1]);
   glEnd();
 
+#endif // COIN_GL_COMPATIBILITY
 }
 
 void
 SoExtSelectionP::offscreenRenderLassoCallback(void * userdata, SoAction * action)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)userdata;
+  (void)action;
+  return;
+#else
   if (!action->isOfType(SoGLRenderAction::getClassTypeId())) return;
 
   SoExtSelectionP * pimpl = (SoExtSelectionP *) userdata;
@@ -2361,11 +2408,17 @@ SoExtSelectionP::offscreenRenderLassoCallback(void * userdata, SoAction * action
   glPopMatrix();
   glMatrixMode(GL_MODELVIEW);
   glPopMatrix();
+#endif // COIN_GL_COMPATIBILITY
 }
 
 void
 SoExtSelectionP::offscreenRenderCallback(void * userdata, SoAction * action)
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  (void)userdata;
+  (void)action;
+  return;
+#else
   if (!action->isOfType(SoGLRenderAction::getClassTypeId())) return;
 
   SoExtSelectionP * pimpl = (SoExtSelectionP *) userdata;
@@ -2423,11 +2476,15 @@ SoExtSelectionP::offscreenRenderCallback(void * userdata, SoAction * action)
 
   // Due to a Mesa 3.4.2 bug
   glColor3fv(currentColor);
+#endif // COIN_GL_COMPATIBILITY
 }
 
 SbBool
 SoExtSelectionP::checkOffscreenRendererCapabilities()
 {
+#if !defined(COIN_GL_COMPATIBILITY)
+  return FALSE;
+#else
   GLboolean rgbmode;
   glGetBooleanv(GL_RGBA_MODE, &rgbmode);
   if (!rgbmode) {
@@ -2481,6 +2538,7 @@ SoExtSelectionP::checkOffscreenRendererCapabilities()
   }
 
   return TRUE;
+#endif // COIN_GL_COMPATIBILITY
 }
 
 

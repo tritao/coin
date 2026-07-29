@@ -169,8 +169,7 @@ SoSpotLight::GLRender(SoGLRenderAction * action)
                       SoViewingMatrixElement::get(state));
 
 #if defined(COIN_GL_COMPATIBILITY)
-  if (sogl_compatibility_profile(state)) {
-    GLenum light = (GLenum) (idx + GL_LIGHT0);
+  GLenum light = (GLenum) (idx + GL_LIGHT0);
 
     SbVec3f attenuation = SoEnvironmentElement::getLightAttenuation(state);
 
@@ -211,8 +210,7 @@ SoSpotLight::GLRender(SoGLRenderAction * action)
 
     glLightf(light, GL_SPOT_EXPONENT, dropoff);
     glLightf(light, GL_SPOT_CUTOFF, cutoff);
-  }
 #else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+  (void)state;
 #endif
 }

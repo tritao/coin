@@ -192,7 +192,9 @@ SoTextureCoordinateNormalMap::pick(SoPickAction * action)
 void
 SoTextureCoordinateNormalMap::handleTexgen(void * /* data */)
 {
+#if defined(COIN_GL_COMPATIBILITY)
   glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_NORMAL_MAP);
   glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_NORMAL_MAP);  
   glTexGeni(GL_R, GL_TEXTURE_GEN_MODE, GL_NORMAL_MAP);
+#endif // COIN_GL_COMPATIBILITY
 }

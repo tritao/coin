@@ -188,7 +188,6 @@ void
 SoTextureCoordinateObject::handleTexgen(void * data)
 {
 #if defined(COIN_GL_COMPATIBILITY)
-  //if (sogl_compatibility_profile(state)) {
     SoTextureCoordinateObject *thisp = (SoTextureCoordinateObject*)data;
     glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
     glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR);
@@ -206,8 +205,7 @@ SoTextureCoordinateObject::handleTexgen(void * data)
 
     const SbVec4f & q = thisp->factorQ.getValue();
     glTexGenfv(GL_Q, GL_OBJECT_PLANE, q.getValue());
-  //}
 #else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+  (void)data;
 #endif
 }

@@ -702,9 +702,9 @@ SoGLRenderAction::initClass(void)
   SO_ENABLE(SoGLRenderAction, SoOverrideElement);
   SO_ENABLE(SoGLRenderAction, SoTextureOverrideElement);
   SO_ENABLE(SoGLRenderAction, SoWindowElement);
+  SO_ENABLE(SoGLRenderAction, SoRenderPlacementElement);
   SO_ENABLE(SoGLRenderAction, SoGLViewportRegionElement);
   SO_ENABLE(SoGLRenderAction, SoGLCacheContextElement);
-  SO_ENABLE(SoGLRenderAction, SoRenderPlacementElement);
 
   const char * env = coin_getenv("COIN_GLBBOX");
   if (env) {
