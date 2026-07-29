@@ -40,10 +40,12 @@
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include "Inventor/nodes/SoOrthographicCamera.h"
 #include <Inventor/actions/SoGLRenderAction.h>
+#include <Inventor/elements/SoDepthBufferElement.h>
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
 #include <Inventor/actions/SoGetMatrixAction.h>
 #include <Inventor/actions/SoSearchAction.h>
 #include <Inventor/actions/SoGLRenderAction.h>
+#include "elements/SoRenderPlacementElement.h"
 
 SbBool SoRenderManagerP::touchtimer = TRUE;
 SbBool SoRenderManagerP::cleanupfunctionset = FALSE;
@@ -309,6 +311,36 @@ SoRenderManager::Superimposition::render(SoGLRenderAction * action, SbBool clear
   if (PRIVATE(this)->transparencytype != INHERIT_TRANSPARENCY_TYPE) {
     action->setTransparencyType(oldttype);
   }
+}
+
+void
+SoRenderManager::Superimposition::render(SoIRRenderAction * action,
+                                         SoRenderStage stage)
+{
+  if (!PRIVATE(this)->enabled || !action) return;
+
+  SoState * state = action->getState();
+  state->push();
+
+  SbBool depthTest = TRUE;
+  SbBool depthWrite = TRUE;
+  SoDepthBufferElement::DepthWriteFunction depthFunction =
+    SoDepthBufferElement::LEQUAL;
+  SbVec2f depthRange;
+  SoDepthBufferElement::get(state, depthTest, depthWrite,
+                            depthFunction, depthRange);
+  depthTest = (PRIVATE(this)->stateflags & Superimposition::ZBUFFERON)
+    ? TRUE : FALSE;
+  SoDepthBufferElement::set(state, depthTest, depthWrite,
+                            depthFunction, depthRange);
+
+  if (PRIVATE(this)->stateflags & Superimposition::CLEARZBUFFER) {
+    SoRenderPlacementElement::setClearDepth(state, TRUE);
+  }
+
+  SoIRRenderStageScope stageScope(*action, stage);
+  action->traverseAdditionalRoot(PRIVATE(this)->scene);
+  state->pop();
 }
 
 void
