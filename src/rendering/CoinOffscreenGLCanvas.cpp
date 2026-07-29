@@ -332,8 +332,25 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
                                   unsigned int nrcomponents) const
 {
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-  //if (sogl_context_supports_legacy_rendering(state)) {
-    glPushAttrib(GL_ALL_ATTRIB_BITS);
+  const cc_glglue * glue = cc_glglue_instance((int) this->renderid);
+  const SbBool legacyContext = cc_glglue_context_supports_legacy_rendering(glue);
+  if (legacyContext) {
+    glPushAttrib(GL_PIXEL_MODE_BIT);
+  }
+#endif
+
+  GLint packSwapBytes;
+  GLint packLsbFirst;
+  GLint packRowLength;
+  GLint packSkipRows;
+  GLint packSkipPixels;
+  GLint packAlignment;
+  glGetIntegerv(GL_PACK_SWAP_BYTES, &packSwapBytes);
+  glGetIntegerv(GL_PACK_LSB_FIRST, &packLsbFirst);
+  glGetIntegerv(GL_PACK_ROW_LENGTH, &packRowLength);
+  glGetIntegerv(GL_PACK_SKIP_ROWS, &packSkipRows);
+  glGetIntegerv(GL_PACK_SKIP_PIXELS, &packSkipPixels);
+  glGetIntegerv(GL_PACK_ALIGNMENT, &packAlignment);
 
     // First reset all settings that can influence the result of a
     // glReadPixels() call, to make sure we get the actual contents of
@@ -353,33 +370,37 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
   //   glPixelStorei(GL_PACK_ALIGNMENT, 4);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
 
-    glPixelTransferi(GL_MAP_COLOR, 0);
-    glPixelTransferi(GL_MAP_STENCIL, 0);
-    glPixelTransferi(GL_INDEX_SHIFT, 0);
-    glPixelTransferi(GL_INDEX_OFFSET, 0);
-    glPixelTransferf(GL_RED_SCALE, 1);
-    glPixelTransferf(GL_RED_BIAS, 0);
-    glPixelTransferf(GL_GREEN_SCALE, 1);
-    glPixelTransferf(GL_GREEN_BIAS, 0);
-    glPixelTransferf(GL_BLUE_SCALE, 1);
-    glPixelTransferf(GL_BLUE_BIAS, 0);
-    glPixelTransferf(GL_ALPHA_SCALE, 1);
-    glPixelTransferf(GL_ALPHA_BIAS, 0);
-    glPixelTransferf(GL_DEPTH_SCALE, 1);
-    glPixelTransferf(GL_DEPTH_BIAS, 0);
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
+    if (legacyContext) {
+      glPixelTransferi(GL_MAP_COLOR, 0);
+      glPixelTransferi(GL_MAP_STENCIL, 0);
+      glPixelTransferi(GL_INDEX_SHIFT, 0);
+      glPixelTransferi(GL_INDEX_OFFSET, 0);
+      glPixelTransferf(GL_RED_SCALE, 1);
+      glPixelTransferf(GL_RED_BIAS, 0);
+      glPixelTransferf(GL_GREEN_SCALE, 1);
+      glPixelTransferf(GL_GREEN_BIAS, 0);
+      glPixelTransferf(GL_BLUE_SCALE, 1);
+      glPixelTransferf(GL_BLUE_BIAS, 0);
+      glPixelTransferf(GL_ALPHA_SCALE, 1);
+      glPixelTransferf(GL_ALPHA_BIAS, 0);
+      glPixelTransferf(GL_DEPTH_SCALE, 1);
+      glPixelTransferf(GL_DEPTH_BIAS, 0);
 
-    GLuint i = 0;
-    GLfloat f = 0.0f;
-    glPixelMapfv(GL_PIXEL_MAP_I_TO_I, 1, &f);
-    glPixelMapuiv(GL_PIXEL_MAP_S_TO_S, 1, &i);
-    glPixelMapfv(GL_PIXEL_MAP_I_TO_R, 1, &f);
-    glPixelMapfv(GL_PIXEL_MAP_I_TO_G, 1, &f);
-    glPixelMapfv(GL_PIXEL_MAP_I_TO_B, 1, &f);
-    glPixelMapfv(GL_PIXEL_MAP_I_TO_A, 1, &f);
-    glPixelMapfv(GL_PIXEL_MAP_R_TO_R, 1, &f);
-    glPixelMapfv(GL_PIXEL_MAP_G_TO_G, 1, &f);
-    glPixelMapfv(GL_PIXEL_MAP_B_TO_B, 1, &f);
-    glPixelMapfv(GL_PIXEL_MAP_A_TO_A, 1, &f);
+      GLuint i = 0;
+      GLfloat f = 0.0f;
+      glPixelMapfv(GL_PIXEL_MAP_I_TO_I, 1, &f);
+      glPixelMapuiv(GL_PIXEL_MAP_S_TO_S, 1, &i);
+      glPixelMapfv(GL_PIXEL_MAP_I_TO_R, 1, &f);
+      glPixelMapfv(GL_PIXEL_MAP_I_TO_G, 1, &f);
+      glPixelMapfv(GL_PIXEL_MAP_I_TO_B, 1, &f);
+      glPixelMapfv(GL_PIXEL_MAP_I_TO_A, 1, &f);
+      glPixelMapfv(GL_PIXEL_MAP_R_TO_R, 1, &f);
+      glPixelMapfv(GL_PIXEL_MAP_G_TO_G, 1, &f);
+      glPixelMapfv(GL_PIXEL_MAP_B_TO_B, 1, &f);
+      glPixelMapfv(GL_PIXEL_MAP_A_TO_A, 1, &f);
+    }
+#endif
 
     // The flushing of the OpenGL pipeline before and after the
     // glReadPixels() call is done as a work-around for a reported
@@ -431,10 +452,17 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
     }
     glFlush(); glFinish();
 
-    glPopAttrib();
-  //}
-#else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+    glPixelStorei(GL_PACK_SWAP_BYTES, packSwapBytes);
+    glPixelStorei(GL_PACK_LSB_FIRST, packLsbFirst);
+    glPixelStorei(GL_PACK_ROW_LENGTH, packRowLength);
+    glPixelStorei(GL_PACK_SKIP_ROWS, packSkipRows);
+    glPixelStorei(GL_PACK_SKIP_PIXELS, packSkipPixels);
+    glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
+
+#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
+    if (legacyContext) {
+      glPopAttrib();
+    }
 #endif
 }
 
