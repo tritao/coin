@@ -59,13 +59,20 @@
 # endif
 #endif
 
-#if defined(COIN_GL_ELEMENTS_COMPATIBILITY)
-/* The core build still links the legacy GL-element ABI so public symbols
-   remain available, but those elements are never registered by retained
-   traversal and cannot be selected as a rendering pipeline. */
-@SIM_COMPAT_INCLUDE_WINDOWS_H@
-@SIM_COMPAT_INCLUDE_GL_H@
-@SIM_COMPAT_INCLUDE_GLEXT_H@
+#if defined(COIN_INTERNAL) && defined(_WIN32)
+/* The Windows SDK's legacy gl.h is still used for the compatibility API,
+   while modern GL declarations come from Coin's private Khronos snapshot.
+   Keep these includes private so installed public headers do not expose
+   Coin's source tree. */
+# if defined(COIN_BUILD_LEGACY_GL_RENDERER)
+#  include <windows.h>
+#  include <GL/gl.h>
+#  include "glue/khronos/GL/glext.h"
+# else
+#  include <windows.h>
+#  include "glue/khronos/GL/glcorearb.h"
+# endif
+
 #else
 @SIM_INCLUDE_WINDOWS_H@
 @SIM_INCLUDE_GL_H@
