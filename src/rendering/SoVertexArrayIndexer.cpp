@@ -48,9 +48,6 @@
 #include <Inventor/misc/SoGLDriverDatabase.h>
 
 #include "Inventor/C/glue/gl.h"
-#include "Inventor/elements/SoViewingMatrixElement.h"
-#include "Inventor/elements/SoProjectionMatrixElement.h"
-
 #include "tidbitsp.h"
 #include "rendering/SoVBO.h"
 #include "rendering/SoGL.h"
@@ -253,6 +250,7 @@ void
 SoVertexArrayIndexer::render(SoState * state, const SbBool renderasvbo, const uint32_t contextid)
 {
   const cc_glglue * glue = sogl_glue_instance(state);
+  const SbBool legacyContext = cc_glglue_context_supports_legacy_rendering(glue);
 
   switch (this->target) {
   case GL_TRIANGLES:
@@ -260,77 +258,97 @@ SoVertexArrayIndexer::render(SoState * state, const SbBool renderasvbo, const ui
   case GL_LINES:
   case GL_POINTS:
     // common case
-    if (renderasvbo) {
-      if (this->vbo == NULL) {
-        this->vbo = new SoVBO(GL_ELEMENT_ARRAY_BUFFER);
-        if (this->use_shorts) {
-          GLushort * dst = reinterpret_cast<GLushort*> 
-            (this->vbo->allocBufferData(this->indexarray.getLength()*sizeof(GLushort)));
-          const int32_t * src = this->indexarray.getArrayPtr();
-          for (int i = 0; i < this->indexarray.getLength(); i++) {
-            dst[i] = static_cast<GLushort> (src[i]);
+    {
+      // Client index arrays are not legal in a core profile.  Force this
+      // helper to use an element buffer whenever the active context is core.
+      const SbBool useVBO = renderasvbo || !legacyContext;
+      if (useVBO) {
+        if (this->vbo == NULL) {
+          this->vbo = new SoVBO(GL_ELEMENT_ARRAY_BUFFER);
+          if (this->use_shorts) {
+            GLushort * dst = reinterpret_cast<GLushort*>
+              (this->vbo->allocBufferData(this->indexarray.getLength()*sizeof(GLushort)));
+            const int32_t * src = this->indexarray.getArrayPtr();
+            for (int i = 0; i < this->indexarray.getLength(); i++) {
+              dst[i] = static_cast<GLushort> (src[i]);
+            }
+          }
+          else {
+            this->vbo->setBufferData(this->indexarray.getArrayPtr(),
+                                     this->indexarray.getLength()*sizeof(int32_t));
           }
         }
-        else {
-          this->vbo->setBufferData(this->indexarray.getArrayPtr(),
-                                   this->indexarray.getLength()*sizeof(int32_t));
-        }
-      }
-      this->vbo->bindBuffer(contextid);
+        this->vbo->bindBuffer(contextid);
 
-#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-        if (cc_glglue_context_supports_legacy_rendering(glue)) {
-          cc_glglue_glDrawElements(glue,
-                                  this->target,
-                                  this->indexarray.getLength(),
-                                  this->use_shorts ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, NULL);
-          cc_glglue_glBindBuffer(glue, GL_ELEMENT_ARRAY_BUFFER, 0);
-        } else
-#endif
-        {
-          glDrawElements(this->target,
-                                  this->indexarray.getLength(),
-                                  this->use_shorts ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, NULL);
-          glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-        }
-    } else {
+        cc_glglue_glDrawElements(glue,
+                                 this->target,
+                                 this->indexarray.getLength(),
+                                 this->use_shorts ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, NULL);
+        cc_glglue_glBindBuffer(glue, GL_ELEMENT_ARRAY_BUFFER, 0);
+      }
+      else {
         const GLint * idxptr = this->indexarray.getArrayPtr();
-#if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-        if (cc_glglue_context_supports_legacy_rendering(glue)) {
-          cc_glglue_glDrawElements(glue,
-                                  this->target,
-                                  this->indexarray.getLength(),
-                                  GL_UNSIGNED_INT,
-                                  idxptr);
-        } else
-#endif
-        {
-          glDrawElements(this->target,
-                         this->indexarray.getLength(),
-                         GL_UNSIGNED_INT,
-                         idxptr);
-        }
+        cc_glglue_glDrawElements(glue,
+                                 this->target,
+                                 this->indexarray.getLength(),
+                                 GL_UNSIGNED_INT,
+                                 idxptr);
+      }
     }
     break;
   default:
-    if (SoGLDriverDatabase::isSupported(glue, SO_GL_MULTIDRAW_ELEMENTS)) {
+    if (!legacyContext) {
+      if (this->vbo == NULL) {
+        this->vbo = new SoVBO(GL_ELEMENT_ARRAY_BUFFER);
+        this->vbo->setBufferData(this->indexarray.getArrayPtr(),
+                                 this->indexarray.getLength() * sizeof(GLint));
+      }
+      this->vbo->bindBuffer(contextid);
+
+      SbList<const GLvoid *> offsets;
+      const GLint * base = this->indexarray.getArrayPtr();
+      for (int i = 0; i < this->countarray.getLength(); i++) {
+        const GLint * ptr = this->ciarray[i];
+        offsets.append(reinterpret_cast<const GLvoid *>(
+          (uintptr_t) (ptr - base) * sizeof(GLint)));
+      }
+
+      if (SoGLDriverDatabase::isSupported(glue, SO_GL_MULTIDRAW_ELEMENTS)) {
         cc_glglue_glMultiDrawElements(glue,
                                       this->target,
                                       (GLsizei*) this->countarray.getArrayPtr(),
                                       GL_UNSIGNED_INT,
-                                      (const GLvoid**) this->ciarray.getArrayPtr(),
+                                      const_cast<const GLvoid **>(offsets.getArrayPtr()),
                                       this->countarray.getLength());
       }
       else {
         for (int i = 0; i < this->countarray.getLength(); i++) {
-          const GLsizei * ptr = this->ciarray[i];
-          GLsizei cnt = this->countarray[i];
           cc_glglue_glDrawElements(glue,
-                                  this->target,
-                                  cnt,
-                                  GL_UNSIGNED_INT,
-                                  (const GLvoid*) ptr);
+                                   this->target,
+                                   this->countarray[i],
+                                   GL_UNSIGNED_INT,
+                                   offsets[i]);
         }
+      }
+      cc_glglue_glBindBuffer(glue, GL_ELEMENT_ARRAY_BUFFER, 0);
+    }
+    else if (SoGLDriverDatabase::isSupported(glue, SO_GL_MULTIDRAW_ELEMENTS)) {
+      cc_glglue_glMultiDrawElements(glue,
+                                    this->target,
+                                    (GLsizei*) this->countarray.getArrayPtr(),
+                                    GL_UNSIGNED_INT,
+                                    (const GLvoid**) this->ciarray.getArrayPtr(),
+                                    this->countarray.getLength());
+    }
+    else {
+      for (int i = 0; i < this->countarray.getLength(); i++) {
+        const GLsizei * ptr = this->ciarray[i];
+        cc_glglue_glDrawElements(glue,
+                                 this->target,
+                                 this->countarray[i],
+                                 GL_UNSIGNED_INT,
+                                 (const GLvoid*) ptr);
+      }
     }
     break;
   }
