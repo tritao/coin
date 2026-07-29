@@ -947,6 +947,13 @@ SoCamera::drawCroppedFrame(SoGLRenderAction *action,
                            const SbViewportRegion & oldvp,
                            const SbViewportRegion & newvp)
 {
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  (void)action;
+  (void)viewportmapping;
+  (void)oldvp;
+  (void)newvp;
+  return;
+#else
   if (viewportmapping == SoCamera::CROP_VIEWPORT_NO_FRAME) return;
 
   if (action->handleTransparency(FALSE))
@@ -964,8 +971,7 @@ SoCamera::drawCroppedFrame(SoGLRenderAction *action,
     SoGLShapeHintsElement::forceSend(state, TRUE, FALSE);
   }
 
-  if (SoRenderer::isOpenGL()) {
-    SbVec2s oldorigin = oldvp.getViewportOriginPixels();
+  SbVec2s oldorigin = oldvp.getViewportOriginPixels();
     SbVec2s oldsize = oldvp.getViewportSizePixels();
     glMatrixMode(GL_PROJECTION);
     // projection matrix will be set later, so don't push
@@ -976,15 +982,13 @@ SoCamera::drawCroppedFrame(SoGLRenderAction *action,
     SoGLMultiTextureEnabledElement::disableAll(state);
 
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-    if (sogl_context_supports_legacy_rendering(action->getState())) {
-      glPushAttrib(GL_LIGHTING_BIT|
-                  GL_FOG_BIT|
-                  GL_DEPTH_BUFFER_BIT|
-                  GL_TEXTURE_BIT|
-                  GL_CURRENT_BIT);
-    }
+    glPushAttrib(GL_LIGHTING_BIT|
+                GL_FOG_BIT|
+                GL_DEPTH_BUFFER_BIT|
+                GL_TEXTURE_BIT|
+                GL_CURRENT_BIT);
 #else
-    assert(0 && "Not implemented yet");
+    (void)action;
 #endif
 
     glMatrixMode(GL_MODELVIEW);
@@ -1004,76 +1008,72 @@ SoCamera::drawCroppedFrame(SoGLRenderAction *action,
       short minpos = origin[0] - 1;
       short maxpos = origin[0] + size[0];
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-      if (sogl_context_supports_legacy_rendering(action->getState())) {
-        if (viewportmapping == SoCamera::CROP_VIEWPORT_LINE_FRAME) {
-          glBegin(GL_LINES);
-          glVertex2s(minpos, oldorigin[1]);
-          glVertex2s(minpos, oldorigin[1]+oldsize[1]);
-          glVertex2s(maxpos, oldorigin[1]);
-          glVertex2s(maxpos, oldorigin[1]+oldsize[1]);
-          glEnd();
-        }
-        else {
-          glBegin(GL_QUADS);
-          glVertex2s(oldorigin[0], oldorigin[1]);
-          glVertex2s(oldorigin[0], oldorigin[1]+oldsize[1]-1);
-          glVertex2s(minpos, oldorigin[1]+oldsize[1]);
-          glVertex2s(minpos, oldorigin[1]);
+      if (viewportmapping == SoCamera::CROP_VIEWPORT_LINE_FRAME) {
+        glBegin(GL_LINES);
+        glVertex2s(minpos, oldorigin[1]);
+        glVertex2s(minpos, oldorigin[1]+oldsize[1]);
+        glVertex2s(maxpos, oldorigin[1]);
+        glVertex2s(maxpos, oldorigin[1]+oldsize[1]);
+        glEnd();
+      }
+      else {
+        glBegin(GL_QUADS);
+        glVertex2s(oldorigin[0], oldorigin[1]);
+        glVertex2s(oldorigin[0], oldorigin[1]+oldsize[1]-1);
+        glVertex2s(minpos, oldorigin[1]+oldsize[1]);
+        glVertex2s(minpos, oldorigin[1]);
 
-          glVertex2s(maxpos, oldorigin[1]);
-          glVertex2s(maxpos, oldorigin[1]+oldsize[1]-1);
-          glVertex2s(oldorigin[0]+oldsize[0]-1, oldorigin[1]+oldsize[1]-1);
-          glVertex2s(oldorigin[0]+oldsize[0]-1, oldorigin[1]);
-          glEnd();
-        }
+        glVertex2s(maxpos, oldorigin[1]);
+        glVertex2s(maxpos, oldorigin[1]+oldsize[1]-1);
+        glVertex2s(oldorigin[0]+oldsize[0]-1, oldorigin[1]+oldsize[1]-1);
+        glVertex2s(oldorigin[0]+oldsize[0]-1, oldorigin[1]);
+        glEnd();
       }
 #else
-  assert(0 && "Not implemented yet");
+      (void)minpos;
+      (void)maxpos;
 #endif
     }
     else if (size[1] < orgsize[1]) {
       short minpos = origin[1] - 1;
       short maxpos = origin[1] + size[1];
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-      if (sogl_context_supports_legacy_rendering(action->getState())) {
-        if (viewportmapping == SoCamera::CROP_VIEWPORT_LINE_FRAME) {
-          glBegin(GL_LINES);
-          glVertex2s(oldorigin[0], minpos);
-          glVertex2s(oldorigin[0]+oldsize[0], minpos);
-          glVertex2s(oldorigin[0], maxpos);
-          glVertex2s(oldorigin[0]+oldsize[0], maxpos);
-          glEnd();
-        }
-        else {
-          glBegin(GL_QUADS);
-          glVertex2s(oldorigin[0], minpos);
-          glVertex2s(oldorigin[0]+oldsize[0]-1, minpos);
-          glVertex2s(oldorigin[0]+oldsize[0]-1, oldorigin[1]);
-          glVertex2s(oldorigin[0], oldorigin[1]);
+      if (viewportmapping == SoCamera::CROP_VIEWPORT_LINE_FRAME) {
+        glBegin(GL_LINES);
+        glVertex2s(oldorigin[0], minpos);
+        glVertex2s(oldorigin[0]+oldsize[0], minpos);
+        glVertex2s(oldorigin[0], maxpos);
+        glVertex2s(oldorigin[0]+oldsize[0], maxpos);
+        glEnd();
+      }
+      else {
+        glBegin(GL_QUADS);
+        glVertex2s(oldorigin[0], minpos);
+        glVertex2s(oldorigin[0]+oldsize[0]-1, minpos);
+        glVertex2s(oldorigin[0]+oldsize[0]-1, oldorigin[1]);
+        glVertex2s(oldorigin[0], oldorigin[1]);
 
-          glVertex2s(oldorigin[0], maxpos);
-          glVertex2s(oldorigin[0], oldorigin[1]+oldsize[1]-1);
-          glVertex2s(oldorigin[0]+oldsize[0]-1, oldorigin[1]+oldsize[1]-1);
-          glVertex2s(oldorigin[1]+oldsize[0]-1, maxpos);
-          glEnd();
-        }
+        glVertex2s(oldorigin[0], maxpos);
+        glVertex2s(oldorigin[0], oldorigin[1]+oldsize[1]-1);
+        glVertex2s(oldorigin[0]+oldsize[0]-1, oldorigin[1]+oldsize[1]-1);
+        glVertex2s(oldorigin[1]+oldsize[0]-1, maxpos);
+        glEnd();
       }
 #else
-  assert(0 && "Not implemented yet");
+      (void)minpos;
+      (void)maxpos;
 #endif
     }
 
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-    if (sogl_context_supports_legacy_rendering(action->getState())) {
-      glPopMatrix();
-      glPopAttrib();
-    }
+    glPopMatrix();
+    glPopAttrib();
 #else
-  assert(0 && "Not implemented yet");
+    (void)action;
 #endif
-  }
 
   state->pop();
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
 }
 
 /*!

@@ -162,8 +162,7 @@ SoVRMLPointLight::GLRender(SoGLRenderAction * action)
   }
 
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-  if (sogl_context_supports_legacy_rendering(action->getState())) {
-    GLenum light = (GLenum) (idx + GL_LIGHT0);
+  GLenum light = (GLenum) (idx + GL_LIGHT0);
 
     SbVec3f att = this->attenuation.getValue();
     glLightf(light, GL_CONSTANT_ATTENUATION, att[0]);
@@ -192,9 +191,8 @@ SoVRMLPointLight::GLRender(SoGLRenderAction * action)
     glLightf(light, GL_SPOT_CUTOFF, 180.0);
 
     // FIXME: consider radius
-  }
 #else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+  (void)action;
 #endif
 }
 

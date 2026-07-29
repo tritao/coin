@@ -657,8 +657,7 @@ SoSeparator::GLRenderBelowPath(SoGLRenderAction * action)
   SbBool didcull = FALSE;
 
   SoGLCacheList * createcache = NULL;
-  if (SoRenderer::isOpenGL() &&
-      (this->renderCaching.getValue() != OFF && sogl_context_supports_legacy_rendering(state)) &&
+  if (this->renderCaching.getValue() != OFF &&
       (SoSeparator::getNumRenderCaches() > 0)) {
 
     // test if bbox is outside view-volume
@@ -724,7 +723,6 @@ SoSeparator::GLRenderBelowPath(SoGLRenderAction * action)
         profiling.postTraversal(action);
       }
 
-      if (SoRenderer::isOpenGL()) {
 #if COIN_DEBUG
         // The GL error test is default disabled for this optimized
         // path.  If you get a GL error reporting an error in the
@@ -745,7 +743,6 @@ SoSeparator::GLRenderBelowPath(SoGLRenderAction * action)
           cc_string_clean(&str);
         }
 #endif // COIN_DEBUG
-      }
     }
     action->popCurPath();
   }

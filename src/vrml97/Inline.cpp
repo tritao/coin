@@ -416,6 +416,10 @@ SoVRMLInline::callback(SoCallbackAction * action)
 void
 SoVRMLInline::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  (void)action;
+  return;
+#else
   BboxVisibility vis = sovrmlinline_bboxvisibility;
   SbVec3f size = this->bboxSize.getValue();
   SoNode * child = this->getChildData();
@@ -474,6 +478,7 @@ SoVRMLInline::GLRender(SoGLRenderAction * action)
     state->pop();
   }
   SoVRMLInline::doAction(action);
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
 }
 
 // Doc in parent

@@ -446,6 +446,10 @@ SoWWWInline::getReadAsSoFile(void)
 void
 SoWWWInline::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  (void)action;
+  return;
+#else
   if (this->getChildData()) {
     SoWWWInline::doAction(action);
     if (SoWWWInline::bboxvisibility == UNTIL_LOADED) return;
@@ -506,6 +510,7 @@ SoWWWInline::GLRender(SoGLRenderAction * action)
   glEnd();
 
   state->pop(); // restore state
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
 }
 
 // doc in super

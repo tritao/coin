@@ -41,7 +41,6 @@
 #include "SoOffscreenGLXData.cpp"
 #include "SoOffscreenRenderer.cpp"
 #include "SoOffscreenWGLData.cpp"
-#include "SoRenderer.cpp"
 #include "SoRenderManager.cpp"
 #include "SoRenderManagerP.cpp"
 #include "SoVBO.cpp"

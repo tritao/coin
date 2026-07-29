@@ -6,7 +6,6 @@ set(COIN_RENDERING_FILES
 	SoGLImage.cpp
 	SoGLCubeMapImage.cpp
 	SoGLNurbs.cpp
-	SoRenderer.cpp
 	SoRenderBackend.cpp
 	SoRenderIR.cpp
 	SoGLRenderBackend.cpp

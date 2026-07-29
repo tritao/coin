@@ -156,10 +156,13 @@ SoDirectionalLight::initClass(void)
 void
 SoDirectionalLight::GLRender(SoGLRenderAction * action)
 {
+#if !defined(COIN_BUILD_LEGACY_GL_RENDERER)
+  (void)action;
+  return;
+#else
   if (!this->on.getValue()) return;
 
-  if (SoRenderer::isOpenGL()) {
-    SoState * state = action->getState();
+  SoState * state = action->getState();
     int idx = SoGLLightIdElement::increment(state);
 
     if (idx < 0) {
@@ -177,26 +180,20 @@ SoDirectionalLight::GLRender(SoGLRenderAction * action)
 
     SbColor4f lightcolor(0.0f, 0.0f, 0.0f, 1.0f);
     // disable ambient contribution from this light source
-    if (SoRenderer::isOpenGL()) {
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-      if (sogl_context_supports_legacy_rendering(state)) {
-        glLightfv(light, GL_AMBIENT, lightcolor.getValue());
-      }
+    glLightfv(light, GL_AMBIENT, lightcolor.getValue());
 #else
-      assert(0 && "Not implemented for non-compatibility GL renderer");
+    (void)state;
 #endif
-    }
 
     lightcolor.setRGB(this->color.getValue());
     lightcolor *= this->intensity.getValue();
 
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-    if (sogl_context_supports_legacy_rendering(state)) {
-      glLightfv(light, GL_DIFFUSE, lightcolor.getValue());
-      glLightfv(light, GL_SPECULAR, lightcolor.getValue());
-    }
+    glLightfv(light, GL_DIFFUSE, lightcolor.getValue());
+    glLightfv(light, GL_SPECULAR, lightcolor.getValue());
 #else
-    assert(0 && "Not implemented for non-compatibility GL renderer");
+    (void)light;
 #endif
 
     // GL directional light is specified towards light source
@@ -212,19 +209,17 @@ SoDirectionalLight::GLRender(SoGLRenderAction * action)
     SbVec4f dirvec(dir[0], dir[1], dir[2], 0.0f);
 
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-    if (sogl_context_supports_legacy_rendering(state)) {
-      glLightfv(light, GL_POSITION, dirvec.getValue());
+    glLightfv(light, GL_POSITION, dirvec.getValue());
 
-      glLightf(light, GL_SPOT_EXPONENT, 0.0);
-      glLightf(light, GL_SPOT_CUTOFF, 180.0);
-      glLightf(light, GL_CONSTANT_ATTENUATION, 1);
-      glLightf(light, GL_LINEAR_ATTENUATION, 0);
-      glLightf(light, GL_QUADRATIC_ATTENUATION, 0);
-    }
+    glLightf(light, GL_SPOT_EXPONENT, 0.0);
+    glLightf(light, GL_SPOT_CUTOFF, 180.0);
+    glLightf(light, GL_CONSTANT_ATTENUATION, 1);
+    glLightf(light, GL_LINEAR_ATTENUATION, 0);
+    glLightf(light, GL_QUADRATIC_ATTENUATION, 0);
 #else
-    assert(0 && "Not implemented for non-compatibility GL renderer");
+    (void)light;
 #endif
-  }
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
 }
 
 // *************************************************************************

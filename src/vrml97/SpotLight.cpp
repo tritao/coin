@@ -255,8 +255,7 @@ SoVRMLSpotLight::GLRender(SoGLRenderAction * action)
   }
 
 #if defined(COIN_BUILD_LEGACY_GL_RENDERER)
-  if (sogl_context_supports_legacy_rendering(state)) {
-    GLenum light = (GLenum) (idx + GL_LIGHT0);
+  GLenum light = (GLenum) (idx + GL_LIGHT0);
 
     SbVec3f att = this->attenuation.getValue();
 
@@ -287,9 +286,8 @@ SoVRMLSpotLight::GLRender(SoGLRenderAction * action)
     glLightf(light, GL_SPOT_CUTOFF, cutoff);
 
     // FIXME: consider radius and beamWidth
-  }
 #else
-  assert(0 && "Not implemented for non-compatibility GL renderer");
+  (void)state;
 #endif
 }
 

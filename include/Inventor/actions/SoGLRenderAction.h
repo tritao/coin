@@ -39,7 +39,6 @@
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/lists/SoPathList.h>
 #include <Inventor/lists/SbList.h>
-#include <Inventor/system/renderer.h>
 
 typedef void SoGLRenderPassCB(void * userdata);
 typedef void SoGLPreRenderCB(void * userdata, class SoGLRenderAction * action);
