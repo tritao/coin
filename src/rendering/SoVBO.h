@@ -41,6 +41,7 @@
 #include <Inventor/C/glue/gl.h>
 
 #include "misc/SbHash.h"
+#include "rendering/SoVertexLayout.h"
 
 class SoState;
 
@@ -51,6 +52,9 @@ class SoVBO {
   ~SoVBO();
 
   static void init(void);
+
+  void setVertexLayout(const SoVertexLayout& layout);
+  SoVertexLayout& getVertexLayout();
 
   void setBufferData(const GLvoid * data, intptr_t size, SbUniqueId dataid = 0);
   void * allocBufferData(intptr_t size, SbUniqueId dataid = 0);
@@ -81,6 +85,7 @@ class SoVBO {
   intptr_t datasize;
   SbUniqueId dataid;
   SbBool didalloc;
+  SoVertexLayout vertexlayout;
 
   SbHash<uint32_t, GLuint> vbohash;
 };
