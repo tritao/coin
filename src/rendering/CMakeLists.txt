@@ -61,6 +61,10 @@ if(COIN_BUILD_SINGLE_LIB)
 	endforeach(SRCFILE)
 else()
 	add_library(rendering OBJECT ${COIN_RENDERING_FILES})
+	# The retained renderer uses C++17 internally; do not raise the requirement
+	# for Coin's installed public headers or unrelated targets.
+	target_compile_features(rendering PRIVATE cxx_std_17)
+	set_target_properties(rendering PROPERTIES CXX_EXTENSIONS OFF)
 endif()
 
 # define documentation

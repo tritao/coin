@@ -53,22 +53,6 @@ if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
   message(FATAL_ERROR "${CMAKE_PROJECT_NAME} requires an out of source build. Please create a separate build directory and run 'cmake <path_to_${CMAKE_PROJECT_NAME}> [options]' from there.")
 endif()
 
-# ############################################################################
-# Set minimum C++ standard needed to compile the Coin code
-# ############################################################################
-set( CMAKE_CXX_STANDARD 20 CACHE STRING "C++ standard used for the build" )
-set( CMAKE_CXX_STANDARD_REQUIRED ON )
-set( CMAKE_CXX_EXTENSIONS OFF )
-if( CMAKE_CXX_STANDARD LESS 20 )
-  message( FATAL_ERROR
-    "Coin requires C++20 or newer (CMAKE_CXX_STANDARD=${CMAKE_CXX_STANDARD})" )
-endif()
-message( STATUS "Setting C++ standard: '${CMAKE_CXX_STANDARD}', which is the minimum needed to compile Coin.")
-
-# Coin does not use C++20 modules. Disable CMake's module dependency scanning
-# when Coin is embedded in projects that build with C++20 or newer.
-set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
-
 # Coin's Win32 code still relies on narrow Win32 API types in several places.
 # Keep this workaround local until those call sites use explicit A/W APIs.
 if(MSVC)
@@ -1042,6 +1026,10 @@ unset(COIN_INTERNAL_DOCUMENTATION_FILES CACHE)
 add_subdirectory(include)
 add_subdirectory(data)
 add_subdirectory(src)
+
+if(COIN_BUILD_TESTS)
+  add_subdirectory(tests)
+endif()
 
 if (COIN_BUILD_EXAMPLES)
   add_subdirectory(examples)

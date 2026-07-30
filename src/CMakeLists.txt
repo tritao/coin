@@ -160,8 +160,7 @@ endif()
 
 # Create the library target
 if(COIN_BUILD_SINGLE_LIB)
-  add_library(${PROJECT_NAME} ${COIN_LIBRARY_TYPE} ${COIN_SOURCE} ${COMMON_HDRS} ${ADDITIONAL_HDRS} ${COMMON_RESOURCES}
-    ${COIN_SINGLE_LIB_EXTRA_OBJECTS})
+  add_library(${PROJECT_NAME} ${COIN_LIBRARY_TYPE} ${COIN_SOURCE} ${COMMON_HDRS} ${ADDITIONAL_HDRS} ${COMMON_RESOURCES})
 else()
   if(NOT COIN_USE_SYSTEM_EXPAT)
     set(expat_target $<TARGET_OBJECTS:expat>)
@@ -210,6 +209,11 @@ else()
     $<TARGET_OBJECTS:xml>
   )
 endif()
+
+# The retained renderer uses C++17 internally. Keep this requirement private
+# so Coin's installed headers remain usable by C++11 applications.
+target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_17)
+set_target_properties(${PROJECT_NAME} PROPERTIES CXX_EXTENSIONS OFF)
 
 # Export a Coin::Coin target when the library is built as a cmake subdirectory
 # so that the same target can be linked using find_package and this method
