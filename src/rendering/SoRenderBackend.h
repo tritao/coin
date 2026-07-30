@@ -207,8 +207,8 @@ struct SoRenderBackendInitParams {
   \brief Abstract GPU backend interface consumed by SoRenderManager.
 
   The base class defines the lifecycle contract (initialize / render /
-   shutdown) for any GPU implementation that wants to consume the render
-   backend draw list (SoDrawList). It also provides helper utilities for logging,
+  shutdown) for any GPU implementation that wants to consume the render
+  backend draw list (SoDrawList). It also provides helper utilities for logging,
   initialization tracking and debug-time validation so each backend does
   not have to reimplement the same boilerplate.
 */

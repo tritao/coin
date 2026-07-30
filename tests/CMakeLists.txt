@@ -1,0 +1,4 @@
+add_executable(coin_public_headers_cxx11 public_headers_smoke.cpp)
+target_compile_features(coin_public_headers_cxx11 PRIVATE cxx_std_11)
+set_target_properties(coin_public_headers_cxx11 PROPERTIES CXX_EXTENSIONS OFF)
+target_link_libraries(coin_public_headers_cxx11 PRIVATE Coin)

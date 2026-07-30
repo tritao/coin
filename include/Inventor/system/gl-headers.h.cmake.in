@@ -72,7 +72,6 @@
 #  include <windows.h>
 #  include "glue/khronos/GL/glcorearb.h"
 # endif
-
 #else
 @SIM_INCLUDE_WINDOWS_H@
 @SIM_INCLUDE_GL_H@
