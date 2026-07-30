@@ -71,6 +71,7 @@
 
 #include <Inventor/nodes/SoLight.h>
 
+#include <Inventor/actions/SoAction.h>
 #include <Inventor/actions/SoCallbackAction.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/elements/SoGLLightIdElement.h>
@@ -142,6 +143,14 @@ SoLight::initClass(void)
 void
 SoLight::callback(SoCallbackAction * action)
 {
+  this->doAction(action);
+}
+
+// Doc from superclass.
+void
+SoLight::doAction(SoAction * action)
+{
+  if (!this->on.getValue()) return;
   SoState * state = action->getState();
   SoLightElement::add(state, this, (SoModelMatrixElement::get(state) * 
                                     SoViewingMatrixElement::get(state)));

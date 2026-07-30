@@ -153,6 +153,7 @@
 #include <Inventor/annex/Profiler/SoProfiler.h>
 
 #include "coindefs.h"
+#include "elements/SoRenderPlacementElement.h"
 #include "tidbitsp.h"
 #include "SbBasicP.h"
 #include "actions/SoActionP.h"
@@ -680,6 +681,10 @@ SoGLRenderAction::initClass(void)
 {
   SO_ACTION_INTERNAL_INIT_CLASS(SoGLRenderAction, SoAction);
 
+  if (SoRenderPlacementElement::getClassTypeId() == SoType::badType()) {
+    SoRenderPlacementElement::initClass();
+  }
+
   SO_ENABLE(SoGLRenderAction, SoDecimationPercentageElement);
   SO_ENABLE(SoGLRenderAction, SoDecimationTypeElement);
   SO_ENABLE(SoGLRenderAction, SoGLLightIdElement);
@@ -691,6 +696,7 @@ SoGLRenderAction::initClass(void)
   SO_ENABLE(SoGLRenderAction, SoWindowElement);
   SO_ENABLE(SoGLRenderAction, SoGLViewportRegionElement);
   SO_ENABLE(SoGLRenderAction, SoGLCacheContextElement);
+  SO_ENABLE(SoGLRenderAction, SoRenderPlacementElement);
 
   const char * env = coin_getenv("COIN_GLBBOX");
   if (env) {

@@ -6,6 +6,12 @@ set(COIN_MICRO_VERSION 10)
 set(COIN_BETA_VERSION)
 set(COIN_VERSION ${COIN_MAJOR_VERSION}.${COIN_MINOR_VERSION}.${COIN_MICRO_VERSION}${COIN_BETA_VERSION}
   CACHE INTERNAL "Coin version string")
+set(COIN_HAVE_RENDER_BACKEND 1)
+set(COIN_RENDER_BACKEND_API_VERSION 1)
+set(Coin_HAVE_RENDER_BACKEND ${COIN_HAVE_RENDER_BACKEND}
+  CACHE INTERNAL "Coin supports the render-backend API" FORCE)
+set(Coin_RENDER_BACKEND_API_VERSION ${COIN_RENDER_BACKEND_API_VERSION}
+  CACHE INTERNAL "Coin render-backend API version" FORCE)
 
 project(Coin VERSION ${COIN_MAJOR_VERSION}.${COIN_MINOR_VERSION}.${COIN_MICRO_VERSION})
 string(TOLOWER ${PROJECT_NAME} PROJECT_NAME_LOWER)
@@ -152,9 +158,17 @@ endif()
 option(COIN_BUILD_LEGACY_GL_RENDERER
   "Build Coin's legacy fixed-function OpenGL renderer."
   ON)
-
 check_include_file_cxx(thread HAVE_STD_THREAD)
 cmake_dependent_option(COIN_DEBUG_CHECK_THREAD "Enable thread check in several central Coin functions." OFF "HAVE_STD_THREAD" OFF)
+
+# Render regression testing options
+cmake_dependent_option(RENDER_TESTS_ENABLED
+  "Enable render regression test tooling and CLI helpers."
+  OFF
+  "COIN_BUILD_TESTS"
+  OFF)
+cmake_dependent_option(RENDER_TESTS_ENABLE_GLES "Enable GLES render backend when render tests are enabled." OFF "RENDER_TESTS_ENABLED" OFF)
+cmake_dependent_option(RENDER_TESTS_ENABLE_PERCEPTUAL_METRICS "Enable perceptual regression metrics once compare tooling is in place." OFF "RENDER_TESTS_ENABLED" OFF)
 
 report_prepare(
   COIN_BUILD_SHARED_LIBS
@@ -186,6 +200,9 @@ report_prepare(
   ZLIB_RUNTIME_LINKING
   GLU_RUNTIME_LINKING
   SPIDERMONKEY_RUNTIME_LINKING
+  RENDER_TESTS_ENABLED
+  RENDER_TESTS_ENABLE_GLES
+  RENDER_TESTS_ENABLE_PERCEPTUAL_METRICS
   HAVE_MULTIPLE_VERSION
   IF_APPLE
     COIN_BUILD_MAC_FRAMEWORK
@@ -311,6 +328,17 @@ set(COIN_EXPAT_PROVIDER "bundled")
 
 # USE_EXTERNAL_EXPAT is a preference. Resolve the actual provider once so
 # bundled fallback and downstream subdirectories stay in sync.
+
+# Optional libbacktrace for debug stack traces
+find_library(BACKTRACE_LIBRARY backtrace)
+find_path(BACKTRACE_INCLUDE_DIR backtrace.h)
+if(BACKTRACE_LIBRARY AND BACKTRACE_INCLUDE_DIR)
+  message(STATUS "Found libbacktrace: ${BACKTRACE_LIBRARY}")
+  list(APPEND COIN_TARGET_LINK_LIBRARIES ${BACKTRACE_LIBRARY})
+  add_definitions(-DCOIN_USE_BACKTRACE)
+  include_directories(${BACKTRACE_INCLUDE_DIR})
+endif()
+
 if(USE_EXTERNAL_EXPAT)
   find_package(EXPAT)
   if(EXPAT_FOUND)
@@ -569,6 +597,7 @@ if(MSVC)
   coin_msvc_link_static_crt(${COIN_BUILD_MSVC_STATIC_RUNTIME})
   add_definitions(-D_CRT_NONSTDC_NO_DEPRECATE -D_CRT_SECURE_NO_DEPRECATE -D_CRT_SECURE_NO_WARNINGS -D_USE_MATH_DEFINES)
 else()
+  add_compile_options(-fdiagnostics-color=always)
   if(APPLE)
     add_definitions(-DGL_SILENCE_DEPRECATION)
   endif()
@@ -1035,6 +1064,21 @@ endif()
 if(COIN_BUILD_TESTS)
   enable_testing()
   add_subdirectory(testsuite)
+endif()
+
+if(RENDER_TESTS_ENABLED)
+  enable_testing()
+  find_package(yaml-cpp REQUIRED)
+  add_subdirectory(thirdparty)
+  add_subdirectory(tools)
+  add_test(NAME render_smoke COMMAND CoinRenderTests snapshot --help)
+  add_test(
+    NAME render_gl
+    COMMAND CoinRenderTests run
+      --spec-dir ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/specs
+      --backend gl
+      --artifacts-dir ${CMAKE_BINARY_DIR}/render_artifacts/gl
+  )
 endif()
 
 # add_feature_info(ThreadSafe COIN_THREADSAFE "Thread safe render traversals.")

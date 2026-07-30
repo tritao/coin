@@ -69,6 +69,7 @@
 #include <Inventor/nodes/SoGroup.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoAnnotation.h>
+#include <Inventor/nodes/SoRenderLayerGroup.h>
 #include <Inventor/nodes/SoSelection.h>
 #include <Inventor/nodes/SoExtSelection.h>
 #include <Inventor/nodes/SoLocateHighlight.h>

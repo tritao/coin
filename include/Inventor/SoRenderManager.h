@@ -48,6 +48,7 @@ class SoNode;
 class SoCamera;
 class SoNodeSensor;
 class SoOneShotSensor;
+class SoPickedPoint;
 class SoSensor;
 class SoRenderManagerP;
 
@@ -74,6 +75,7 @@ public:
     void render(SoGLRenderAction * action, SbBool clearcolorbuffer = FALSE);
     void setEnabled(SbBool yes);
     int getStateFlags(void) const;
+    SoNode * getScene(void) const;
     void setTransparencyType(SoGLRenderAction::TransparencyType transparencytype);
 
   private:
@@ -109,6 +111,18 @@ public:
     NO_AUTO_CLIPPING,
     FIXED_NEAR_PLANE,
     VARIABLE_NEAR_PLANE
+  };
+
+  /// Scene roots traversed before or after the main scene by renderers
+  /// that support explicit render layer roots.
+  enum RenderLayer {
+    RENDER_LAYER_BACKGROUND,
+    RENDER_LAYER_FOREGROUND
+  };
+
+  enum RendererMode {
+    RENDERER_LEGACY_GL,
+    RENDERER_RENDER_BACKEND
   };
 
   SoRenderManager(void);
@@ -159,6 +173,8 @@ public:
 
   void scheduleRedraw(void);
   void setWindowSize(const SbVec2s & newsize);
+  void setDevicePixelRatio(float dpr);
+  float getDevicePixelRatio(void) const;
   const SbVec2s & getWindowSize(void) const;
   void setSize(const SbVec2s & newsize);
   const SbVec2s & getSize(void) const;
@@ -181,14 +197,25 @@ public:
   void getAntialiasing(SbBool & smoothing, int & numPasses) const;
   void setGLRenderAction(SoGLRenderAction * const action);
   SoGLRenderAction * getGLRenderAction(void) const;
-  void setModernRenderEnabled(SbBool enable);
-  SbBool isModernRenderEnabled(void) const;
+  void setRendererMode(RendererMode mode);
+  RendererMode getRendererMode(void) const;
 
-  /// Access the modern render backend (NULL if not initialized).
+  /// Access the render backend (NULL if not initialized).
   /// Used for GPU picking via backend->pick().
-  class SoRenderBackend * getModernBackend(void) const;
+  class SoRenderBackend * getRenderBackend(void) const;
 
-  /// GPU pick at pixel coordinates using the modern backend's ID buffer.
+  /// Access the IR render action (NULL if not created yet).
+  class SoIRRenderAction * getIRRenderAction(void) const;
+
+  /// Set a scene root for an explicit render layer.
+  /// The background layer is traversed before the main scene, and the
+  /// foreground layer is traversed after the main scene.
+  void setRenderLayerRoot(RenderLayer layer, SoNode * root);
+
+  /// Return the scene root assigned to an explicit render layer, or NULL.
+  SoNode * getRenderLayerRoot(RenderLayer layer) const;
+
+  /// GPU pick at pixel coordinates using the render backend's ID buffer.
   /// Returns the pick LUT index (1-based) or 0 for no hit.
   /// Coordinates are in OpenGL convention (origin at bottom-left).
   uint32_t gpuPick(int x, int y, int pickRadius = 5) const;
@@ -196,6 +223,73 @@ public:
   /// Resolve a pick LUT index to a pick identity string.
   /// Returns tab-separated "pickIdentity\tElementName" or empty string.
   std::string resolveGpuPickIdentity(uint32_t lutIndex) const;
+
+  /// Get the stored scene graph path for a pick LUT entry's command.
+  /// Returns NULL if not available. Path is ref'd and owned by the action.
+  SoPath * getGpuPickPath(uint32_t lutIndex) const;
+
+  /// Get the element index (face/edge/vertex) for a pick LUT entry.
+  /// Returns -1 if index is out of range.
+  int getGpuPickElement(uint32_t lutIndex) const;
+
+  /// Get the element type for a pick LUT entry.
+  /// Returns: 0=face, 1=edge, 2=vertex, 3=whole_body, -1=invalid
+  int getGpuPickElementType(uint32_t lutIndex) const;
+
+  /// Assemble a complete SoPickedPoint from the GPU ID buffer pick.
+  /// Returns a newly allocated SoPickedPoint with the correct path, detail,
+  /// and 3D intersection point — identical to what SoRayPickAction produces.
+  /// Returns NULL for no hit. Caller owns the returned pointer.
+  SoPickedPoint * assemblePickedPoint(int screenX, int screenY,
+                                      int pickRadius = 5) const;
+
+  /// Set/get the line width for edge picking in the ID buffer.
+  /// Wider lines make edges easier to select. Default 7.0.
+  void setGpuPickLineWidth(float width);
+  float getGpuPickLineWidth() const;
+
+  /// Set/get the point size for vertex picking in the ID buffer.
+  /// Larger points make vertices easier to select. Default 7.0.
+  void setGpuPickPointSize(float size);
+  float getGpuPickPointSize() const;
+
+  /// Force the render-backend path to re-traverse the scene graph on the next frame.
+  void invalidateDrawList();
+
+  /// Directly set preselection highlight on a draw list command by pick LUT index.
+  /// Avoids scene graph traversal. Returns true if highlight was applied.
+  /// @param lutIndex  Pick LUT index (1-based, from gpuPick). 0 clears all highlights.
+  /// @param color     Highlight color (RGBA).
+  bool setDrawListHighlight(uint32_t lutIndex, const SbColor4f & color);
+
+  /// Clear all preselection highlights in the draw list.
+  void clearDrawListHighlight();
+
+  /// Set selection state on a draw list command by pick LUT index.
+  /// @param lutIndex  Pick LUT index (1-based). 0 is invalid.
+  /// @param color     Selection color (RGBA).
+  /// @param append    If true, add to existing selection. If false, replace.
+  bool setDrawListSelection(uint32_t lutIndex, const SbColor4f & color,
+                            SbBool append = TRUE);
+
+  /// Select all commands whose pickIdentity starts with the given prefix.
+  /// Used for tree-view selection (whole object, no GPU pick).
+  bool setDrawListSelectionByIdentity(const char * identityPrefix,
+                                      const SbColor4f & color,
+                                      SbBool append = TRUE);
+
+  /// Clear all selection state in the draw list.
+  void clearDrawListSelection();
+
+  /// Set interactive mode (true during camera orbit/pan/zoom).
+  /// When interactive, the backend skips the ID pick buffer to save GPU time.
+  void setInteractive(SbBool interactive);
+  SbBool isInteractive() const;
+
+  /// Signal that the camera is being modified (e.g. zoom scroll).
+  /// Consumed by the deferred sensor callback to avoid full scene rebuild.
+  void notifyCameraChange(void);
+
   void setAudioRenderAction(SoAudioRenderAction * const action);
   SoAudioRenderAction * getAudioRenderAction(void) const;
 
@@ -228,7 +322,7 @@ protected:
                     SbBool initmatrices,
                     SbBool clearwindow,
                     SbBool clearzbuffer);
-  void renderModern(const SbBool clearwindow,
+  void renderWithBackend(const SbBool clearwindow,
                     const SbBool clearzbuffer);
 
   void renderStereo(SoGLRenderAction * action,

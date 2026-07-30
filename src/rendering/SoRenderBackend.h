@@ -12,7 +12,7 @@
 
 #include <cstdint>
 
-#include "rendering/SoModernIR.h"
+#include "rendering/SoRenderIR.h"
 
 class SoDrawList;
 
@@ -132,15 +132,23 @@ struct SoRenderParams {
   */
   uint32_t           contextId;
   /*!
-    \brief Bitfield for view-specific options (wireframe, debug overlays, etc.).
+    \brief Bitfield for view-specific options.
 
-    No bits are defined yet; reserving the field keeps the ABI stable.
+    Bit 0: clear window requested
+    Bit 1: interactive mode (camera orbiting/panning — skip ID buffer)
   */
   uint32_t           flags;
   /*!
-    \brief Reserved for future expansion – keeps struct 16-byte aligned.
+    \brief Number of commands at the start of the draw list that are
+    background (e.g. gradient). The backend renders these first, then
+    clears the depth buffer before rendering the main scene.
   */
-  uint32_t           reserved;
+  int                bgCommandCount;
+  /*!
+    \brief Device pixel ratio for HiDPI scaling (e.g. 2.0 on Retina).
+    Line widths and point sizes are scaled by this factor.
+  */
+  float              devicePixelRatio;
 };
 
 /*!
@@ -188,8 +196,8 @@ struct SoRenderBackendInitParams {
   \brief Abstract GPU backend interface consumed by SoRenderManager.
 
   The base class defines the lifecycle contract (initialize / render /
-  shutdown) for any GPU implementation that wants to consume the modern
-  draw list (SoDrawList). It also provides helper utilities for logging,
+   shutdown) for any GPU implementation that wants to consume the render
+   backend draw list (SoDrawList). It also provides helper utilities for logging,
   initialization tracking and debug-time validation so each backend does
   not have to reimplement the same boilerplate.
 */
@@ -205,6 +213,28 @@ public:
   virtual SbBool render(const SoDrawList & drawlist,
                         const SoRenderParams & params) = 0;
   virtual void resizeTarget(const SoRenderTargetInfo & info);
+
+  /*!
+    \brief GPU pick at pixel coordinates using the ID buffer.
+
+    Returns the pick LUT index (1-based) of the nearest visible element,
+    or 0 for background/no hit. The draw list's resolvePickIdentity()
+    can then map this to an application-level name.
+
+    Backends that support GPU picking implement this; others return 0.
+    \param x  Pixel X (left = 0)
+    \param y  Pixel Y (bottom = 0, OpenGL convention)
+    \param pickRadius  Half-size of the pick region (default 5 = 11x11)
+  */
+  virtual uint32_t pick(int x, int y, int pickRadius = 5) const;
+
+  /// Set the line width used for edge picking in the ID buffer (default 7.0).
+  /// Wider lines make edges easier to pick.
+  virtual void setPickLineWidth(float width);
+  /// Set the point size used for vertex picking in the ID buffer (default 7.0).
+  virtual void setPickPointSize(float size);
+  virtual float getPickLineWidth() const;
+  virtual float getPickPointSize() const;
 
   SbBool isInitialized() const;
 

@@ -39,6 +39,10 @@
 
 #include <vector>
 
+#ifdef COIN_USE_BACKTRACE
+#include <backtrace.h>
+#endif
+
 #ifdef COIN_THREADSAFE
 #include <Inventor/threads/SbMutex.h>
 #endif // COIN_THREADSAFE
@@ -49,6 +53,7 @@
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/elements/SoLazyElement.h>
 #include <Inventor/sensors/SoNodeSensor.h>
+#include <Inventor/rendering/SoRenderIR.h>
 #include <Inventor/misc/SoNotification.h>
 
 class SbMatrix;
@@ -59,7 +64,7 @@ class SoGetBoundingBoxAction;
 class SoGetMatrixAction;
 class SoSearchAction;
 class SbPList;
-class SoModernRenderAction;
+class SoIRRenderAction;
 class SoRenderBackend;
 
 class SoRenderManagerP {
@@ -115,6 +120,7 @@ public:
 
   SoRenderManager::StereoMode stereostenciltype;
   SoRenderManager::RenderMode rendermode;
+  SoRenderManager::RendererMode rendererMode;
   SoRenderManager::StereoMode stereomode;
   SoRenderManager::AutoClippingStrategy autoclipping;
 
@@ -124,10 +130,30 @@ public:
 
   SbPList * superimpositions;
 
-  SoModernRenderAction * modernAction;
-  SoRenderBackend * modernBackend;
-  SbBool modernEnabled;
-  int modernFrameCounter;
+  SoIRRenderAction * irAction;
+  SoIRRenderAction * foregroundAction;  // Separate action for foreground overlays
+  SoRenderBackend * renderBackend;
+  SoNode * renderLayerBackgroundRoot = NULL;
+  SoNode * renderLayerForegroundRoot = NULL;
+  int backgroundCommandCount = 0;
+  int mainSceneCommandCount = 0;  // bg + main scene commands (excludes foreground)
+  SoIRBuffer::SavePoint poolSavePoint;  // geometry pool state after main scene traversal
+  SbViewportRegion backendViewport;  // viewport for the render backend (replaces glaction viewport)
+  int backendFrameCounter;
+
+  // Generation-based draw list caching. Each region tracks its own version.
+  // Only regions whose generation advanced are re-traversed.
+  uint32_t sceneGeneration = 1;        // bg + main scene (structural changes)
+  uint32_t foregroundGeneration = 1;   // NaviCube/overlays (camera changes)
+  uint32_t cachedSceneGen = 0;         // last traversed scene generation
+  uint32_t cachedForegroundGen = 0;    // last traversed foreground generation
+  bool hasCameraDependentShapes = false;
+  float devicePixelRatio = 1.0f;
+  bool pendingCameraChange = false;  // set by notifyCameraChange(), consumed by sensor
+  SbBool interactive = FALSE;
+#ifdef COIN_USE_BACKTRACE
+  struct backtrace_state * btState = nullptr;
+#endif
 
   void invokePreRenderCallbacks(void);
   void invokePostRenderCallbacks(void);
