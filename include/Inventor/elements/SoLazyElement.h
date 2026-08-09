@@ -213,6 +213,7 @@ protected:
     SbColor emissive;
     float shininess;
     SbBool blending;
+    SbBool separateblending;
     int blend_sfactor;
     int blend_dfactor;
     int alpha_blend_sfactor;

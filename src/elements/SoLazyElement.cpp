@@ -168,6 +168,7 @@ SoLazyElement::init(SoState * COIN_UNUSED_ARG(state))
   this->coinstate.emissive = this->getDefaultEmissive();
   this->coinstate.shininess = this->getDefaultShininess();
   this->coinstate.blending = FALSE;
+  this->coinstate.separateblending = FALSE;
   this->coinstate.blend_sfactor = 0;
   this->coinstate.blend_dfactor = 0;
   this->coinstate.alpha_blend_sfactor = 0;
@@ -1039,6 +1040,7 @@ void
 SoLazyElement::enableBlendingElt(int sfactor, int dfactor, int alpha_sfactor, int alpha_dfactor)
 {
   this->coinstate.blending = TRUE;
+  this->coinstate.separateblending = (alpha_sfactor != 0 || alpha_dfactor != 0);
   this->coinstate.blend_sfactor = sfactor;
   this->coinstate.blend_dfactor = dfactor;
   this->coinstate.alpha_blend_sfactor = alpha_sfactor;
@@ -1049,6 +1051,7 @@ void
 SoLazyElement::disableBlendingElt(void)
 {
   this->coinstate.blending = FALSE;
+  this->coinstate.separateblending = FALSE;
 }
 
 void

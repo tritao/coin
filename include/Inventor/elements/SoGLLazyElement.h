@@ -84,6 +84,7 @@ public:
     float shininess;
     int32_t lightmodel;
     int32_t blending;
+    int32_t separateblending;
     int32_t blend_sfactor;
     int32_t blend_dfactor;
     int32_t alpha_blend_sfactor;
