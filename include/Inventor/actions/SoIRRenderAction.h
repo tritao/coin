@@ -12,6 +12,8 @@
 
 #include <cstddef>
 class SoPrimitiveVertex;
+class SoPath;
+class SoPathList;
 class SoIRRenderActionP;
 
 /*!
@@ -65,7 +67,13 @@ public:
 
   // Standard entry points, mirroring SoGLRenderAction
   virtual void apply(SoNode * root) override;
-  
+  virtual void apply(SoPath * path) override;
+  virtual void apply(const SoPathList & pathlist, SbBool obeysrules = FALSE) override;
+
+  //! Associate the commands emitted by a shape with its current scene path.
+  void storeCommandPath(int commandIndex, const SoPath * path);
+  //! Return the retained scene path for a command, or NULL when unavailable.
+  SoPath * getCommandPath(int commandIndex) const;
 
   //! Return the generated draw list for the current frame.
   const SoDrawList & getDrawList(void) const { return this->drawlist; }
