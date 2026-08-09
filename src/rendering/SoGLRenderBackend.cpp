@@ -303,7 +303,7 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
   this->colorLoc = this->glue->glGetAttribLocation(this->shaderProgram, "a_color");
 
 #if defined(COIN_DRAW_LIST_PICKING)
-  this->pickBuffer = std::make_unique<SoIDPickBuffer>();
+  this->pickBuffer.reset(new SoIDPickBuffer);
   if (!this->pickBuffer->initialize()) {
     this->emitLog("ID pick buffer initialization failed (picking disabled)");
     this->pickBuffer.reset();
@@ -1311,7 +1311,7 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
   this->glue->glUniform1f(this->uRenderModeLocation, 1.0f);
 
-  auto drawWholeCommand = [](const SoRenderCommand & cmd, GLenum prim) {
+  auto drawWholeCommand = [this](const SoRenderCommand & cmd, GLenum prim) {
     if (cmd.geometry.indexCount > 0 && cmd.geometry.indices) {
       cc_glglue_glDrawElements(this->glue, prim, cmd.geometry.indexCount, GL_UNSIGNED_INT, nullptr);
     }
@@ -1320,7 +1320,7 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
     }
   };
 
-  auto drawRange = [](const SoRenderCommand & cmd,
+  auto drawRange = [this](const SoRenderCommand & cmd,
                       const SoRenderElementRange & range,
                       GLenum prim) {
     if (range.drawCount <= 0) return;
