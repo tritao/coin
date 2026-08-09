@@ -2027,6 +2027,13 @@ glglue_resolve_symbols(cc_glglue * w)
     }
   }
 
+  w->glBlitFramebuffer = (COIN_PFNGLBLITFRAMEBUFFERPROC)
+    cc_glglue_getprocaddress(w, "glBlitFramebuffer");
+  if (!w->glBlitFramebuffer) {
+    w->glBlitFramebuffer = (COIN_PFNGLBLITFRAMEBUFFERPROC)
+      cc_glglue_getprocaddress(w, "glBlitFramebufferEXT");
+  }
+
   if (cc_glglue_glext_supported(w, "GL_EXT_framebuffer_object")) {
     w->glIsRenderbuffer = (COIN_PFNGLISRENDERBUFFERPROC) cc_glglue_getprocaddress(w, "glIsRenderbufferEXT");
     w->glBindRenderbuffer = (COIN_PFNGLBINDRENDERBUFFERPROC) cc_glglue_getprocaddress(w, "glBindRenderbufferEXT");
@@ -2045,7 +2052,6 @@ glglue_resolve_symbols(cc_glglue * w)
     w->glFramebufferRenderbuffer = (COIN_PFNGLFRAMEBUFFERRENDERBUFFERPROC)cc_glglue_getprocaddress(w, "glFramebufferRenderbufferEXT");
     w->glGetFramebufferAttachmentParameteriv = (COIN_PFNGLGETFRAMEBUFFERATTACHMENTPARAMETERIVPROC)
       cc_glglue_getprocaddress(w, "glGetFramebufferAttachmentParameterivEXT");
-
     if (!w->glIsRenderbuffer || !w->glBindRenderbuffer || !w->glDeleteRenderbuffers ||
         !w->glGenRenderbuffers || !w->glRenderbufferStorage || !w->glGetRenderbufferParameteriv ||
         !w->glIsFramebuffer || !w->glBindFramebuffer || !w->glDeleteFramebuffers ||

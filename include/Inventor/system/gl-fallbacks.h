@@ -18,6 +18,10 @@
 #define GL_ARRAY_BUFFER 0x8892
 #endif
 
+#ifndef GL_VERTEX_ARRAY_BINDING
+#define GL_VERTEX_ARRAY_BINDING 0x85B5
+#endif
+
 #ifndef GL_BGR
 #define GL_BGR 0x80E0
 #endif

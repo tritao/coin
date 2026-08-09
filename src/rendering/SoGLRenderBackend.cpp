@@ -304,7 +304,7 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
 
 #if defined(COIN_DRAW_LIST_PICKING)
   this->pickBuffer.reset(new SoIDPickBuffer);
-  if (!this->pickBuffer->initialize()) {
+  if (!this->pickBuffer->initialize(this->glue)) {
     this->emitLog("ID pick buffer initialization failed (picking disabled)");
     this->pickBuffer.reset();
   }

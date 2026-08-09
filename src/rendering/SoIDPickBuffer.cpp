@@ -13,16 +13,10 @@
 #include <Inventor/SbMatrix.h>
 #include <Inventor/system/gl.h>
 
-// macOS: declare standard VAO functions (see SoGLRenderBackend.cpp comment)
-#if defined(__APPLE__) && !defined(glGenVertexArrays)
-extern "C" {
-void glGenVertexArrays(GLsizei n, GLuint * arrays);
-void glBindVertexArray(GLuint array);
-void glDeleteVertexArrays(GLsizei n, const GLuint * arrays);
-}
-#endif
-
 #include <Inventor/C/glue/gl.h>
+
+#include "glue/glp.h"
+#include "glue/glslp.h"
 
 #include <algorithm>
 #include <cstring>
@@ -69,39 +63,39 @@ SoIDPickBuffer::decodeId(const uint8_t rgba[4])
 // Shader helpers
 // -----------------------------------------------------------------------
 
-static GLuint compileShader(GLenum type, const char * src)
+static GLuint compileShader(const cc_glglue * glue, GLenum type, const char * src)
 {
-  GLuint shader = glCreateShader(type);
-  glShaderSource(shader, 1, &src, NULL);
-  glCompileShader(shader);
+  GLuint shader = cc_glglue_glCreateShader(glue, type);
+  cc_glglue_glShaderSource(glue, shader, 1, &src, NULL);
+  cc_glglue_glCompileShader(glue, shader);
   GLint ok;
-  glGetShaderiv(shader, GL_COMPILE_STATUS, &ok);
+  cc_glglue_glGetShaderiv(glue, shader, GL_COMPILE_STATUS, &ok);
   if (!ok) {
     char log[512];
-    glGetShaderInfoLog(shader, sizeof(log), NULL, log);
+    cc_glglue_glGetShaderInfoLog(glue, shader, sizeof(log), NULL, log);
     SoDebugError::post("SoIDPickBuffer", "Shader compile error: %s", log);
-    glDeleteShader(shader);
+    cc_glglue_glDeleteShader(glue, shader);
     return 0;
   }
   return shader;
 }
 
-static GLuint linkProgram(GLuint vs, GLuint fs)
+static GLuint linkProgram(const cc_glglue * glue, GLuint vs, GLuint fs)
 {
-  GLuint prog = glCreateProgram();
-  glAttachShader(prog, vs);
-  glAttachShader(prog, fs);
-  glBindAttribLocation(prog, 0, "aPos");
-  glBindAttribLocation(prog, 1, "aNormal");
-  glBindAttribLocation(prog, 2, "aIdColor");
-  glLinkProgram(prog);
+  GLuint prog = cc_glglue_glCreateProgram(glue);
+  cc_glglue_glAttachShader(glue, prog, vs);
+  cc_glglue_glAttachShader(glue, prog, fs);
+  glue->glBindAttribLocation(prog, 0, "aPos");
+  glue->glBindAttribLocation(prog, 1, "aNormal");
+  glue->glBindAttribLocation(prog, 2, "aIdColor");
+  cc_glglue_glLinkProgram(glue, prog);
   GLint ok;
-  glGetProgramiv(prog, GL_LINK_STATUS, &ok);
+  cc_glglue_glGetGLSLProgramiv(glue, prog, GL_LINK_STATUS, &ok);
   if (!ok) {
     char log[512];
-    glGetProgramInfoLog(prog, sizeof(log), NULL, log);
+    cc_glglue_glGetProgramInfoLog(glue, prog, sizeof(log), NULL, log);
     SoDebugError::post("SoIDPickBuffer", "Program link error: %s", log);
-    glDeleteProgram(prog);
+    cc_glglue_glDeleteProgram(glue, prog);
     return 0;
   }
   return prog;
@@ -110,6 +104,7 @@ static GLuint linkProgram(GLuint vs, GLuint fs)
 namespace {
 
 struct SoScopedIdPassState {
+  const cc_glglue * glue;
   GLint viewport[4] = {0, 0, 0, 0};
   GLfloat lineWidth = 1.0f;
   GLfloat pointSize = 1.0f;
@@ -118,7 +113,7 @@ struct SoScopedIdPassState {
   GLint arrayBuffer = 0;
   GLint elementArrayBuffer = 0;
 
-  SoScopedIdPassState()
+  explicit SoScopedIdPassState(const cc_glglue * glueIn) : glue(glueIn)
   {
     glGetIntegerv(GL_VIEWPORT, this->viewport);
     glGetFloatv(GL_LINE_WIDTH, &this->lineWidth);
@@ -131,13 +126,13 @@ struct SoScopedIdPassState {
 
   ~SoScopedIdPassState()
   {
-    glBindVertexArray(static_cast<GLuint>(this->vao));
-    glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(this->arrayBuffer));
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(this->elementArrayBuffer));
+    this->glue->glBindVertexArray(static_cast<GLuint>(this->vao));
+    this->glue->glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(this->arrayBuffer));
+    this->glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(this->elementArrayBuffer));
     glLineWidth(this->lineWidth);
     glPointSize(this->pointSize);
     glViewport(this->viewport[0], this->viewport[1], this->viewport[2], this->viewport[3]);
-    glUseProgram(static_cast<GLuint>(this->program));
+    cc_glglue_glUseProgram(this->glue, static_cast<GLuint>(this->program));
   }
 
   SoScopedIdPassState(const SoScopedIdPassState &) = delete;
@@ -154,19 +149,21 @@ SoIDPickBuffer::SoIDPickBuffer() = default;
 
 SoIDPickBuffer::~SoIDPickBuffer()
 {
+  if (!this->glue) return;
   for (uint32_t vbo : idColorVBOs) {
-    if (vbo) glDeleteBuffers(1, &vbo);
+    if (vbo) this->glue->glDeleteBuffers(1, &vbo);
   }
   for (uint32_t vao : idVAOs) {
-    if (vao) glDeleteVertexArrays(1, &vao);
+    if (vao) this->glue->glDeleteVertexArrays(1, &vao);
   }
-  if (tempPosVBO) glDeleteBuffers(1, &tempPosVBO);
-  if (tempIdxVBO) glDeleteBuffers(1, &tempIdxVBO);
-  if (pbo[0]) glDeleteBuffers(2, pbo);
-  if (colorTex) glDeleteTextures(1, &colorTex);
-  if (depthRbo) glDeleteRenderbuffers(1, &depthRbo);
-  if (fbo) glDeleteFramebuffers(1, &fbo);
-  if (shaderProgram) glDeleteProgram(shaderProgram);
+  if (tempPosVBO) this->glue->glDeleteBuffers(1, &tempPosVBO);
+  if (tempIdxVBO) this->glue->glDeleteBuffers(1, &tempIdxVBO);
+  if (pbo[0]) this->glue->glDeleteBuffers(2, pbo);
+  if (colorTex) this->glue->glDeleteTextures(1, &colorTex);
+  if (depthRbo) this->glue->glDeleteRenderbuffers(1, &depthRbo);
+  if (fbo) this->glue->glDeleteFramebuffers(1, &fbo);
+  if (shaderProgram) cc_glglue_glDeleteProgram(this->glue, shaderProgram);
+  if (lineShaderProgram) cc_glglue_glDeleteProgram(this->glue, lineShaderProgram);
 }
 
 // -----------------------------------------------------------------------
@@ -174,57 +171,77 @@ SoIDPickBuffer::~SoIDPickBuffer()
 // -----------------------------------------------------------------------
 
 SbBool
-SoIDPickBuffer::initialize()
+SoIDPickBuffer::initialize(const cc_glglue * glue)
 {
   if (shaderInitialized) return TRUE;
+  if (!glue ||
+      !glue->glBindAttribLocation || !glue->glGetAttribLocation ||
+      !glue->glVertexAttribPointer || !glue->glEnableVertexAttribArray ||
+      !glue->glDisableVertexAttribArray || !glue->glUniformMatrix4fv ||
+      !glue->glUniform1f || !glue->glUniform2f ||
+      !glue->glGenBuffers || !glue->glDeleteBuffers ||
+      !glue->glBindBuffer || !glue->glBufferData ||
+      !glue->glMapBuffer || !glue->glUnmapBuffer ||
+      !glue->glGenVertexArrays || !glue->glBindVertexArray ||
+      !glue->glDeleteVertexArrays || !glue->glGenFramebuffers ||
+      !glue->glBindFramebuffer || !glue->glDeleteFramebuffers ||
+      !glue->glCheckFramebufferStatus || !glue->glFramebufferTexture2D ||
+      !glue->glFramebufferRenderbuffer || !glue->glGenRenderbuffers ||
+      !glue->glBindRenderbuffer || !glue->glDeleteRenderbuffers ||
+      !glue->glRenderbufferStorage || !glue->glGenTextures ||
+      !glue->glBindTexture || !glue->glDeleteTextures) {
+    SoDebugError::post("SoIDPickBuffer", "active context lacks ID-picking GL dispatch");
+    return FALSE;
+  }
+  this->glue = glue;
 
-  GLuint vs = compileShader(GL_VERTEX_SHADER, BACKENDIDPICKVERTEX_shadersource);
+  GLuint vs = compileShader(this->glue, GL_VERTEX_SHADER, BACKENDIDPICKVERTEX_shadersource);
   if (!vs) return FALSE;
-  GLuint fs = compileShader(GL_FRAGMENT_SHADER, BACKENDIDPICKFRAGMENT_shadersource);
-  if (!fs) { glDeleteShader(vs); return FALSE; }
+  GLuint fs = compileShader(this->glue, GL_FRAGMENT_SHADER, BACKENDIDPICKFRAGMENT_shadersource);
+  if (!fs) { cc_glglue_glDeleteShader(this->glue, vs); return FALSE; }
 
-  shaderProgram = linkProgram(vs, fs);
-  glDeleteShader(vs);
-  glDeleteShader(fs);
+  shaderProgram = linkProgram(this->glue, vs, fs);
+  cc_glglue_glDeleteShader(this->glue, vs);
+  cc_glglue_glDeleteShader(this->glue, fs);
   if (!shaderProgram) return FALSE;
 
-  uIdView = glGetUniformLocation(shaderProgram, "uView");
-  uIdProj = glGetUniformLocation(shaderProgram, "uProj");
-  uIdModel = glGetUniformLocation(shaderProgram, "uModel");
-  cachedPosLoc = glGetAttribLocation(shaderProgram, "aPos");
-  cachedIdColorLoc = glGetAttribLocation(shaderProgram, "aIdColor");
+  uIdView = cc_glglue_glGetUniformLocation(this->glue, shaderProgram, "uView");
+  uIdProj = cc_glglue_glGetUniformLocation(this->glue, shaderProgram, "uProj");
+  uIdModel = cc_glglue_glGetUniformLocation(this->glue, shaderProgram, "uModel");
+  cachedPosLoc = this->glue->glGetAttribLocation(shaderProgram, "aPos");
+  cachedIdColorLoc = this->glue->glGetAttribLocation(shaderProgram, "aIdColor");
 
   // Line shader for wide ID edges on Core Profile (glLineWidth clamped to 1)
 #ifndef GL_GEOMETRY_SHADER
 #define GL_GEOMETRY_SHADER 0x8DD9
 #endif
-  GLuint lvs2 = compileShader(GL_VERTEX_SHADER, BACKENDIDPICKVERTEX_shadersource);
-  GLuint lgs2 = compileShader(GL_GEOMETRY_SHADER, BACKENDIDPICKLINEGEOMETRY_shadersource);
-  GLuint lfs2 = compileShader(GL_FRAGMENT_SHADER, BACKENDIDPICKLINEFRAGMENT_shadersource);
+  GLuint lvs2 = compileShader(this->glue, GL_VERTEX_SHADER, BACKENDIDPICKVERTEX_shadersource);
+  GLuint lgs2 = compileShader(this->glue, GL_GEOMETRY_SHADER, BACKENDIDPICKLINEGEOMETRY_shadersource);
+  GLuint lfs2 = compileShader(this->glue, GL_FRAGMENT_SHADER, BACKENDIDPICKLINEFRAGMENT_shadersource);
   if (lvs2 && lgs2 && lfs2) {
-    GLuint lprog = glCreateProgram();
-    glAttachShader(lprog, lvs2);
-    glAttachShader(lprog, lgs2);
-    glAttachShader(lprog, lfs2);
-    glBindAttribLocation(lprog, 0, "aPos");
-    glBindAttribLocation(lprog, 2, "aIdColor");
-    glLinkProgram(lprog);
+    GLuint lprog = cc_glglue_glCreateProgram(this->glue);
+    cc_glglue_glAttachShader(this->glue, lprog, lvs2);
+    cc_glglue_glAttachShader(this->glue, lprog, lgs2);
+    cc_glglue_glAttachShader(this->glue, lprog, lfs2);
+    this->glue->glBindAttribLocation(lprog, 0, "aPos");
+    this->glue->glBindAttribLocation(lprog, 2, "aIdColor");
+    cc_glglue_glLinkProgram(this->glue, lprog);
     GLint linkOk = GL_FALSE;
-    glGetProgramiv(lprog, GL_LINK_STATUS, &linkOk);
+    cc_glglue_glGetGLSLProgramiv(this->glue, lprog, GL_LINK_STATUS, &linkOk);
     if (linkOk) {
       lineShaderProgram = lprog;
-      lineUView = glGetUniformLocation(lprog, "uView");
-      lineUProj = glGetUniformLocation(lprog, "uProj");
-      lineUModel = glGetUniformLocation(lprog, "uModel");
-      lineUVpSize = glGetUniformLocation(lprog, "uVpSize");
-      lineULineWidth = glGetUniformLocation(lprog, "uLineWidth");
+      lineUView = cc_glglue_glGetUniformLocation(this->glue, lprog, "uView");
+      lineUProj = cc_glglue_glGetUniformLocation(this->glue, lprog, "uProj");
+      lineUModel = cc_glglue_glGetUniformLocation(this->glue, lprog, "uModel");
+      lineUVpSize = cc_glglue_glGetUniformLocation(this->glue, lprog, "uVpSize");
+      lineULineWidth = cc_glglue_glGetUniformLocation(this->glue, lprog, "uLineWidth");
     } else {
-      glDeleteProgram(lprog);
+      cc_glglue_glDeleteProgram(this->glue, lprog);
     }
   }
-  glDeleteShader(lvs2);
-  glDeleteShader(lgs2);
-  glDeleteShader(lfs2);
+  if (lvs2) cc_glglue_glDeleteShader(this->glue, lvs2);
+  if (lgs2) cc_glglue_glDeleteShader(this->glue, lgs2);
+  if (lfs2) cc_glglue_glDeleteShader(this->glue, lfs2);
 
   shaderInitialized = TRUE;
   return TRUE;
@@ -239,38 +256,38 @@ SoIDPickBuffer::resize(int width, int height)
 {
   if (width == fbWidth && height == fbHeight && fbo != 0) return;
 
-  if (pbo[0]) { glDeleteBuffers(2, pbo); pbo[0] = pbo[1] = 0; pboInitialized = FALSE; }
-  if (colorTex) { glDeleteTextures(1, &colorTex); colorTex = 0; }
-  if (depthRbo) { glDeleteRenderbuffers(1, &depthRbo); depthRbo = 0; }
-  if (fbo) { glDeleteFramebuffers(1, &fbo); fbo = 0; }
+  if (pbo[0]) { this->glue->glDeleteBuffers(2, pbo); pbo[0] = pbo[1] = 0; pboInitialized = FALSE; }
+  if (colorTex) { this->glue->glDeleteTextures(1, &colorTex); colorTex = 0; }
+  if (depthRbo) { this->glue->glDeleteRenderbuffers(1, &depthRbo); depthRbo = 0; }
+  if (fbo) { this->glue->glDeleteFramebuffers(1, &fbo); fbo = 0; }
 
   fbWidth = width;
   fbHeight = height;
   if (width <= 0 || height <= 0) return;
 
-  glGenFramebuffers(1, &fbo);
-  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  this->glue->glGenFramebuffers(1, &fbo);
+  this->glue->glBindFramebuffer(GL_FRAMEBUFFER, fbo);
 
-  glGenTextures(1, &colorTex);
-  glBindTexture(GL_TEXTURE_2D, colorTex);
+  this->glue->glGenTextures(1, &colorTex);
+  this->glue->glBindTexture(GL_TEXTURE_2D, colorTex);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTex, 0);
+  this->glue->glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, colorTex, 0);
 
-  glGenRenderbuffers(1, &depthRbo);
-  glBindRenderbuffer(GL_RENDERBUFFER, depthRbo);
-  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
-  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthRbo);
+  this->glue->glGenRenderbuffers(1, &depthRbo);
+  this->glue->glBindRenderbuffer(GL_RENDERBUFFER, depthRbo);
+  this->glue->glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, width, height);
+  this->glue->glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, depthRbo);
 
-  GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+  GLenum status = this->glue->glCheckFramebufferStatus(GL_FRAMEBUFFER);
   if (status != GL_FRAMEBUFFER_COMPLETE) {
     SoDebugError::post("SoIDPickBuffer", "FBO incomplete (0x%x)", status);
-    glDeleteFramebuffers(1, &fbo);
+    this->glue->glDeleteFramebuffers(1, &fbo);
     fbo = 0;
   }
 
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  this->glue->glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 // -----------------------------------------------------------------------
@@ -355,15 +372,15 @@ SoIDPickBuffer::buildIdColorVBOs(const SoDrawList & drawlist, uint32_t /*context
 
     // Upload VBO
     if (idColorVBOs[ci] == 0) {
-      glGenBuffers(1, &idColorVBOs[ci]);
+      this->glue->glGenBuffers(1, &idColorVBOs[ci]);
     }
-    glBindBuffer(GL_ARRAY_BUFFER, idColorVBOs[ci]);
-    glBufferData(GL_ARRAY_BUFFER,
+    this->glue->glBindBuffer(GL_ARRAY_BUFFER, idColorVBOs[ci]);
+    this->glue->glBufferData(GL_ARRAY_BUFFER,
                  static_cast<GLsizeiptr>(colors.size()),
                  colors.data(), GL_DYNAMIC_DRAW);
     idColorVertexCounts[ci] = numVerts;
   }
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  this->glue->glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
 // -----------------------------------------------------------------------
@@ -388,45 +405,45 @@ SoIDPickBuffer::render(const float * viewMatrix, const float * projMatrix,
   pboSize = numPixels * 4;
 
   if (!pboInitialized) {
-    glGenBuffers(2, pbo);
+    this->glue->glGenBuffers(2, pbo);
     for (int i = 0; i < 2; i++) {
-      glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[i]);
-      glBufferData(GL_PIXEL_PACK_BUFFER, static_cast<GLsizeiptr>(pboSize),
+      this->glue->glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[i]);
+      this->glue->glBufferData(GL_PIXEL_PACK_BUFFER, static_cast<GLsizeiptr>(pboSize),
                    NULL, GL_STREAM_READ);
     }
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    this->glue->glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     pboInitialized = TRUE;
     // First frame: synchronous readback
     cachedColor.resize(pboSize);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    this->glue->glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glReadPixels(0, 0, fbWidth, fbHeight, GL_RGBA, GL_UNSIGNED_BYTE, cachedColor.data());
     // Prime both PBOs
     for (int i = 0; i < 2; i++) {
-      glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[i]);
+      this->glue->glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[i]);
       glReadPixels(0, 0, fbWidth, fbHeight, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-      glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+      this->glue->glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     }
   }
   else {
     // Read previous frame's PBO
     int readPbo = 1 - pboIndex;
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[readPbo]);
+    this->glue->glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[readPbo]);
     const uint8_t * ptr = static_cast<const uint8_t *>(
-        glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY));
+        this->glue->glMapBuffer(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY));
     if (ptr) {
       cachedColor.resize(pboSize);
       std::memcpy(cachedColor.data(), ptr, pboSize);
-      glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+      this->glue->glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
     }
     // Start async DMA for current frame
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[pboIndex]);
-    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+    this->glue->glBindBuffer(GL_PIXEL_PACK_BUFFER, pbo[pboIndex]);
+    this->glue->glBindFramebuffer(GL_FRAMEBUFFER, fbo);
     glReadPixels(0, 0, fbWidth, fbHeight, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    this->glue->glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
     pboIndex = 1 - pboIndex;
   }
 
-  glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
+  this->glue->glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFbo));
 }
 
 void
@@ -434,9 +451,9 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
                              const SoDrawList & drawlist,
                              const SoIDPassVBOInfo * vboCache, int vboCacheCount)
 {
-  SoScopedIdPassState savedState;
+  SoScopedIdPassState savedState(this->glue);
 
-  glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+  this->glue->glBindFramebuffer(GL_FRAMEBUFFER, fbo);
   glViewport(0, 0, fbWidth, fbHeight);
 
   glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -447,15 +464,15 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
   glDepthMask(GL_TRUE);
   glDisable(GL_BLEND);
 
-  glUseProgram(shaderProgram);
-  glUniformMatrix4fv(uIdView, 1, GL_FALSE, viewMatrix);
-  glUniformMatrix4fv(uIdProj, 1, GL_FALSE, projMatrix);
+  cc_glglue_glUseProgram(this->glue, shaderProgram);
+  this->glue->glUniformMatrix4fv(uIdView, 1, GL_FALSE, viewMatrix);
+  this->glue->glUniformMatrix4fv(uIdProj, 1, GL_FALSE, projMatrix);
 
   int numCmds = drawlist.getNumCommands();
 
   // Temp VBOs as fallback when no cached VBOs available
-  if (tempPosVBO == 0) glGenBuffers(1, &tempPosVBO);
-  if (tempIdxVBO == 0) glGenBuffers(1, &tempIdxVBO);
+  if (tempPosVBO == 0) this->glue->glGenBuffers(1, &tempPosVBO);
+  if (tempIdxVBO == 0) this->glue->glGenBuffers(1, &tempIdxVBO);
 
   GLint posLoc = cachedPosLoc;
   GLint idColorLoc = cachedIdColorLoc;
@@ -477,7 +494,7 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
 
     SbMat modelMat;
     cmd.modelMatrix.getValue(modelMat);
-    glUniformMatrix4fv(uIdModel, 1, GL_FALSE, &modelMat[0][0]);
+    this->glue->glUniformMatrix4fv(uIdModel, 1, GL_FALSE, &modelMat[0][0]);
 
     bool useCached = (vboCache && ci < vboCacheCount && vboCache[ci].posVBO != 0);
 
@@ -490,71 +507,71 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
           || idVAOPosKey[ci] != curPosVBO
           || idVAOIdxKey[ci] != curIdxVBO) {
         // Build/rebuild the ID VAO
-        if (idVAOs[ci] == 0) glGenVertexArrays(1, &idVAOs[ci]);
-        glBindVertexArray(idVAOs[ci]);
+        if (idVAOs[ci] == 0) this->glue->glGenVertexArrays(1, &idVAOs[ci]);
+        this->glue->glBindVertexArray(idVAOs[ci]);
 
         GLsizei stride = static_cast<GLsizei>(vboCache[ci].vertexStride);
         if (posLoc >= 0) {
-          glBindBuffer(GL_ARRAY_BUFFER, curPosVBO);
-          glEnableVertexAttribArray(posLoc);
-          glVertexAttribPointer(posLoc, 3, GL_FLOAT, GL_FALSE, stride, NULL);
+          this->glue->glBindBuffer(GL_ARRAY_BUFFER, curPosVBO);
+          this->glue->glEnableVertexAttribArray(posLoc);
+          this->glue->glVertexAttribPointer(posLoc, 3, GL_FLOAT, GL_FALSE, stride, NULL);
         }
         if (idColorLoc >= 0) {
-          glBindBuffer(GL_ARRAY_BUFFER, curColorVBO);
-          glEnableVertexAttribArray(idColorLoc);
-          glVertexAttribPointer(idColorLoc, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, NULL);
+          this->glue->glBindBuffer(GL_ARRAY_BUFFER, curColorVBO);
+          this->glue->glEnableVertexAttribArray(idColorLoc);
+          this->glue->glVertexAttribPointer(idColorLoc, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, NULL);
         }
         if (vboCache[ci].idxVBO != 0) {
-          glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboCache[ci].idxVBO);
+          this->glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vboCache[ci].idxVBO);
         }
 
-        glBindVertexArray(0);
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+        this->glue->glBindVertexArray(0);
+        this->glue->glBindBuffer(GL_ARRAY_BUFFER, 0);
+        this->glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
         idVAOColorKey[ci] = curColorVBO;
         idVAOPosKey[ci] = curPosVBO;
         idVAOIdxKey[ci] = curIdxVBO;
       }
 
       // Fast path: bind VAO + draw (3 GL calls)
-      glBindVertexArray(idVAOs[ci]);
+      this->glue->glBindVertexArray(idVAOs[ci]);
       if (cmd.geometry.indexCount > 0 && vboCache[ci].idxVBO != 0) {
-        glDrawElements(prim, cmd.geometry.indexCount, GL_UNSIGNED_INT, NULL);
+        this->glue->glDrawElements(prim, cmd.geometry.indexCount, GL_UNSIGNED_INT, NULL);
       }
       else {
-        glDrawArrays(prim, 0, cmd.geometry.vertexCount);
+        this->glue->glDrawArrays(prim, 0, cmd.geometry.vertexCount);
       }
     }
     else {
       // Fallback: manual attribute setup with temp VBOs
       GLsizei stride = static_cast<GLsizei>(
         cmd.geometry.vertexStride ? cmd.geometry.vertexStride : sizeof(float) * 3);
-      glBindBuffer(GL_ARRAY_BUFFER, tempPosVBO);
-      glBufferData(GL_ARRAY_BUFFER,
+      this->glue->glBindBuffer(GL_ARRAY_BUFFER, tempPosVBO);
+      this->glue->glBufferData(GL_ARRAY_BUFFER,
                    static_cast<GLsizeiptr>(cmd.geometry.vertexCount) * stride,
                    cmd.geometry.positions, GL_STREAM_DRAW);
       if (posLoc >= 0) {
-        glEnableVertexAttribArray(posLoc);
-        glVertexAttribPointer(posLoc, 3, GL_FLOAT, GL_FALSE, stride, NULL);
+        this->glue->glEnableVertexAttribArray(posLoc);
+        this->glue->glVertexAttribPointer(posLoc, 3, GL_FLOAT, GL_FALSE, stride, NULL);
       }
       if (idColorLoc >= 0) {
-        glBindBuffer(GL_ARRAY_BUFFER, idColorVBOs[ci]);
-        glEnableVertexAttribArray(idColorLoc);
-        glVertexAttribPointer(idColorLoc, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, NULL);
+        this->glue->glBindBuffer(GL_ARRAY_BUFFER, idColorVBOs[ci]);
+        this->glue->glEnableVertexAttribArray(idColorLoc);
+        this->glue->glVertexAttribPointer(idColorLoc, 4, GL_UNSIGNED_BYTE, GL_TRUE, 0, NULL);
       }
       if (cmd.geometry.indexCount > 0 && cmd.geometry.indices) {
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, tempIdxVBO);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER,
+        this->glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, tempIdxVBO);
+        this->glue->glBufferData(GL_ELEMENT_ARRAY_BUFFER,
                      cmd.geometry.indexCount * sizeof(uint32_t),
                      cmd.geometry.indices, GL_STREAM_DRAW);
-        glDrawElements(prim, cmd.geometry.indexCount, GL_UNSIGNED_INT, NULL);
+        this->glue->glDrawElements(prim, cmd.geometry.indexCount, GL_UNSIGNED_INT, NULL);
       }
       else {
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-        glDrawArrays(prim, 0, cmd.geometry.vertexCount);
+        this->glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+        this->glue->glDrawArrays(prim, 0, cmd.geometry.vertexCount);
       }
-      if (posLoc >= 0) glDisableVertexAttribArray(posLoc);
-      if (idColorLoc >= 0) glDisableVertexAttribArray(idColorLoc);
+      if (posLoc >= 0) this->glue->glDisableVertexAttribArray(posLoc);
+      if (idColorLoc >= 0) this->glue->glDisableVertexAttribArray(idColorLoc);
     }
   };
 
@@ -576,11 +593,11 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
   // Use line geometry shader for wide ID edges on Core Profile
   bool useLineShader = (lineShaderProgram != 0 && pickLineWidth > 1.0f);
   if (useLineShader) {
-    glUseProgram(lineShaderProgram);
-    glUniformMatrix4fv(lineUView, 1, GL_FALSE, viewMatrix);
-    glUniformMatrix4fv(lineUProj, 1, GL_FALSE, projMatrix);
-    glUniform2f(lineUVpSize, static_cast<float>(fbWidth), static_cast<float>(fbHeight));
-    glUniform1f(lineULineWidth, pickLineWidth);
+    cc_glglue_glUseProgram(this->glue, lineShaderProgram);
+    this->glue->glUniformMatrix4fv(lineUView, 1, GL_FALSE, viewMatrix);
+    this->glue->glUniformMatrix4fv(lineUProj, 1, GL_FALSE, projMatrix);
+    this->glue->glUniform2f(lineUVpSize, static_cast<float>(fbWidth), static_cast<float>(fbHeight));
+    this->glue->glUniform1f(lineULineWidth, pickLineWidth);
   }
   for (int ci = 0; ci < numCmds; ci++) {
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
@@ -591,13 +608,13 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
     if (useLineShader) {
       SbMat modelMat;
       cmd.modelMatrix.getValue(modelMat);
-      glUniformMatrix4fv(lineUModel, 1, GL_FALSE, &modelMat[0][0]);
+      this->glue->glUniformMatrix4fv(lineUModel, 1, GL_FALSE, &modelMat[0][0]);
     }
     glLineWidth(std::max(cmd.state.raster.lineWidth, pickLineWidth));
     drawIdCmd(cmd, ci, GL_LINES);
   }
   if (useLineShader) {
-    glUseProgram(shaderProgram);
+    cc_glglue_glUseProgram(this->glue, shaderProgram);
   }
   glDepthMask(GL_TRUE);
   glDepthFunc(GL_LESS);
@@ -619,8 +636,8 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
   glDepthMask(GL_TRUE);
   glDepthFunc(GL_LESS);
 
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+  this->glue->glBindBuffer(GL_ARRAY_BUFFER, 0);
+  this->glue->glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
 // -----------------------------------------------------------------------
@@ -822,20 +839,20 @@ SoIDPickBuffer::computeIntersection(uint32_t lutIndex, const SoDrawList & drawli
 void
 SoIDPickBuffer::blitToScreen(int screenWidth, int screenHeight) const
 {
-  if (!fbo || !colorTex) return;
+  if (!fbo || !colorTex || !this->glue || !this->glue->glBlitFramebuffer) return;
 
   // Use glBlitFramebuffer for compatibility (no legacy GL needed)
   GLint prevReadFbo = 0, prevDrawFbo = 0;
   glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prevReadFbo);
   glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prevDrawFbo);
 
-  glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(prevDrawFbo));
+  this->glue->glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+  this->glue->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, static_cast<GLuint>(prevDrawFbo));
 
-  glBlitFramebuffer(
+  this->glue->glBlitFramebuffer(
     0, 0, fbWidth, fbHeight,
     0, 0, screenWidth, screenHeight,
     GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
-  glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(prevReadFbo));
+  this->glue->glBindFramebuffer(GL_READ_FRAMEBUFFER, static_cast<GLuint>(prevReadFbo));
 }

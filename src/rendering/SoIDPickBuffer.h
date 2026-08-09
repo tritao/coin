@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <vector>
 
+struct cc_glglue;
+
 /// Per-command cached VBO info passed from the visual pass backend
 /// to the ID pick buffer, avoiding redundant geometry uploads.
 struct SoIDPassVBOInfo {
@@ -49,7 +51,7 @@ public:
   SoIDPickBuffer & operator=(const SoIDPickBuffer &) = delete;
 
   /// Initialize GL resources (shader, FBO). Requires valid GL context.
-  SbBool initialize();
+  SbBool initialize(const cc_glglue * glue);
 
   /// Resize FBO when viewport changes. No-op if size unchanged.
   void resize(int width, int height);
@@ -124,6 +126,7 @@ private:
 
   // GL resources
   uint32_t fbo = 0;
+  const cc_glglue * glue = nullptr;
   uint32_t colorTex = 0;
   uint32_t depthRbo = 0;
   int fbWidth = 0;
