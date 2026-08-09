@@ -37,7 +37,9 @@ if(COIN_BUILD_SINGLE_LIB)
 		set(COIN_SOURCE ${COIN_SOURCE} elements/GL/${SRCFILE} CACHE INTERNAL "COIN_SOURCE")
 	endforeach(SRCFILE)
 else()
-	add_library(glelements OBJECT ${COIN_GLELEMENTS_FILES})
+	if(COIN_BUILD_LEGACY_GL_RENDERER)
+		add_library(glelements OBJECT ${COIN_GLELEMENTS_FILES})
+	endif()
 endif()
 
 # define documentation
