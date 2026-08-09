@@ -163,6 +163,18 @@ if(HAVE_EGL)
 	add_test(NAME DrawListPickingTest COMMAND DrawListPickingTest)
 	set_tests_properties(DrawListPickingTest PROPERTIES SKIP_RETURN_CODE 77)
 
+	add_executable(DrawListManagerTest drawlist-manager-test.cpp)
+	target_link_libraries(DrawListManagerTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+	target_compile_definitions(DrawListManagerTest PRIVATE COIN_INTERNAL)
+	target_include_directories(DrawListManagerTest PRIVATE
+		${PROJECT_SOURCE_DIR}/src
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES}
+	)
+	add_test(NAME DrawListManagerTest COMMAND DrawListManagerTest)
+	set_tests_properties(DrawListManagerTest PROPERTIES SKIP_RETURN_CODE 77)
+
 	add_executable(EGLBindingTest egl-binding-test.cpp)
 	target_link_libraries(EGLBindingTest Coin ${COIN_TARGET_LINK_LIBRARIES})
 	target_compile_definitions(EGLBindingTest PRIVATE COIN_INTERNAL)

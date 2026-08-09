@@ -115,8 +115,7 @@ jobs:
           $installedPrefix = (Join-Path $env:GITHUB_WORKSPACE "cmake_install_dir").Replace('\', '/')
           cmake -S $smokeSource -B $smokeBuild -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$installedPrefix"
           cmake --build $smokeBuild --config Release
-      - name: Run compatibility tests
-        if: matrix.legacy_gl_renderer == 'ON'
+      - name: Run tests
         run: ctest -C Release -VV
         working-directory: cmake_build_dir
       - name: Create Artifacts
@@ -156,8 +155,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/cmake_install_dir"
           cmake --build installed-package-smoke --config Release -- -j4
-      - name: Run compatibility tests
-        if: matrix.legacy_gl_renderer == 'ON'
+      - name: Run tests
         run: ctest -C Release -VV
         working-directory: cmake_build_dir
       - name: Create Artifacts
