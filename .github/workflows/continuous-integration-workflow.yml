@@ -50,8 +50,8 @@ jobs:
           path: cmake_install_dir/
         if: always()
 
-  ubuntu-egl-context:
-    name: Ubuntu CI (EGL headless)
+  ubuntu-core:
+    name: Ubuntu CI (GL core)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -62,11 +62,11 @@ jobs:
         run: |
           sudo apt-get -y update
           sudo apt-get -y install freeglut3-dev
-          cmake -S . -B cmake_build_dir -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DCOIN_BUILD_LEGACY_GL_RENDERER=ON -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_EXAMPLES=OFF -DCOIN_BUILD_DOCUMENTATION=OFF
-      - name: Build EGL and GLSL tests
-        run: cmake --build cmake_build_dir --target EGLBindingTest GLSLRuntimeTest --config Release -- -j4
-      - name: Run EGL and GLSL tests in a core profile
-        run: ctest -C Release -R '^(EGLBindingTest|GLSLRuntimeTest)$' --output-on-failure
+          cmake -S . -B cmake_build_dir -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DCOIN_BUILD_LEGACY_GL_RENDERER=OFF -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_EXAMPLES=OFF -DCOIN_BUILD_DOCUMENTATION=OFF
+      - name: Build core EGL, GLSL, and readback tests
+        run: cmake --build cmake_build_dir --target EGLBindingTest GLSLRuntimeTest OffscreenReadbackTest --config Release -- -j4
+      - name: Run core EGL, GLSL, and readback tests
+        run: ctest -C Release -R '^(EGLBindingTest|GLSLRuntimeTest|OffscreenReadbackTest)$' --output-on-failure
         working-directory: cmake_build_dir
         env:
           COIN_EGL: 1

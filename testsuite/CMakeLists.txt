@@ -125,6 +125,18 @@ if(HAVE_EGL)
 	)
 	add_test(NAME GLSLDiagnosticsTest COMMAND GLSLDiagnosticsTest)
 	set_tests_properties(GLSLDiagnosticsTest PROPERTIES SKIP_RETURN_CODE 77)
+
+	add_executable(OffscreenReadbackTest offscreen-readback-test.cpp)
+	target_link_libraries(OffscreenReadbackTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+	target_compile_definitions(OffscreenReadbackTest PRIVATE COIN_INTERNAL)
+	target_include_directories(OffscreenReadbackTest PRIVATE
+		${PROJECT_SOURCE_DIR}/src
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES}
+	)
+	add_test(NAME OffscreenReadbackTest COMMAND OffscreenReadbackTest)
+	set_tests_properties(OffscreenReadbackTest PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 
 # Many warnings are generated from test macros on macOS with Xcode.
