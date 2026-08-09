@@ -79,7 +79,10 @@ extern "C" {
 #define GL_VERSION_1_0 1
 typedef void GLvoid;
 typedef unsigned int GLenum;
-#include <KHR/khrplatform.h>
+/* Keep the snapshot self-contained for installed Coin consumers.  The
+ * namespaced copy is installed alongside this header and must not depend on
+ * an application-owned top-level KHR include directory. */
+#include <Inventor/system/khronos/khrplatform.h>
 typedef khronos_float_t GLfloat;
 typedef int GLint;
 typedef int GLsizei;
