@@ -539,6 +539,8 @@ returnpoint:
    actual cc_glglue instances. */
 static cc_dict * gldict = NULL;
 
+static SbBool glglue_detect_context_legacy_rendering(const cc_glglue * glue);
+
 static void
 free_glglue_instance(uintptr_t COIN_UNUSED_ARG(key), void * value, void * COIN_UNUSED_ARG(closure))
 {
@@ -2440,13 +2442,29 @@ cc_glglue_instance(int contextid)
       }
     }
 
+    // Cache the legacy-rendering capability before querying limits. Some
+    // limits are invalid in a core profile and would otherwise leave a stale
+    // GL error for later capability queries.
+    gi->context_supports_legacy_rendering =
+      glglue_detect_context_legacy_rendering(gi);
+    gi->legacy_rendering_support_cached = TRUE;
+
     /* read some limits */
 
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &gltmp);
     gi->max_texture_size = gltmp;
 
-    glGetIntegerv(GL_MAX_LIGHTS, &gltmp);
-    gi->max_lights = (int) gltmp;
+    if (gi->context_supports_legacy_rendering) {
+#if COIN_BUILD_LEGACY_GL_RENDERER
+      glGetIntegerv(GL_MAX_LIGHTS, &gltmp);
+      gi->max_lights = (int) gltmp;
+#else
+      gi->max_lights = 0;
+#endif
+    }
+    else {
+      gi->max_lights = 0;
+    }
 
     {
       GLfloat vals[2];
@@ -2585,6 +2603,64 @@ SbBool
 cc_glglue_isdirect(const cc_glglue * w)
 {
   return w->glx.isdirect;
+}
+
+static SbBool
+glglue_detect_context_legacy_rendering(const cc_glglue * glue)
+{
+  if (glue == NULL || glue->versionstr == NULL) return FALSE;
+  if (strncmp(glue->versionstr, "OpenGL ES", 9) == 0) return FALSE;
+
+  unsigned int major, minor, release;
+  cc_glglue_glversion(glue, &major, &minor, &release);
+  if (major == 0) return FALSE;
+  if (major < 2 || (major == 2 && minor <= 1)) return TRUE;
+
+  if (major == 3 && minor == 0) {
+    GLint flags = 0;
+    glGetIntegerv(GL_CONTEXT_FLAGS, &flags);
+    return (flags & GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT) == 0;
+  }
+
+  if (major == 3 && minor == 1) {
+    if (glue->extensionsstr != NULL) {
+      return coin_glglue_extension_available(glue->extensionsstr,
+                                             "GL_ARB_compatibility");
+    }
+    COIN_PFNGLGETSTRINGIPROC getStringi = glue->glGetStringi;
+    if (getStringi == NULL) {
+      getStringi = reinterpret_cast<COIN_PFNGLGETSTRINGIPROC>(
+        cc_glglue_getprocaddress(glue, "glGetStringi"));
+    }
+    if (getStringi != NULL) {
+      GLint extensionCount = 0;
+      glGetIntegerv(GL_NUM_EXTENSIONS, &extensionCount);
+      for (GLint i = 0; i < extensionCount; ++i) {
+        const char * name = reinterpret_cast<const char *>(
+          getStringi(GL_EXTENSIONS, static_cast<GLuint>(i)));
+        if (name && strcmp(name, "GL_ARB_compatibility") == 0) return TRUE;
+      }
+    }
+    return FALSE;
+  }
+
+  GLint profile = 0;
+  glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &profile);
+  return (profile & GL_CONTEXT_COMPATIBILITY_PROFILE_BIT) != 0 &&
+    (profile & GL_CONTEXT_CORE_PROFILE_BIT) == 0;
+}
+
+SbBool
+cc_glglue_context_supports_legacy_rendering(const cc_glglue * glue)
+{
+  if (glue == NULL) return FALSE;
+  if (!glue->legacy_rendering_support_cached) {
+    cc_glglue * mutableGlue = const_cast<cc_glglue *>(glue);
+    mutableGlue->context_supports_legacy_rendering =
+      glglue_detect_context_legacy_rendering(glue);
+    mutableGlue->legacy_rendering_support_cached = TRUE;
+  }
+  return glue->context_supports_legacy_rendering;
 }
 
 
