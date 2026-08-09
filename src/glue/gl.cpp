@@ -1185,6 +1185,27 @@ glglue_resolve_symbols(cc_glglue * w)
 #endif /* GL_VERSION_1_1 */
 
 
+  /* Vertex array objects are core in OpenGL 3.0 and exposed by
+     GL_ARB_vertex_array_object on older contexts. Resolve them explicitly;
+     the Windows OpenGL 1.1 import library does not export these symbols. */
+  w->glBindVertexArray = (COIN_PFNGLBINDVERTEXARRAYPROC)
+    cc_glglue_getprocaddress(w, "glBindVertexArray");
+  w->glDeleteVertexArrays = (COIN_PFNGLDELETEVERTEXARRAYSPROC)
+    cc_glglue_getprocaddress(w, "glDeleteVertexArrays");
+  w->glGenVertexArrays = (COIN_PFNGLGENVERTEXARRAYSPROC)
+    cc_glglue_getprocaddress(w, "glGenVertexArrays");
+  if (!w->glBindVertexArray || !w->glDeleteVertexArrays || !w->glGenVertexArrays) {
+    if (cc_glglue_glext_supported(w, "GL_APPLE_vertex_array_object")) {
+      w->glBindVertexArray = (COIN_PFNGLBINDVERTEXARRAYPROC)
+        cc_glglue_getprocaddress(w, "glBindVertexArrayAPPLE");
+      w->glDeleteVertexArrays = (COIN_PFNGLDELETEVERTEXARRAYSPROC)
+        cc_glglue_getprocaddress(w, "glDeleteVertexArraysAPPLE");
+      w->glGenVertexArrays = (COIN_PFNGLGENVERTEXARRAYSPROC)
+        cc_glglue_getprocaddress(w, "glGenVertexArraysAPPLE");
+    }
+  }
+
+
 #if defined(GL_VERSION_1_2)
   w->glDrawRangeElements = NULL;
   if (cc_glglue_glversion_matches_at_least(w, 1, 2, 0))
@@ -1713,6 +1734,33 @@ glglue_resolve_symbols(cc_glglue * w)
   w->glDeleteProgram = NULL;
   w->glGetProgramiv = NULL;
   w->glGetProgramInfoLog = NULL;
+  w->glBindAttribLocation = NULL;
+  w->glGetAttribLocation = NULL;
+  w->glVertexAttrib1f = NULL;
+  w->glVertexAttrib2f = NULL;
+  w->glVertexAttrib3f = NULL;
+  w->glVertexAttrib4f = NULL;
+  w->glVertexAttribPointer = NULL;
+  w->glEnableVertexAttribArray = NULL;
+  w->glDisableVertexAttribArray = NULL;
+  w->glBindAttribLocation = (COIN_PFNGLBINDATTRIBLOCATIONPROC)
+    cc_glglue_getprocaddress(w, "glBindAttribLocation");
+  w->glGetAttribLocation = (COIN_PFNGLGETATTRIBLOCATIONPROC)
+    cc_glglue_getprocaddress(w, "glGetAttribLocation");
+  w->glVertexAttrib1f = (COIN_PFNGLVERTEXATTRIB1FPROC)
+    cc_glglue_getprocaddress(w, "glVertexAttrib1f");
+  w->glVertexAttrib2f = (COIN_PFNGLVERTEXATTRIB2FPROC)
+    cc_glglue_getprocaddress(w, "glVertexAttrib2f");
+  w->glVertexAttrib3f = (COIN_PFNGLVERTEXATTRIB3FPROC)
+    cc_glglue_getprocaddress(w, "glVertexAttrib3f");
+  w->glVertexAttrib4f = (COIN_PFNGLVERTEXATTRIB4FPROC)
+    cc_glglue_getprocaddress(w, "glVertexAttrib4f");
+  w->glVertexAttribPointer = (COIN_PFNGLVERTEXATTRIBPOINTERPROC)
+    cc_glglue_getprocaddress(w, "glVertexAttribPointer");
+  w->glEnableVertexAttribArray = (COIN_PFNGLENABLEVERTEXATTRIBARRAYPROC)
+    cc_glglue_getprocaddress(w, "glEnableVertexAttribArray");
+  w->glDisableVertexAttribArray = (COIN_PFNGLDISABLEVERTEXATTRIBARRAYPROC)
+    cc_glglue_getprocaddress(w, "glDisableVertexAttribArray");
 
   /* Resolve standard GLSL entry points independently of the active profile.
      The wrappers below fall back to the ARB_shader_objects aliases when a
@@ -1836,6 +1884,38 @@ glglue_resolve_symbols(cc_glglue * w)
   if (!w->glUniform3iv) w->glUniform3iv = w->glUniform3ivARB;
   if (!w->glUniform4iv) w->glUniform4iv = w->glUniform4ivARB;
   if (!w->glUniformMatrix4fv) w->glUniformMatrix4fv = w->glUniformMatrix4fvARB;
+  if (!w->glBindAttribLocation && w->glBindAttribLocationARB) {
+    w->glBindAttribLocation = (COIN_PFNGLBINDATTRIBLOCATIONPROC)
+      w->glBindAttribLocationARB;
+  }
+  if (!w->glGetAttribLocation && w->glGetAttribLocationARB) {
+    w->glGetAttribLocation = (COIN_PFNGLGETATTRIBLOCATIONPROC)
+      w->glGetAttribLocationARB;
+  }
+  if (!w->glVertexAttrib1f && w->glVertexAttrib1fARB) {
+    w->glVertexAttrib1f = (COIN_PFNGLVERTEXATTRIB1FPROC) w->glVertexAttrib1fARB;
+  }
+  if (!w->glVertexAttrib2f && w->glVertexAttrib2fARB) {
+    w->glVertexAttrib2f = (COIN_PFNGLVERTEXATTRIB2FPROC) w->glVertexAttrib2fARB;
+  }
+  if (!w->glVertexAttrib3f && w->glVertexAttrib3fARB) {
+    w->glVertexAttrib3f = (COIN_PFNGLVERTEXATTRIB3FPROC) w->glVertexAttrib3fARB;
+  }
+  if (!w->glVertexAttrib4f && w->glVertexAttrib4fARB) {
+    w->glVertexAttrib4f = (COIN_PFNGLVERTEXATTRIB4FPROC) w->glVertexAttrib4fARB;
+  }
+  if (!w->glVertexAttribPointer && w->glVertexAttribPointerARB) {
+    w->glVertexAttribPointer = (COIN_PFNGLVERTEXATTRIBPOINTERPROC)
+      w->glVertexAttribPointerARB;
+  }
+  if (!w->glEnableVertexAttribArray && w->glEnableVertexAttribArrayARB) {
+    w->glEnableVertexAttribArray = (COIN_PFNGLENABLEVERTEXATTRIBARRAYPROC)
+      w->glEnableVertexAttribArrayARB;
+  }
+  if (!w->glDisableVertexAttribArray && w->glDisableVertexAttribArrayARB) {
+    w->glDisableVertexAttribArray = (COIN_PFNGLDISABLEVERTEXATTRIBARRAYPROC)
+      w->glDisableVertexAttribArrayARB;
+  }
 
   w->glGenQueries = NULL; /* so that cc_glglue_has_occlusion_query() works  */
 #if defined(GL_VERSION_1_5)
