@@ -33,6 +33,12 @@
 #ifndef COIN_BASIC_H
 #define COIN_BASIC_H
 
+/* LegacyGL is the default for non-CMake builds. CMake-generated headers
+ * replace this with the configured 0/1 value. */
+#ifndef COIN_BUILD_LEGACY_GL_RENDERER
+#define COIN_BUILD_LEGACY_GL_RENDERER 1
+#endif
+
 /*
   NOTE: basic.h is automatically generated from basic.h.in, so don't
   edit basic.h directly.

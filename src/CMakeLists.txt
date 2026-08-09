@@ -372,6 +372,17 @@ if(COIN_INSTALL)
   install(DIRECTORY ${CMAKE_BINARY_DIR}/include/Inventor/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/Inventor COMPONENT development FILES_MATCHING PATTERN "*.h")
   install(FILES ${PROJECT_SOURCE_DIR}/include/SoWinEnterScope.h ${PROJECT_SOURCE_DIR}/include/SoWinLeaveScope.h ${PROJECT_SOURCE_DIR}/include/SoDebug.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT development)
 
+  # Keep Coin's vendored Khronos snapshot under the Coin namespace so it
+  # cannot shadow a platform or application-owned GL/KHR header tree.
+  install(FILES
+    ${PROJECT_SOURCE_DIR}/src/glue/khronos/GL/glcorearb.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/Inventor/system/khronos
+    COMPONENT development)
+  install(FILES
+    ${PROJECT_SOURCE_DIR}/src/glue/khronos/KHR/khrplatform.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/Inventor/system/khronos
+    COMPONENT development)
+
 # ############################################################################
 # Install data files
 # ############################################################################

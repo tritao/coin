@@ -34,6 +34,13 @@
 #ifndef COIN_BASIC_H
 #define COIN_BASIC_H
 
+/* Generated renderer configuration.  Keep this available before any public
+ * node or action header is parsed, since core-only builds omit LegacyGL
+ * declarations and implementations together. */
+#ifndef COIN_BUILD_LEGACY_GL_RENDERER
+#define COIN_BUILD_LEGACY_GL_RENDERER @COIN_BUILD_LEGACY_GL_RENDERER_VALUE@
+#endif
+
 /*
   NOTE: basic.h is automatically generated from basic.h.in, so don't
   edit basic.h directly.
