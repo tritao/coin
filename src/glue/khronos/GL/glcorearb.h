@@ -79,11 +79,7 @@ extern "C" {
 #define GL_VERSION_1_0 1
 typedef void GLvoid;
 typedef unsigned int GLenum;
-#if defined(COIN_INTERNAL)
 #include <KHR/khrplatform.h>
-#else
-#include <Inventor/system/khronos/khrplatform.h>
-#endif
 typedef khronos_float_t GLfloat;
 typedef int GLint;
 typedef int GLsizei;
