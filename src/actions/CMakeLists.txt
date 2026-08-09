@@ -15,6 +15,7 @@ set(COIN_ACTIONS_FILES
 	SoToVRML2Action.cpp
 	SoWriteAction.cpp
 	SoAudioRenderAction.cpp
+	SoIRRenderAction.cpp
 )
 
 if(COIN_BUILD_LEGACY_GL_RENDERER)
