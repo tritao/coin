@@ -722,7 +722,9 @@ SoNode::initClasses(void)
   SoBumpMapTransform::initClass();
 
   SoSceneTexture2::initClass();
+#if COIN_BUILD_LEGACY_GL_RENDERER
   SoSceneTextureCubeMap::initClass();
+#endif
 
   SoTextureCoordinateCube::initClass();
   SoTextureCoordinateSphere::initClass();
@@ -951,6 +953,7 @@ SoNode::getPrimitiveCount(SoGetPrimitiveCountAction * COIN_UNUSED_ARG(action))
   used for calling the SoNode::GLRender() virtual method which does
   the \e real work.
 */
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoNode::GLRenderS(SoAction * action, SoNode * node)
 {
@@ -989,7 +992,9 @@ SoNode::GLRenderS(SoAction * action, SoNode * node)
     cc_string_clean(&str);
   }
 }
+#endif
 
+#if COIN_BUILD_LEGACY_GL_RENDERER
 // Note that this documentation will also be used for all subclasses
 // which reimplements the method, so keep the doc "generic enough".
 /*!
@@ -1039,6 +1044,7 @@ SoNode::GLRenderOffPath(SoGLRenderAction * action)
 {
   this->GLRender(action);
 }
+#endif
 
 // *************************************************************************
 
@@ -1614,7 +1620,9 @@ static void
 init_action_methods(void)
 {
   SoCallbackAction::addMethod(SoNode::getClassTypeId(), SoNode::callbackS);
+#if COIN_BUILD_LEGACY_GL_RENDERER
   SoGLRenderAction::addMethod(SoNode::getClassTypeId(), SoNode::GLRenderS);
+#endif
   SoGetBoundingBoxAction::addMethod(SoNode::getClassTypeId(), SoNode::getBoundingBoxS);
   SoGetMatrixAction::addMethod(SoNode::getClassTypeId(), SoNode::getMatrixS);
   SoGetPrimitiveCountAction::addMethod(SoNode::getClassTypeId(), SoNode::getPrimitiveCountS);
@@ -1631,7 +1639,9 @@ init_action_methods(void)
   SoRayPickAction::addMethod(SoBumpMap::getClassTypeId(), SoNode::rayPickS);
   SoRayPickAction::addMethod(SoImage::getClassTypeId(), SoNode::rayPickS);
   SoRayPickAction::addMethod(SoSceneTexture2::getClassTypeId(), SoNode::rayPickS);
+#if COIN_BUILD_LEGACY_GL_RENDERER
   SoRayPickAction::addMethod(SoSceneTextureCubeMap::getClassTypeId(), SoNode::rayPickS);
+#endif
   SoRayPickAction::addMethod(SoTextureCubeMap::getClassTypeId(), SoNode::rayPickS);
 
   SoSearchAction::addMethod(SoNode::getClassTypeId(), SoNode::searchS);
