@@ -44,7 +44,6 @@
 #endif // HAVE_CONFIG_H
 
 #include <Inventor/C/tidbits.h>
-#include <Inventor/elements/SoGLCacheContextElement.h>
 #include <Inventor/misc/SoState.h>
 
 #include "glue/glp.h"
@@ -108,65 +107,4 @@ sogl_glerror_debugging(void)
     COIN_GLERROR_DEBUGGING = str ? atoi(str) : 0;
   }
   return (COIN_GLERROR_DEBUGGING == 0) ? FALSE : TRUE;
-}
-
-static int SOGL_AUTOCACHE_REMOTE_MIN = 500000;
-static int SOGL_AUTOCACHE_REMOTE_MAX = 5000000;
-static int SOGL_AUTOCACHE_LOCAL_MIN = 100000;
-static int SOGL_AUTOCACHE_LOCAL_MAX = 1000000;
-static int SOGL_AUTOCACHE_VBO_LIMIT = 65536;
-
-/*!
-  Called by each shape during rendering. Will enable/disable auto caching
-  based on the number of primitives.
-*/
-void
-sogl_autocache_update(SoState * state, const int numprimitives, SbBool didusevbo)
-{
-  static SbBool didtestenv = FALSE;
-  if (!didtestenv) {
-    const char * env;
-    env = coin_getenv("COIN_AUTOCACHE_REMOTE_MIN");
-    if (env) {
-      SOGL_AUTOCACHE_REMOTE_MIN = atoi(env);
-    }
-    env = coin_getenv("COIN_AUTOCACHE_REMOTE_MAX");
-    if (env) {
-      SOGL_AUTOCACHE_REMOTE_MAX = atoi(env);
-    }
-    env = coin_getenv("COIN_AUTOCACHE_LOCAL_MIN");
-    if (env) {
-      SOGL_AUTOCACHE_LOCAL_MIN = atoi(env);
-    }
-    env = coin_getenv("COIN_AUTOCACHE_LOCAL_MAX");
-    if (env) {
-      SOGL_AUTOCACHE_LOCAL_MAX = atoi(env);
-    }
-    env = coin_getenv("COIN_AUTOCACHE_VBO_LIMIT");
-    if (env) {
-      SOGL_AUTOCACHE_VBO_LIMIT = atoi(env);
-    }
-    didtestenv = TRUE;
-  }
-
-  int minval = SOGL_AUTOCACHE_LOCAL_MIN;
-  int maxval = SOGL_AUTOCACHE_LOCAL_MAX;
-  if (SoGLCacheContextElement::getIsRemoteRendering(state)) {
-    minval = SOGL_AUTOCACHE_REMOTE_MIN;
-    maxval = SOGL_AUTOCACHE_REMOTE_MAX;
-  }
-  if (numprimitives <= minval) {
-    SoGLCacheContextElement::shouldAutoCache(state, SoGLCacheContextElement::DO_AUTO_CACHE);
-  }
-  else if (numprimitives >= maxval) {
-    SoGLCacheContextElement::shouldAutoCache(state, SoGLCacheContextElement::DONT_AUTO_CACHE);
-  }
-  SoGLCacheContextElement::incNumShapes(state);
-
-  if (didusevbo) {
-    // avoid creating caches when rendering large VBOs
-    if (numprimitives > SOGL_AUTOCACHE_VBO_LIMIT) {
-      SoGLCacheContextElement::shouldAutoCache(state, SoGLCacheContextElement::DONT_AUTO_CACHE);
-    }
-  }
 }
