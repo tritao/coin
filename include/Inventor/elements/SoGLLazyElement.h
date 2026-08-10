@@ -40,6 +40,7 @@ class SoGLRenderCache;
 class SoGLLazyElementP;
 class SoVBO;
 
+#if COIN_HAVE_LEGACY_GL_RENDERER
 class COIN_DLL_API SoGLLazyElement : public SoLazyElement {
   typedef SoLazyElement inherited;
 
@@ -188,4 +189,5 @@ private:
   SoGLLazyElementP * pimpl; // for future use
 };
 
+#endif
 #endif // !COIN_SOGLLAZYELEMENT_H

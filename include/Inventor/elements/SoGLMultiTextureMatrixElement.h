@@ -37,6 +37,7 @@
 
 typedef struct cc_glglue cc_glue; // same as in glue/gl.h
 
+#if COIN_HAVE_LEGACY_GL_RENDERER
 class COIN_DLL_API SoGLMultiTextureMatrixElement : public SoMultiTextureMatrixElement {
   typedef SoMultiTextureMatrixElement inherited;
 
@@ -60,4 +61,5 @@ private:
   uint32_t cachecontext;
 };
 
+#endif
 #endif // !COIN_SOGLMULTITEXTUREMATRIXELEMENT_H

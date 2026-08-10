@@ -40,11 +40,11 @@
 #include <Inventor/SbVec2f.h>
 #include <Inventor/tools/SbPimplPtr.h>
 
+#if COIN_HAVE_LEGACY_GL_RENDERER
 class SoPrimitiveVertexCacheP;
 class SoPrimitiveVertex;
 class SoPointDetail;
 class SoState;
-
 class COIN_DLL_API SoPrimitiveVertexCache : public SoCache {
   typedef SoCache inherited;
 public:
@@ -103,5 +103,6 @@ private:
   SoPrimitiveVertexCache & operator = (const SoPrimitiveVertexCache & rhs); // N/A
 
 };
+#endif
 
 #endif // COIN_SOPRIMITIVEVERTEXCACHE_H

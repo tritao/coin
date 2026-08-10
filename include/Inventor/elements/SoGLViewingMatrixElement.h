@@ -35,6 +35,7 @@
 
 #include <Inventor/elements/SoViewingMatrixElement.h>
 
+#if COIN_HAVE_LEGACY_GL_RENDERER
 class COIN_DLL_API SoGLViewingMatrixElement : public SoViewingMatrixElement {
   typedef SoViewingMatrixElement inherited;
 
@@ -64,4 +65,5 @@ private:
   void updategl(void);
 };
 
+#endif
 #endif // !COIN_SOGLVIEWINGMATRIXELEMENT_H

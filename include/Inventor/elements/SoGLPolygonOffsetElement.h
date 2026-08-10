@@ -35,6 +35,7 @@
 
 #include <Inventor/elements/SoPolygonOffsetElement.h>
 
+#if COIN_HAVE_LEGACY_GL_RENDERER
 class COIN_DLL_API SoGLPolygonOffsetElement : public SoPolygonOffsetElement {
   typedef SoPolygonOffsetElement inherited;
 
@@ -58,4 +59,5 @@ private:
   void updategl(void);
 };
 
+#endif
 #endif // !COIN_SOGLPOLYGONOFFSETELEMENT_H

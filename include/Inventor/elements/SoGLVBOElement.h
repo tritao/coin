@@ -38,6 +38,7 @@
 class SoVBO;
 class SoGLVBOElementP;
 
+#if COIN_HAVE_LEGACY_GL_RENDERER
 class COIN_DLL_API SoGLVBOElement : public SoElement {
   typedef SoElement inherited;
 
@@ -78,4 +79,5 @@ class COIN_DLL_API SoGLVBOElement : public SoElement {
   SoGLVBOElementP * pimpl;
 };
 
+#endif
 #endif // COIN_SOGLVBOELEMENT_H

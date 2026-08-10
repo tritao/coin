@@ -56,10 +56,8 @@
 
 #include "SbBasicP.h"
 
-#if COIN_BUILD_LEGACY_GL_RENDERER
 #include "glue/glp.h"
 #include "rendering/SoGL.h"
-#endif
 
 #define FLAG_COLORONLY  0x01
 #define FLAG_NVIDIA_BUG 0x02

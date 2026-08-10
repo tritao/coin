@@ -35,6 +35,7 @@
 
 #include <Inventor/elements/SoDepthBufferElement.h>
 
+#if COIN_HAVE_LEGACY_GL_RENDERER
 class COIN_DLL_API SoGLDepthBufferElement : public SoDepthBufferElement {
   typedef SoDepthBufferElement inherited;
   SO_ELEMENT_HEADER(SoGLDepthBufferElement);
@@ -57,4 +58,5 @@ private:
 
 }; // SoGLDepthBufferElement
 
+#endif
 #endif // !COIN_SOGLDEPTHBUFFERELEMENT_H

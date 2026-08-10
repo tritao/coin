@@ -272,7 +272,9 @@
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/sensors/SoFieldSensor.h>
 #include <Inventor/sensors/SoOneShotSensor.h>
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/actions/SoGLRenderAction.h>
+#endif
 #include <Inventor/SoOffscreenRenderer.h>
 #include <Inventor/misc/SoNotification.h>
 
@@ -364,6 +366,7 @@ namespace {
 // *************************************************************************
 
 class SoSceneTexture2P {
+#if COIN_BUILD_LEGACY_GL_RENDERER
   struct fbo_data {
     GLuint fbo_frameBuffer;
     GLuint fbo_depthBuffer;
@@ -383,6 +386,7 @@ class SoSceneTexture2P {
         this->fbo_mipmap = FALSE;
     }
   };
+#endif
 
 public:
   SoSceneTexture2P(SoSceneTexture2 * api);
@@ -397,7 +401,9 @@ public:
   SbVec2s glcontextsize;
   int contextid;
 
+#if COIN_BUILD_LEGACY_GL_RENDERER
   fbo_data * fbodata;
+#endif
   SoGLImage * glimage;
   int32_t glimagecontext;
   
@@ -409,8 +415,10 @@ public:
   void updateBuffer(SoState * state, const float quality);
   void updateFrameBuffer(SoState * state, const float quality);
   void updatePBuffer(SoState * state, const float quality);
+#if COIN_BUILD_LEGACY_GL_RENDERER
   SoGLRenderAction * glaction;
   static void prerendercb(void * userdata, SoGLRenderAction * action);
+#endif
 
   SbBool createFramebufferObjects(const cc_glglue * glue, SoState * state,
                                   const SoSceneTexture2::Type type,
@@ -418,7 +426,9 @@ public:
   void deleteFrameBufferObjects(const cc_glglue * glue, SoState * state);
   SbBool checkFramebufferStatus(const cc_glglue * glue, const SbBool warn);
 
+#if COIN_BUILD_LEGACY_GL_RENDERER
   SoGLRenderAction::TransparencyType getTransparencyType(SoState * state);
+#endif
   SbBool shouldCreateMipmap(SoState * state) {
     float q = SoTextureQualityElement::get(state);
     return q > 0.5f;
@@ -713,14 +723,15 @@ SoSceneTexture2P::SoSceneTexture2P(SoSceneTexture2 * apiptr)
   this->glimage = NULL;
 #endif
   this->glimagecontext = 0;
+#if COIN_BUILD_LEGACY_GL_RENDERER
   this->glaction = NULL;
+#endif
   this->glcontextsize.setValue(-1,-1);
   this->glrectangle = FALSE;
   this->offscreenbuffer = NULL;
   this->offscreenbuffersize = 0;
   this->canrendertotexture = FALSE;
   this->contextid = -1;
-  this->fbodata = NULL;
 }
 
 SoSceneTexture2P::~SoSceneTexture2P()
@@ -1407,14 +1418,12 @@ SoSceneTexture2P::SoSceneTexture2P(SoSceneTexture2 * apiptr)
   this->glimagevalid = FALSE;
   this->glimage = NULL;
   this->glimagecontext = 0;
-  this->glaction = NULL;
   this->glcontextsize.setValue(-1, -1);
   this->glrectangle = FALSE;
   this->offscreenbuffer = NULL;
   this->offscreenbuffersize = 0;
   this->canrendertotexture = FALSE;
   this->contextid = -1;
-  this->fbodata = NULL;
 }
 
 SoSceneTexture2P::~SoSceneTexture2P()

@@ -39,6 +39,7 @@
 class SoGLRenderAction;
 class SoVertexAttributeData;
 
+#if COIN_HAVE_LEGACY_GL_RENDERER
 class COIN_DLL_API SoGLVertexAttributeElement : public SoVertexAttributeElement {
   typedef SoVertexAttributeElement inherited;
   SO_ELEMENT_HEADER(SoGLVertexAttributeElement);
@@ -57,4 +58,5 @@ protected:
   void addElt(SoVertexAttributeData * attribdata) override;
 };
 
+#endif
 #endif // COIN_SOGLVERTEXATTRIBUTEELEMENT_H

@@ -46,10 +46,10 @@
 #include <Inventor/SoType.h>
 #include <cstddef>
 
+#if COIN_HAVE_LEGACY_GL_RENDERER
 class SoGLDisplayList;
 class SoState;
 class SbImage;
-
 class COIN_DLL_API SoGLImage {
 public:
 
@@ -201,5 +201,6 @@ private:
   static void registerImage(SoGLImage * image);
   static void unregisterImage(SoGLImage * image);
 };
+#endif
 
 #endif // !COIN_SOGLIMAGE_H

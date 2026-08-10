@@ -35,6 +35,7 @@
 
 #include <Inventor/elements/SoSubElement.h>
 
+#if COIN_HAVE_LEGACY_GL_RENDERER
 class COIN_DLL_API SoGLRenderPassElement : public SoElement {
   typedef SoElement inherited;
 
@@ -57,4 +58,5 @@ protected:
 
 };
 
+#endif
 #endif // !COIN_SOGLRENDERPASSELEMENT_H

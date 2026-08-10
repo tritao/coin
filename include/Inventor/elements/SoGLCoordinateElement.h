@@ -35,6 +35,7 @@
 
 #include <Inventor/elements/SoCoordinateElement.h>
 
+#if COIN_HAVE_LEGACY_GL_RENDERER
 class COIN_DLL_API SoGLCoordinateElement : public SoCoordinateElement {
   typedef SoCoordinateElement inherited;
 
@@ -51,4 +52,5 @@ public:
 
 };
 
+#endif
 #endif // !COIN_SOGLCOORDINATEELEMENT_H
