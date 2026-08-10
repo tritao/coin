@@ -43,8 +43,8 @@ jobs:
       - name: Run tests
         run: ctest -C Release -VV
         working-directory: cmake_build_dir
-      - name: Diagnose CoinTests LegacyGL ON crash
-        if: always() && matrix.legacy_gl_renderer == 'ON'
+      - name: Diagnose Windows CoinTests crash
+        if: always()
         shell: pwsh
         working-directory: cmake_build_dir
         run: |
