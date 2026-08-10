@@ -104,7 +104,7 @@ inline void check_equal(const A & a, const B & b,
 inline void print_usage(const char * program)
 {
   std::fprintf(stderr,
-               "Usage: %s [--list] [--test NAME | --filter TEXT] [--max-tests N]\n",
+               "Usage: %s [--list] [--test NAME | --filter TEXT] [--max-tests N [--append-test NAME]]\n",
                program);
 }
 
@@ -123,6 +123,7 @@ inline int run_all(int argc, char ** argv)
   const std::vector<TestCase> & tests = registry();
   const char * exact_name = NULL;
   const char * name_filter = NULL;
+  const char * append_name = NULL;
   size_t max_tests = 0;
   bool list_tests = false;
 
@@ -158,10 +159,22 @@ inline int run_all(int argc, char ** argv)
         return 2;
       }
     }
+    else if (std::strcmp(arg, "--append-test") == 0) {
+      if (i + 1 >= argc || append_name || exact_name || name_filter) {
+        print_usage(argv[0]);
+        return 2;
+      }
+      append_name = argv[++i];
+    }
     else {
       print_usage(argv[0]);
       return 2;
     }
+  }
+
+  if (append_name && !max_tests) {
+    print_usage(argv[0]);
+    return 2;
   }
 
   if (list_tests) {
@@ -175,13 +188,21 @@ inline int run_all(int argc, char ** argv)
   int failedtests = 0;
   int totalchecks = 0;
   size_t selectedtests = 0;
+  bool appended_test_run = false;
 
   for (size_t i = 0; i < tests.size(); ++i) {
     const TestCase & tc = tests[i];
     if (exact_name && std::strcmp(tc.name, exact_name) != 0) continue;
     if (name_filter && !std::strstr(tc.name, name_filter)) continue;
-    if (max_tests && selectedtests >= max_tests) break;
+    const bool is_appended_test = append_name &&
+      std::strcmp(tc.name, append_name) == 0;
+    if (is_appended_test && appended_test_run) continue;
+    if (max_tests && selectedtests >= max_tests && !is_appended_test) {
+      if (!append_name) break;
+      continue;
+    }
     selectedtests += 1;
+    if (is_appended_test) appended_test_run = true;
 
     std::fprintf(stderr, "[RUN %zu/%zu] %s (%s:%d)\n",
                  i + 1, tests.size(), tc.name, tc.file, tc.line);
@@ -219,6 +240,11 @@ inline int run_all(int argc, char ** argv)
 
   if (selectedtests == 0) {
     std::fprintf(stderr, "[ERROR] no tests selected\n");
+    return 2;
+  }
+
+  if (append_name && !appended_test_run) {
+    std::fprintf(stderr, "[ERROR] appended test not found: %s\n", append_name);
     return 2;
   }
 

@@ -67,8 +67,16 @@ jobs:
 
           run_probe "single-167" --test models_dead_simple_all_iv_iv
           run_probe "single-168" --test models_dead_simple_array_iv
-          run_probe "prefix-166" --max-tests 166
-          run_probe "prefix-167" --max-tests 167
+          run_probe "prefix-40-then-167" --max-tests 40 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-80-then-167" --max-tests 80 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-120-then-167" --max-tests 120 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-140-then-167" --max-tests 140 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-150-then-167" --max-tests 150 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-155-then-167" --max-tests 155 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-160-then-167" --max-tests 160 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-163-then-167" --max-tests 163 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-165-then-167" --max-tests 165 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-166-then-167" --max-tests 166 --append-test models_dead_simple_all_iv_iv
 
           if [ "$failures" -ne 0 ]; then
             echo "${failures} CoinTests diagnostic probe(s) failed" >&2
@@ -179,8 +187,16 @@ jobs:
 
           Invoke-CoinProbe "single-167" @("--test", "models_dead_simple_all_iv_iv")
           Invoke-CoinProbe "single-168" @("--test", "models_dead_simple_array_iv")
-          Invoke-CoinProbe "prefix-166" @("--max-tests", "166")
-          Invoke-CoinProbe "prefix-167" @("--max-tests", "167")
+          Invoke-CoinProbe "prefix-40-then-167" @("--max-tests", "40", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-80-then-167" @("--max-tests", "80", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-120-then-167" @("--max-tests", "120", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-140-then-167" @("--max-tests", "140", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-150-then-167" @("--max-tests", "150", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-155-then-167" @("--max-tests", "155", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-160-then-167" @("--max-tests", "160", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-163-then-167" @("--max-tests", "163", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-165-then-167" @("--max-tests", "165", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-166-then-167" @("--max-tests", "166", "--append-test", "models_dead_simple_all_iv_iv")
 
           if ($script:failures -ne 0) {
             Write-Error "$script:failures CoinTests diagnostic probe(s) failed"
