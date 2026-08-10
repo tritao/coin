@@ -123,6 +123,11 @@ jobs:
         shell: pwsh
         working-directory: cmake_build_dir
         run: |
+          if (-not (Select-String -Path "CMakeCache.txt" -Pattern "^COIN_BUILD_LEGACY_GL_RENDERER:BOOL=ON$")) {
+            Write-Host "Skipping LegacyGL-only CoinTests probes for the core build"
+            exit 0
+          }
+
           $coinTests = Join-Path (Get-Location) "bin\CoinTests.exe"
           $script:failures = 0
 
