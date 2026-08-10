@@ -234,6 +234,120 @@ jobs:
           path: cmake_install_dir/
         if: always()
 
+  ubuntu-cointests-sanitizers:
+    name: Ubuntu CoinTests ASan/UBSan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: Create sanitizer build
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install freeglut3-dev
+          cmake -S . -B cmake_asan -G "Ninja" \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCOIN_BUILD_LEGACY_GL_RENDERER=ON \
+            -DCOIN_BUILD_TESTS=ON \
+            -DCOIN_BUILD_DOCUMENTATION=OFF \
+            -DCOIN_BUILD_EXAMPLES=OFF \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer -g" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+      - name: Build CoinTests
+        run: cmake --build cmake_asan --target CoinTests --parallel 4
+      - name: Repeat sanitizer replay
+        working-directory: cmake_asan
+        env:
+          ASAN_OPTIONS: halt_on_error=1:abort_on_error=1:print_stacktrace=1:detect_leaks=0
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: |
+          coin_tests="$PWD/bin/CoinTests"
+          failures=0
+          for attempt in $(seq 1 20); do
+            log_file="$RUNNER_TEMP/coin-asan-${attempt}.log"
+            if "$coin_tests" --max-tests 166 --append-test models_dead_simple_all_iv_iv >"$log_file" 2>&1; then
+              status=0
+            else
+              status=$?
+            fi
+            echo "=== ASan replay attempt ${attempt}/20 exit code ${status} ==="
+            if [ "$status" -ne 0 ]; then
+              failures=$((failures + 1))
+              cat "$log_file"
+            fi
+          done
+          if [ "$failures" -ne 0 ]; then
+            echo "${failures} sanitizer replay(s) failed" >&2
+            exit 1
+          fi
+      - name: Upload sanitizer logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Ubuntu-CoinTests-sanitizer-logs
+          path: ${{ runner.temp }}/coin-asan-*.log
+          if-no-files-found: warn
+
+  windows-cointests-sanitizer:
+    name: Windows CoinTests MSVC ASan
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: Create sanitizer build
+        shell: pwsh
+        run: |
+          cmake -S . -B cmake_asan -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo `
+            -DCMAKE_INSTALL_PREFIX=cmake_asan_install `
+            -DCOIN_BUILD_LEGACY_GL_RENDERER=ON `
+            -DCOIN_BUILD_TESTS=ON `
+            -DCOIN_BUILD_DOCUMENTATION=OFF `
+            -DCOIN_BUILD_EXAMPLES=OFF `
+            "-DCMAKE_C_FLAGS=/fsanitize=address /Zi" `
+            "-DCMAKE_CXX_FLAGS=/fsanitize=address /Zi"
+      - name: Build CoinTests
+        shell: pwsh
+        run: |
+          cmake --build cmake_asan --target CoinTests --config RelWithDebInfo -- /nologo /verbosity:minimal /maxcpucount:2
+      - name: Repeat sanitizer replay
+        shell: pwsh
+        env:
+          ASAN_OPTIONS: "halt_on_error=1:abort_on_error=1:print_stacktrace=1:detect_leaks=0"
+        run: |
+          $coinTests = Get-ChildItem -Path (Join-Path $env:GITHUB_WORKSPACE "cmake_asan\bin") -Filter CoinTests.exe -Recurse | Select-Object -First 1
+          if (-not $coinTests) { throw "CoinTests.exe not found" }
+          $failures = 0
+          for ($attempt = 1; $attempt -le 20; $attempt++) {
+            $logFile = Join-Path $env:RUNNER_TEMP "coin-msvc-asan-$attempt.log"
+            $dumpFile = Join-Path $env:RUNNER_TEMP "coin-msvc-asan-$attempt.dmp"
+            $env:ASAN_SAVE_DUMPS = $dumpFile
+            & $coinTests.FullName --max-tests 166 --append-test models_dead_simple_all_iv_iv *> $logFile
+            $exitCode = $LASTEXITCODE
+            Write-Host "=== MSVC ASan replay attempt $attempt/20 exit code $exitCode ==="
+            if ($exitCode -ne 0) {
+              $failures += 1
+              Get-Content $logFile
+            }
+          }
+          if ($failures -ne 0) {
+            throw "$failures sanitizer replay(s) failed"
+          }
+      - name: Upload sanitizer diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: Windows-CoinTests-msvc-asan-diagnostics
+          path: |
+            ${{ runner.temp }}/coin-msvc-asan-*.log
+            ${{ runner.temp }}/coin-msvc-asan-*.dmp
+          if-no-files-found: warn
+
   macos-build:
     name: macOS CI (${{ matrix.renderer }})
     runs-on: macos-14
