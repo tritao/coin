@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -100,14 +101,91 @@ inline void check_equal(const A & a, const B & b,
   }
 }
 
-inline int run_all(void)
+inline void print_usage(const char * program)
+{
+  std::fprintf(stderr,
+               "Usage: %s [--list] [--test NAME | --filter TEXT] [--max-tests N]\n",
+               program);
+}
+
+inline bool parse_max_tests(const char * text, size_t & value)
+{
+  if (!text || !text[0]) return false;
+  char * end = NULL;
+  const unsigned long parsed = std::strtoul(text, &end, 10);
+  if (*end != '\0' || parsed == 0) return false;
+  value = static_cast<size_t>(parsed);
+  return true;
+}
+
+inline int run_all(int argc, char ** argv)
 {
   const std::vector<TestCase> & tests = registry();
+  const char * exact_name = NULL;
+  const char * name_filter = NULL;
+  size_t max_tests = 0;
+  bool list_tests = false;
+
+  for (int i = 1; i < argc; ++i) {
+    const char * arg = argv[i];
+    if (std::strcmp(arg, "--list") == 0) {
+      list_tests = true;
+    }
+    else if (std::strcmp(arg, "--test") == 0 ||
+             std::strcmp(arg, "--filter") == 0) {
+      if (i + 1 >= argc) {
+        print_usage(argv[0]);
+        return 2;
+      }
+      if (std::strcmp(arg, "--test") == 0) {
+        if (exact_name || name_filter) {
+          print_usage(argv[0]);
+          return 2;
+        }
+        exact_name = argv[++i];
+      }
+      else {
+        if (exact_name || name_filter) {
+          print_usage(argv[0]);
+          return 2;
+        }
+        name_filter = argv[++i];
+      }
+    }
+    else if (std::strcmp(arg, "--max-tests") == 0) {
+      if (i + 1 >= argc || !parse_max_tests(argv[++i], max_tests)) {
+        print_usage(argv[0]);
+        return 2;
+      }
+    }
+    else {
+      print_usage(argv[0]);
+      return 2;
+    }
+  }
+
+  if (list_tests) {
+    for (size_t i = 0; i < tests.size(); ++i) {
+      const TestCase & tc = tests[i];
+      std::fprintf(stdout, "%zu\t%s\t%s:%d\n", i + 1, tc.name, tc.file, tc.line);
+    }
+    return 0;
+  }
+
   int failedtests = 0;
   int totalchecks = 0;
+  size_t selectedtests = 0;
 
   for (size_t i = 0; i < tests.size(); ++i) {
     const TestCase & tc = tests[i];
+    if (exact_name && std::strcmp(tc.name, exact_name) != 0) continue;
+    if (name_filter && !std::strstr(tc.name, name_filter)) continue;
+    if (max_tests && selectedtests >= max_tests) break;
+    selectedtests += 1;
+
+    std::fprintf(stderr, "[RUN %zu/%zu] %s (%s:%d)\n",
+                 i + 1, tests.size(), tc.name, tc.file, tc.line);
+    std::fflush(stderr);
 
     Context ctx;
     current_context() = &ctx;
@@ -135,13 +213,24 @@ inline int run_all(void)
     }
   }
 
+  if (selectedtests == 0) {
+    std::fprintf(stderr, "[ERROR] no tests selected\n");
+    return 2;
+  }
+
   if (failedtests == 0) {
-    std::fprintf(stderr, "[OK] %zu tests, %d checks\n", tests.size(), totalchecks);
+    std::fprintf(stderr, "[OK] %zu tests, %d checks\n", selectedtests, totalchecks);
     return 0;
   }
 
-  std::fprintf(stderr, "[FAIL] %d/%zu tests failed, %d checks\n", failedtests, tests.size(), totalchecks);
+  std::fprintf(stderr, "[FAIL] %d/%zu tests failed, %d checks\n",
+               failedtests, selectedtests, totalchecks);
   return 1;
+}
+
+inline int run_all(void)
+{
+  return run_all(0, NULL);
 }
 
 } // namespace CoinTest

@@ -46,7 +46,7 @@ int main(int argc, char* argv[])
     SoInteraction::init();
     TestSuite::Init();
 
-    int rc = CoinTest::run_all();
+    int rc = CoinTest::run_all(argc, argv);
 
     SoDB::finish();
 
