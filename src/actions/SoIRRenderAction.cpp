@@ -47,6 +47,7 @@
 #include <Inventor/elements/SoFontSizeElement.h>
 #include <Inventor/elements/SoDecimationPercentageElement.h>
 #include <Inventor/elements/SoDecimationTypeElement.h>
+#include <Inventor/elements/SoDevicePixelRatioElement.h>
 #include <Inventor/elements/SoTextureOverrideElement.h>
 #include <Inventor/elements/SoPointSizeElement.h>
 #include <Inventor/nodes/SoShaderProgram.h>
@@ -134,6 +135,7 @@ SoIRRenderAction::initClass(void)
   SO_ENABLE(SoIRRenderAction, SoPointSizeElement);
   SO_ENABLE(SoIRRenderAction, SoDecimationPercentageElement);
   SO_ENABLE(SoIRRenderAction, SoDecimationTypeElement);
+  SO_ENABLE(SoIRRenderAction, SoDevicePixelRatioElement);
   SO_ENABLE(SoIRRenderAction, SoTextureOverrideElement);
   SO_ENABLE(SoIRRenderAction, SoRenderPlacementElement);
 }
