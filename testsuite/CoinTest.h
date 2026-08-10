@@ -200,6 +200,10 @@ inline int run_all(int argc, char ** argv)
       add_failure(tc.file, tc.line, "unhandled non-std exception");
     }
 
+    std::fprintf(stderr, "[DONE %zu/%zu] %s\n",
+                 i + 1, tests.size(), tc.name);
+    std::fflush(stderr);
+
     current_context() = NULL;
     totalchecks += ctx.checks;
 

@@ -43,6 +43,38 @@ jobs:
       - name: Run tests
         run: ctest -C Release -VV
         working-directory: cmake_build_dir
+      - name: Diagnose CoinTests LegacyGL ON crash
+        if: always() && matrix.legacy_gl_renderer == 'ON'
+        shell: pwsh
+        working-directory: cmake_build_dir
+        run: |
+          $coinTests = Join-Path (Get-Location) "bin\CoinTests.exe"
+          $script:failures = 0
+
+          function Invoke-CoinProbe {
+            param(
+              [string]$Name,
+              [string[]]$Arguments
+            )
+
+            Write-Host "=== CoinTests probe: $Name ==="
+            & $coinTests @Arguments
+            $exitCode = $LASTEXITCODE
+            Write-Host "=== CoinTests probe: $Name exit code $exitCode ==="
+            if ($exitCode -ne 0) {
+              $script:failures += 1
+            }
+          }
+
+          Invoke-CoinProbe "single-167" @("--test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "single-168" @("--test", "models_dead_simple_array_iv")
+          Invoke-CoinProbe "prefix-166" @("--max-tests", "166")
+          Invoke-CoinProbe "prefix-167" @("--max-tests", "167")
+
+          if ($script:failures -ne 0) {
+            Write-Error "$script:failures CoinTests diagnostic probe(s) failed"
+            exit 1
+          }
       - name: Create Artifacts
         uses: actions/upload-artifact@v7
         with:
