@@ -717,6 +717,9 @@ SoSceneTexture2P::SoSceneTexture2P(SoSceneTexture2 * apiptr)
 {
   this->api = apiptr;
   this->glcontext = NULL;
+#if COIN_BUILD_LEGACY_GL_RENDERER
+  this->fbodata = NULL;
+#endif
   this->buffervalid = FALSE;
 #if COIN_BUILD_LEGACY_GL_RENDERER
   this->glimagevalid = FALSE;
