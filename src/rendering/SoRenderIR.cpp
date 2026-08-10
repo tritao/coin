@@ -143,6 +143,10 @@ SoIRBuffer::SoIRBuffer()
 {
 }
 
+// C++11 requires an out-of-class definition when this constexpr member is
+// odr-used, as it is by the instrumented sanitizer builds.
+constexpr size_t SoIRBuffer::MIN_CHUNK_SIZE;
+
 SoIRRenderAction::GeometrySavePoint
 SoIRBuffer::save() const
 {

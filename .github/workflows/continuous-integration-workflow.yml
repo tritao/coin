@@ -315,6 +315,16 @@ jobs:
         shell: pwsh
         run: |
           cmake --build cmake_asan --target CoinTests --config RelWithDebInfo -- /nologo /verbosity:minimal /maxcpucount:2
+      - name: Locate MSVC ASan runtime
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsInstall = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsInstall) { throw "Visual Studio installation not found" }
+          $asanRuntime = Get-ChildItem -Path (Join-Path $vsInstall "VC\Tools\MSVC") -Filter clang_rt.asan_dynamic-x86_64.dll -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $asanRuntime) { throw "MSVC ASan runtime not found" }
+          Write-Host "Using MSVC ASan runtime: $($asanRuntime.FullName)"
+          Add-Content -Path $env:GITHUB_PATH -Value $asanRuntime.DirectoryName
       - name: Repeat sanitizer replay
         shell: pwsh
         env:
