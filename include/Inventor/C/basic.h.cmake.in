@@ -38,6 +38,13 @@
  * internal CMake decision and must not be overrideable by consumers. */
 #define COIN_HAVE_LEGACY_GL_RENDERER @COIN_BUILD_LEGACY_GL_RENDERER_VALUE@
 
+/* Public availability contract for classes implemented by the LegacyGL
+ * renderer.  Core-only consumers can use this instead of discovering the
+ * configuration through a linker error. */
+#ifndef COIN_LEGACY_GL_API_AVAILABLE
+#define COIN_LEGACY_GL_API_AVAILABLE COIN_BUILD_LEGACY_GL_RENDERER
+#endif
+
 /*
   NOTE: basic.h is automatically generated from basic.h.in, so don't
   edit basic.h directly.

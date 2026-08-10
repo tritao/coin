@@ -40,6 +40,12 @@
 #endif
 #define COIN_HAVE_LEGACY_GL_RENDERER 1
 
+/* Public availability contract for classes implemented by the LegacyGL
+ * renderer. */
+#ifndef COIN_LEGACY_GL_API_AVAILABLE
+#define COIN_LEGACY_GL_API_AVAILABLE COIN_BUILD_LEGACY_GL_RENDERER
+#endif
+
 /*
   NOTE: basic.h is automatically generated from basic.h.in, so don't
   edit basic.h directly.
