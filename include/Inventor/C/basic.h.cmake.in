@@ -34,12 +34,9 @@
 #ifndef COIN_BASIC_H
 #define COIN_BASIC_H
 
-/* Generated renderer configuration.  Keep this available before any public
- * node or action header is parsed, since core-only builds omit LegacyGL
- * declarations and implementations together. */
-#ifndef COIN_BUILD_LEGACY_GL_RENDERER
-#define COIN_BUILD_LEGACY_GL_RENDERER @COIN_BUILD_LEGACY_GL_RENDERER_VALUE@
-#endif
+/* Immutable installed-library capability.  This is generated from the
+ * internal CMake decision and must not be overrideable by consumers. */
+#define COIN_HAVE_LEGACY_GL_RENDERER @COIN_BUILD_LEGACY_GL_RENDERER_VALUE@
 
 /*
   NOTE: basic.h is automatically generated from basic.h.in, so don't
