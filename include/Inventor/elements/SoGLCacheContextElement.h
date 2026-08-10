@@ -108,8 +108,8 @@ private:
 
 // For compatibility with client code originally written with SGI/TGS
 // Inventor:
-#if !defined(COIN_INTERNAL) && COIN_BUILD_LEGACY_GL_RENDERER
+#if !defined(COIN_INTERNAL) && COIN_HAVE_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLDisplayList.h>
-#endif // ! COIN_INTERNAL && COIN_BUILD_LEGACY_GL_RENDERER
+#endif // ! COIN_INTERNAL && COIN_HAVE_LEGACY_GL_RENDERER
 
 #endif // !COIN_SOGLCACHECONTEXTELEMENT_H

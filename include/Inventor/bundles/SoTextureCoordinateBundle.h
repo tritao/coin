@@ -37,7 +37,7 @@
 #include <Inventor/SbBasic.h>
 #include <Inventor/elements/SoMultiTextureCoordinateElement.h>
 
-#if COIN_BUILD_LEGACY_GL_RENDERER
+#if COIN_HAVE_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLMultiTextureCoordinateElement.h>
 #endif
 
@@ -45,7 +45,7 @@
 
 class SoTextureCoordinateCache;
 class SoShape;
-#if COIN_BUILD_LEGACY_GL_RENDERER
+#if COIN_HAVE_LEGACY_GL_RENDERER
 class SoGLMultiTextureCoordinateElement;
 #endif
 
@@ -65,7 +65,7 @@ public:
   const SbVec4f &get(const SbVec3f &point, const SbVec3f &normal);
 
   void send(const int index) const {
-#if COIN_BUILD_LEGACY_GL_RENDERER
+#if COIN_HAVE_LEGACY_GL_RENDERER
     glElt->send(index);
 #else
     (void)index;
@@ -73,7 +73,7 @@ public:
   }
   void send(const int index, const SbVec3f &point,
             const SbVec3f &normal) const {
-#if COIN_BUILD_LEGACY_GL_RENDERER
+#if COIN_HAVE_LEGACY_GL_RENDERER
     glElt->send(index, point, normal);
 #else
     (void)index;
@@ -86,7 +86,7 @@ public:
 
 private:
   const SoMultiTextureCoordinateElement *coordElt;
-#if COIN_BUILD_LEGACY_GL_RENDERER
+#if COIN_HAVE_LEGACY_GL_RENDERER
   const SoGLMultiTextureCoordinateElement *glElt;
 #endif
   unsigned int flags;
