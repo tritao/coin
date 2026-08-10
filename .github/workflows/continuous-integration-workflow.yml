@@ -43,6 +43,37 @@ jobs:
       - name: Run tests
         run: ctest -C Release -VV
         working-directory: cmake_build_dir
+      - name: Diagnose Ubuntu CoinTests crash
+        if: always()
+        working-directory: cmake_build_dir
+        run: |
+          coin_tests="$(pwd)/bin/CoinTests"
+          failures=0
+
+          run_probe() {
+            name="$1"
+            shift
+            echo "=== CoinTests probe: ${name} ==="
+            if "$coin_tests" "$@"; then
+              status=0
+            else
+              status=$?
+            fi
+            echo "=== CoinTests probe: ${name} exit code ${status} ==="
+            if [ "$status" -ne 0 ]; then
+              failures=$((failures + 1))
+            fi
+          }
+
+          run_probe "single-167" --test models_dead_simple_all_iv_iv
+          run_probe "single-168" --test models_dead_simple_array_iv
+          run_probe "prefix-166" --max-tests 166
+          run_probe "prefix-167" --max-tests 167
+
+          if [ "$failures" -ne 0 ]; then
+            echo "${failures} CoinTests diagnostic probe(s) failed" >&2
+            exit 1
+          fi
       - name: Create Artifacts
         uses: actions/upload-artifact@v7
         with:
