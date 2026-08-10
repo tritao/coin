@@ -34,6 +34,7 @@
 \**************************************************************************/
 
 #include <Inventor/SbVec2s.h>
+#include <Inventor/SoRenderManager.h>
 
 class SbViewportRegion;
 class SoEvent;
@@ -100,6 +101,8 @@ public:
   void setGLRenderAction(SoGLRenderAction * const action);
   SoGLRenderAction * getGLRenderAction(void) const;
 #endif
+  void setRenderPipeline(SoRenderManager::RenderPipeline pipeline);
+  SoRenderManager::RenderPipeline getRenderPipeline(void) const;
   void setAudioRenderAction(SoAudioRenderAction * const action);
   SoAudioRenderAction * getAudioRenderAction(void) const;
   void setHandleEventAction(SoHandleEventAction * hea);

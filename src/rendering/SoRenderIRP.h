@@ -34,6 +34,9 @@ public:
 
   size_t size() const { return this->totalAllocated; }
 
+  SoIRRenderAction::GeometrySavePoint save() const;
+  void rewindTo(const SoIRRenderAction::GeometrySavePoint & savepoint);
+
 private:
   static constexpr size_t MIN_CHUNK_SIZE = 1024 * 1024; // 1 MB
   struct Chunk {

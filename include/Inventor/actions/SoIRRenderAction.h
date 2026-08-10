@@ -11,9 +11,11 @@
 #include <Inventor/rendering/SoRenderIR.h>
 
 #include <cstddef>
+#include <memory>
 class SoPrimitiveVertex;
 class SoPath;
 class SoPathList;
+class SoCamera;
 class SoIRRenderActionP;
 
 /*!
@@ -54,6 +56,19 @@ public:
     virtual void onPoint(const SoPrimitiveVertex * v) = 0;
   };
 
+  /*! \brief Opaque checkpoint for partial frame geometry rebuilds. */
+  class GeometrySavePoint {
+  public:
+    GeometrySavePoint() = default;
+
+  private:
+    struct Data;
+    explicit GeometrySavePoint(const std::shared_ptr<Data> & data)
+      : data(data) { }
+    std::shared_ptr<Data> data;
+    friend class SoIRBuffer;
+  };
+
   static void initClass(void);
 
   SoIRRenderAction(const SbViewportRegion & vp);
@@ -65,10 +80,25 @@ public:
   void setViewportRegion(const SbViewportRegion & vp);
   const SbViewportRegion & getViewportRegion(void) const { return this->vpRegion; }
 
+  void setCacheContext(uint32_t context) { this->cacheContext = context; }
+  uint32_t getCacheContext(void) const { return this->cacheContext; }
+  void setCamera(SoCamera * camera) { this->camera = camera; }
+  SoCamera * getCamera(void) const { return this->camera; }
+
   // Standard entry points, mirroring SoGLRenderAction
   virtual void apply(SoNode * root) override;
   virtual void apply(SoPath * path) override;
   virtual void apply(const SoPathList & pathlist, SbBool obeysrules = FALSE) override;
+
+  //! Append a root without clearing the current retained frame.
+  void traverseAdditionalRoot(SoNode * root);
+
+  void beginAfterMainStage();
+  void endAfterMainStage();
+  bool isAfterMainStage() const { return this->afterMainStageDepth != 0; }
+  SoRenderStage getRenderStage() const { return this->renderStage; }
+  void setRenderStage(SoRenderStage stage) { this->renderStage = stage; }
+  void applyRenderStage(SoRenderCommand & command);
 
   //! Associate the commands emitted by a shape with its current scene path.
   void storeCommandPath(int commandIndex, const SoPath * path);
@@ -88,6 +118,9 @@ public:
   */
   void * allocateGeometryStorage(size_t bytes, size_t alignment = alignof(float));
 
+  GeometrySavePoint saveGeometryPool() const;
+  void rewindGeometryPool(const GeometrySavePoint & savepoint);
+
   //! Clear all transient geometry owned by the current frame.
   void clearGeometryPool();
 
@@ -97,6 +130,9 @@ public:
   void popPrimitiveCollector(PrimitiveCollector * collector);
   //! Return the currently active primitive collector, or NULL.
   PrimitiveCollector * getActivePrimitiveCollector(void) const;
+
+  void setHasCameraDependentShapes(bool value) { this->cameraDependentShapes = value; }
+  bool hasCameraDependentShapes() const { return this->cameraDependentShapes; }
 
   // (later) hooks for backend:
   // uint32_t getCacheContext(void) const;
@@ -115,8 +151,28 @@ private:
   void resetFrameResources();
 
   SbViewportRegion vpRegion;
+  SoCamera *       camera = nullptr;
   SoDrawList       drawlist;
   SoIRRenderActionP * pimpl;
+  uint32_t          cacheContext = 0;
+  bool              cameraDependentShapes = false;
+  unsigned int      afterMainStageDepth = 0;
+  bool              afterMainDepthClearPending = false;
+  SoRenderStage     renderStage = SoRenderStage::Main;
+};
+
+/*! \brief RAII guard for an action-local manager render stage. */
+class COIN_DLL_API SoIRRenderStageScope {
+public:
+  SoIRRenderStageScope(SoIRRenderAction & action, SoRenderStage stage);
+  ~SoIRRenderStageScope();
+
+  SoIRRenderStageScope(const SoIRRenderStageScope &) = delete;
+  SoIRRenderStageScope & operator=(const SoIRRenderStageScope &) = delete;
+
+private:
+  SoIRRenderAction * action;
+  SoRenderStage previousStage;
 };
 
 #endif // COIN_SOIRRENDERACTION_H

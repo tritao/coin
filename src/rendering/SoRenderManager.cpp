@@ -80,6 +80,7 @@
 #if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/actions/SoGLRenderAction.h>
 #endif
+#include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/actions/SoAudioRenderAction.h>
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/sensors/SoOneShotSensor.h>
@@ -90,6 +91,8 @@
 #include "coindefs.h"
 #include "tidbitsp.h"
 #include "misc/AudioTools.h"
+#include "rendering/SoGLRenderBackend.h"
+#include "rendering/SoRenderBackend.h"
 #include "coindefs.h"
 
 #if COIN_WORKAROUND(COIN_MSVC, <= COIN_MSVC_6_0_VERSION)
@@ -264,6 +267,15 @@ SoRenderManager::SoRenderManager(void)
 
   PRIVATE(this)->stereostencilmask = NULL;
   PRIVATE(this)->superimpositions = NULL;
+  PRIVATE(this)->renderPipeline =
+#if COIN_BUILD_LEGACY_GL_RENDERER
+    SoRenderManager::RenderPipeline::LEGACY_GL;
+#else
+    SoRenderManager::RenderPipeline::DRAW_LIST;
+#endif
+  PRIVATE(this)->irAction = NULL;
+  PRIVATE(this)->renderBackend = NULL;
+  PRIVATE(this)->renderBackendFrame = 0;
   PRIVATE(this)->viewport = SbViewportRegion(SbVec2s(400, 400));
   PRIVATE(this)->devicePixelRatio = 1.0f;
 
@@ -308,6 +320,12 @@ SoRenderManager::SoRenderManager(void)
  */
 SoRenderManager::~SoRenderManager()
 {
+  if (PRIVATE(this)->renderBackend) {
+    PRIVATE(this)->renderBackend->shutdown();
+    delete PRIVATE(this)->renderBackend;
+  }
+  delete PRIVATE(this)->irAction;
+
   PRIVATE(this)->dummynode->unref();
 
 #if COIN_BUILD_LEGACY_GL_RENDERER
@@ -603,6 +621,10 @@ SoRenderManager::removeSuperimposition(Superimposition * s)
 void
 SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
 {
+  if (PRIVATE(this)->renderPipeline == RenderPipeline::DRAW_LIST) {
+    this->renderDrawListPipeline(clearwindow, clearzbuffer);
+    return;
+  }
 #if !COIN_BUILD_LEGACY_GL_RENDERER
   (void) clearwindow;
   (void) clearzbuffer;
@@ -693,6 +715,12 @@ SoRenderManager::render(SoGLRenderAction * action,
                         const SbBool clearwindow,
                         const SbBool clearzbuffer)
 {
+  if (PRIVATE(this)->renderPipeline == RenderPipeline::DRAW_LIST) {
+    (void) action;
+    (void) initmatrices;
+    this->renderDrawListPipeline(clearwindow, clearzbuffer);
+    return;
+  }
   SbBool clearwindow_tmp = clearwindow; // make sure we only clear the color buffer once
   PRIVATE(this)->invokePreRenderCallbacks();
 
@@ -734,6 +762,72 @@ SoRenderManager::render(SoGLRenderAction * action,
   PRIVATE(this)->invokePostRenderCallbacks();
 }
 #endif
+
+void
+SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
+                                        const SbBool clearzbuffer)
+{
+  if (!PRIVATE(this)->scene) return;
+
+  const SbViewportRegion viewport = PRIVATE(this)->viewport;
+  if (!PRIVATE(this)->irAction) {
+    PRIVATE(this)->irAction = new SoIRRenderAction(viewport);
+  }
+  PRIVATE(this)->irAction->setViewportRegion(viewport);
+  PRIVATE(this)->irAction->setCamera(PRIVATE(this)->camera);
+  SoState * state = PRIVATE(this)->irAction->getState();
+  state->push();
+  SoDevicePixelRatioElement::set(state,
+                                 PRIVATE(this)->dummynode,
+                                 PRIVATE(this)->devicePixelRatio);
+  PRIVATE(this)->irAction->apply(PRIVATE(this)->scene);
+  state->pop();
+
+  SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
+  drawlist.buildPickLUT();
+
+  if (!PRIVATE(this)->renderBackend) {
+    PRIVATE(this)->renderBackend = new SoGLRenderBackend;
+    SoRenderBackendInitParams initparams = {};
+    initparams.targetInfo.size = viewport.getViewportSizePixels();
+    initparams.targetInfo.samples = 1;
+    if (!PRIVATE(this)->renderBackend->initialize(initparams)) {
+      delete PRIVATE(this)->renderBackend;
+      PRIVATE(this)->renderBackend = NULL;
+#if COIN_BUILD_LEGACY_GL_RENDERER
+      SoDebugError::postWarning("SoRenderManager::renderDrawListPipeline",
+                                "DrawList backend initialization failed; "
+                                "falling back to LegacyGL");
+      PRIVATE(this)->renderPipeline = RenderPipeline::LEGACY_GL;
+      this->render(clearwindow, clearzbuffer);
+      PRIVATE(this)->renderPipeline = RenderPipeline::DRAW_LIST;
+#else
+      SoDebugError::post("SoRenderManager::renderDrawListPipeline",
+                         "DrawList backend initialization failed in a core-only build");
+#endif
+      return;
+    }
+  }
+
+  SoRenderTargetInfo targetinfo = {};
+  targetinfo.size = viewport.getViewportSizePixels();
+  targetinfo.samples = 1;
+  PRIVATE(this)->renderBackend->resizeTarget(targetinfo);
+
+  SoRenderParams params = {};
+  params.frameIndex = PRIVATE(this)->renderBackendFrame++;
+  params.time = SbTime::getTimeOfDay().getValue();
+  params.viewport = viewport;
+  params.viewMatrix.makeIdentity();
+  params.projMatrix.makeIdentity();
+  params.viewProjMatrix.makeIdentity();
+  params.clearColor = PRIVATE(this)->backgroundcolor;
+  params.clearDepth = 1.0f;
+  params.state = PRIVATE(this)->irAction->getState();
+  params.flags = (clearwindow ? SO_PARAM_CLEAR_WINDOW : 0u) |
+                 (clearzbuffer ? SO_PARAM_CLEAR_DEPTH : 0u);
+  PRIVATE(this)->renderBackend->render(drawlist, params);
+}
 
 /*!
   Convenience function for \ref SoRenderManager::renderScene
@@ -1690,6 +1784,28 @@ SoRenderManager::getGLRenderAction(void) const
   return PRIVATE(this)->glaction;
 }
 #endif
+
+void
+SoRenderManager::setRenderPipeline(const RenderPipeline pipeline)
+{
+#if !COIN_BUILD_LEGACY_GL_RENDERER
+  if (pipeline == RenderPipeline::LEGACY_GL) {
+    SoDebugError::postWarning("SoRenderManager::setRenderPipeline",
+                              "LEGACY_GL is unavailable in a core-only build; "
+                              "keeping the DRAW_LIST pipeline");
+    return;
+  }
+#endif
+  if (PRIVATE(this)->renderPipeline == pipeline) return;
+  PRIVATE(this)->renderPipeline = pipeline;
+  this->scheduleRedraw();
+}
+
+SoRenderManager::RenderPipeline
+SoRenderManager::getRenderPipeline(void) const
+{
+  return PRIVATE(this)->renderPipeline;
+}
 
 /*!
   This method returns the current auto clipping strategy.

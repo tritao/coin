@@ -196,6 +196,16 @@ SoIRRenderAction::apply(const SoPathList & pathlist, SbBool obeysrules)
 }
 
 void
+SoIRRenderAction::traverseAdditionalRoot(SoNode * root)
+{
+  if (!root) return;
+  this->state->push();
+  SoViewportRegionElement::set(this->state, this->vpRegion);
+  this->traverse(root);
+  this->state->pop();
+}
+
+void
 SoIRRenderAction::storeCommandPath(int commandIndex, const SoPath * path)
 {
   if (commandIndex < 0) return;
@@ -292,10 +302,75 @@ SoIRRenderAction::allocateGeometryStorage(size_t bytes, size_t alignment)
   return PRIVATE(this)->geometryPool.allocate(bytes, alignment);
 }
 
+SoIRRenderAction::GeometrySavePoint
+SoIRRenderAction::saveGeometryPool() const
+{
+  return PRIVATE(this)->geometryPool.save();
+}
+
+void
+SoIRRenderAction::rewindGeometryPool(const GeometrySavePoint & savepoint)
+{
+  PRIVATE(this)->geometryPool.rewindTo(savepoint);
+}
+
 void
 SoIRRenderAction::clearGeometryPool()
 {
   PRIVATE(this)->geometryPool.clear();
+}
+
+void
+SoIRRenderAction::beginAfterMainStage()
+{
+  if (this->afterMainStageDepth == 0) {
+    this->afterMainDepthClearPending = true;
+  }
+  ++this->afterMainStageDepth;
+}
+
+void
+SoIRRenderAction::endAfterMainStage()
+{
+  if (this->afterMainStageDepth == 0) return;
+  --this->afterMainStageDepth;
+  if (this->afterMainStageDepth == 0) {
+    this->afterMainDepthClearPending = false;
+  }
+}
+
+void
+SoIRRenderAction::applyRenderStage(SoRenderCommand & command)
+{
+  if (this->isAfterMainStage()) {
+    command.stage = SoRenderStage::AfterMain;
+  }
+  else if (this->renderStage == SoRenderStage::Foreground) {
+    command.stage = SoRenderStage::Foreground;
+    command.pass = SO_RENDERPASS_OVERLAY;
+  }
+  if (this->isAfterMainStage() && this->afterMainDepthClearPending) {
+    command.state.raster.clearDepth = TRUE;
+    this->afterMainDepthClearPending = false;
+  }
+}
+
+SoIRRenderStageScope::SoIRRenderStageScope(SoIRRenderAction & action,
+                                           SoRenderStage stage)
+  : action(&action), previousStage(action.getRenderStage())
+{
+  this->action->setRenderStage(stage);
+  if (stage == SoRenderStage::AfterMain) {
+    this->action->beginAfterMainStage();
+  }
+}
+
+SoIRRenderStageScope::~SoIRRenderStageScope()
+{
+  if (this->action->getRenderStage() == SoRenderStage::AfterMain) {
+    this->action->endAfterMainStage();
+  }
+  this->action->setRenderStage(this->previousStage);
 }
 
 void
@@ -307,4 +382,7 @@ SoIRRenderAction::resetFrameResources()
     if (path && SoDB::isInitialized()) path->unref();
   }
   PRIVATE(this)->commandPaths.clear();
+  this->afterMainStageDepth = 0;
+  this->afterMainDepthClearPending = false;
+  this->renderStage = SoRenderStage::Main;
 }

@@ -59,6 +59,9 @@ class SoGetBoundingBoxAction;
 class SoGetMatrixAction;
 class SoSearchAction;
 class SbPList;
+class SoIRRenderAction;
+class SoRenderBackend;
+
 class SoRenderManagerP {
 public:
   SoRenderManagerP(SoRenderManager * publ);
@@ -115,6 +118,10 @@ public:
 #endif
   SbViewportRegion viewport;
   float devicePixelRatio;
+  SoRenderManager::RenderPipeline renderPipeline;
+  SoIRRenderAction * irAction;
+  SoRenderBackend * renderBackend;
+  int renderBackendFrame;
 
   SoRenderManager::StereoMode stereostenciltype;
   SoRenderManager::RenderMode rendermode;

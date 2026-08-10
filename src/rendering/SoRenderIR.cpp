@@ -122,6 +122,11 @@ alphaTestFunctionFromLegacyGL(const int value)
 
 } // namespace
 
+struct SoIRRenderAction::GeometrySavePoint::Data {
+  std::vector<size_t> chunkCursors;
+  size_t totalAllocated = 0;
+};
+
 SbBool
 coin_render_ir_trace_enabled()
 {
@@ -136,6 +141,37 @@ coin_render_ir_trace_enabled()
 
 SoIRBuffer::SoIRBuffer()
 {
+}
+
+SoIRRenderAction::GeometrySavePoint
+SoIRBuffer::save() const
+{
+  std::shared_ptr<SoIRRenderAction::GeometrySavePoint::Data> data(
+    new SoIRRenderAction::GeometrySavePoint::Data);
+  data->totalAllocated = this->totalAllocated;
+  data->chunkCursors.reserve(this->chunks.size());
+  for (const auto & chunk : this->chunks) {
+    data->chunkCursors.push_back(chunk->cursor);
+  }
+  return SoIRRenderAction::GeometrySavePoint(data);
+}
+
+void
+SoIRBuffer::rewindTo(const SoIRRenderAction::GeometrySavePoint & savepoint)
+{
+  if (!savepoint.data) {
+    this->clear();
+    return;
+  }
+
+  this->totalAllocated = savepoint.data->totalAllocated;
+  for (size_t i = 0;
+       i < savepoint.data->chunkCursors.size() && i < this->chunks.size(); ++i) {
+    this->chunks[i]->cursor = savepoint.data->chunkCursors[i];
+  }
+  for (size_t i = savepoint.data->chunkCursors.size(); i < this->chunks.size(); ++i) {
+    this->chunks[i]->cursor = 0;
+  }
 }
 
 void
