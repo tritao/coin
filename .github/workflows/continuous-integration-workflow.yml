@@ -67,16 +67,22 @@ jobs:
 
           run_probe "single-167" --test models_dead_simple_all_iv_iv
           run_probe "single-168" --test models_dead_simple_array_iv
-          run_probe "prefix-40-then-167" --max-tests 40 --append-test models_dead_simple_all_iv_iv
-          run_probe "prefix-80-then-167" --max-tests 80 --append-test models_dead_simple_all_iv_iv
-          run_probe "prefix-120-then-167" --max-tests 120 --append-test models_dead_simple_all_iv_iv
           run_probe "prefix-140-then-167" --max-tests 140 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-141-then-167" --max-tests 141 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-142-then-167" --max-tests 142 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-143-then-167" --max-tests 143 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-144-then-167" --max-tests 144 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-145-then-167" --max-tests 145 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-146-then-167" --max-tests 146 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-147-then-167" --max-tests 147 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-148-then-167" --max-tests 148 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-149-then-167" --max-tests 149 --append-test models_dead_simple_all_iv_iv
           run_probe "prefix-150-then-167" --max-tests 150 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-151-then-167" --max-tests 151 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-152-then-167" --max-tests 152 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-153-then-167" --max-tests 153 --append-test models_dead_simple_all_iv_iv
+          run_probe "prefix-154-then-167" --max-tests 154 --append-test models_dead_simple_all_iv_iv
           run_probe "prefix-155-then-167" --max-tests 155 --append-test models_dead_simple_all_iv_iv
-          run_probe "prefix-160-then-167" --max-tests 160 --append-test models_dead_simple_all_iv_iv
-          run_probe "prefix-163-then-167" --max-tests 163 --append-test models_dead_simple_all_iv_iv
-          run_probe "prefix-165-then-167" --max-tests 165 --append-test models_dead_simple_all_iv_iv
-          run_probe "prefix-166-then-167" --max-tests 166 --append-test models_dead_simple_all_iv_iv
 
           if [ "$failures" -ne 0 ]; then
             echo "${failures} CoinTests diagnostic probe(s) failed" >&2
@@ -187,16 +193,22 @@ jobs:
 
           Invoke-CoinProbe "single-167" @("--test", "models_dead_simple_all_iv_iv")
           Invoke-CoinProbe "single-168" @("--test", "models_dead_simple_array_iv")
-          Invoke-CoinProbe "prefix-40-then-167" @("--max-tests", "40", "--append-test", "models_dead_simple_all_iv_iv")
-          Invoke-CoinProbe "prefix-80-then-167" @("--max-tests", "80", "--append-test", "models_dead_simple_all_iv_iv")
-          Invoke-CoinProbe "prefix-120-then-167" @("--max-tests", "120", "--append-test", "models_dead_simple_all_iv_iv")
           Invoke-CoinProbe "prefix-140-then-167" @("--max-tests", "140", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-141-then-167" @("--max-tests", "141", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-142-then-167" @("--max-tests", "142", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-143-then-167" @("--max-tests", "143", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-144-then-167" @("--max-tests", "144", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-145-then-167" @("--max-tests", "145", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-146-then-167" @("--max-tests", "146", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-147-then-167" @("--max-tests", "147", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-148-then-167" @("--max-tests", "148", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-149-then-167" @("--max-tests", "149", "--append-test", "models_dead_simple_all_iv_iv")
           Invoke-CoinProbe "prefix-150-then-167" @("--max-tests", "150", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-151-then-167" @("--max-tests", "151", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-152-then-167" @("--max-tests", "152", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-153-then-167" @("--max-tests", "153", "--append-test", "models_dead_simple_all_iv_iv")
+          Invoke-CoinProbe "prefix-154-then-167" @("--max-tests", "154", "--append-test", "models_dead_simple_all_iv_iv")
           Invoke-CoinProbe "prefix-155-then-167" @("--max-tests", "155", "--append-test", "models_dead_simple_all_iv_iv")
-          Invoke-CoinProbe "prefix-160-then-167" @("--max-tests", "160", "--append-test", "models_dead_simple_all_iv_iv")
-          Invoke-CoinProbe "prefix-163-then-167" @("--max-tests", "163", "--append-test", "models_dead_simple_all_iv_iv")
-          Invoke-CoinProbe "prefix-165-then-167" @("--max-tests", "165", "--append-test", "models_dead_simple_all_iv_iv")
-          Invoke-CoinProbe "prefix-166-then-167" @("--max-tests", "166", "--append-test", "models_dead_simple_all_iv_iv")
 
           if ($script:failures -ne 0) {
             Write-Error "$script:failures CoinTests diagnostic probe(s) failed"
