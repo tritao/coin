@@ -1025,6 +1025,14 @@ SoGLRenderAction::getSortedLayersNumPasses() const
 void
 SoGLRenderAction::beginTraversal(SoNode * node)
 {
+  if (!sogl_context_supports_legacy_rendering(this->getState())) {
+    SoDebugError::postWarning(
+      "SoGLRenderAction::beginTraversal",
+      "legacy OpenGL traversal requested without a compatibility context");
+    this->setTerminated(TRUE);
+    return;
+  }
+
   if (PRIVATE(this)->cachedprofilingsg == NULL) {
     if (node->isOfType(SoGroup::getClassTypeId()) &&
         (coin_assert_cast<SoGroup *>(node))->getNumChildren() > 0) {
