@@ -638,6 +638,7 @@ SoNode::initClasses(void)
   SoGroup::initClass();
   SoSeparator::initClass();
   SoAnnotation::initClass();
+  SoRenderLayerGroup::initClass();
   SoLocateHighlight::initClass();
   SoWWWAnchor::initClass();
   SoArray::initClass();

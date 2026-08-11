@@ -70,6 +70,7 @@
 #include <Inventor/nodes/SoGroup.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoAnnotation.h>
+#include <Inventor/nodes/SoRenderLayerGroup.h>
 #include <Inventor/nodes/SoSelection.h>
 #if COIN_HAVE_LEGACY_GL_RENDERER
 #include <Inventor/nodes/SoExtSelection.h>
