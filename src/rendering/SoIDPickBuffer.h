@@ -5,7 +5,7 @@
 
 #include <Inventor/SbBasic.h>
 
-#include "rendering/SoRenderIR.h"
+#include <Inventor/rendering/SoRenderIR.h>
 
 #include <cstdint>
 #include <vector>
@@ -59,8 +59,7 @@ public:
   /// Build per-vertex ID color VBOs for each command in the draw list.
   /// Must be called after SoDrawList::buildPickLUT().
   /// @param drawlist  The draw list with commands and pick LUT
-  /// @param contextId  GL context ID for VBO creation
-  void buildIdColorVBOs(const SoDrawList & drawlist, uint32_t contextId);
+  void buildIdColorVBOs(const SoDrawList & drawlist);
 
   /// Render the ID buffer using the draw list's geometry + per-vertex IDs.
   /// @param viewMatrix   Column-major 4x4 view matrix

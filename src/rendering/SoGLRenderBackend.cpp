@@ -40,14 +40,26 @@ static constexpr float DIFFUSE_COEFF  = 0.85f;
 static constexpr float SPECULAR_COEFF = 0.12f;
 static constexpr float DEFAULT_SHININESS = 64.0f;
 
+// Alpha thresholds for selection/highlight overlays
+static constexpr float HIGHLIGHT_ALPHA = 0.6f;
+static constexpr float SELECTION_ALPHA = 0.5f;
+
 // Texture alpha discard threshold (shader-side)
 static constexpr float ALPHA_DISCARD_THRESHOLD = 0.3f;
+
+// Minimum point size for point highlight/selection overlays. Keep this
+// slightly larger than the default point style so selected vertices stay
+// legible without inflating normal point rendering.
+static constexpr float MIN_SELECTION_POINT_SIZE = 6.0f;
 
 // Cache GC: entries unused for this many frames are destroyed
 static constexpr int CACHE_UNUSED_FRAME_THRESHOLD = 3;
 
 // Safety limit: skip commands with absurd vertex counts
 static constexpr int MAX_VERTEX_COUNT = 10000000;
+
+// Default pick line width / point size when no pick buffer exists
+static constexpr float DEFAULT_PICK_SIZE = 7.0f;
 
 // Maximum number of scene lights uploaded to the unified shader.
 static constexpr int MAX_SHADER_LIGHTS = 8;
@@ -383,13 +395,11 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
   this->normLoc = this->glue->glGetAttribLocation(this->shaderProgram, "a_normal");
   this->colorLoc = this->glue->glGetAttribLocation(this->shaderProgram, "a_color");
 
-#if defined(COIN_DRAW_LIST_PICKING)
   this->pickBuffer.reset(new SoIDPickBuffer);
   if (!this->pickBuffer->initialize(this->glue)) {
     this->emitLog("ID pick buffer initialization failed (picking disabled)");
     this->pickBuffer.reset();
   }
-#endif
 
   this->setInitialized(TRUE);
   return TRUE;
@@ -401,9 +411,7 @@ SoGLRenderBackend::shutdown()
   if (!this->isInitialized()) {
     return;
   }
-#if defined(COIN_DRAW_LIST_PICKING)
   this->pickBuffer.reset();
-#endif
   // Destroy all cached GPU resources
   for (auto & entry : gpuCache) {
     destroyCacheEntry(entry);
@@ -1167,6 +1175,15 @@ SoGLRenderBackend::beginFrame(const SoDrawList & drawlist,
   this->logFrameStats(drawlist, params);
   this->currentFrame = params.frameIndex;
 
+  // Only re-render the ID buffer when camera or scene changes
+  if (!matricesInitialized ||
+      params.viewMatrix != lastViewMatrix ||
+      params.projMatrix != lastProjMatrix) {
+    this->pickBufferDirty = true;
+    lastViewMatrix = params.viewMatrix;
+    lastProjMatrix = params.projMatrix;
+    matricesInitialized = true;
+  }
 
   // Drain any GL errors left by legacy Coin code (SoGLRenderAction
   // makes deprecated calls that generate errors in Core Profile)
@@ -1400,6 +1417,251 @@ SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
   glDisable(GL_BLEND);
 }
 
+void
+SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
+                                       const SbMat & viewMat,
+                                       const SbMat & projMat,
+                                       const SoRenderParams & params)
+{
+  const int count = drawlist.getNumCommands();
+  const float dpr = params.devicePixelRatio > 0.0f
+    ? params.devicePixelRatio : 1.0f;
+
+  // Selection/highlight overlays — emissive flat color on top
+  glDepthMask(GL_FALSE);
+  glDepthFunc(GL_LEQUAL);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  this->glue->glUniform1f(this->uRenderModeLocation, 1.0f);
+
+  auto drawWholeCommand = [this](const SoRenderCommand & cmd, GLenum prim) {
+    if (cmd.geometry.indexCount > 0 && cmd.geometry.indices) {
+      cc_glglue_glDrawElements(this->glue, prim, cmd.geometry.indexCount, GL_UNSIGNED_INT, nullptr);
+    }
+    else {
+      cc_glglue_glDrawArrays(this->glue, prim, 0, cmd.geometry.vertexCount);
+    }
+  };
+
+  auto drawRange = [this](const SoRenderCommand & cmd,
+                      const SoRenderElementRange & range,
+                      GLenum prim) {
+    if (range.drawCount <= 0) return;
+    if (cmd.geometry.indexCount > 0 && cmd.geometry.indices) {
+      cc_glglue_glDrawElements(this->glue, prim, range.drawCount, GL_UNSIGNED_INT,
+                     reinterpret_cast<const void *>(
+                       static_cast<uintptr_t>(range.drawStart * sizeof(uint32_t))));
+    }
+    else {
+      cc_glglue_glDrawArrays(this->glue, prim, range.drawStart, range.drawCount);
+    }
+  };
+
+  auto drawElementRanges = [&drawRange](const SoRenderCommand & cmd,
+                                        int elementIndex,
+                                        GLenum prim) {
+    bool drew = false;
+    for (const SoRenderElementRange & range : cmd.pick.elementRanges) {
+      if (range.elementIndex == elementIndex) {
+        drawRange(cmd, range, prim);
+        drew = true;
+      }
+    }
+    return drew;
+  };
+
+  for (int i = 0; i < count; ++i) {
+    const SoRenderCommand & cmd = drawlist.getCommand(i);
+    int hlElem = cmd.selection.highlightedElements.empty()
+      ? -1 : cmd.selection.highlightedElements.front();
+    bool hasHighlight = cmd.selection.highlightWholeObject
+      || !cmd.selection.highlightedElements.empty();
+    bool hasSelection = cmd.selection.selectWholeObject || !cmd.selection.selectedElements.empty();
+    if (!hasHighlight && !hasSelection) continue;
+
+    if (!cmd.geometry.positions) continue;
+    auto it = ptrToCacheIndex.find(CacheKey{cmd.geometry.positions, cmd.geometry.indices});
+    if (it == ptrToCacheIndex.end()) continue;
+    const CachedGPUCommand & entry = gpuCache[it->second];
+    if (entry.vao == 0) continue;
+
+    SbMat modelMat;
+    cmd.modelMatrix.getValue(modelMat);
+    this->glue->glUniformMatrix4fv(this->uModelLocation, 1, GL_FALSE, &modelMat[0][0]);
+    this->glue->glUniformMatrix4fv(this->uViewLocation, 1, GL_FALSE, &viewMat[0][0]);
+    this->glue->glUniformMatrix4fv(this->uProjLocation, 1, GL_FALSE, &projMat[0][0]);
+
+    GLenum prim = topologyToGL(cmd.geometry.topology);
+    bool pointShaderActive = false;
+
+    if (prim == GL_POINTS) {
+      float pointSize = cmd.state.raster.pointSize;
+      if (pointSize < 1.0f) pointSize = cmd.state.raster.lineWidth;
+      pointSize = std::max(pointSize, MIN_SELECTION_POINT_SIZE) * dpr;
+      if (this->pointShaderProgram) {
+        pointShaderActive = true;
+        this->bindPointShader(cmd,
+                              viewMat,
+                              projMat,
+                              SbVec4f(1.0f, 1.0f, 1.0f, 1.0f),
+                              false,
+                              false,
+                              pointSize,
+                              coin_command_viewport_size(cmd, params));
+      } else {
+        glPointSize(pointSize);
+        this->glue->glUniform1f(this->uRenderModeLocation, 1.0f);
+      }
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+    if (prim == GL_LINES || prim == GL_LINE_STRIP) {
+      // Render edge highlight at same width as original edge, opaque,
+      // using GL_ALWAYS to overwrite the black edge with highlight color.
+      // This matches the legacy renderer which replaces the edge color.
+      glDepthFunc(GL_ALWAYS);
+      float edgeWidth = std::max(cmd.state.raster.lineWidth, 1.0f) * dpr;
+      if (this->lineShaderProgram && edgeWidth > 1.0f) {
+        cc_glglue_glUseProgram(this->glue, this->lineShaderProgram);
+        this->glue->glUniformMatrix4fv(this->lineUModelLocation, 1, GL_FALSE, &modelMat[0][0]);
+        this->glue->glUniformMatrix4fv(this->lineUViewLocation, 1, GL_FALSE, &viewMat[0][0]);
+        this->glue->glUniformMatrix4fv(this->lineUProjLocation, 1, GL_FALSE, &projMat[0][0]);
+        SbVec2s vpSz = params.viewport.getViewportSizePixels();
+        this->glue->glUniform2f(this->lineUVpSizeLocation,
+                    static_cast<float>(vpSz[0]), static_cast<float>(vpSz[1]));
+        this->glue->glUniform1f(this->lineULineWidthLocation, edgeWidth);
+        this->glue->glUniform1f(this->lineUStipplePeriodLocation, 0.0f);
+        this->glue->glUniform1f(this->lineUUseVertexColorLocation, 0.0f);
+      }
+    }
+
+    // Bind cached VAO (has pos + norm + idx already set up).
+    // For flat overlay, normals are ignored by the shader (u_renderMode == 1).
+    this->glue->glBindVertexArray(entry.vao);
+
+    // Helper: set color on whichever shader is active (main or line).
+    // For edges, use opaque color (replaces the edge, not overlays).
+    bool isEdge = (prim == GL_LINES || prim == GL_LINE_STRIP);
+    bool isPoint = (prim == GL_POINTS);
+    bool lineShaderActive = isEdge && this->lineShaderProgram;
+    auto setSelColor = [&](float r, float g, float b, float a) {
+      float alpha = (isEdge || isPoint) ? 1.0f : a;  // opaque for edges/points
+      if (lineShaderActive) {
+        this->glue->glUniform4f(this->lineUColorLocation, r, g, b, alpha);
+      } else if (pointShaderActive) {
+        this->glue->glUniform4f(this->pointUColorLocation, r, g, b, alpha);
+      } else {
+        this->glue->glUniform4f(this->uColorLocation, r, g, b, alpha);
+      }
+    };
+
+    if (hasSelection) {
+      const SbVec4f & sc = cmd.selection.selectionColor;
+      setSelColor(sc[0], sc[1], sc[2], SELECTION_ALPHA);
+
+      // Render wireframe bounding box only for whole-object selection from
+      // tree-view selection. Per-element click selection uses the normal
+      // element range overlay path below.
+      if (cmd.selection.selectWholeObject && prim == GL_TRIANGLES
+          && cmd.geometry.positions && cmd.geometry.vertexCount >= 3) {
+        // Compute AABB from vertex positions
+        GLsizei stride = static_cast<GLsizei>(
+          cmd.geometry.vertexStride ? cmd.geometry.vertexStride : sizeof(float) * 3);
+        int floatStride = stride / static_cast<int>(sizeof(float));
+        const float * pos = cmd.geometry.positions;
+        float minX = pos[0], minY = pos[1], minZ = pos[2];
+        float maxX = minX, maxY = minY, maxZ = minZ;
+        for (uint32_t vi = 1; vi < cmd.geometry.vertexCount; vi++) {
+          const float * p = pos + vi * floatStride;
+          if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
+          if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
+          if (p[2] < minZ) minZ = p[2]; if (p[2] > maxZ) maxZ = p[2];
+        }
+        // 24 vertices for 12 edges of a wireframe box (GL_LINES)
+        float bboxVerts[24 * 3] = {
+          minX,minY,minZ, maxX,minY,minZ,  maxX,minY,minZ, maxX,maxY,minZ,
+          maxX,maxY,minZ, minX,maxY,minZ,  minX,maxY,minZ, minX,minY,minZ,
+          minX,minY,maxZ, maxX,minY,maxZ,  maxX,minY,maxZ, maxX,maxY,maxZ,
+          maxX,maxY,maxZ, minX,maxY,maxZ,  minX,maxY,maxZ, minX,minY,maxZ,
+          minX,minY,minZ, minX,minY,maxZ,  maxX,minY,minZ, maxX,minY,maxZ,
+          maxX,maxY,minZ, maxX,maxY,maxZ,  minX,maxY,minZ, minX,maxY,maxZ,
+        };
+        GLuint bboxVBO;
+        cc_glglue_glGenBuffers(this->glue, 1, &bboxVBO);
+        cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, bboxVBO);
+        cc_glglue_glBufferData(this->glue, GL_ARRAY_BUFFER, sizeof(bboxVerts), bboxVerts, GL_STREAM_DRAW);
+
+        GLuint bboxVAO;
+        this->glue->glGenVertexArrays(1, &bboxVAO);
+        this->glue->glBindVertexArray(bboxVAO);
+        cc_glglue_glEnableVertexAttribArray(this->glue, this->posLoc);
+        cc_glglue_glVertexAttribPointer(this->glue, this->posLoc, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+        if (this->normLoc >= 0) {
+          cc_glglue_glDisableVertexAttribArray(this->glue, this->normLoc);
+          cc_glglue_glVertexAttrib3f(this->glue, this->normLoc, 0.0f, 0.0f, 1.0f);
+        }
+        if (this->colorLoc >= 0) {
+          cc_glglue_glDisableVertexAttribArray(this->glue, this->colorLoc);
+        }
+        this->glue->glUniform1f(this->uUseVertexColorLocation, 0.0f);
+        this->glue->glUniform4f(this->uColorLocation, sc[0], sc[1], sc[2], 1.0f);
+        glLineWidth(2.0f * dpr);
+        cc_glglue_glDrawArrays(this->glue, GL_LINES, 0, 24);
+        glLineWidth(1.0f);
+        this->glue->glBindVertexArray(0);
+        this->glue->glDeleteVertexArrays(1, &bboxVAO);
+        cc_glglue_glDeleteBuffers(this->glue, 1, &bboxVBO);
+        // Rebind the original VAO for subsequent draws
+        this->glue->glBindVertexArray(entry.vao);
+      }
+      else {
+        if (cmd.selection.selectWholeObject) {
+          drawWholeCommand(cmd, prim);
+        }
+        for (int elem : cmd.selection.selectedElements) {
+          drawElementRanges(cmd, elem, prim);
+        }
+      }
+    }
+
+    if (hasHighlight) {
+      const SbVec4f & hc = cmd.selection.highlightColor;
+      setSelColor(hc[0], hc[1], hc[2], HIGHLIGHT_ALPHA);
+      if (prim == GL_POINTS) {
+        // Match the legacy point overlay path: committed selection respects
+        // depth, while the live highlight renders on top.
+        glDepthFunc(GL_ALWAYS);
+      }
+      if (cmd.selection.highlightWholeObject) {
+        drawWholeCommand(cmd, prim);
+      }
+      else {
+        drawElementRanges(cmd, hlElem, prim);
+      }
+    }
+
+    if (prim == GL_POINTS) {
+      if (pointShaderActive) {
+        cc_glglue_glUseProgram(this->glue, this->shaderProgram);
+      }
+      this->glue->glUniform1f(this->uRenderModeLocation, 1.0f);  // restore to flat
+      glDepthFunc(GL_LEQUAL);
+    }
+    if (prim == GL_LINES || prim == GL_LINE_STRIP) {
+      glDepthFunc(GL_LEQUAL);
+      if (this->lineShaderProgram) {
+        cc_glglue_glUseProgram(this->glue, this->shaderProgram);
+        this->glue->glUniform1f(this->uRenderModeLocation, 1.0f);
+      }
+    }
+  }
+
+  // Restore default state
+  this->glue->glUniform1f(this->uRenderModeLocation, 0.0f);
+  glDepthFunc(GL_LEQUAL);
+  glDepthMask(GL_TRUE);
+  glDisable(GL_BLEND);
+}
 
 void
 SoGLRenderBackend::endFrame()
@@ -1410,6 +1672,65 @@ SoGLRenderBackend::endFrame()
   gcStaleEntries(this->currentFrame);
 }
 
+void
+SoGLRenderBackend::renderIDBufferPass(const SoDrawList & drawlist,
+                                      const SbMat & viewMat,
+                                      const SbMat & projMat,
+                                      const SoRenderParams & params)
+{
+  // Skip during interactive navigation (no preselection during orbit/pan/zoom)
+  bool interactive = (params.flags & SO_PARAM_INTERACTIVE) != 0;
+  bool skipIdBuffer = (params.flags & SO_PARAM_SKIP_ID) != 0;
+  if (!pickBuffer || interactive || skipIdBuffer) return;
+
+  const int count = drawlist.getNumCommands();
+  const auto & lut = drawlist.getPickLUT();
+  SbVec2s vpSize = params.viewport.getViewportSizePixels();
+
+  // Render ID buffer at half resolution — 4x less fragment work.
+  // Pick radius and line/point sizes still provide adequate coverage.
+  int idW = std::max(1, static_cast<int>(vpSize[0]) / 2);
+  int idH = std::max(1, static_cast<int>(vpSize[1]) / 2);
+  pickBuffer->resize(idW, idH);
+  pickBuffer->setPickScale(static_cast<float>(idW) / vpSize[0],
+                           static_cast<float>(idH) / vpSize[1]);
+
+  if (lut.size() != lastPickLUTSize) {
+    pickBuffer->buildIdColorVBOs(drawlist);
+    lastPickLUTSize = lut.size();
+    pickBufferDirty = true;
+  }
+
+  if (pickBufferDirty && !lut.empty()) {
+    // Build per-command VBO info array so the ID pass can reuse cached VBOs
+    std::vector<SoIDPassVBOInfo> vboInfo(count);
+    for (int i = 0; i < count; ++i) {
+      const SoRenderCommand & cmd = drawlist.getCommand(i);
+      vboInfo[i] = {0, 0, 0};
+      if (!cmd.geometry.positions) continue;
+      auto it = ptrToCacheIndex.find(
+        CacheKey{cmd.geometry.positions, cmd.geometry.indices});
+      if (it != ptrToCacheIndex.end()) {
+        const CachedGPUCommand & entry = gpuCache[it->second];
+        vboInfo[i].posVBO = entry.posVBO;
+        vboInfo[i].idxVBO = entry.idxVBO;
+        vboInfo[i].vertexStride = entry.vertexStride;
+      }
+    }
+    pickBuffer->render(&viewMat[0][0], &projMat[0][0], drawlist,
+                       vboInfo.data(), count);
+    pickBufferDirty = false;
+  }
+
+  static int showIdBuffer = -1;
+  if (showIdBuffer < 0) {
+    const char * env = coin_getenv("FREECAD_SHOW_ID_BUFFER");
+    showIdBuffer = (env && env[0] == '1') ? 1 : 0;
+  }
+  if (showIdBuffer) {
+    pickBuffer->blitToScreen(vpSize[0], vpSize[1]);
+  }
+}
 
 // -----------------------------------------------------------------------
 // Render — orchestrator
@@ -1428,8 +1749,10 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
   updateGeometryCache(drawlist);
   renderOpaquePass(drawlist, viewMat, projMat, params);
   renderTransparentPass(drawlist, viewMat, projMat, params);
+  renderSelectionPass(drawlist, viewMat, projMat, params);
   renderOverlayPass(drawlist, viewMat, projMat, params);
   endFrame();
+  renderIDBufferPass(drawlist, viewMat, projMat, params);
 
   return TRUE;
 }
@@ -1442,12 +1765,16 @@ void
 SoGLRenderBackend::resizeTarget(const SoRenderTargetInfo & info)
 {
   this->storedparams.targetInfo = info;
-#if defined(COIN_DRAW_LIST_PICKING)
   this->pickBufferDirty = true;
-#endif
   SoRenderBackend::resizeTarget(info);
 }
 
+uint32_t
+SoGLRenderBackend::pick(int x, int y, int pickRadius) const
+{
+  if (!pickBuffer) return 0;
+  return pickBuffer->pick(x, y, pickRadius);
+}
 
 void
 SoGLRenderBackend::logFrameStats(const SoDrawList & drawlist,
@@ -1621,4 +1948,28 @@ SoGLRenderBackend::createShaders()
   cc_glglue_glDeleteShader(this->glue, pfs);
 
   return TRUE;
+}
+
+void
+SoGLRenderBackend::setPickLineWidth(float width)
+{
+  if (pickBuffer) pickBuffer->setPickLineWidth(width);
+}
+
+void
+SoGLRenderBackend::setPickPointSize(float size)
+{
+  if (pickBuffer) pickBuffer->setPickPointSize(size);
+}
+
+float
+SoGLRenderBackend::getPickLineWidth() const
+{
+  return pickBuffer ? pickBuffer->getPickLineWidth() : DEFAULT_PICK_SIZE;
+}
+
+float
+SoGLRenderBackend::getPickPointSize() const
+{
+  return pickBuffer ? pickBuffer->getPickPointSize() : DEFAULT_PICK_SIZE;
 }

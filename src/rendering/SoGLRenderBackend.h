@@ -4,6 +4,7 @@
 #define COIN_SOGLRENDERBACKEND_H
 
 #include "rendering/SoRenderBackend.h"
+#include "rendering/SoIDPickBuffer.h"
 
 #include <Inventor/system/gl.h>
 
@@ -68,6 +69,16 @@ public:
                 const SoRenderParams & params) override;
   void resizeTarget(const SoRenderTargetInfo & info) override;
 
+  /// GPU pick at pixel coordinates. Returns pick LUT index (1-based).
+  uint32_t pick(int x, int y, int pickRadius = 5) const;
+
+  void setPickLineWidth(float width);
+  void setPickPointSize(float size);
+  float getPickLineWidth() const;
+  float getPickPointSize() const;
+
+  /// Access the pick buffer for debug visualization.
+  SoIDPickBuffer * getPickBuffer() { return pickBuffer.get(); }
 
   /// Get cached GPU entry for a command index (for ID pass sharing).
   const CachedGPUCommand * getCachedCommand(int cmdIndex) const;
@@ -106,7 +117,13 @@ private:
   void renderOverlayPass(const SoDrawList & drawlist,
                          const SbMat & viewMat, const SbMat & projMat,
                          const SoRenderParams & params);
+  void renderSelectionPass(const SoDrawList & drawlist,
+                           const SbMat & viewMat, const SbMat & projMat,
+                           const SoRenderParams & params);
   void endFrame();
+  void renderIDBufferPass(const SoDrawList & drawlist,
+                          const SbMat & viewMat, const SbMat & projMat,
+                          const SoRenderParams & params);
 
   CachedGPUCommand & getOrCreateCache(const float * posPtr, const uint32_t * idxPtr);
   void uploadGeometry(CachedGPUCommand & entry, const SoRenderCommand & cmd);
@@ -213,7 +230,15 @@ private:
   std::unordered_map<CacheKey, int, CacheKeyHash> ptrToCacheIndex;
   int currentFrame = 0;
 
+  // GPU picking
+  std::unique_ptr<SoIDPickBuffer> pickBuffer;
+  bool pickBufferDirty = true;
+  size_t lastPickLUTSize = 0;
 
+  // Previous frame's view/proj for camera change detection
+  SbMatrix lastViewMatrix;
+  SbMatrix lastProjMatrix;
+  bool matricesInitialized = false;
 };
 
 #endif // COIN_SOGLRENDERBACKEND_H
