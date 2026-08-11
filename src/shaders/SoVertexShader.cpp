@@ -59,6 +59,7 @@
 
 #include "nodes/SoSubNodeP.h"
 #include "glue/glp.h"
+#include "glue/glslp.h"
 
 // *************************************************************************
 
@@ -115,7 +116,7 @@ SoVertexShader::isSupported(SourceType sourceType)
     return SoGLDriverDatabase::isSupported(glue, SO_GL_ARB_VERTEX_PROGRAM);
   }
   else if (sourceType == GLSL_PROGRAM) {
-    return SoGLDriverDatabase::isSupported(glue, SO_GL_ARB_SHADER_OBJECT);
+    return cc_glglue_has_glsl(glue);
   }
   // FIXME: Add support for detecting missing Cg support
   // (20050427 handegar)
