@@ -35,6 +35,14 @@ class COIN_DLL_API SoIRRenderAction : public SoAction {
   SO_ACTION_HEADER(SoIRRenderAction);
 
 public:
+  /*! Camera state policy used when starting a root traversal. */
+  enum class CameraPolicy {
+    //! Initialize the traversal from the camera configured on this action.
+    USE_CONFIGURED_CAMERA,
+    //! Start with the current state and let a camera node in the root set it.
+    CAMERA_IN_ROOT
+  };
+
   /*!
     \class SoIRRenderAction::PrimitiveCollector
     \brief Callback interface for receiving primitives generated during traversal.
@@ -68,6 +76,8 @@ public:
 
   void setCamera(SoCamera * camera) { this->camera = camera; }
   SoCamera * getCamera(void) const { return this->camera; }
+  void setCameraPolicy(CameraPolicy policy) { this->cameraPolicy = policy; }
+  CameraPolicy getCameraPolicy(void) const { return this->cameraPolicy; }
   void setDevicePixelRatio(float dpr) { this->devicePixelRatio = dpr; }
   float getDevicePixelRatio(void) const { return this->devicePixelRatio; }
 
@@ -77,7 +87,9 @@ public:
   virtual void apply(const SoPathList & pathlist, SbBool obeysrules = FALSE) override;
 
   //! Append a root without clearing the current retained frame.
-  void traverseAdditionalRoot(SoNode * root);
+  void traverseAdditionalRoot(
+    SoNode * root,
+    CameraPolicy policy = CameraPolicy::USE_CONFIGURED_CAMERA);
 
   void beginAfterMainStage();
   void endAfterMainStage();
@@ -128,10 +140,12 @@ protected:
   static void renderShape(SoAction * action, SoNode * node);
 
 private:
+  void initializeCameraState(CameraPolicy policy);
   void resetFrameResources();
 
   SbViewportRegion vpRegion;
   SoCamera *       camera = nullptr;
+  CameraPolicy     cameraPolicy = CameraPolicy::USE_CONFIGURED_CAMERA;
   float            devicePixelRatio = 1.0f;
   SoDrawList       drawlist;
   SoIRRenderActionP * pimpl;

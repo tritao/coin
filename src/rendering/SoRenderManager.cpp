@@ -60,8 +60,6 @@
 #include <Inventor/elements/SoComplexityTypeElement.h>
 #include <Inventor/elements/SoDevicePixelRatioElement.h>
 #include <Inventor/elements/SoLazyElement.h>
-#include <Inventor/elements/SoProjectionMatrixElement.h>
-#include <Inventor/elements/SoViewingMatrixElement.h>
 
 #include <algorithm>
 //FIXME:Need this include early, since including it via SoRenderManagerP.h will cause problems for cygwin. Don't understand the root cause BFG 20090629
@@ -275,12 +273,14 @@ SoRenderManager::SoRenderManager(void)
 #else
     SoRenderManager::RenderPipeline::DRAW_LIST;
 #endif
+  PRIVATE(this)->lightingmode = SoRenderManager::LIT;
   PRIVATE(this)->irAction = NULL;
   PRIVATE(this)->renderBackend = NULL;
   PRIVATE(this)->renderBackendFrame = 0;
   PRIVATE(this)->drawListCallbackScope = FALSE;
   PRIVATE(this)->viewport = SbViewportRegion(SbVec2s(400, 400));
   PRIVATE(this)->devicePixelRatio = 1.0f;
+  PRIVATE(this)->cameraInSceneGraph = FALSE;
 
   PRIVATE(this)->doublebuffer = TRUE;
   PRIVATE(this)->deleteaudiorenderaction = TRUE;
@@ -371,6 +371,11 @@ SoRenderManager::setSceneGraph(SoNode * const sceneroot)
   // old root == the new sceneroot. (Just to be that bit more robust.)
   SoNode * oldroot = PRIVATE(this)->scene;
 
+  // Scene ownership must be declared again by the scene manager or caller
+  // when the root changes. Do not let a previous root's camera policy leak
+  // into a new scene graph.
+  PRIVATE(this)->cameraInSceneGraph = FALSE;
+
   PRIVATE(this)->scene = sceneroot;
 
   if (PRIVATE(this)->scene) {
@@ -414,6 +419,18 @@ SoCamera *
 SoRenderManager::getCamera(void) const
 {
   return PRIVATE(this)->camera;
+}
+
+void
+SoRenderManager::setCameraInSceneGraph(SbBool inSceneGraph)
+{
+  PRIVATE(this)->cameraInSceneGraph = inSceneGraph;
+}
+
+SbBool
+SoRenderManager::isCameraInSceneGraph(void) const
+{
+  return PRIVATE(this)->cameraInSceneGraph;
 }
 
 /*
@@ -729,6 +746,24 @@ SoRenderManager::render(SoGLRenderAction * action,
     PRIVATE(this)->invokePreRenderCallbacks();
   }
 
+  if (PRIVATE(this)->renderLayerBackgroundRoot) {
+    SoState * state = action->getState();
+    state->push();
+    SoDevicePixelRatioElement::set(state,
+                                   PRIVATE(this)->dummynode,
+                                   PRIVATE(this)->devicePixelRatio);
+    if (PRIVATE(this)->lightingmode == SoRenderManager::UNLIT) {
+      SoLightModelElement::set(state, PRIVATE(this)->dummynode,
+                               SoLightModelElement::BASE_COLOR);
+      SoOverrideElement::setLightModelOverride(state,
+                                                PRIVATE(this)->dummynode,
+                                                TRUE);
+    }
+    this->renderScene(action, PRIVATE(this)->renderLayerBackgroundRoot, 0);
+    state->pop();
+    clearwindow_tmp = FALSE;
+  }
+
   if (PRIVATE(this)->superimpositions) {
     for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
       Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
@@ -738,6 +773,13 @@ SoRenderManager::render(SoGLRenderAction * action,
         SoDevicePixelRatioElement::set(state,
                                        PRIVATE(this)->dummynode,
                                        PRIVATE(this)->devicePixelRatio);
+        if (PRIVATE(this)->lightingmode == SoRenderManager::UNLIT) {
+          SoLightModelElement::set(state, PRIVATE(this)->dummynode,
+                                   SoLightModelElement::BASE_COLOR);
+          SoOverrideElement::setLightModelOverride(state,
+                                                    PRIVATE(this)->dummynode,
+                                                    TRUE);
+        }
         s->render(action, clearwindow_tmp);
         state->pop();
         clearwindow_tmp = FALSE;
@@ -749,6 +791,40 @@ SoRenderManager::render(SoGLRenderAction * action,
     this->renderSingle(action, initmatrices, clearwindow_tmp, clearzbuffer):
     this->renderStereo(action, initmatrices, clearwindow_tmp, clearzbuffer);
 
+  {
+    SoState * state = action->getState();
+    state->push();
+    SoDevicePixelRatioElement::set(state,
+                                   PRIVATE(this)->dummynode,
+                                   PRIVATE(this)->devicePixelRatio);
+    if (PRIVATE(this)->lightingmode == SoRenderManager::UNLIT) {
+      SoLightModelElement::set(state, PRIVATE(this)->dummynode,
+                               SoLightModelElement::BASE_COLOR);
+      SoOverrideElement::setLightModelOverride(state,
+                                                PRIVATE(this)->dummynode,
+                                                TRUE);
+    }
+    PRIVATE(this)->invokeAfterMainSceneCallbacks(action);
+    state->pop();
+  }
+
+  if (PRIVATE(this)->renderLayerForegroundRoot) {
+    SoState * state = action->getState();
+    state->push();
+    SoDevicePixelRatioElement::set(state,
+                                   PRIVATE(this)->dummynode,
+                                   PRIVATE(this)->devicePixelRatio);
+    if (PRIVATE(this)->lightingmode == SoRenderManager::UNLIT) {
+      SoLightModelElement::set(state, PRIVATE(this)->dummynode,
+                               SoLightModelElement::BASE_COLOR);
+      SoOverrideElement::setLightModelOverride(state,
+                                                PRIVATE(this)->dummynode,
+                                                TRUE);
+    }
+    this->renderScene(action, PRIVATE(this)->renderLayerForegroundRoot, 0);
+    state->pop();
+  }
+
   if (PRIVATE(this)->superimpositions) {
     for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
       Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
@@ -758,6 +834,13 @@ SoRenderManager::render(SoGLRenderAction * action,
         SoDevicePixelRatioElement::set(state,
                                        PRIVATE(this)->dummynode,
                                        PRIVATE(this)->devicePixelRatio);
+        if (PRIVATE(this)->lightingmode == SoRenderManager::UNLIT) {
+          SoLightModelElement::set(state, PRIVATE(this)->dummynode,
+                                   SoLightModelElement::BASE_COLOR);
+          SoOverrideElement::setLightModelOverride(state,
+                                                    PRIVATE(this)->dummynode,
+                                                    TRUE);
+        }
         s->render(action);
         state->pop();
       }
@@ -777,9 +860,12 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   PRIVATE(this)->drawListCallbackScope = TRUE;
   PRIVATE(this)->invokePreRenderCallbacks();
   if (!PRIVATE(this)->scene) {
-    PRIVATE(this)->invokePostRenderCallbacks();
-    PRIVATE(this)->drawListCallbackScope = FALSE;
-    return;
+    if (!PRIVATE(this)->renderLayerBackgroundRoot &&
+        !PRIVATE(this)->renderLayerForegroundRoot) {
+      PRIVATE(this)->invokePostRenderCallbacks();
+      PRIVATE(this)->drawListCallbackScope = FALSE;
+      return;
+    }
   }
 
   const SbViewportRegion viewport = PRIVATE(this)->viewport;
@@ -788,14 +874,86 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   }
   PRIVATE(this)->irAction->setViewportRegion(viewport);
   PRIVATE(this)->irAction->setCamera(PRIVATE(this)->camera);
+  PRIVATE(this)->irAction->setCameraPolicy(
+    PRIVATE(this)->cameraInSceneGraph
+      ? SoIRRenderAction::CameraPolicy::CAMERA_IN_ROOT
+      : SoIRRenderAction::CameraPolicy::USE_CONFIGURED_CAMERA);
   PRIVATE(this)->irAction->setDevicePixelRatio(PRIVATE(this)->devicePixelRatio);
-  PRIVATE(this)->irAction->apply(PRIVATE(this)->scene);
+
+  SoIRRenderAction * action = PRIVATE(this)->irAction;
+  SoState * state = action->getState();
+  action->beginFrame();
+
+  if (PRIVATE(this)->renderLayerBackgroundRoot) {
+    SoIRRenderStageScope backgroundScope(*action, SoRenderStage::Background);
+    state->push();
+    SoDevicePixelRatioElement::set(state,
+                                   PRIVATE(this)->dummynode,
+                                   PRIVATE(this)->devicePixelRatio);
+    if (PRIVATE(this)->lightingmode == SoRenderManager::UNLIT) {
+      SoLightModelElement::set(state, PRIVATE(this)->dummynode,
+                               SoLightModelElement::BASE_COLOR);
+      SoOverrideElement::setLightModelOverride(state, PRIVATE(this)->dummynode, TRUE);
+    }
+    action->traverseAdditionalRoot(PRIVATE(this)->renderLayerBackgroundRoot);
+    state->pop();
+  }
+
+  if (PRIVATE(this)->scene) {
+    state->push();
+    SoDevicePixelRatioElement::set(state,
+                                   PRIVATE(this)->dummynode,
+                                   PRIVATE(this)->devicePixelRatio);
+    if (PRIVATE(this)->lightingmode == SoRenderManager::UNLIT) {
+      SoLightModelElement::set(state, PRIVATE(this)->dummynode,
+                               SoLightModelElement::BASE_COLOR);
+      SoOverrideElement::setLightModelOverride(state, PRIVATE(this)->dummynode, TRUE);
+    }
+    action->traverseAdditionalRoot(
+      PRIVATE(this)->scene,
+      PRIVATE(this)->cameraInSceneGraph
+        ? SoIRRenderAction::CameraPolicy::CAMERA_IN_ROOT
+        : SoIRRenderAction::CameraPolicy::USE_CONFIGURED_CAMERA);
+    state->pop();
+  }
+
+  {
+    SoIRRenderStageScope afterMainScope(*action, SoRenderStage::AfterMain);
+    state->push();
+    SoDevicePixelRatioElement::set(state,
+                                   PRIVATE(this)->dummynode,
+                                   PRIVATE(this)->devicePixelRatio);
+    if (PRIVATE(this)->lightingmode == SoRenderManager::UNLIT) {
+      SoLightModelElement::set(state, PRIVATE(this)->dummynode,
+                               SoLightModelElement::BASE_COLOR);
+      SoOverrideElement::setLightModelOverride(state, PRIVATE(this)->dummynode, TRUE);
+    }
+    PRIVATE(this)->invokeAfterMainSceneCallbacks(action);
+    state->pop();
+  }
+
+  if (PRIVATE(this)->renderLayerForegroundRoot) {
+    SoIRRenderStageScope foregroundScope(*action, SoRenderStage::Foreground);
+    state->push();
+    SoDevicePixelRatioElement::set(state,
+                                   PRIVATE(this)->dummynode,
+                                   PRIVATE(this)->devicePixelRatio);
+    if (PRIVATE(this)->lightingmode == SoRenderManager::UNLIT) {
+      SoLightModelElement::set(state, PRIVATE(this)->dummynode,
+                               SoLightModelElement::BASE_COLOR);
+      SoOverrideElement::setLightModelOverride(state, PRIVATE(this)->dummynode, TRUE);
+    }
+    action->traverseAdditionalRoot(PRIVATE(this)->renderLayerForegroundRoot);
+    state->pop();
+  }
 
   SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
   drawlist.buildPickLUT();
 
   if (!PRIVATE(this)->renderBackend) {
     PRIVATE(this)->renderBackend = new SoGLRenderBackend;
+  }
+  if (!PRIVATE(this)->renderBackend->isInitialized()) {
     SoRenderBackendInitParams initparams = {};
     initparams.targetInfo.size = viewport.getViewportSizePixels();
     initparams.targetInfo.samples = 1;
@@ -828,8 +986,21 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   params.frameIndex = PRIVATE(this)->renderBackendFrame++;
   params.time = SbTime::getTimeOfDay().getValue();
   params.viewport = viewport;
-  params.viewMatrix = SoViewingMatrixElement::get(PRIVATE(this)->irAction->getState());
-  params.projMatrix = SoProjectionMatrixElement::get(PRIVATE(this)->irAction->getState());
+  // The retained traversal scopes its scene roots and restores the action
+  // state before the backend is invoked. Re-read the camera matrices from the
+  // camera itself instead of relying on the restored state, which otherwise
+  // leaves the backend with identity view/projection matrices for path-based
+  // after-main commands.
+  if (PRIVATE(this)->camera) {
+    SbViewportRegion cameraViewport = viewport;
+    const SbViewVolume viewVolume = PRIVATE(this)->camera->getViewVolume(
+      viewport, cameraViewport);
+    viewVolume.getMatrices(params.viewMatrix, params.projMatrix);
+  }
+  else {
+    params.viewMatrix = SbMatrix::identity();
+    params.projMatrix = SbMatrix::identity();
+  }
   params.viewProjMatrix = params.viewMatrix;
   params.viewProjMatrix.multRight(params.projMatrix);
   params.devicePixelRatio = PRIVATE(this)->devicePixelRatio;
@@ -968,6 +1139,11 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
 
   SoNode * node = PRIVATE(this)->dummynode;
   SoDevicePixelRatioElement::set(state, node, PRIVATE(this)->devicePixelRatio);
+
+  if (PRIVATE(this)->lightingmode == SoRenderManager::UNLIT) {
+    SoLightModelElement::set(state, node, SoLightModelElement::BASE_COLOR);
+    SoOverrideElement::setLightModelOverride(state, node, TRUE);
+  }
 
   if (!this->isTexturesEnabled()) {
     SoTextureQualityElement::set(state, node, 0.0f);
@@ -1680,6 +1856,26 @@ SoRenderManager::getRenderMode(void) const
   return PRIVATE(this)->rendermode;
 }
 
+void
+SoRenderManager::setLightingMode(const LightingMode mode)
+{
+  if (PRIVATE(this)->lightingmode == mode) return;
+  PRIVATE(this)->lightingmode = mode;
+#if COIN_BUILD_LEGACY_GL_RENDERER
+  if (PRIVATE(this)->glaction) {
+    PRIVATE(this)->glaction->invalidateState();
+  }
+#endif
+  this->invalidateScene();
+  PRIVATE(this)->dummynode->touch();
+}
+
+SoRenderManager::LightingMode
+SoRenderManager::getLightingMode(void) const
+{
+  return PRIVATE(this)->lightingmode;
+}
+
 /*!
   Sets the stereo mode.
 */
@@ -1819,6 +2015,115 @@ SoRenderManager::RenderPipeline
 SoRenderManager::getRenderPipeline(void) const
 {
   return PRIVATE(this)->renderPipeline;
+}
+
+SoRenderBackend *
+SoRenderManager::getRenderBackend(void) const
+{
+  return PRIVATE(this)->renderBackend;
+}
+
+SoIRRenderAction *
+SoRenderManager::getIRRenderAction(void) const
+{
+  return PRIVATE(this)->irAction;
+}
+
+void
+SoRenderManager::invalidateSharedGLState(void)
+{
+#if COIN_BUILD_LEGACY_GL_RENDERER
+  if (PRIVATE(this)->glaction) {
+    PRIVATE(this)->glaction->invalidateState();
+  }
+#endif
+}
+
+void
+SoRenderManager::releaseRenderBackendResources(void)
+{
+  if (PRIVATE(this)->renderBackend &&
+      PRIVATE(this)->renderBackend->isInitialized()) {
+    PRIVATE(this)->renderBackend->shutdown();
+  }
+}
+
+void
+SoRenderManager::discardRenderBackendResources(void)
+{
+  if (PRIVATE(this)->renderBackend &&
+      PRIVATE(this)->renderBackend->isInitialized()) {
+    PRIVATE(this)->renderBackend->discard();
+  }
+}
+
+void
+SoRenderManager::setRenderLayerRoot(RenderLayer layer, SoNode * root)
+{
+  SoNode ** slot = NULL;
+  SoNodeSensor ** sensorSlot = NULL;
+  switch (layer) {
+  case RENDER_LAYER_BACKGROUND:
+    slot = &PRIVATE(this)->renderLayerBackgroundRoot;
+    sensorSlot = &PRIVATE(this)->renderLayerBackgroundSensor;
+    break;
+  case RENDER_LAYER_FOREGROUND:
+    slot = &PRIVATE(this)->renderLayerForegroundRoot;
+    sensorSlot = &PRIVATE(this)->renderLayerForegroundSensor;
+    break;
+  default:
+    assert(0 && "unknown render layer");
+    return;
+  }
+
+  if (*slot == root) return;
+
+  if (*sensorSlot) (*sensorSlot)->detach();
+  if (*slot) (*slot)->unref();
+
+  *slot = root;
+  if (root) {
+    root->ref();
+    if (!*sensorSlot) {
+      *sensorSlot = new SoNodeSensor(SoRenderManager::nodesensorCB, this);
+    }
+    (*sensorSlot)->attach(root);
+  }
+
+  if (layer == RENDER_LAYER_BACKGROUND) this->invalidateScene();
+  else this->invalidateForeground();
+}
+
+SoNode *
+SoRenderManager::getRenderLayerRoot(RenderLayer layer) const
+{
+  switch (layer) {
+  case RENDER_LAYER_BACKGROUND:
+    return PRIVATE(this)->renderLayerBackgroundRoot;
+  case RENDER_LAYER_FOREGROUND:
+    return PRIVATE(this)->renderLayerForegroundRoot;
+  default:
+    assert(0 && "unknown render layer");
+    return NULL;
+  }
+}
+
+void
+SoRenderManager::invalidateDrawList(void)
+{
+  this->invalidateScene();
+}
+
+void
+SoRenderManager::invalidateScene(void)
+{
+  this->scheduleRedraw();
+}
+
+void
+SoRenderManager::invalidateForeground(void)
+{
+  this->scheduleRedraw();
 }
 
 /*!
@@ -2051,6 +2356,27 @@ SoRenderManager::removePostRenderCallback(SoRenderManagerRenderCB * cb, void * d
         "Tried to remove a cb,data tuple which doesn't exist"
         );
   PRIVATE(this)->postRenderCallbacks.erase(findit);
+}
+
+void
+SoRenderManager::addAfterMainSceneCallback(SoRenderManagerStageCB * cb, void * data)
+{
+  PRIVATE(this)->afterMainSceneCallbacks.push_back(
+    SoRenderManagerP::StageCBTouple(cb, data));
+}
+
+void
+SoRenderManager::removeAfterMainSceneCallback(SoRenderManagerStageCB * cb, void * data)
+{
+  std::vector<SoRenderManagerP::StageCBTouple>::iterator findit =
+    std::find(PRIVATE(this)->afterMainSceneCallbacks.begin(),
+              PRIVATE(this)->afterMainSceneCallbacks.end(),
+              SoRenderManagerP::StageCBTouple(cb, data));
+  assert(findit != PRIVATE(this)->afterMainSceneCallbacks.end() &&
+         "Tried to remove an after-main-scene callback which doesn't exist");
+  if (findit != PRIVATE(this)->afterMainSceneCallbacks.end()) {
+    PRIVATE(this)->afterMainSceneCallbacks.erase(findit);
+  }
 }
 
 #undef PRIVATE

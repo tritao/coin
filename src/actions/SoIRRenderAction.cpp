@@ -217,13 +217,33 @@ SoIRRenderAction::apply(const SoPathList & pathlist, SbBool obeysrules)
 }
 
 void
-SoIRRenderAction::traverseAdditionalRoot(SoNode * root)
+SoIRRenderAction::initializeCameraState(CameraPolicy policy)
+{
+  if (policy != CameraPolicy::USE_CONFIGURED_CAMERA || !this->camera) {
+    return;
+  }
+
+  SbViewportRegion cameraViewport = this->vpRegion;
+  const SbViewVolume viewVolume =
+    this->camera->getViewVolume(this->vpRegion, cameraViewport);
+  SbMatrix viewingMatrix;
+  SbMatrix projectionMatrix;
+  viewVolume.getMatrices(viewingMatrix, projectionMatrix);
+  SoViewportRegionElement::set(this->state, cameraViewport);
+  SoViewVolumeElement::set(this->state, this->camera, viewVolume);
+  SoViewingMatrixElement::set(this->state, this->camera, viewingMatrix);
+  SoProjectionMatrixElement::set(this->state, this->camera, projectionMatrix);
+}
+
+void
+SoIRRenderAction::traverseAdditionalRoot(SoNode * root, CameraPolicy policy)
 {
   if (!root) return;
   this->traversalMethods->setUp();
   this->state->push();
   SoViewportRegionElement::set(this->state, this->vpRegion);
   SoDevicePixelRatioElement::set(this->state, this->devicePixelRatio);
+  this->initializeCameraState(policy);
   this->switchToNodeTraversal(root);
   this->state->pop();
 }
@@ -265,18 +285,7 @@ SoIRRenderAction::beginTraversal(SoNode * node)
 {
   SoViewportRegionElement::set(this->state, this->vpRegion);
   SoDevicePixelRatioElement::set(this->state, this->devicePixelRatio);
-  if (this->camera) {
-    SbViewportRegion cameraViewport = this->vpRegion;
-    const SbViewVolume viewVolume =
-      this->camera->getViewVolume(this->vpRegion, cameraViewport);
-    SbMatrix viewingMatrix;
-    SbMatrix projectionMatrix;
-    viewVolume.getMatrices(viewingMatrix, projectionMatrix);
-    SoViewportRegionElement::set(this->state, cameraViewport);
-    SoViewVolumeElement::set(this->state, this->camera, viewVolume);
-    SoViewingMatrixElement::set(this->state, this->camera, viewingMatrix);
-    SoProjectionMatrixElement::set(this->state, this->camera, projectionMatrix);
-  }
+  this->initializeCameraState(this->cameraPolicy);
   inherited::beginTraversal(node);
 }
 

@@ -41,18 +41,24 @@
 
 class SbViewportRegion;
 class SoEvent;
+class SoAction;
 #if COIN_HAVE_LEGACY_GL_RENDERER
 class SoGLRenderAction;
 #endif
 class SoAudioRenderAction;
 class SoNode;
 class SoCamera;
+class SoIRRenderAction;
+class SoRenderBackend;
 class SoNodeSensor;
 class SoOneShotSensor;
 class SoSensor;
 class SoRenderManagerP;
 
 typedef void SoRenderManagerRenderCB(void * userdata, class SoRenderManager * mgr);
+typedef void SoRenderManagerStageCB(void * userdata,
+                                    class SoRenderManager * mgr,
+                                    SoAction * action);
 
 class COIN_DLL_API SoRenderManager {
 public:
@@ -101,6 +107,16 @@ public:
     SHADED_HIDDEN_LINES
   };
 
+  enum LightingMode {
+    LIT,
+    UNLIT
+  };
+
+  enum RenderLayer {
+    RENDER_LAYER_BACKGROUND,
+    RENDER_LAYER_FOREGROUND
+  };
+
   enum StereoMode {
     MONO,
     ANAGLYPH,
@@ -147,6 +163,16 @@ public:
   void setCamera(SoCamera * camera);
   SoCamera * getCamera(void) const;
 
+  /*!\brief Declare that the main scene graph contains the configured camera.
+
+    The retained renderer uses this to preserve scene-graph camera ordering:
+    state before the camera node starts from identity, just as in legacy
+    traversal. The default is FALSE, meaning the configured camera is
+    external to the scene graph.
+  */
+  void setCameraInSceneGraph(SbBool inSceneGraph);
+  SbBool isCameraInSceneGraph(void) const;
+
   void setAutoClipping(AutoClippingStrategy autoclipping);
   AutoClippingStrategy getAutoClipping(void) const;
   void setNearPlaneValue(float value);
@@ -157,6 +183,8 @@ public:
   SbBool isDoubleBuffer(void) const;
   void setRenderMode(const RenderMode mode);
   RenderMode getRenderMode(void) const;
+  void setLightingMode(const LightingMode mode);
+  LightingMode getLightingMode(void) const;
   void setStereoMode(const StereoMode mode);
   StereoMode getStereoMode(void) const;
   void setStereoOffset(const float offset);
@@ -199,6 +227,20 @@ public:
 #endif
   void setRenderPipeline(RenderPipeline pipeline);
   RenderPipeline getRenderPipeline(void) const;
+
+  SoRenderBackend * getRenderBackend(void) const;
+  SoIRRenderAction * getIRRenderAction(void) const;
+
+  void invalidateSharedGLState(void);
+  void releaseRenderBackendResources(void);
+  void discardRenderBackendResources(void);
+
+  void setRenderLayerRoot(RenderLayer layer, SoNode * root);
+  SoNode * getRenderLayerRoot(RenderLayer layer) const;
+
+  void invalidateDrawList(void);
+  void invalidateScene(void);
+  void invalidateForeground(void);
   void setAudioRenderAction(SoAudioRenderAction * const action);
   SoAudioRenderAction * getAudioRenderAction(void) const;
 
@@ -211,6 +253,9 @@ public:
 
   void addPostRenderCallback(SoRenderManagerRenderCB * cb, void * data);
   void removePostRenderCallback(SoRenderManagerRenderCB * cb, void * data);
+
+  void addAfterMainSceneCallback(SoRenderManagerStageCB * cb, void * data);
+  void removeAfterMainSceneCallback(SoRenderManagerStageCB * cb, void * data);
 
   void reinitialize(void);
 
