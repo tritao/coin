@@ -261,6 +261,9 @@
 */
 
 #include <Inventor/nodes/SoSceneTexture2.h>
+#include <Inventor/elements/SoLazyElement.h>
+#include <Inventor/elements/SoMultiTextureEnabledElement.h>
+#include <Inventor/elements/SoMultiTextureImageElement.h>
 #include "coindefs.h"
 
 #include <cassert>
@@ -281,19 +284,31 @@
 #include <Inventor/elements/SoTextureQualityElement.h>
 #include <Inventor/elements/SoGLShaderProgramElement.h>
 #include <Inventor/elements/SoTextureOverrideElement.h>
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLLazyElement.h>
+#endif
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
 #include <Inventor/elements/SoTextureUnitElement.h>
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLMultiTextureImageElement.h>
+#endif
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLMultiTextureEnabledElement.h>
+#endif
 #include <Inventor/elements/SoShapeStyleElement.h>
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLDisplayList.h>
+#endif
 #include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoLightElement.h>
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLLightIdElement.h>
+#endif
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLLazyElement.h>
+#endif
 #include <Inventor/elements/SoShapeStyleElement.h>
 #include <Inventor/elements/SoTextureQualityElement.h>
 #include <Inventor/errors/SoReadError.h>
@@ -302,7 +317,9 @@
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/SbImage.h>
 #include <Inventor/C/glue/gl.h>
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/misc/SoGLImage.h>
+#endif
 #include <Inventor/C/tidbits.h>
 #include <Inventor/system/gl.h>
 #include <Inventor/misc/SoGLDriverDatabase.h>
@@ -316,6 +333,8 @@
 #endif // COIN_THREADSAFE
 
 #include "nodes/SoSubNodeP.h"
+
+class SoGLImage;
 #include "elements/SoTextureScalePolicyElement.h"
 
 
@@ -437,8 +456,8 @@ SoSceneTexture2::initClass(void)
 {
   SO_NODE_INTERNAL_INIT_CLASS(SoSceneTexture2, SO_FROM_COIN_2_2);
 
-  SO_ENABLE(SoGLRenderAction, SoGLMultiTextureImageElement);
-  SO_ENABLE(SoGLRenderAction, SoGLMultiTextureEnabledElement);
+  SO_ENABLE_LEGACY_GL(SoGLRenderAction, SoGLMultiTextureImageElement);
+  SO_ENABLE_LEGACY_GL(SoGLRenderAction, SoGLMultiTextureEnabledElement);
 
   SO_ENABLE(SoCallbackAction, SoMultiTextureImageElement);
   SO_ENABLE(SoCallbackAction, SoMultiTextureEnabledElement);
@@ -447,6 +466,7 @@ SoSceneTexture2::initClass(void)
   SO_ENABLE(SoRayPickAction, SoMultiTextureEnabledElement);
 }
 
+#if COIN_BUILD_LEGACY_GL_RENDERER
 static SoGLImage::Wrap
 translateWrap(const SoSceneTexture2::Wrap wrap)
 {
@@ -454,6 +474,7 @@ translateWrap(const SoSceneTexture2::Wrap wrap)
   if (wrap == SoSceneTexture2::REPEAT) return SoGLImage::REPEAT;
   return SoGLImage::CLAMP;
 }
+#endif
 
 SoSceneTexture2::SoSceneTexture2(void)
 {
@@ -523,6 +544,7 @@ SoSceneTexture2::~SoSceneTexture2(void)
 
 
 // Documented in superclass.
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoSceneTexture2::GLRender(SoGLRenderAction * action)
 {
@@ -598,6 +620,7 @@ SoSceneTexture2::GLRender(SoGLRenderAction * action)
     // units will be ignored. pederb, 2003-11-04
   }
 }
+#endif
 
 
 // Documented in superclass.
@@ -679,13 +702,16 @@ SoSceneTexture2::write(SoWriteAction * action)
 
 #define PUBLIC(obj) obj->api
 
+#if COIN_BUILD_LEGACY_GL_RENDERER
 SoSceneTexture2P::SoSceneTexture2P(SoSceneTexture2 * apiptr)
 {
   this->api = apiptr;
   this->glcontext = NULL;
   this->buffervalid = FALSE;
+#if COIN_BUILD_LEGACY_GL_RENDERER
   this->glimagevalid = FALSE;
   this->glimage = NULL;
+#endif
   this->glimagecontext = 0;
   this->glaction = NULL;
   this->glcontextsize.setValue(-1,-1);
@@ -1370,6 +1396,36 @@ SoSceneTexture2P::getTransparencyType(SoState * state)
   return (SoGLRenderAction::TransparencyType)
     SoShapeStyleElement::getTransparencyType(state);
 }
+
+#else
+
+SoSceneTexture2P::SoSceneTexture2P(SoSceneTexture2 * apiptr)
+{
+  this->api = apiptr;
+  this->glcontext = NULL;
+  this->buffervalid = FALSE;
+  this->glimagevalid = FALSE;
+  this->glimage = NULL;
+  this->glimagecontext = 0;
+  this->glaction = NULL;
+  this->glcontextsize.setValue(-1, -1);
+  this->glrectangle = FALSE;
+  this->offscreenbuffer = NULL;
+  this->offscreenbuffersize = 0;
+  this->canrendertotexture = FALSE;
+  this->contextid = -1;
+  this->fbodata = NULL;
+}
+
+SoSceneTexture2P::~SoSceneTexture2P()
+{
+#if COIN_BUILD_LEGACY_GL_RENDERER
+  if (this->glimage) this->glimage->unref(NULL);
+#endif
+  delete [] this->offscreenbuffer;
+}
+
+#endif
 
 
 #undef PUBLIC
