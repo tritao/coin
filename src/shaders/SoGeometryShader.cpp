@@ -129,7 +129,9 @@
 
 #include <Inventor/nodes/SoGeometryShader.h>
 
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/actions/SoGLRenderAction.h>
+#endif
 #include <Inventor/elements/SoGLShaderProgramElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
 #include <Inventor/errors/SoDebugError.h>
@@ -185,6 +187,7 @@ SoGeometryShader::~SoGeometryShader()
 {
 }
 
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoGeometryShader::GLRender(SoGLRenderAction * action)
 {
@@ -242,6 +245,7 @@ SoGeometryShader::GLRender(SoGLRenderAction * action)
   }
   inherited::GLRender(action);
 }
+#endif
 
 // *************************************************************************
 
