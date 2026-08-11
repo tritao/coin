@@ -5,7 +5,7 @@
 
 #include <Inventor/SbBasic.h>
 
-#include "rendering/SoRenderIR.h"
+#include <Inventor/rendering/SoRenderIR.h>
 
 #include <cstdint>
 #include <vector>
