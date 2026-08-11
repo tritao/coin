@@ -67,8 +67,8 @@ int countNonBlack(CoinOffscreenGLCanvas & canvas)
 
 }
 
-int
-main()
+static int
+runTest()
 {
   set_environment("COIN_EGL", "1");
   set_environment("EGL_PLATFORM", "surfaceless");
@@ -78,7 +78,6 @@ main()
   CoinOffscreenGLCanvas canvas;
   canvas.setWantedSize(SbVec2s(32, 32));
   if (canvas.activateGLContext() == 0) {
-    SoDB::finish();
     return skip("core EGL offscreen context is unavailable");
   }
 
@@ -92,23 +91,26 @@ main()
   camera->ref();
 
   // The manager's camera bridge must feed real matrices into traversal.
-  SoIRRenderAction cameraAction(SbViewportRegion(SbVec2s(32, 32)));
-  cameraAction.setCamera(camera);
-  cameraAction.apply(cubeRoot);
-  if (SoViewingMatrixElement::get(cameraAction.getState()) == SbMatrix::identity()
-      || SoProjectionMatrixElement::get(cameraAction.getState()) == SbMatrix::identity()) {
-    std::cerr << "FAIL: transformed camera did not reach retained traversal state" << std::endl;
-    camera->unref();
-    cubeRoot->unref();
-    canvas.deactivateGLContext();
-    SoDB::finish();
-    return 1;
+  SbViewportRegion testViewport(SbVec2s(32, 32));
+  testViewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(32, 32));
+  {
+    SoIRRenderAction cameraAction(testViewport);
+    cameraAction.setCamera(camera);
+    cameraAction.apply(cubeRoot);
+    if (SoViewingMatrixElement::get(cameraAction.getState()) == SbMatrix::identity()
+        || SoProjectionMatrixElement::get(cameraAction.getState()) == SbMatrix::identity()) {
+      std::cerr << "FAIL: transformed camera did not reach retained traversal state" << std::endl;
+      camera->unref();
+      cubeRoot->unref();
+      canvas.deactivateGLContext();
+      return 1;
+    }
   }
 
   int result = 0;
   {
     SoRenderManager manager;
-    manager.setViewportRegion(SbViewportRegion(SbVec2s(32, 32)));
+    manager.setViewportRegion(testViewport);
     manager.setSceneGraph(cubeRoot);
     manager.setCamera(camera);
     manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
@@ -127,6 +129,7 @@ main()
     }
 
     SoSeparator * dprRoot = new SoSeparator;
+    dprRoot->ref();
     SoSeparator * lineGroup = new SoSeparator;
     SoDrawStyle * lineStyle = new SoDrawStyle;
     lineStyle->style = SoDrawStyle::LINES;
@@ -172,6 +175,13 @@ main()
   camera->unref();
   cubeRoot->unref();
   canvas.deactivateGLContext();
+  return result;
+}
+
+int
+main()
+{
+  const int result = runTest();
   SoDB::finish();
   return result;
 }

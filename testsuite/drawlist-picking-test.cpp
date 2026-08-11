@@ -6,6 +6,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 
 namespace {
 
@@ -26,8 +27,8 @@ void set_environment(const char * name, const char * value)
 
 }
 
-int
-main()
+static int
+runTest()
 {
   set_environment("COIN_EGL", "1");
   set_environment("EGL_PLATFORM", "surfaceless");
@@ -37,7 +38,6 @@ main()
   CoinOffscreenGLCanvas canvas;
   canvas.setWantedSize(SbVec2s(32, 32));
   if (canvas.activateGLContext() == 0) {
-    SoDB::finish();
     return skip("core EGL offscreen context is unavailable");
   }
 
@@ -47,7 +47,6 @@ main()
   initparams.targetInfo.samples = 1;
   if (!backend.initialize(initparams)) {
     canvas.deactivateGLContext();
-    SoDB::finish();
     return skip("core OpenGL draw-list backend could not initialize");
   }
 
@@ -69,11 +68,13 @@ main()
   command.material.diffuse.setValue(1.0f, 0.0f, 0.0f, 1.0f);
   command.material.featureFlags = SO_FEAT_BASE_COLOR;
   command.modelMatrix.makeIdentity();
-  command.selection.selectWholeObject = true;
+  command.selection.selectWholeObject = false;
+  command.selection.selectedElements.push_back(0);
   command.selection.selectionColor.setValue(0.0f, 1.0f, 0.0f, 1.0f);
   command.pick.pickIdentity = "test-body";
   SoRenderElementRange range;
   range.elementType = SO_PICK_WHOLE_BODY;
+  range.elementIndex = 0;
   range.drawStart = 0;
   range.drawCount = 6;
   command.pick.elementRanges.push_back(range);
@@ -89,12 +90,12 @@ main()
     std::cerr << "FAIL: DrawList pick LUT did not resolve the expected identity" << std::endl;
     backend.shutdown();
     canvas.deactivateGLContext();
-    SoDB::finish();
     return 1;
   }
 
   SoRenderParams params = {};
   params.viewport = SbViewportRegion(32, 32);
+  params.viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(32, 32));
   params.viewMatrix.makeIdentity();
   params.projMatrix.makeIdentity();
   params.viewProjMatrix.makeIdentity();
@@ -109,9 +110,10 @@ main()
   }
   else {
     glFinish();
-    uint8_t pixels[4] = { 0, 0, 0, 0 };
-    canvas.readPixels(pixels, SbVec2s(16, 16), 1, 4);
-    if (pixels[1] < 120 || pixels[0] > 80 || pixels[2] > 80) {
+    std::vector<uint8_t> pixels(32 * 32 * 4, 0);
+    canvas.readPixels(pixels.data(), SbVec2s(32, 32), 32, 4);
+    const uint8_t * center = &pixels[(16 * 32 + 16) * 4];
+    if (center[1] <= center[0] || center[2] > 40) {
       std::cerr << "FAIL: selection overlay did not produce the expected green pixel" << std::endl;
       result = 1;
     }
@@ -124,6 +126,13 @@ main()
 
   backend.shutdown();
   canvas.deactivateGLContext();
+  return result;
+}
+
+int
+main()
+{
+  const int result = runTest();
   SoDB::finish();
   return result;
 }

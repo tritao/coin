@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 
 namespace {
 
@@ -27,8 +28,8 @@ void set_environment(const char * name, const char * value)
 
 }
 
-int
-main()
+static int
+runTest()
 {
   set_environment("COIN_EGL", "1");
   set_environment("EGL_PLATFORM", "surfaceless");
@@ -39,7 +40,6 @@ main()
   CoinOffscreenGLCanvas canvas;
   canvas.setWantedSize(SbVec2s(32, 32));
   if (canvas.activateGLContext() == 0) {
-    SoDB::finish();
     return skip("core EGL offscreen context is unavailable");
   }
 
@@ -49,7 +49,6 @@ main()
   initparams.targetInfo.samples = 1;
   if (!backend.initialize(initparams)) {
     canvas.deactivateGLContext();
-    SoDB::finish();
     return skip("core OpenGL draw-list backend could not initialize");
   }
 
@@ -116,12 +115,13 @@ main()
 
   SoRenderParams params = {};
   params.viewport = SbViewportRegion(32, 32);
+  params.viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(32, 32));
   params.viewMatrix.makeIdentity();
   params.projMatrix.makeIdentity();
   params.viewProjMatrix.makeIdentity();
   params.clearColor.setValue(0.0f, 0.0f, 0.0f, 1.0f);
   params.clearDepth = 1.0f;
-  params.flags = SO_PARAM_CLEAR_WINDOW | SO_PARAM_CLEAR_DEPTH;
+  params.flags = SO_PARAM_CLEAR_WINDOW | SO_PARAM_CLEAR_DEPTH | SO_PARAM_SKIP_ID;
 
   int result = 0;
   if (!backend.render(drawlist, params)) {
@@ -130,22 +130,24 @@ main()
   }
   else {
     glFinish();
-    uint8_t pixels[4] = { 0, 0, 0, 0 };
-    canvas.readPixels(pixels, SbVec2s(5, 1), 1, 4);
-    if (pixels[0] < 180 || std::abs(static_cast<int>(pixels[0]) - pixels[1]) > 5
-        || std::abs(static_cast<int>(pixels[1]) - pixels[2]) > 5) {
+    std::vector<uint8_t> pixels(32 * 32 * 4, 0);
+    canvas.readPixels(pixels.data(), SbVec2s(32, 32), 32, 4);
+    auto pixelAt = [&](int x, int y) { return &pixels[(y * 32 + x) * 4]; };
+    const uint8_t * leftPixel = pixelAt(5, 16);
+    if (leftPixel[0] < 180 || std::abs(static_cast<int>(leftPixel[0]) - leftPixel[1]) > 5
+        || std::abs(static_cast<int>(leftPixel[1]) - leftPixel[2]) > 5) {
       std::cerr << "FAIL: core draw-list L texture produced unexpected pixels" << std::endl;
       result = 1;
     }
-    canvas.readPixels(pixels, SbVec2s(16, 1), 1, 4);
-    if (pixels[0] < 70 || pixels[0] > 130
-        || std::abs(static_cast<int>(pixels[0]) - pixels[1]) > 5
-        || std::abs(static_cast<int>(pixels[1]) - pixels[2]) > 5) {
+    const uint8_t * middlePixel = pixelAt(16, 16);
+    if (middlePixel[0] < 70 || middlePixel[0] > 130
+        || std::abs(static_cast<int>(middlePixel[0]) - middlePixel[1]) > 5
+        || std::abs(static_cast<int>(middlePixel[1]) - middlePixel[2]) > 5) {
       std::cerr << "FAIL: core draw-list LA texture produced unexpected pixels" << std::endl;
       result = 1;
     }
-    canvas.readPixels(pixels, SbVec2s(27, 1), 1, 4);
-    if (pixels[0] < 200 || pixels[1] > 40 || pixels[2] > 40) {
+    const uint8_t * rightPixel = pixelAt(27, 16);
+    if (rightPixel[0] < 200 || rightPixel[1] > 40 || rightPixel[2] > 40) {
       std::cerr << "FAIL: core draw-list plain rendering produced unexpected pixels" << std::endl;
       result = 1;
     }
@@ -153,6 +155,13 @@ main()
 
   backend.shutdown();
   canvas.deactivateGLContext();
+  return result;
+}
+
+int
+main()
+{
+  const int result = runTest();
   SoDB::finish();
   return result;
 }
