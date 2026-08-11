@@ -111,6 +111,13 @@ sogl_glue_instance(const SoState * state)
 #endif // workaround version
 }
 
+SbBool
+sogl_context_supports_legacy_rendering(const SoState * state)
+{
+  const cc_glglue * glue = sogl_glue_instance(state);
+  return cc_glglue_context_supports_legacy_rendering(glue);
+}
+
 
 // generate a 3d circle in the x-z plane
 static void
