@@ -80,7 +80,7 @@ jobs:
           sudo apt-get -y install freeglut3-dev libegl1-mesa-dev xvfb
           cmake -S . -B cmake_build_dir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCOIN_BUILD_LEGACY_GL_RENDERER=ON -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_GL_TESTS=ON -DCOIN_BUILD_EXAMPLES=OFF -DCOIN_BUILD_DOCUMENTATION=OFF
       - name: Build OpenGL tests
-        run: cmake --build cmake_build_dir --target EGLBindingTest GLSLRuntimeTest --config Release --parallel
+        run: cmake --build cmake_build_dir --target EGLBindingTest GLSLRuntimeTest GLSLDiagnosticsTest --config Release --parallel
       - name: Run generic core-profile tests
         run: xvfb-run -a ctest -C Release -L gl-core --output-on-failure
         working-directory: cmake_build_dir

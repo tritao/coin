@@ -194,6 +194,8 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 
 	coin_add_gl_test(NAME GLSLRuntimeTest PROFILE core INTERNAL
 		SOURCES GLSLRuntimeTest.cpp)
+	coin_add_gl_test(NAME GLSLDiagnosticsTest PROFILE core INTERNAL
+		SOURCES GLSLDiagnosticsTest.cpp)
 endif()
 
 if(HAVE_EGL AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
