@@ -135,6 +135,24 @@ target_include_directories(ActionSwitchedTraversalTest PRIVATE
 	${COIN_TARGET_INCLUDE_DIRECTORIES}
 )
 add_test(NAME ActionSwitchedTraversalTest COMMAND ActionSwitchedTraversalTest)
+
+add_executable(RetainedIRTest retained-ir-test.cpp)
+target_link_libraries(RetainedIRTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(RetainedIRTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+add_test(NAME RetainedIRTest COMMAND RetainedIRTest)
+
+add_executable(RetainedNodeTest retained-node-test.cpp)
+target_link_libraries(RetainedNodeTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(RetainedNodeTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+add_test(NAME RetainedNodeTest COMMAND RetainedNodeTest)
 if(HAVE_EGL)
 	add_executable(EGLBindingTest egl-binding-test.cpp)
 	target_link_libraries(EGLBindingTest Coin ${COIN_TARGET_LINK_LIBRARIES})
