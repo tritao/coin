@@ -281,6 +281,7 @@
 #include "glue/khronos/GL/wglext.h"
 #endif
 #include "glue/glp.h"
+#include "glue/glslp.h"
 #include "glue/dlp.h"
 #include "glue/gl_agl.h"
 #include "glue/gl_cgl.h"
@@ -1677,6 +1678,77 @@ glglue_resolve_symbols(cc_glglue * w)
   w->glUniformMatrix3fvARB = NULL;
   w->glUniformMatrix4fvARB = NULL;
 
+  w->glCreateShader = NULL;
+  w->glShaderSource = NULL;
+  w->glCompileShader = NULL;
+  w->glGetShaderiv = NULL;
+  w->glGetShaderInfoLog = NULL;
+  w->glDeleteShader = NULL;
+  w->glAttachShader = NULL;
+  w->glDetachShader = NULL;
+  w->glGetUniformLocation = NULL;
+  w->glGetActiveUniform = NULL;
+  w->glUniform1f = NULL;
+  w->glUniform2f = NULL;
+  w->glUniform3f = NULL;
+  w->glUniform4f = NULL;
+  w->glUniform1fv = NULL;
+  w->glUniform2fv = NULL;
+  w->glUniform3fv = NULL;
+  w->glUniform4fv = NULL;
+  w->glUniform1i = NULL;
+  w->glUniform2i = NULL;
+  w->glUniform3i = NULL;
+  w->glUniform4i = NULL;
+  w->glUniform1iv = NULL;
+  w->glUniform2iv = NULL;
+  w->glUniform3iv = NULL;
+  w->glUniform4iv = NULL;
+  w->glUniformMatrix4fv = NULL;
+  w->glCreateProgram = NULL;
+  w->glLinkProgram = NULL;
+  w->glUseProgram = NULL;
+  w->glDeleteProgram = NULL;
+  w->glGetProgramiv = NULL;
+  w->glGetProgramInfoLog = NULL;
+
+  /* Resolve standard GLSL entry points independently of the active profile.
+     The wrappers below fall back to the ARB_shader_objects aliases when a
+     driver only exposes those names. */
+  w->glCreateShader = (COIN_PFNGLCREATESHADERPROC) PROC(w, glCreateShader);
+  w->glShaderSource = (COIN_PFNGLSHADERSOURCEPROC) PROC(w, glShaderSource);
+  w->glCompileShader = (COIN_PFNGLCOMPILESHADERPROC) PROC(w, glCompileShader);
+  w->glGetShaderiv = (COIN_PFNGLGETSHADERIVPROC) PROC(w, glGetShaderiv);
+  w->glGetShaderInfoLog = (COIN_PFNGLGETSHADERINFOLOGPROC) PROC(w, glGetShaderInfoLog);
+  w->glDeleteShader = (COIN_PFNGLDELETESHADERPROC) PROC(w, glDeleteShader);
+  w->glAttachShader = (COIN_PFNGLATTACHSHADERPROC) PROC(w, glAttachShader);
+  w->glDetachShader = (COIN_PFNGLDETACHSHADERPROC) PROC(w, glDetachShader);
+  w->glGetUniformLocation = (COIN_PFNGLGETUNIFORMLOCATIONPROC) PROC(w, glGetUniformLocation);
+  w->glGetActiveUniform = (COIN_PFNGLGETACTIVEUNIFORMPROC) PROC(w, glGetActiveUniform);
+  w->glUniform1f = (COIN_PFNGLUNIFORM1FPROC) PROC(w, glUniform1f);
+  w->glUniform2f = (COIN_PFNGLUNIFORM2FPROC) PROC(w, glUniform2f);
+  w->glUniform3f = (COIN_PFNGLUNIFORM3FPROC) PROC(w, glUniform3f);
+  w->glUniform4f = (COIN_PFNGLUNIFORM4FPROC) PROC(w, glUniform4f);
+  w->glUniform1fv = (COIN_PFNGLUNIFORM1FVPROC) PROC(w, glUniform1fv);
+  w->glUniform2fv = (COIN_PFNGLUNIFORM2FVPROC) PROC(w, glUniform2fv);
+  w->glUniform3fv = (COIN_PFNGLUNIFORM3FVPROC) PROC(w, glUniform3fv);
+  w->glUniform4fv = (COIN_PFNGLUNIFORM4FVPROC) PROC(w, glUniform4fv);
+  w->glUniform1i = (COIN_PFNGLUNIFORM1IPROC) PROC(w, glUniform1i);
+  w->glUniform2i = (COIN_PFNGLUNIFORM2IPROC) PROC(w, glUniform2i);
+  w->glUniform3i = (COIN_PFNGLUNIFORM3IPROC) PROC(w, glUniform3i);
+  w->glUniform4i = (COIN_PFNGLUNIFORM4IPROC) PROC(w, glUniform4i);
+  w->glUniform1iv = (COIN_PFNGLUNIFORM1IVPROC) PROC(w, glUniform1iv);
+  w->glUniform2iv = (COIN_PFNGLUNIFORM2IVPROC) PROC(w, glUniform2iv);
+  w->glUniform3iv = (COIN_PFNGLUNIFORM3IVPROC) PROC(w, glUniform3iv);
+  w->glUniform4iv = (COIN_PFNGLUNIFORM4IVPROC) PROC(w, glUniform4iv);
+  w->glUniformMatrix4fv = (COIN_PFNGLUNIFORMMATRIX4FVPROC) PROC(w, glUniformMatrix4fv);
+  w->glCreateProgram = (COIN_PFNGLCREATEPROGRAMPROC) PROC(w, glCreateProgram);
+  w->glLinkProgram = (COIN_PFNGLLINKPROGRAMPROC) PROC(w, glLinkProgram);
+  w->glUseProgram = (COIN_PFNGLUSEPROGRAMPROC) PROC(w, glUseProgram);
+  w->glDeleteProgram = (COIN_PFNGLDELETEPROGRAMPROC) PROC(w, glDeleteProgram);
+  w->glGetProgramiv = (COIN_PFNGLGETPROGRAMIVPROC) PROC(w, glGetProgramiv);
+  w->glGetProgramInfoLog = (COIN_PFNGLGETPROGRAMINFOLOGPROC) PROC(w, glGetProgramInfoLog);
+
 
 #ifdef GL_ARB_shader_objects
 
@@ -1741,6 +1813,27 @@ glglue_resolve_symbols(cc_glglue * w)
 #undef BIND_FUNCTION_WITH_WARN
   }
 #endif /* GL_ARB_shader_objects */
+
+  /* The uniform entry points have compatible core and ARB signatures. Keep
+     the normalized pointer in the glue object so callers do not need a
+     wrapper for every trivial uniform variant. */
+  if (!w->glUniform1f) w->glUniform1f = w->glUniform1fARB;
+  if (!w->glUniform2f) w->glUniform2f = w->glUniform2fARB;
+  if (!w->glUniform3f) w->glUniform3f = w->glUniform3fARB;
+  if (!w->glUniform4f) w->glUniform4f = w->glUniform4fARB;
+  if (!w->glUniform1fv) w->glUniform1fv = w->glUniform1fvARB;
+  if (!w->glUniform2fv) w->glUniform2fv = w->glUniform2fvARB;
+  if (!w->glUniform3fv) w->glUniform3fv = w->glUniform3fvARB;
+  if (!w->glUniform4fv) w->glUniform4fv = w->glUniform4fvARB;
+  if (!w->glUniform1i) w->glUniform1i = w->glUniform1iARB;
+  if (!w->glUniform2i) w->glUniform2i = w->glUniform2iARB;
+  if (!w->glUniform3i) w->glUniform3i = w->glUniform3iARB;
+  if (!w->glUniform4i) w->glUniform4i = w->glUniform4iARB;
+  if (!w->glUniform1iv) w->glUniform1iv = w->glUniform1ivARB;
+  if (!w->glUniform2iv) w->glUniform2iv = w->glUniform2ivARB;
+  if (!w->glUniform3iv) w->glUniform3iv = w->glUniform3ivARB;
+  if (!w->glUniform4iv) w->glUniform4iv = w->glUniform4ivARB;
+  if (!w->glUniformMatrix4fv) w->glUniformMatrix4fv = w->glUniformMatrix4fvARB;
 
   w->glGenQueries = NULL; /* so that cc_glglue_has_occlusion_query() works  */
 #if defined(GL_VERSION_1_5)

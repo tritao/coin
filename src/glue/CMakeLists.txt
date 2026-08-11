@@ -4,6 +4,7 @@ set(COIN_GLUE_FILES
 	spidermonkey.cpp
 	dl.cpp
 	gl.cpp
+	glslp.cpp
 	gl_wgl.cpp
 	gl_agl.cpp
 	gl_cgl.cpp
@@ -24,6 +25,8 @@ set(COIN_GLUE_INTERNAL_FILES
 	cg.h
 	cg.cpp
 	spidermonkey.cpp
+	glslp.h
+	glslp.cpp
 	gl_wgl.h
 	gl_wgl.cpp
 	gl_agl.h
