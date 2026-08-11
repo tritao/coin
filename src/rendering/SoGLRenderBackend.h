@@ -108,6 +108,9 @@ private:
   // --- Render pass methods ---
   void beginFrame(const SoDrawList & drawlist, const SoRenderParams & params);
   void updateGeometryCache(const SoDrawList & drawlist);
+  void renderBackgroundPass(const SoDrawList & drawlist,
+                            const SbMat & viewMat, const SbMat & projMat,
+                            const SoRenderParams & params);
   void renderOpaquePass(const SoDrawList & drawlist,
                         const SbMat & viewMat, const SbMat & projMat,
                         const SoRenderParams & params);

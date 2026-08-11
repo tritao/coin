@@ -29,6 +29,8 @@
 #include <Inventor/nodes/SoShape.h>
 #include <Inventor/nodes/SoSpotLight.h>
 
+#include "elements/SoRenderPlacementElement.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -448,6 +450,18 @@ renderpass_name(SoRenderPassType pass)
   }
 }
 
+static const char *
+renderstage_name(SoRenderStage stage)
+{
+  switch (stage) {
+  case SoRenderStage::Background: return "background";
+  case SoRenderStage::Main: return "main";
+  case SoRenderStage::AfterMain: return "after-main";
+  case SoRenderStage::Foreground: return "foreground";
+  default: return "unknown";
+  }
+}
+
 void
 SoIRDumpSummary(const SoDrawList & drawlist)
 {
@@ -498,8 +512,9 @@ SoIRDumpFirstN(const SoDrawList & drawlist, int count)
       ambient = lighting->ambient;
     }
     SoDebugError::postInfo("SoDrawList",
-                           "[%d] pass=%s depth=%d topo=%d verts=%u idx=%u colors=%p diffuse=(%.3f, %.3f, %.3f, %.3f) lights=%d ambient=(%.3f, %.3f, %.3f) pipeline=0x%016" PRIx64,
+                           "[%d] stage=%s pass=%s depth=%d topo=%d verts=%u idx=%u colors=%p diffuse=(%.3f, %.3f, %.3f, %.3f) lights=%d ambient=(%.3f, %.3f, %.3f) pipeline=0x%016" PRIx64,
                            i,
+                           renderstage_name(cmd.stage),
                            renderpass_name(cmd.pass),
                            cmd.state.depth.enabled,
                            static_cast<int>(cmd.geometry.topology),
@@ -519,6 +534,12 @@ SoIRDumpFirstN(const SoDrawList & drawlist, int count)
 }
 
 namespace SoRenderIR {
+
+void
+setCommandMatricesOverride(SoState * state, SbBool enabled)
+{
+  SoRenderPlacementElement::setCommandMatricesOverride(state, enabled);
+}
 
 static SoTextureWrap
 textureWrapFromLegacy(SoMultiTextureImageElement::Wrap wrap)
@@ -625,6 +646,8 @@ void
 fillRenderStateFromState(SoState * state, SoRenderState & rs)
 {
   SoState * mutableState = state;
+  rs.useCommandMatrices =
+    SoRenderPlacementElement::getCommandMatricesOverride(mutableState);
   SbBool depthtest = TRUE;
   SbBool depthwrite = TRUE;
   SoDepthBufferElement::DepthWriteFunction depthfunc =
@@ -717,15 +740,30 @@ fillRenderStateFromState(SoState * state, SoRenderState & rs)
   rs.raster.linePattern = static_cast<uint16_t>(SoLinePatternElement::get(mutableState));
   rs.raster.linePatternScale = static_cast<int16_t>(SoLinePatternElement::getScaleFactor(mutableState));
 
-  const SbViewportRegion & viewport = SoViewportRegionElement::get(mutableState);
-  const SbVec2s & viewportOrigin = viewport.getViewportOriginPixels();
-  const SbVec2s & viewportSize = viewport.getViewportSizePixels();
-  rs.raster.viewportEnabled = viewportSize[0] > 0 && viewportSize[1] > 0;
-  rs.raster.viewportX = viewportOrigin[0];
-  rs.raster.viewportY = viewportOrigin[1];
-  rs.raster.viewportWidth = viewportSize[0];
-  rs.raster.viewportHeight = viewportSize[1];
-  rs.raster.clearDepth = FALSE;
+  int viewportX = 0;
+  int viewportY = 0;
+  int viewportWidth = 0;
+  int viewportHeight = 0;
+  if (SoRenderPlacementElement::getViewport(mutableState,
+                                            viewportX, viewportY,
+                                            viewportWidth, viewportHeight)) {
+    rs.raster.viewportOverride = TRUE;
+    rs.raster.viewportEnabled = viewportWidth > 0 && viewportHeight > 0;
+    rs.raster.viewportX = viewportX;
+    rs.raster.viewportY = viewportY;
+    rs.raster.viewportWidth = viewportWidth;
+    rs.raster.viewportHeight = viewportHeight;
+  } else {
+    rs.raster.viewportOverride = FALSE;
+    const SbViewportRegion & viewport = SoViewportRegionElement::get(mutableState);
+    const SbVec2s & viewportOrigin = viewport.getViewportOriginPixels();
+    const SbVec2s & viewportSize = viewport.getViewportSizePixels();
+    rs.raster.viewportEnabled = viewportSize[0] > 0 && viewportSize[1] > 0;
+    rs.raster.viewportX = viewportOrigin[0];
+    rs.raster.viewportY = viewportOrigin[1];
+    rs.raster.viewportWidth = viewportSize[0];
+    rs.raster.viewportHeight = viewportSize[1];
+  }
 
   float offsetfactor = 0.0f;
   float offsetunits = 0.0f;

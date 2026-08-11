@@ -96,7 +96,7 @@ static SbVec2s
 coin_command_viewport_size(const SoRenderCommand & cmd,
                            const SoRenderParams & params)
 {
-  if (cmd.pass == SO_RENDERPASS_OVERLAY &&
+  if (cmd.state.raster.viewportOverride &&
       cmd.state.raster.viewportEnabled &&
       cmd.state.raster.viewportWidth > 0 &&
       cmd.state.raster.viewportHeight > 0) {
@@ -118,7 +118,7 @@ static void
 coin_apply_command_viewport(const SoRenderCommand & cmd,
                             const SoRenderParams & params)
 {
-  if (cmd.pass == SO_RENDERPASS_OVERLAY &&
+  if (cmd.state.raster.viewportOverride &&
       cmd.state.raster.viewportEnabled &&
       cmd.state.raster.viewportWidth > 0 &&
       cmd.state.raster.viewportHeight > 0) {
@@ -133,29 +133,42 @@ coin_apply_command_viewport(const SoRenderCommand & cmd,
 }
 
 static void
-coin_clear_overlay_depth(const SoRenderCommand & cmd,
+coin_clear_command_depth(const SoRenderCommand & cmd,
                          const SoRenderParams & params)
 {
-  if (!cmd.state.raster.clearDepth) {
-    return;
-  }
-
-  if (!(cmd.state.raster.viewportEnabled &&
-        cmd.state.raster.viewportWidth > 0 &&
-        cmd.state.raster.viewportHeight > 0)) {
-    glClear(GL_DEPTH_BUFFER_BIT);
+  if (!cmd.clearDepthBefore) {
     return;
   }
 
   const GLboolean scissorEnabled = glIsEnabled(GL_SCISSOR_TEST);
   GLint scissorBox[4] = {0, 0, 0, 0};
   glGetIntegerv(GL_SCISSOR_BOX, scissorBox);
+  GLboolean depthWriteMask = GL_TRUE;
+  glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWriteMask);
+  GLdouble clearDepth = 1.0;
+  glGetDoublev(GL_DEPTH_CLEAR_VALUE, &clearDepth);
+
+  int x = params.viewport.getViewportOriginPixels()[0];
+  int y = params.viewport.getViewportOriginPixels()[1];
+  int width = params.viewport.getViewportSizePixels()[0];
+  int height = params.viewport.getViewportSizePixels()[1];
+  if (cmd.state.raster.viewportOverride) {
+    if (!cmd.state.raster.viewportEnabled ||
+        cmd.state.raster.viewportWidth <= 0 ||
+        cmd.state.raster.viewportHeight <= 0) {
+      return;
+    }
+    x = cmd.state.raster.viewportX;
+    y = cmd.state.raster.viewportY;
+    width = cmd.state.raster.viewportWidth;
+    height = cmd.state.raster.viewportHeight;
+  }
+  if (width <= 0 || height <= 0) return;
 
   glEnable(GL_SCISSOR_TEST);
-  glScissor(cmd.state.raster.viewportX,
-            cmd.state.raster.viewportY,
-            cmd.state.raster.viewportWidth,
-            cmd.state.raster.viewportHeight);
+  glScissor(x, y, width, height);
+  glDepthMask(GL_TRUE);
+  glClearDepth(params.clearDepth);
   glClear(GL_DEPTH_BUFFER_BIT);
 
   glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
@@ -165,7 +178,21 @@ coin_clear_overlay_depth(const SoRenderCommand & cmd,
   else {
     glDisable(GL_SCISSOR_TEST);
   }
-  coin_apply_default_viewport(params);
+  glDepthMask(depthWriteMask);
+  glClearDepth(clearDepth);
+}
+
+static bool
+coin_preserve_stage_order(const SoDrawList & drawlist, SoRenderStage stage)
+{
+  for (int i = 0; i < drawlist.getNumCommands(); ++i) {
+    const SoRenderCommand & cmd = drawlist.getCommand(i);
+    if (cmd.stage == stage &&
+        (cmd.clearDepthBefore || cmd.state.raster.viewportOverride)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 static GLuint
@@ -431,6 +458,13 @@ SoGLRenderBackend::shutdown()
     cc_glglue_glDeleteProgram(this->glue, this->pointShaderProgram);
     this->pointShaderProgram = 0;
   }
+  this->matricesInitialized = false;
+  this->lastViewMatrix.makeIdentity();
+  this->lastProjMatrix.makeIdentity();
+#if defined(COIN_DRAW_LIST_PICKING)
+  this->pickBufferDirty = true;
+  this->lastPickLUTSize = 0;
+#endif
   this->setInitialized(FALSE);
   this->emitLog("shutdown");
 }
@@ -778,6 +812,11 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
                                const SbMat & projMat,
                                const SoRenderParams & params)
 {
+  if (cmd.state.raster.viewportOverride &&
+      !cmd.state.raster.viewportEnabled) {
+    return;
+  }
+  coin_clear_command_depth(cmd, params);
   if (cmd.geometry.vertexCount == 0 || !cmd.geometry.positions) return;
   if (cmd.geometry.vertexCount > MAX_VERTEX_COUNT) return;
   if (cmd.geometry.indexCount > 0 && !cmd.geometry.indices) return;
@@ -1315,6 +1354,39 @@ SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
 }
 
 void
+SoGLRenderBackend::renderBackgroundPass(const SoDrawList & drawlist,
+                                        const SbMat & viewMat,
+                                        const SbMat & projMat,
+                                        const SoRenderParams & params)
+{
+  int count = drawlist.getNumCommands();
+  bool hasBackground = false;
+  for (int i = 0; i < count; ++i) {
+    if (drawlist.getCommand(i).stage == SoRenderStage::Background) {
+      hasBackground = true;
+      break;
+    }
+  }
+  if (!hasBackground) return;
+
+  // Background commands have their own view/proj matrices captured
+  // per-command (identity for gradients, ortho for grids, etc.).
+  glDepthMask(GL_FALSE);
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_BLEND);
+  for (int i = 0; i < count; ++i) {
+    const SoRenderCommand & cmd = drawlist.getCommand(i);
+    if (cmd.stage != SoRenderStage::Background) continue;
+    drawCommand(drawlist, cmd, viewMat, projMat, params);
+  }
+
+  // Restore default state; clear depth so main scene renders on top
+  glEnable(GL_DEPTH_TEST);
+  glDepthMask(GL_TRUE);
+  glClear(GL_DEPTH_BUFFER_BIT);
+}
+
+void
 SoGLRenderBackend::renderOpaquePass(const SoDrawList & drawlist,
                                     const SbMat & viewMat,
                                     const SbMat & projMat,
@@ -1322,13 +1394,16 @@ SoGLRenderBackend::renderOpaquePass(const SoDrawList & drawlist,
 {
   const int count = drawlist.getNumCommands();
   const auto & order = drawlist.getSortedOrder();
+  const bool preserveOrder = coin_preserve_stage_order(drawlist, SoRenderStage::Main);
 
   glDepthMask(GL_TRUE);
   glDisable(GL_BLEND);
 
   for (int si = 0; si < count; ++si) {
-    int ci = (si < static_cast<int>(order.size())) ? order[si] : si;
+    int ci = preserveOrder ? si
+      : ((si < static_cast<int>(order.size())) ? order[si] : si);
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
+    if (cmd.stage != SoRenderStage::Main) continue;
     if (cmd.pass != SO_RENDERPASS_OPAQUE) continue;
     drawCommand(drawlist, cmd, viewMat, projMat, params);
   }
@@ -1342,14 +1417,17 @@ SoGLRenderBackend::renderTransparentPass(const SoDrawList & drawlist,
 {
   const int count = drawlist.getNumCommands();
   const auto & order = drawlist.getSortedOrder();
+  const bool preserveOrder = coin_preserve_stage_order(drawlist, SoRenderStage::Main);
 
   glDepthMask(GL_FALSE);
   glEnable(GL_BLEND);
   glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
   for (int si = 0; si < count; ++si) {
-    int ci = (si < static_cast<int>(order.size())) ? order[si] : si;
+    int ci = preserveOrder ? si
+      : ((si < static_cast<int>(order.size())) ? order[si] : si);
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
+    if (cmd.stage != SoRenderStage::Main) continue;
     if (cmd.pass != SO_RENDERPASS_TRANSPARENT) continue;
     drawCommand(drawlist, cmd, viewMat, projMat, params);
   }
@@ -1360,54 +1438,74 @@ SoGLRenderBackend::renderTransparentPass(const SoDrawList & drawlist,
 }
 
 void
+SoGLRenderBackend::renderAfterMainPass(const SoDrawList & drawlist,
+                                       const SbMat & viewMat,
+                                       const SbMat & projMat,
+                                       const SoRenderParams & params)
+{
+  const int count = drawlist.getNumCommands();
+  const auto & order = drawlist.getSortedOrder();
+  const bool preserveOrder = coin_preserve_stage_order(drawlist, SoRenderStage::AfterMain);
+
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LEQUAL);
+  glDepthMask(GL_TRUE);
+  glDisable(GL_BLEND);
+  for (int si = 0; si < count; ++si) {
+    int ci = preserveOrder ? si
+      : ((si < static_cast<int>(order.size())) ? order[si] : si);
+    const SoRenderCommand & cmd = drawlist.getCommand(ci);
+    if (cmd.stage != SoRenderStage::AfterMain) continue;
+    if (cmd.pass == SO_RENDERPASS_TRANSPARENT ||
+        cmd.pass == SO_RENDERPASS_OVERLAY) {
+      glDepthMask(GL_FALSE);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+    drawCommand(drawlist, cmd, viewMat, projMat, params);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+  }
+}
+
+void
 SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
                                      const SbMat & viewMat,
                                      const SbMat & projMat,
                                      const SoRenderParams & params)
 {
   const int count = drawlist.getNumCommands();
-  const auto & order = drawlist.getSortedOrder();
 
-  // Collect overlay commands, partitioned into 3D (own camera, e.g. NaviCube)
-  // and 2D (annotations, constraint labels — use main camera).
+  // Foreground commands stay in traversal order so independent layer scopes
+  // (including their one-shot depth clears) remain independent.
   SbMatrix mainView = params.viewMatrix;
-  std::vector<int> overlay3D, overlay2D;
-  for (int si = 0; si < count; ++si) {
-    int ci = (si < static_cast<int>(order.size())) ? order[si] : si;
+  std::vector<int> foreground;
+  for (int ci = 0; ci < count; ++ci) {
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
-    if (cmd.pass != SO_RENDERPASS_OVERLAY) continue;
-    // 3D overlays have their own camera (viewMatrix differs from main scene)
-    if (cmd.viewMatrix != mainView) {
-      overlay3D.push_back(ci);
-    } else {
-      overlay2D.push_back(ci);
-    }
+    if (cmd.stage == SoRenderStage::Foreground) foreground.push_back(ci);
   }
 
-  // 3D overlays (NaviCube): clear depth, enable depth test for self-occlusion
-  if (!overlay3D.empty()) {
-    coin_clear_overlay_depth(drawlist.getCommand(overlay3D.front()), params);
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LEQUAL);
-    glDepthMask(GL_TRUE);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    for (int ci : overlay3D) {
-      drawCommand(drawlist, drawlist.getCommand(ci), viewMat, projMat, params);
+  bool in3D = false;
+  for (int ci : foreground) {
+    const SoRenderCommand & cmd = drawlist.getCommand(ci);
+    const bool command3D = cmd.viewMatrix != mainView;
+    if (command3D != in3D) {
+      in3D = command3D;
+      if (in3D) {
+        // 3D foreground (NaviCube): depth-test for self-occlusion.
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+        glDepthMask(GL_TRUE);
+      }
+      else {
+        // 2D foreground (annotations): render over the completed frame.
+        glDisable(GL_DEPTH_TEST);
+        glDepthMask(GL_FALSE);
+      }
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
-    coin_apply_default_viewport(params);
-  }
-
-  // 2D overlays (annotations): depth disabled, render on top of everything
-  if (!overlay2D.empty()) {
-    glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    for (int ci : overlay2D) {
-      drawCommand(drawlist, drawlist.getCommand(ci), viewMat, projMat, params);
-    }
-    coin_apply_default_viewport(params);
+    drawCommand(drawlist, cmd, viewMat, projMat, params);
   }
 
   // Restore default state
@@ -1472,6 +1570,9 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
 
   for (int i = 0; i < count; ++i) {
     const SoRenderCommand & cmd = drawlist.getCommand(i);
+    if (cmd.stage != SoRenderStage::Main) continue;
+    if (cmd.state.raster.viewportOverride &&
+        !cmd.state.raster.viewportEnabled) continue;
     int hlElem = cmd.selection.highlightedElements.empty()
       ? -1 : cmd.selection.highlightedElements.front();
     bool hasHighlight = cmd.selection.highlightWholeObject
@@ -1484,6 +1585,8 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
     if (it == ptrToCacheIndex.end()) continue;
     const CachedGPUCommand & entry = gpuCache[it->second];
     if (entry.vao == 0) continue;
+
+    coin_apply_command_viewport(cmd, params);
 
     SbMat modelMat;
     cmd.modelMatrix.getValue(modelMat);
@@ -1747,9 +1850,11 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
 
   beginFrame(drawlist, params);
   updateGeometryCache(drawlist);
+  renderBackgroundPass(drawlist, viewMat, projMat, params);
   renderOpaquePass(drawlist, viewMat, projMat, params);
   renderTransparentPass(drawlist, viewMat, projMat, params);
   renderSelectionPass(drawlist, viewMat, projMat, params);
+  renderAfterMainPass(drawlist, viewMat, projMat, params);
   renderOverlayPass(drawlist, viewMat, projMat, params);
   endFrame();
   renderIDBufferPass(drawlist, viewMat, projMat, params);

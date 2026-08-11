@@ -487,6 +487,20 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
 
   // Helper: draw one command using cached VBOs + ID VAO when available
   auto drawIdCmd = [&](const SoRenderCommand & cmd, int ci, GLenum prim) {
+    if (cmd.state.raster.viewportOverride) {
+      if (!cmd.state.raster.viewportEnabled ||
+          cmd.state.raster.viewportWidth <= 0 ||
+          cmd.state.raster.viewportHeight <= 0) {
+        return;
+      }
+      glViewport(static_cast<GLint>(cmd.state.raster.viewportX * pickScaleX),
+                 static_cast<GLint>(cmd.state.raster.viewportY * pickScaleY),
+                 static_cast<GLsizei>(cmd.state.raster.viewportWidth * pickScaleX),
+                 static_cast<GLsizei>(cmd.state.raster.viewportHeight * pickScaleY));
+    }
+    else {
+      glViewport(0, 0, fbWidth, fbHeight);
+    }
     if (ci >= static_cast<int>(idColorVBOs.size()) || idColorVBOs[ci] == 0) return;
     if (!cmd.geometry.positions || cmd.geometry.vertexCount == 0) return;
     // Skip textured commands (SoImage) — not pickable

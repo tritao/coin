@@ -456,6 +456,7 @@ SoText2::IRRender(SoIRRenderAction * action)
   SoRenderIR::ensureMaterialBlendState(command.state, command.material);
   command.pass = SoRenderIR::isMaterialTransparent(command.material)
     ? SO_RENDERPASS_TRANSPARENT : SO_RENDERPASS_OPAQUE;
+  action->applyRenderStage(command);
   command.lightingHandle = SoRenderIR::fillLightingFromState(
     state, action->getMutableDrawList());
   action->getMutableDrawList().addCommand(command);

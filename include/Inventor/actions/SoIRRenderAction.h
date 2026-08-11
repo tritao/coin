@@ -76,6 +76,16 @@ public:
   virtual void apply(SoPath * path) override;
   virtual void apply(const SoPathList & pathlist, SbBool obeysrules = FALSE) override;
 
+  //! Append a root without clearing the current retained frame.
+  void traverseAdditionalRoot(SoNode * root);
+
+  void beginAfterMainStage();
+  void endAfterMainStage();
+  bool isAfterMainStage() const { return this->afterMainStageDepth != 0; }
+  SoRenderStage getRenderStage() const { return this->renderStage; }
+  void setRenderStage(SoRenderStage stage) { this->renderStage = stage; }
+  void applyRenderStage(SoRenderCommand & command);
+
   //! Associate the commands emitted by a shape with its current scene path.
   void storeCommandPath(int commandIndex, const SoPath * path);
   //! Return the retained scene path for a command, or NULL when unavailable.
@@ -125,6 +135,23 @@ private:
   float            devicePixelRatio = 1.0f;
   SoDrawList       drawlist;
   SoIRRenderActionP * pimpl;
+  unsigned int     afterMainStageDepth = 0;
+  bool             afterMainDepthClearPending = false;
+  SoRenderStage    renderStage = SoRenderStage::Main;
+};
+
+/*! \brief RAII guard for an action-local manager render stage. */
+class COIN_DLL_API SoIRRenderStageScope {
+public:
+  SoIRRenderStageScope(SoIRRenderAction & action, SoRenderStage stage);
+  ~SoIRRenderStageScope();
+
+  SoIRRenderStageScope(const SoIRRenderStageScope &) = delete;
+  SoIRRenderStageScope & operator=(const SoIRRenderStageScope &) = delete;
+
+private:
+  SoIRRenderAction * action;
+  SoRenderStage previousStage;
 };
 
 #endif // COIN_SOIRRENDERACTION_H

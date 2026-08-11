@@ -59,6 +59,7 @@
 #include <Inventor/lists/SoPathList.h>
 
 #include "actions/SoSubActionP.h"
+#include "elements/SoRenderPlacementElement.h"
 #include "rendering/SoRenderIRP.h"
 
 #include <cassert>
@@ -111,10 +112,14 @@ SoIRRenderAction::initClass(void)
   if (SoCacheElement::getClassTypeId() == SoType::badType()) {
     SoCacheElement::initClass();
   }
+  if (SoRenderPlacementElement::getClassTypeId() == SoType::badType()) {
+    SoRenderPlacementElement::initClass();
+  }
   SO_ACTION_ADD_METHOD_INTERNAL(SoNode, SoIRRenderAction::renderNode);
   SO_ACTION_ADD_METHOD_INTERNAL(SoShape, SoIRRenderAction::renderShape);
 
   SO_ENABLE(SoIRRenderAction, SoViewportRegionElement);
+  SO_ENABLE(SoIRRenderAction, SoRenderPlacementElement);
   SO_ENABLE(SoIRRenderAction, SoDevicePixelRatioElement);
   SO_ENABLE(SoIRRenderAction, SoViewVolumeElement);
   SO_ENABLE(SoIRRenderAction, SoViewingMatrixElement);
@@ -209,6 +214,18 @@ SoIRRenderAction::apply(const SoPathList & pathlist, SbBool obeysrules)
 {
   this->beginFrame();
   inherited::apply(pathlist, obeysrules);
+}
+
+void
+SoIRRenderAction::traverseAdditionalRoot(SoNode * root)
+{
+  if (!root) return;
+  this->traversalMethods->setUp();
+  this->state->push();
+  SoViewportRegionElement::set(this->state, this->vpRegion);
+  SoDevicePixelRatioElement::set(this->state, this->devicePixelRatio);
+  this->switchToNodeTraversal(root);
+  this->state->pop();
 }
 
 void
@@ -346,6 +363,67 @@ SoIRRenderAction::clearGeometryPool()
 }
 
 void
+SoIRRenderAction::beginAfterMainStage()
+{
+  if (this->afterMainStageDepth == 0) {
+    this->afterMainDepthClearPending = true;
+  }
+  ++this->afterMainStageDepth;
+}
+
+void
+SoIRRenderAction::endAfterMainStage()
+{
+  if (this->afterMainStageDepth == 0) return;
+  --this->afterMainStageDepth;
+  if (this->afterMainStageDepth == 0) {
+    this->afterMainDepthClearPending = false;
+  }
+}
+
+void
+SoIRRenderAction::applyRenderStage(SoRenderCommand & command)
+{
+  if (this->renderStage == SoRenderStage::Background) {
+    command.stage = SoRenderStage::Background;
+  }
+  else if (this->isAfterMainStage()) {
+    command.stage = SoRenderStage::AfterMain;
+  }
+  else if (this->renderStage == SoRenderStage::Foreground
+           || SoRenderPlacementElement::getLayer(this->state)
+              == SoRenderPlacementElement::FOREGROUND) {
+    command.stage = SoRenderStage::Foreground;
+    command.pass = SO_RENDERPASS_OVERLAY;
+  }
+  if (SoRenderPlacementElement::consumeClearDepth(this->state)) {
+    command.clearDepthBefore = TRUE;
+  }
+  if (this->isAfterMainStage() && this->afterMainDepthClearPending) {
+    command.clearDepthBefore = TRUE;
+    this->afterMainDepthClearPending = false;
+  }
+}
+
+SoIRRenderStageScope::SoIRRenderStageScope(SoIRRenderAction & action,
+                                           SoRenderStage stage)
+  : action(&action), previousStage(action.getRenderStage())
+{
+  this->action->setRenderStage(stage);
+  if (stage == SoRenderStage::AfterMain) {
+    this->action->beginAfterMainStage();
+  }
+}
+
+SoIRRenderStageScope::~SoIRRenderStageScope()
+{
+  if (this->action->getRenderStage() == SoRenderStage::AfterMain) {
+    this->action->endAfterMainStage();
+  }
+  this->action->setRenderStage(this->previousStage);
+}
+
+void
 SoIRRenderAction::resetFrameResources()
 {
   PRIVATE(this)->geometryPool.clear();
@@ -355,4 +433,7 @@ SoIRRenderAction::resetFrameResources()
     if (path && SoDB::isInitialized()) path->unref();
   }
   PRIVATE(this)->commandPaths.clear();
+  this->afterMainStageDepth = 0;
+  this->afterMainDepthClearPending = false;
+  this->renderStage = SoRenderStage::Main;
 }

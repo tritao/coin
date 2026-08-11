@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+class SoState;
+
 /*!
   \file SoRenderIR.h
   \brief Backend-neutral intermediate representation for retained rendering.
@@ -307,7 +309,7 @@ struct SoRasterState {
   SoPointShape pointShape = SO_POINT_SHAPE_SQUARE;
   uint8_t cullMode = 0;
   SbBool  scissorEnabled = FALSE;
-  SbBool  clearDepth = FALSE;
+  SbBool  viewportOverride = FALSE;
   SbBool  viewportEnabled = FALSE;
   int     viewportX = 0;
   int     viewportY = 0;
@@ -330,8 +332,21 @@ struct SoRenderState {
   SoBlendState blend;
   SoAlphaTestState alphaTest;
   SoRasterState raster;
+  //! Use the view/projection matrices captured with the command.
+  SbBool useCommandMatrices = FALSE;
   uint32_t opaqueKey = 0;
   uint32_t translucentKey = 0;
+};
+
+/*!
+  \enum SoRenderStage
+  \brief Ordered scene stage containing one or more render passes.
+*/
+enum class SoRenderStage : uint8_t {
+  Background,
+  Main,
+  AfterMain,
+  Foreground
 };
 
 /*!
@@ -469,7 +484,10 @@ struct SoRenderCommand {
   SbMatrix         viewMatrix;
   SbMatrix         projMatrix;
 
+  SoRenderStage    stage = SoRenderStage::Main;
   SoRenderPassType pass = SO_RENDERPASS_OPAQUE;
+  //! Clear depth once immediately before this command's scoped placement.
+  SbBool           clearDepthBefore = FALSE;
   SoLightingHandle lightingHandle = 0;
   SoPipelineKey    pipelineKey = 0;
   SoPickData       pick;
@@ -479,6 +497,11 @@ struct SoRenderCommand {
   uint64_t         sortKey = 0; //!< Backend-computed key used by sorting.
   void *           userData = nullptr; //!< Opaque, non-owned producer data.
 };
+
+namespace SoRenderIR {
+//! Mark screen-space traversal state so emitted commands use their matrices.
+COIN_DLL_API void setCommandMatricesOverride(SoState * state, SbBool enabled);
+}
 
 /*! 
   \class SoDrawList
