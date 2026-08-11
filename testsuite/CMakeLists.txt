@@ -89,6 +89,15 @@ if (USE_PTHREAD)
 endif()
 add_test(NAME CoinTests COMMAND CoinTests)
 
+	add_executable(CoreTraversalTest CoreTraversalTest.cpp)
+target_link_libraries(CoreTraversalTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(CoreTraversalTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+add_test(NAME CoreTraversalTest COMMAND CoreTraversalTest)
+
 if(HAVE_EGL)
 	add_executable(EGLBindingTest EGLBindingTest.cpp)
 	target_link_libraries(EGLBindingTest Coin ${COIN_TARGET_LINK_LIBRARIES})
