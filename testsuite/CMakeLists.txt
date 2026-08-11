@@ -101,6 +101,18 @@ if(HAVE_EGL)
 	)
 	add_test(NAME EGLBindingTest COMMAND EGLBindingTest)
 	set_tests_properties(EGLBindingTest PROPERTIES SKIP_RETURN_CODE 77)
+
+	add_executable(GLSLRuntimeTest GLSLRuntimeTest.cpp)
+	target_link_libraries(GLSLRuntimeTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+	target_compile_definitions(GLSLRuntimeTest PRIVATE COIN_INTERNAL)
+	target_include_directories(GLSLRuntimeTest PRIVATE
+		${PROJECT_SOURCE_DIR}/src
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES}
+	)
+	add_test(NAME GLSLRuntimeTest COMMAND GLSLRuntimeTest)
+	set_tests_properties(GLSLRuntimeTest PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 
 # Many warnings are generated from test macros on macOS with Xcode.
