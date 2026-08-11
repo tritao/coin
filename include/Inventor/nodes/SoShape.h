@@ -67,7 +67,9 @@ public:
   void notify(SoNotList * nl) override;
 
   void getBoundingBox(SoGetBoundingBoxAction * action) override;
+#if COIN_HAVE_LEGACY_GL_RENDERER
   void GLRender(SoGLRenderAction * action) override;
+#endif
   void rayPick(SoRayPickAction * action) override;
   void callback(SoCallbackAction * action) override;
   virtual void computeBBox(SoAction * action, SbBox3f & box,
@@ -85,10 +87,12 @@ protected:
 
   float getComplexityValue(SoAction * action);
   virtual void generatePrimitives(SoAction * action) =  0;
+#if COIN_HAVE_LEGACY_GL_RENDERER
   virtual SbBool shouldGLRender(SoGLRenderAction * action);
   void beginSolidShape(SoGLRenderAction * action);
   void endSolidShape(SoGLRenderAction * action);
   void GLRenderBoundingBox(SoGLRenderAction * action);
+#endif
   SbBool shouldPrimitiveCount(SoGetPrimitiveCountAction * action);
 
   SbBool shouldRayPick(SoRayPickAction * const action);
@@ -138,6 +142,7 @@ protected:
                       const float r,
                       const SbVec3f & normal);
 
+#if COIN_HAVE_LEGACY_GL_RENDERER
   SbBool startVertexArray(SoGLRenderAction * action,
                           const SoCoordinateElement * coords,
                           const SbVec3f * pervertexnormals,
@@ -149,9 +154,12 @@ protected:
                          const SbBool normpervertex,
                          const SbBool texpervertex,
                          const SbBool colorpervertex);
+#endif
 private:
   class SoShapeP * pimpl;
+#if COIN_HAVE_LEGACY_GL_RENDERER
   void validatePVCache(SoGLRenderAction * action);
+#endif
   void getBBox(SoAction * action, SbBox3f & box, SbVec3f & center);
   void rayPickBoundingBox(SoRayPickAction * action);
   friend class soshape_primdata;           // internal class

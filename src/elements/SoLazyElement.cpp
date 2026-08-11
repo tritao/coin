@@ -75,9 +75,10 @@
 #include <cassert>
 #include <cstring>
 
-#include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/elements/SoShapeStyleElement.h>
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLVBOElement.h>
+#endif
 #include <Inventor/fields/SoMFColor.h>
 #include <Inventor/fields/SoMFFloat.h>
 #include <Inventor/misc/SoState.h>
@@ -180,7 +181,9 @@ SoLazyElement::init(SoState * COIN_UNUSED_ARG(state))
   this->coinstate.transparray = lazy_defaulttransp;
   this->coinstate.colorindexarray = lazy_defaultindex;
   this->coinstate.istransparent = FALSE;
-  this->coinstate.transptype = static_cast<int32_t>(SoGLRenderAction::BLEND);
+  // Keep the public transparency enum ABI stable without depending on the
+  // LegacyGL-only SoGLRenderAction declaration in core builds.
+  this->coinstate.transptype = 4; // SoTransparencyType::BLEND
   this->coinstate.diffusenodeid = 0;
   this->coinstate.transpnodeid = 0;
   this->coinstate.stipplenum = 0;
@@ -240,9 +243,11 @@ void
 SoLazyElement::setDiffuse(SoState * state, SoNode * node, int32_t numcolors,
                           const SbColor * colors, SoColorPacker * packer)
 {
+#if COIN_BUILD_LEGACY_GL_RENDERER
   if (state->isElementEnabled(SoGLVBOElement::getClassStackIndex())) {
     SoGLVBOElement::setColorVBO(state, NULL);
   }
+#endif
   SoLazyElement * elem = SoLazyElement::getInstance(state);
   if (numcolors && (elem->coinstate.diffusenodeid !=
                     get_diffuse_node_id(node, numcolors, colors))) {
@@ -261,9 +266,11 @@ void
 SoLazyElement::setTransparency(SoState *state, SoNode *node, int32_t numvalues,
                                const float * transparency, SoColorPacker * packer)
 {
+#if COIN_BUILD_LEGACY_GL_RENDERER
   if (state->isElementEnabled(SoGLVBOElement::getClassStackIndex())) {
     SoGLVBOElement::setColorVBO(state, NULL);
   }
+#endif
   SoLazyElement * elem = SoLazyElement::getInstance(state);
   if (numvalues && (elem->coinstate.transpnodeid !=
                     get_transp_node_id(node, numvalues, transparency))) {
@@ -284,9 +291,11 @@ SoLazyElement::setPacked(SoState * state, SoNode * node,
                          int32_t numcolors, const uint32_t * colors,
                          const SbBool packedtransparency)
 {
+#if COIN_BUILD_LEGACY_GL_RENDERER
   if (state->isElementEnabled(SoGLVBOElement::getClassStackIndex())) {
     SoGLVBOElement::setColorVBO(state, NULL);
   }
+#endif
   SoLazyElement * elem = SoLazyElement::getInstance(state);
   if (numcolors && elem->coinstate.diffusenodeid != node->getNodeId()) {
     elem = getWInstance(state);
@@ -745,9 +754,11 @@ SoLazyElement::setMaterials(SoState * state, SoNode *node, uint32_t bitmask,
                             const float shininess,
                             const SbBool istransparent)
 {
+#if COIN_BUILD_LEGACY_GL_RENDERER
   if (state->isElementEnabled(SoGLVBOElement::getClassStackIndex())) {
     SoGLVBOElement::setColorVBO(state, NULL);
   }
+#endif
   SoLazyElement * elem = SoLazyElement::getInstance(state);
 
   uint32_t eltbitmask = 0;

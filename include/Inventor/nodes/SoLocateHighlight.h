@@ -40,6 +40,9 @@
 
 class SoFullPath;
 class SoLocateHighlightP;
+#if COIN_HAVE_LEGACY_GL_RENDERER
+class SoGLRenderAction;
+#endif
 
 class COIN_DLL_API SoLocateHighlight : public SoSeparator {
   typedef SoSeparator inherited;
@@ -63,9 +66,11 @@ public:
   SoSFEnum mode;
 
   void handleEvent(SoHandleEventAction * action) override;
+#if COIN_HAVE_LEGACY_GL_RENDERER
   void GLRenderBelowPath(SoGLRenderAction * action) override;
   void GLRenderInPath(SoGLRenderAction * action) override;
   static void turnOffCurrentHighlight(SoGLRenderAction * action);
+#endif
 
 protected:
   virtual ~SoLocateHighlight();
@@ -74,7 +79,9 @@ protected:
 private:
 
   static void turnoffcurrent(SoAction * action);
+#if COIN_HAVE_LEGACY_GL_RENDERER
   void setOverride(SoGLRenderAction * action);
+#endif
 
   SoLocateHighlightP * pimpl;
 };
