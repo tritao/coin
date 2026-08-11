@@ -19,56 +19,16 @@ jobs:
         uses: docker://rhysd/actionlint:1.7.12
 
   ubuntu-build:
-    name: Ubuntu CI (Legacy renderer enabled)
+    name: Ubuntu CI (Legacy renderer ${{ matrix.renderer_state }})
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          submodules: recursive
-      - name: Create build directory and run CMake
-        run: |
-          scripts/install-dependencies.sh gl
-          sudo apt-get -y install freeglut3-dev libegl1-mesa-dev
-          cmake -S . -B cmake_build_dir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake_install_dir -DCOIN_BUILD_LEGACY_GL_RENDERER=ON -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_GL_TESTS=ON -DCOIN_STRICT_WARNINGS=ON
-      - name: Build project
-        run: cmake --build cmake_build_dir --target install --config Release --parallel
-      - name: Check installed package
-        run: |
-          cmake -S testsuite/installed-package-smoke -B installed-package-smoke \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/cmake_install_dir"
-          cmake --build installed-package-smoke --config Release --parallel
-      - name: Run tests
-        run: ctest -C Release -VV
-        working-directory: cmake_build_dir
-      - name: Create Artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: Ubuntu-Artifacts-LegacyGL-ON
-          path: cmake_install_dir/
-        if: always()
-
-  ubuntu-core:
-    name: Ubuntu core-header smoke
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          submodules: recursive
-      - name: Create build directory and run CMake
-        run: |
-          sudo apt-get -y update
-          sudo apt-get -y install freeglut3-dev
-          cmake -S . -B cmake_build_dir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCOIN_BUILD_LEGACY_GL_RENDERER=OFF -DCOIN_BUILD_TESTS=OFF -DCOIN_BUILD_EXAMPLES=OFF -DCOIN_BUILD_DOCUMENTATION=OFF
-      - name: Build core GL glue
-        run: cmake --build cmake_build_dir --target glue --config Release --parallel
-
-  ubuntu-core-profile-runtime:
-    name: Ubuntu CI (core-profile runtime)
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - renderer_state: enabled
+            legacy_gl_renderer: ON
+          - renderer_state: disabled
+            legacy_gl_renderer: OFF
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -78,19 +38,43 @@ jobs:
         run: |
           scripts/install-dependencies.sh gl
           sudo apt-get -y install freeglut3-dev libegl1-mesa-dev xvfb
-          cmake -S . -B cmake_build_dir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCOIN_BUILD_LEGACY_GL_RENDERER=ON -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_GL_TESTS=ON -DCOIN_BUILD_EXAMPLES=OFF -DCOIN_BUILD_DOCUMENTATION=OFF
-      - name: Build OpenGL tests
-        run: cmake --build cmake_build_dir --target EGLBindingTest GLSLRuntimeTest GLSLDiagnosticsTest OffscreenReadbackTest --config Release --parallel
-      - name: Run generic core-profile tests
+          cmake -S . -B cmake_build_dir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake_install_dir -DCOIN_BUILD_LEGACY_GL_RENDERER=${{ matrix.legacy_gl_renderer }} -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_GL_TESTS=ON -DCOIN_STRICT_WARNINGS=ON
+      - name: Build project
+        run: cmake --build cmake_build_dir --target install --config Release --parallel
+      - name: Check installed package
+        run: |
+          cmake -S testsuite/installed-package-smoke -B installed-package-smoke \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/cmake_install_dir"
+          cmake --build installed-package-smoke --config Release --parallel
+      - name: Run unit tests
+        run: ctest -C Release -L unit --output-on-failure
+        working-directory: cmake_build_dir
+      - name: Run core-profile tests
         run: xvfb-run -a ctest -C Release -L gl-core --output-on-failure
         working-directory: cmake_build_dir
       - name: Run EGL tests
         run: ctest -C Release -L requires-egl --output-on-failure
         working-directory: cmake_build_dir
+      - name: Create Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: Ubuntu-Artifacts-LegacyGL-${{ matrix.legacy_gl_renderer }}
+          path: cmake_install_dir/
+        if: always()
 
   windows-build:
-    name: Windows CI (Legacy renderer enabled)
+    name: Windows CI (Legacy renderer ${{ matrix.renderer_state }})
     runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - renderer_state: enabled
+            legacy_gl_renderer: ON
+          - renderer_state: disabled
+            legacy_gl_renderer: OFF
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -102,22 +86,39 @@ jobs:
       - name: Create build directory and run CMake
         shell: cmd
         run: |
-          cmake -S . -B cmake_build_dir -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="%VCPKG_INSTALLATION_ROOT%/scripts/buildsystems/vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake_install_dir -DCOIN_BUILD_LEGACY_GL_RENDERER=ON -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_GL_TESTS=ON
+          cmake -S . -B cmake_build_dir -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="%VCPKG_INSTALLATION_ROOT%/scripts/buildsystems/vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake_install_dir -DCOIN_BUILD_LEGACY_GL_RENDERER=${{ matrix.legacy_gl_renderer }} -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_GL_TESTS=ON
       - name: Build project
         run: cmake --build cmake_build_dir --target INSTALL --config Release --parallel 2
-      - name: Run tests
-        run: ctest -C Release -VV
+      - name: Check installed package
+        shell: pwsh
+        run: |
+          $prefix = (Join-Path $env:GITHUB_WORKSPACE "cmake_install_dir").Replace('\', '/')
+          cmake -S testsuite/installed-package-smoke -B installed-package-smoke -G "Visual Studio 17 2022" -A x64 -DCMAKE_PREFIX_PATH="$prefix"
+          cmake --build installed-package-smoke --config Release --parallel 2
+      - name: Run unit tests
+        run: ctest -C Release -L unit --output-on-failure
+        working-directory: cmake_build_dir
+      - name: Run core-profile tests
+        run: ctest -C Release -L gl-core --output-on-failure
         working-directory: cmake_build_dir
       - name: Create Artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: Windows-Artifacts-LegacyGL-ON
+          name: Windows-Artifacts-LegacyGL-${{ matrix.legacy_gl_renderer }}
           path: cmake_install_dir/
         if: always()
 
   macos-build:
-    name: macOS CI (Legacy renderer enabled)
+    name: macOS CI (Legacy renderer ${{ matrix.renderer_state }})
     runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - renderer_state: enabled
+            legacy_gl_renderer: ON
+          - renderer_state: disabled
+            legacy_gl_renderer: OFF
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -127,15 +128,25 @@ jobs:
         run: scripts/install-dependencies.sh gl
       - name: Create build directory and run CMake
         run: |
-          cmake -S . -B cmake_build_dir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake_install_dir -DCMAKE_CXX_STANDARD=11 -DCOIN_BUILD_LEGACY_GL_RENDERER=ON -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_GL_TESTS=ON
+          cmake -S . -B cmake_build_dir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake_install_dir -DCMAKE_CXX_STANDARD=11 -DCOIN_BUILD_LEGACY_GL_RENDERER=${{ matrix.legacy_gl_renderer }} -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_GL_TESTS=ON
       - name: Build project
         run: cmake --build cmake_build_dir --target install --config Release --parallel
-      - name: Run tests
-        run: ctest -C Release -VV
+      - name: Check installed package
+        run: |
+          cmake -S testsuite/installed-package-smoke -B installed-package-smoke \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$GITHUB_WORKSPACE/cmake_install_dir"
+          cmake --build installed-package-smoke --config Release --parallel
+      - name: Run unit tests
+        run: ctest -C Release -L unit --output-on-failure
+        working-directory: cmake_build_dir
+      - name: Run core-profile tests
+        run: ctest -C Release -L gl-core --output-on-failure
         working-directory: cmake_build_dir
       - name: Create Artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: macOS-Artifacts-LegacyGL-ON
+          name: macOS-Artifacts-LegacyGL-${{ matrix.legacy_gl_renderer }}
           path: cmake_install_dir/
         if: always()
