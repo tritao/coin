@@ -360,7 +360,12 @@ SoGLRenderBackend::SoGLRenderBackend()
 SoGLRenderBackend::~SoGLRenderBackend()
 {
   if (this->isInitialized()) {
-    this->shutdown();
+    if (coin_gl_current_context() == this->context) {
+      this->shutdown();
+    }
+    else {
+      this->discard();
+    }
   }
 }
 
@@ -385,6 +390,7 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
   this->setInitParams(params);
 
   void * currentContext = coin_gl_current_context();
+  this->context = currentContext;
   this->glue = currentContext ?
     cc_glglue_instance_from_context_ptr(currentContext) : nullptr;
   if (!this->glue || !this->glue->glGenVertexArrays ||
@@ -403,6 +409,7 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
       !this->glue->glUniformMatrix4fv) {
     this->emitError("active context does not provide retained-renderer GL dispatch");
     this->glue = nullptr;
+    this->context = nullptr;
     return FALSE;
   }
   char buffer[128];
@@ -438,6 +445,10 @@ SoGLRenderBackend::shutdown()
   if (!this->isInitialized()) {
     return;
   }
+  if (coin_gl_current_context() != this->context) {
+    this->discard();
+    return;
+  }
   this->pickBuffer.reset();
   // Destroy all cached GPU resources
   for (auto & entry : gpuCache) {
@@ -461,12 +472,36 @@ SoGLRenderBackend::shutdown()
   this->matricesInitialized = false;
   this->lastViewMatrix.makeIdentity();
   this->lastProjMatrix.makeIdentity();
+  this->pickBufferDirty = true;
+  this->lastPickLUTSize = 0;
+  this->glue = nullptr;
+  this->context = nullptr;
+  this->setInitialized(FALSE);
+  this->emitLog("shutdown");
+}
+
+void
+SoGLRenderBackend::discard()
+{
+#if defined(COIN_DRAW_LIST_PICKING)
+  if (this->pickBuffer) this->pickBuffer->discard();
+  this->pickBuffer.reset();
+#endif
+  this->gpuCache.clear();
+  this->ptrToCacheIndex.clear();
+  this->shaderProgram = 0;
+  this->lineShaderProgram = 0;
+  this->pointShaderProgram = 0;
+  this->glue = nullptr;
+  this->context = nullptr;
+  this->lastViewMatrix.makeIdentity();
+  this->lastProjMatrix.makeIdentity();
+  this->matricesInitialized = false;
 #if defined(COIN_DRAW_LIST_PICKING)
   this->pickBufferDirty = true;
   this->lastPickLUTSize = 0;
 #endif
   this->setInitialized(FALSE);
-  this->emitLog("shutdown");
 }
 
 // -----------------------------------------------------------------------

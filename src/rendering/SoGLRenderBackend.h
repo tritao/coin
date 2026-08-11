@@ -65,6 +65,7 @@ public:
 
   SbBool initialize(const SoRenderBackendInitParams & params) override;
   void shutdown() override;
+  void discard() override;
   SbBool render(const SoDrawList & drawlist,
                 const SoRenderParams & params) override;
   void resizeTarget(const SoRenderTargetInfo & info) override;
@@ -145,6 +146,9 @@ private:
   // All rendering calls must use this table instead of linking post-1.1 GL
   // entry points directly.
   const cc_glglue * glue = nullptr;
+  // The native context identity used to create the resources above.  It lets
+  // shutdown fall back to discard when that context is no longer current.
+  void * context = nullptr;
 
   // Unified shader program (lit + flat + billboard + textured)
   GLuint shaderProgram = 0;
