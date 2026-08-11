@@ -213,6 +213,7 @@ protected:
     SbColor emissive;
     float shininess;
     SbBool blending;
+    SbBool separateblending;
     int blend_sfactor;
     int blend_dfactor;
     int alpha_blend_sfactor;
@@ -257,7 +258,9 @@ protected:
   virtual void setSpecularElt(const SbColor* color);
   virtual void setShininessElt(float value);
   virtual void setColorMaterialElt(SbBool value);
-  virtual void enableBlendingElt(int sfactor, int dfactor, int alpha_sfactor, int alpha_dfactor);
+  virtual void enableBlendingElt(int sfactor, int dfactor,
+                                 int alpha_sfactor, int alpha_dfactor,
+                                 SbBool separate);
   virtual void disableBlendingElt(void);
   virtual void setLightModelElt(SoState *state, int32_t model);
   virtual void setMaterialElt(SoNode * node, uint32_t bitmask,
