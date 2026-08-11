@@ -2,6 +2,7 @@
 
 #include <Inventor/actions/SoIRRenderAction.h>
 
+#include <Inventor/SoDB.h>
 #include <Inventor/C/tidbits.h>
 #include <Inventor/SbBasic.h>
 #include <Inventor/errors/SoDebugError.h>
@@ -53,6 +54,8 @@
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/nodes/SoShape.h>
+#include <Inventor/SoPath.h>
+#include <Inventor/lists/SoPathList.h>
 
 #include "actions/SoSubActionP.h"
 #include "rendering/SoRenderIRP.h"
@@ -63,10 +66,16 @@ SO_ACTION_SOURCE(SoIRRenderAction);
 
 class SoIRRenderActionP {
 public:
-  SoIRRenderActionP() = default;
+  ~SoIRRenderActionP()
+  {
+    for (SoPath * path : this->commandPaths) {
+      if (path && SoDB::isInitialized()) path->unref();
+    }
+  }
 
   SoIRBuffer geometryPool;
   SbList<SoIRRenderAction::PrimitiveCollector *> collectorStack;
+  std::vector<SoPath *> commandPaths;
 };
 
 #define PRIVATE(obj) (obj->pimpl)
@@ -165,6 +174,52 @@ SoIRRenderAction::apply(SoNode * root)
 }
 
 void
+SoIRRenderAction::apply(SoPath * path)
+{
+  this->beginFrame();
+  inherited::apply(path);
+}
+
+void
+SoIRRenderAction::apply(const SoPathList & pathlist, SbBool obeysrules)
+{
+  this->beginFrame();
+  inherited::apply(pathlist, obeysrules);
+}
+
+void
+SoIRRenderAction::storeCommandPath(int commandIndex, const SoPath * path)
+{
+  if (commandIndex < 0) return;
+
+  std::vector<SoPath *> & paths = PRIVATE(this)->commandPaths;
+  if (static_cast<size_t>(commandIndex) >= paths.size()) {
+    paths.resize(static_cast<size_t>(commandIndex) + 1, NULL);
+  }
+  if (paths[static_cast<size_t>(commandIndex)]) {
+    paths[static_cast<size_t>(commandIndex)]->unref();
+    paths[static_cast<size_t>(commandIndex)] = NULL;
+  }
+  if (path) {
+    SoPath * copy = path->copy();
+    if (copy) {
+      copy->ref();
+      paths[static_cast<size_t>(commandIndex)] = copy;
+    }
+  }
+}
+
+SoPath *
+SoIRRenderAction::getCommandPath(int commandIndex) const
+{
+  if (commandIndex < 0 ||
+      static_cast<size_t>(commandIndex) >= PRIVATE(this)->commandPaths.size()) {
+    return NULL;
+  }
+  return PRIVATE(this)->commandPaths[static_cast<size_t>(commandIndex)];
+}
+
+void
 SoIRRenderAction::beginTraversal(SoNode * node)
 {
   SoViewportRegionElement::set(this->state, this->vpRegion);
@@ -188,7 +243,13 @@ SoIRRenderAction::renderShape(SoAction * a, SoNode * node)
 {
   SoIRRenderAction * action = static_cast<SoIRRenderAction *>(a);
   SoShape * shape = static_cast<SoShape *>(node);
+  const int firstCommand = action->getDrawList().getNumCommands();
   shape->IRRender(action);
+  const SoPath * path = action->getCurPath();
+  for (int command = firstCommand;
+       command < action->getDrawList().getNumCommands(); ++command) {
+    action->storeCommandPath(command, path);
+  }
 }
 
 // Shader programs are handled in renderNode() without explicit registration.
@@ -234,4 +295,8 @@ SoIRRenderAction::resetFrameResources()
 {
   PRIVATE(this)->geometryPool.clear();
   PRIVATE(this)->collectorStack.truncate(0);
+  for (SoPath * path : PRIVATE(this)->commandPaths) {
+    if (path && SoDB::isInitialized()) path->unref();
+  }
+  PRIVATE(this)->commandPaths.clear();
 }
