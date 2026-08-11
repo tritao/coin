@@ -31,6 +31,10 @@ checkRenderManager(SoRenderManager & manager)
   manager.setViewportRegion(region);
   if (manager.getViewportRegion() != region) return 1;
 
+#if !COIN_HAVE_LEGACY_GL_RENDERER
+  if (manager.getGLRenderAction() != NULL) return 1;
+#endif
+
   SoSeparator * root = new SoSeparator;
   manager.setSceneGraph(root);
   if (manager.getSceneGraph() != root) return 1;
