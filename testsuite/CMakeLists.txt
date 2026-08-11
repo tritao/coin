@@ -187,6 +187,10 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		NAME GLSLRuntimeTest
 		PROFILE core
 		SOURCES GLSLRuntimeTest.cpp)
+	coin_add_gl_test(
+		NAME GLSLDiagnosticsTest
+		PROFILE core
+		SOURCES GLSLDiagnosticsTest.cpp)
 endif()
 
 # Many warnings are generated from test macros on macOS with Xcode.
