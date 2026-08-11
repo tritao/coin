@@ -83,6 +83,7 @@ PublicHeaders = \
 	SoProfileCoordinate3.h \
 	SoQuadMesh.h \
 	SoResetTransform.h \
+	SoRenderLayerGroup.h \
 	SoReversePerspectiveCamera.h \
 	SoRotation.h \
 	SoRotationXYZ.h \
