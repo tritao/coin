@@ -2,6 +2,7 @@
 #include <Inventor/SoRenderManager.h>
 #include <Inventor/SoSceneManager.h>
 #include <Inventor/SbViewportRegion.h>
+#include <Inventor/elements/SoDevicePixelRatioElement.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
 
@@ -24,6 +25,10 @@ checkRenderManager(SoRenderManager & manager)
 {
   manager.setWindowSize(SbVec2s(800, 600));
   if (manager.getWindowSize() != SbVec2s(800, 600)) return 1;
+
+  if (manager.getDevicePixelRatio() != 1.0f) return 1;
+  manager.setDevicePixelRatio(2.0f);
+  if (manager.getDevicePixelRatio() != 2.0f) return 1;
 
   manager.setSize(SbVec2s(640, 480));
   if (manager.getSize() != SbVec2s(640, 480)) return 1;
@@ -59,6 +64,10 @@ checkSceneManager(SoSceneManager & manager)
 {
   manager.setWindowSize(SbVec2s(800, 600));
   if (manager.getWindowSize() != SbVec2s(800, 600)) return 1;
+
+  if (manager.getDevicePixelRatio() != 1.0f) return 1;
+  manager.setDevicePixelRatio(2.0f);
+  if (manager.getDevicePixelRatio() != 2.0f) return 1;
 
   manager.setSize(SbVec2s(640, 480));
   if (manager.getSize() != SbVec2s(640, 480)) return 1;
