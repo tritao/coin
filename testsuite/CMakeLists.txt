@@ -164,8 +164,16 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		PUBLIC ${COIN_TEST_GLFW_TARGET}
 		PRIVATE Coin ${COIN_TEST_OPENGL_TARGET})
 
+	# Keep the private readback implementation outside Coin's public DLL ABI
+	# while allowing the white-box test to exercise the production code.
+	add_library(CoinGLReadbackTestSupport STATIC
+		${PROJECT_SOURCE_DIR}/src/rendering/CoinGLReadback.cpp)
+	target_link_libraries(CoinGLReadbackTestSupport PRIVATE
+		CoinPrivateTestHeaders Coin ${COIN_TEST_OPENGL_TARGET})
+
 	function(coin_add_gl_test)
-		cmake_parse_arguments(ARG "INTERNAL" "NAME;PROFILE" "SOURCES;LABELS" ${ARGN})
+		cmake_parse_arguments(ARG "INTERNAL" "NAME;PROFILE"
+			"SOURCES;LABELS;LIBRARIES" ${ARGN})
 		if(NOT ARG_NAME OR NOT ARG_PROFILE OR NOT ARG_SOURCES)
 			message(FATAL_ERROR "coin_add_gl_test requires NAME, PROFILE, and SOURCES")
 		endif()
@@ -177,6 +185,9 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 
 		add_executable(${ARG_NAME} ${ARG_SOURCES})
 		target_link_libraries(${ARG_NAME} PRIVATE CoinGLTestSupport Coin)
+		if(ARG_LIBRARIES)
+			target_link_libraries(${ARG_NAME} PRIVATE ${ARG_LIBRARIES})
+		endif()
 		if(ARG_INTERNAL)
 			target_link_libraries(${ARG_NAME} PRIVATE CoinPrivateTestHeaders)
 		endif()
@@ -196,11 +207,16 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		SOURCES GLSLRuntimeTest.cpp)
 	coin_add_gl_test(NAME GLSLDiagnosticsTest PROFILE core INTERNAL
 		SOURCES GLSLDiagnosticsTest.cpp)
+	coin_add_gl_test(NAME OffscreenReadbackTest PROFILE core INTERNAL
+		SOURCES OffscreenReadbackTest.cpp
+		LIBRARIES CoinGLReadbackTestSupport)
 endif()
 
 if(HAVE_EGL AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	coin_add_egl_test(NAME EGLBindingTest SOURCES EGLBindingTest.cpp
 		LABELS requires-egl)
+	coin_add_egl_test(NAME OffscreenContextTest SOURCES OffscreenContextTest.cpp
+		LABELS offscreen requires-egl)
 endif()
 
 # Many warnings are generated from test macros on macOS with Xcode.

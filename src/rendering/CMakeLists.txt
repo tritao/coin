@@ -7,6 +7,7 @@ set(COIN_RENDERING_FILES
 	SoGLImage.cpp
 	SoGLCubeMapImage.cpp
 	SoGLNurbs.cpp
+	CoinGLReadback.cpp
 	SoRenderManager.cpp
 	SoRenderManagerP.cpp
 	SoOffscreenRenderer.cpp
@@ -39,6 +40,8 @@ set(COIN_RENDERING_INTERNAL_FILES
 	SoVertexArrayIndexer.cpp
 	CoinOffscreenGLCanvas.h
 	CoinOffscreenGLCanvas.cpp
+	CoinGLReadback.h
+	CoinGLReadback.cpp
 )
 
 # build library
