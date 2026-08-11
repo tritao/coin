@@ -28,6 +28,7 @@
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
+#include "elements/SoRenderPlacementElement.h"
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoLight.h>
@@ -281,7 +282,9 @@ SoDrawList::clear()
 {
   this->commands.clear();
   this->lightingSetups.clear();
+  this->depthClearEvents.clear();
   this->pickLUT.clear();
+  this->sortedOrder.clear();
   this->generation++;
   this->pickLUTGeneration = 0;
 }
@@ -291,8 +294,15 @@ SoDrawList::truncate(int count)
 {
   if (count < static_cast<int>(this->commands.size())) {
     this->commands.resize(static_cast<size_t>(count));
+    while (!this->depthClearEvents.empty() &&
+           this->depthClearEvents.back().sequence >
+             static_cast<uint32_t>(count)) {
+      this->depthClearEvents.pop_back();
+    }
     this->pickLUT.clear();
     this->pickLUTGeneration = 0;
+    // The command vector remains insertion-ordered; sortedOrder is rebuilt
+    // when the backend prepares the frame.
   }
 }
 
@@ -317,6 +327,15 @@ SoDrawList::emplaceCommand()
   this->pickLUTGeneration = 0;
   this->commands.emplace_back();
   return this->commands.back();
+}
+
+void
+SoDrawList::addDepthClearEvent(const SoDepthClearEvent & event)
+{
+  SoDepthClearEvent recorded = event;
+  recorded.sequence = std::min(recorded.sequence,
+                               static_cast<uint32_t>(this->commands.size()));
+  this->depthClearEvents.push_back(recorded);
 }
 
 int
@@ -450,12 +469,91 @@ SoDrawList::end() const
 }
 
 void
+SoDrawList::buildSortedOrder(const SbMatrix & viewMatrix)
+{
+  int n = static_cast<int>(this->commands.size());
+  sortedOrder.resize(n);
+  for (int i = 0; i < n; i++) sortedOrder[i] = i;
+
+  SoRenderCommand * arr = this->commands.data();
+
+  // Compute camera-space depth for each command using the model matrix origin.
+  for (int i = 0; i < n; i++) {
+    SoRenderCommand & cmd = arr[i];
+    SbMat v;
+    if (cmd.state.useCommandMatrices) cmd.viewMatrix.getValue(v);
+    else viewMatrix.getValue(v);
+    SbMat m;
+    cmd.modelMatrix.getValue(m);
+    float wx = m[3][0], wy = m[3][1], wz = m[3][2];
+    float eyeZ = v[0][2] * wx + v[1][2] * wy + v[2][2] * wz + v[3][2];
+    float depth = -eyeZ;
+
+    // Float-to-uint reinterpretation for monotonic ordering
+    uint32_t bits;
+    std::memcpy(&bits, &depth, sizeof(bits));
+    if (bits & 0x80000000u) {
+      bits = ~bits;
+    } else {
+      bits |= 0x80000000u;
+    }
+    uint32_t depthBucket = (bits >> 8) & 0x00FFFFFFu;
+
+    // Transparent: back-to-front (invert depth)
+    uint32_t passOrder = static_cast<uint32_t>(cmd.pass);
+    if (cmd.pass == SO_RENDERPASS_TRANSPARENT) {
+      depthBucket = 0x00FFFFFFu - depthBucket;
+    }
+    cmd.sortKey = SoIRComputeSortKey(cmd, passOrder, depthBucket);
+  }
+
+  // Sort the INDEX array by sort key, leaving commands in place
+  std::stable_sort(sortedOrder.begin(), sortedOrder.end(),
+    [arr](int a, int b) {
+      return arr[a].sortKey < arr[b].sortKey;
+    });
+}
+
+uint64_t
+SoIRComputeSortKey(const SoRenderCommand & cmd,
+                   uint32_t passOrderBits,
+                   uint32_t depthBucket)
+{
+  const uint64_t passbits = (static_cast<uint64_t>(passOrderBits) & 0xffULL) << 56;
+  const uint64_t depthbits = (static_cast<uint64_t>(depthBucket) & 0x00ffffffULL) << 32;
+  return passbits | depthbits;
+}
+
+static const char *
+renderpass_name(SoRenderPassType pass)
+{
+  switch (pass) {
+  case SO_RENDERPASS_OPAQUE: return "opaque";
+  case SO_RENDERPASS_TRANSPARENT: return "transparent";
+  default: return "unknown";
+  }
+}
+
+static const char *
+renderstage_name(SoRenderStage stage)
+{
+  switch (stage) {
+  case SoRenderStage::Background: return "background";
+  case SoRenderStage::Main: return "main";
+  case SoRenderStage::AfterMain: return "after-main";
+  case SoRenderStage::Foreground: return "foreground";
+  default: return "unknown";
+  }
+}
+
+void
 SoIRDumpSummary(const SoDrawList & drawlist)
 {
   if (!coin_render_ir_trace_enabled()) {
     return;
   }
 
+  int counts[SO_RENDERPASS_COUNT] = { 0 };
   uint32_t minVerts = UINT32_MAX;
   uint32_t maxVerts = 0;
   const int num = drawlist.getNumCommands();
@@ -464,11 +562,16 @@ SoIRDumpSummary(const SoDrawList & drawlist)
     const uint32_t vc = cmd.geometry.vertexCount;
     minVerts = std::min(minVerts, vc);
     maxVerts = std::max(maxVerts, vc);
+    if (cmd.pass < SO_RENDERPASS_COUNT) {
+      counts[cmd.pass]++;
+    }
   }
 
   SoDebugError::postInfo("SoDrawList",
-                         "commands=%d minVerts=%u maxVerts=%u",
+                         "commands=%d opaque=%d transparent=%d minVerts=%u maxVerts=%u",
                          num,
+                         counts[SO_RENDERPASS_OPAQUE],
+                         counts[SO_RENDERPASS_TRANSPARENT],
                          minVerts == UINT32_MAX ? 0 : minVerts,
                          maxVerts);
 }
@@ -492,8 +595,9 @@ SoIRDumpFirstN(const SoDrawList & drawlist, int count)
       ambient = lighting->ambient;
     }
     SoDebugError::postInfo("SoDrawList",
-                           "[%d] depth=%d topo=%d verts=%u idx=%u colors=%p diffuse=(%.3f, %.3f, %.3f, %.3f) lights=%d ambient=(%.3f, %.3f, %.3f)",
+                           "[%d] pass=%s depth=%d topo=%d verts=%u idx=%u colors=%p diffuse=(%.3f, %.3f, %.3f, %.3f) lights=%d ambient=(%.3f, %.3f, %.3f)",
                            i,
+                           renderpass_name(cmd.pass),
                            cmd.state.depth.enabled,
                            static_cast<int>(cmd.geometry.topology),
                            cmd.geometry.vertexCount,
@@ -579,6 +683,12 @@ namespace SoRenderIR {
 static void fillTextureFromState(SoState * state, SoIRRenderAction * action,
                                  SoMaterialData & material);
 
+void
+setCommandMatricesOverride(SoState * state, SbBool enabled)
+{
+  SoRenderPlacementElement::setCommandMatricesOverride(state, enabled);
+}
+
 static SoTextureWrap
 textureWrapFromLegacy(SoMultiTextureImageElement::Wrap wrap)
 {
@@ -595,25 +705,11 @@ textureWrapFromLegacy(SoMultiTextureImageElement::Wrap wrap)
 }
 
 static bool
-textureHasTransparency(const SoTextureData & texture)
+hasTexture(const SoMaterialData & material)
 {
-  // DECAL uses texture alpha as a color interpolation factor; it does not
-  // change the fragment alpha that controls coverage or blending.
-  if (texture.model == SO_TEXTURE_MODEL_DECAL) return false;
-  if (texture.hasTransparency) return true;
-  if (!texture.pixels || texture.width <= 0 || texture.height <= 0 ||
-      (texture.numComponents != 2 && texture.numComponents != 4)) {
-    return false;
-  }
-  const size_t pixelCount = static_cast<size_t>(texture.width) *
-                            static_cast<size_t>(texture.height);
-  for (size_t pixel = 0; pixel < pixelCount; ++pixel) {
-    if (texture.pixels[pixel * static_cast<size_t>(texture.numComponents) +
-                       static_cast<size_t>(texture.numComponents - 1)] != 0xffu) {
-      return true;
-    }
-  }
-  return false;
+  return material.texture.pixels != nullptr &&
+    material.texture.width > 0 && material.texture.height > 0 &&
+    material.texture.numComponents > 0;
 }
 
 void
@@ -704,15 +800,14 @@ fillTextureFromState(SoState * state, SoIRRenderAction * action,
   const size_t pixelCount = static_cast<size_t>(size[0]) *
                             static_cast<size_t>(size[1]);
   const size_t byteCount = pixelCount * static_cast<size_t>(numComponents);
-  bool hasTransparency = false;
-  const unsigned char * copy = action->allocateTextureStorage(
-    bytes, byteCount, size[0], size[1], numComponents, hasTransparency);
+  unsigned char * copy = static_cast<unsigned char *>(
+    action->allocateGeometryStorage(byteCount, alignof(unsigned char)));
+  std::memcpy(copy, bytes, byteCount);
 
   material.texture.pixels = copy;
   material.texture.width = size[0];
   material.texture.height = size[1];
   material.texture.numComponents = numComponents;
-  material.texture.hasTransparency = hasTransparency;
   material.texture.wrapS = textureWrapFromLegacy(wrapS);
   material.texture.wrapT = textureWrapFromLegacy(wrapT);
   material.texture.model = textureModelFromLegacy(model);
@@ -726,6 +821,8 @@ void
 fillRenderStateFromState(SoState * state, SoRenderState & rs)
 {
   SoState * mutableState = state;
+  rs.useCommandMatrices =
+    SoRenderPlacementElement::getCommandMatricesOverride(mutableState);
   SbBool depthtest = TRUE;
   SbBool depthwrite = TRUE;
   SoDepthBufferElement::DepthWriteFunction depthfunc =
@@ -814,14 +911,31 @@ fillRenderStateFromState(SoState * state, SoRenderState & rs)
   rs.raster.linePatternScale = static_cast<int16_t>(std::max(
     1, SoLinePatternElement::getScaleFactor(mutableState)));
 
-  const SbViewportRegion & viewport = SoViewportRegionElement::get(mutableState);
-  const SbVec2s & viewportOrigin = viewport.getViewportOriginPixels();
-  const SbVec2s & viewportSize = viewport.getViewportSizePixels();
-  rs.raster.viewportEnabled = viewportSize[0] > 0 && viewportSize[1] > 0;
-  rs.raster.viewportX = viewportOrigin[0];
-  rs.raster.viewportY = viewportOrigin[1];
-  rs.raster.viewportWidth = viewportSize[0];
-  rs.raster.viewportHeight = viewportSize[1];
+  int viewportX = 0;
+  int viewportY = 0;
+  int viewportWidth = 0;
+  int viewportHeight = 0;
+  if (SoRenderPlacementElement::getViewport(mutableState,
+                                            viewportX, viewportY,
+                                            viewportWidth, viewportHeight)) {
+    rs.raster.viewportOverride = TRUE;
+    rs.raster.viewportEnabled = viewportWidth > 0 && viewportHeight > 0;
+    rs.raster.viewportX = viewportX;
+    rs.raster.viewportY = viewportY;
+    rs.raster.viewportWidth = viewportWidth;
+    rs.raster.viewportHeight = viewportHeight;
+  }
+  else {
+    rs.raster.viewportOverride = FALSE;
+    const SbViewportRegion & viewport = SoViewportRegionElement::get(mutableState);
+    const SbVec2s & viewportOrigin = viewport.getViewportOriginPixels();
+    const SbVec2s & viewportSize = viewport.getViewportSizePixels();
+    rs.raster.viewportEnabled = viewportSize[0] > 0 && viewportSize[1] > 0;
+    rs.raster.viewportX = viewportOrigin[0];
+    rs.raster.viewportY = viewportOrigin[1];
+    rs.raster.viewportWidth = viewportSize[0];
+    rs.raster.viewportHeight = viewportSize[1];
+  }
 
   float offsetfactor = 0.0f;
   float offsetunits = 0.0f;
@@ -943,7 +1057,7 @@ fillLightingFromState(SoState * /* state */,
 bool
 isMaterialTransparent(const SoMaterialData & material)
 {
-  return material.opacity < 0.999f || textureHasTransparency(material.texture);
+  return material.opacity < 0.999f;
 }
 
 void
@@ -954,7 +1068,8 @@ ensureMaterialBlendState(SoRenderState & renderState,
   // legacy GL action enables the conventional blend function as part of its
   // transparency setup. Make that implicit IR contract explicit without
   // replacing an actual non-standard blend state.
-  if (renderState.blend.enabled || !isMaterialTransparent(material)) {
+  if (renderState.blend.enabled ||
+      (!isMaterialTransparent(material) && !hasTexture(material))) {
     return;
   }
 
@@ -982,6 +1097,8 @@ finalizeCommand(SoRenderCommand & command)
   }
   command.opacityClass = transparent
     ? SO_OPACITY_TRANSPARENT : SO_OPACITY_OPAQUE;
+  command.pass = transparent ? SO_RENDERPASS_TRANSPARENT
+                             : SO_RENDERPASS_OPAQUE;
   if (transparent && !command.state.blend.enabled) {
     command.state.blend.enabled = TRUE;
     command.state.blend.srcRGBFactor = SO_BLEND_FACTOR_SRC_ALPHA;
@@ -989,6 +1106,8 @@ finalizeCommand(SoRenderCommand & command)
     command.state.blend.srcAlphaFactor = SO_BLEND_FACTOR_SRC_ALPHA;
     command.state.blend.dstAlphaFactor = SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
   }
+  command.sortKey = SoIRComputeSortKey(
+    command, static_cast<uint32_t>(command.pass), 0);
 }
 
 } // namespace SoRenderIR

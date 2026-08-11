@@ -316,6 +316,7 @@ SoRenderLayerGroup::doAction(SoAction * action)
   }
 
   if (action->isOfType(SoIRRenderAction::getClassTypeId())) {
+    SoIRRenderAction * retained = static_cast<SoIRRenderAction *>(action);
     SoState * state = action->getState();
     if (!state) return;
 
@@ -345,11 +346,11 @@ SoRenderLayerGroup::doAction(SoAction * action)
                                             viewportWidth, viewportHeight);
       SoRenderPlacementElement::setCommandMatricesOverride(state, TRUE);
     }
-    if (this->clearDepthBuffer.getValue()) {
-      SoRenderPlacementElement::setClearDepth(state, TRUE);
-    }
     if (layerValue == SoRenderLayerGroup::FOREGROUND) {
       SoRenderPlacementElement::setLayer(state, SoRenderPlacementElement::FOREGROUND);
+    }
+    if (this->clearDepthBuffer.getValue()) {
+      retained->requestDepthClear();
     }
     inherited::doAction(action);
     state->pop();

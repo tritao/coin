@@ -337,6 +337,8 @@ SoIRRenderAction::traverseAdditionalRoot(SoNode * root, CameraPolicy policy)
   SoViewportRegionElement::set(this->state, this->vpRegion);
   SoDevicePixelRatioElement::set(this->state, this->devicePixelRatio);
   this->initializeCameraState(policy);
+  SoRenderIR::setCommandMatricesOverride(
+    this->state, policy == CameraPolicy::CAMERA_IN_ROOT);
   this->switchToNodeTraversal(root);
   this->state->pop();
 }
@@ -352,13 +354,6 @@ SoIRRenderAction::traverseAdditionalPath(SoPath * path,
                                          const SoIRRenderContext & context)
 {
   this->traverseAdditionalPathInternal(path, &context);
-}
-
-void
-SoIRRenderAction::traverseAdditionalSubtree(
-  SoNode * root, const SoIRRenderContext & context)
-{
-  this->traverseAdditionalSubtreeInternal(root, &context);
 }
 
 void
@@ -378,38 +373,16 @@ SoIRRenderAction::traverseAdditionalPathInternal(
   if (context) {
     // The path traversal reconstructs model state through its ancestors.
     context->applyToState(this->state, FALSE);
+    SoRenderIR::setCommandMatricesOverride(this->state, TRUE);
   }
   else {
     SoViewportRegionElement::set(this->state, this->vpRegion);
     SoDevicePixelRatioElement::set(this->state, this->devicePixelRatio);
     this->initializeCameraState(this->cameraPolicy);
+    SoRenderIR::setCommandMatricesOverride(
+      this->state, this->cameraPolicy == CameraPolicy::CAMERA_IN_ROOT);
   }
   this->switchToPathTraversal(path);
-  this->state->pop();
-  this->hasRenderContextOverride = previousHasContext;
-  if (previousHasContext) {
-    this->renderContextOverride = previousContext;
-  }
-}
-
-void
-SoIRRenderAction::traverseAdditionalSubtreeInternal(
-  SoNode * root, const SoIRRenderContext * context)
-{
-  if (!root) return;
-
-  this->traversalMethods->setUp();
-  const bool previousHasContext = this->hasRenderContextOverride;
-  const SoIRRenderContext previousContext = this->renderContextOverride;
-  this->hasRenderContextOverride = context != nullptr;
-  if (context) {
-    this->renderContextOverride = *context;
-  }
-  this->state->push();
-  if (context) {
-    context->applyToState(this->state);
-  }
-  this->switchToNodeTraversal(root);
   this->state->pop();
   this->hasRenderContextOverride = previousHasContext;
   if (previousHasContext) {
@@ -423,6 +396,8 @@ SoIRRenderAction::beginTraversal(SoNode * node)
   SoViewportRegionElement::set(this->state, this->vpRegion);
   SoDevicePixelRatioElement::set(this->state, this->devicePixelRatio);
   this->initializeCameraState(this->cameraPolicy);
+  SoRenderIR::setCommandMatricesOverride(
+    this->state, this->cameraPolicy == CameraPolicy::CAMERA_IN_ROOT);
   inherited::beginTraversal(node);
 }
 
@@ -506,46 +481,45 @@ SoIRRenderAction::allocateTextureStorage(const unsigned char * source,
 }
 
 void
-SoIRRenderAction::beginAfterMainStage()
-{
-  if (this->afterMainStageDepth == 0) {
-    this->afterMainDepthClearPending = true;
-  }
-  ++this->afterMainStageDepth;
-}
-
-void
-SoIRRenderAction::endAfterMainStage()
-{
-  if (this->afterMainStageDepth == 0) return;
-  --this->afterMainStageDepth;
-  if (this->afterMainStageDepth == 0) {
-    this->afterMainDepthClearPending = false;
-  }
-}
-
-void
 SoIRRenderAction::applyRenderStage(SoRenderCommand & command)
 {
   if (this->renderStage == SoRenderStage::Background) {
     command.stage = SoRenderStage::Background;
   }
-  else if (this->isAfterMainStage()) {
+  else if (this->renderStage == SoRenderStage::AfterMain) {
     command.stage = SoRenderStage::AfterMain;
   }
-  else if (this->renderStage == SoRenderStage::Foreground
-           || SoRenderPlacementElement::getLayer(this->state)
-              == SoRenderPlacementElement::FOREGROUND) {
+  else if (this->renderStage == SoRenderStage::Foreground ||
+           SoRenderPlacementElement::getLayer(this->state) ==
+             SoRenderPlacementElement::FOREGROUND) {
     command.stage = SoRenderStage::Foreground;
-    command.pass = SO_RENDERPASS_OVERLAY;
   }
-  if (SoRenderPlacementElement::consumeClearDepth(this->state)) {
-    command.clearDepthBefore = TRUE;
+}
+
+void
+SoIRRenderAction::requestDepthClear()
+{
+  SoDepthClearEvent event;
+  event.stage = this->renderStage;
+  if (SoRenderPlacementElement::getLayer(this->state) ==
+      SoRenderPlacementElement::FOREGROUND) {
+    event.stage = SoRenderStage::Foreground;
   }
-  if (this->isAfterMainStage() && this->afterMainDepthClearPending) {
-    command.clearDepthBefore = TRUE;
-    this->afterMainDepthClearPending = false;
+  event.sequence = static_cast<uint32_t>(
+    this->drawlist.getNumCommands());
+  int x = 0;
+  int y = 0;
+  int width = 0;
+  int height = 0;
+  if (SoRenderPlacementElement::getViewport(
+        this->state, x, y, width, height)) {
+    event.viewportOverride = TRUE;
+    event.viewportX = x;
+    event.viewportY = y;
+    event.viewportWidth = width;
+    event.viewportHeight = height;
   }
+  this->drawlist.addDepthClearEvent(event);
 }
 
 SoIRRenderStageScope::SoIRRenderStageScope(SoIRRenderAction & action,
@@ -553,16 +527,10 @@ SoIRRenderStageScope::SoIRRenderStageScope(SoIRRenderAction & action,
   : action(&action), previousStage(action.getRenderStage())
 {
   this->action->setRenderStage(stage);
-  if (stage == SoRenderStage::AfterMain) {
-    this->action->beginAfterMainStage();
-  }
 }
 
 SoIRRenderStageScope::~SoIRRenderStageScope()
 {
-  if (this->action->getRenderStage() == SoRenderStage::AfterMain) {
-    this->action->endAfterMainStage();
-  }
   this->action->setRenderStage(this->previousStage);
 }
 
@@ -585,8 +553,6 @@ SoIRRenderAction::clearCommandPaths()
     if (path && SoDB::isInitialized()) path->unref();
   }
   this->commandPaths.clear();
-  this->afterMainStageDepth = 0;
-  this->afterMainDepthClearPending = false;
   this->renderStage = SoRenderStage::Main;
   this->hasRenderContextOverride = false;
   this->renderContextOverride = SoIRRenderContext();
