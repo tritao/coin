@@ -88,19 +88,105 @@ if (USE_PTHREAD)
 	target_link_libraries(CoinTests pthread)
 endif()
 add_test(NAME CoinTests COMMAND CoinTests)
+set_tests_properties(CoinTests PROPERTIES LABELS "unit")
 
-if(HAVE_EGL)
-	add_executable(EGLBindingTest EGLBindingTest.cpp)
-	target_link_libraries(EGLBindingTest Coin ${COIN_TARGET_LINK_LIBRARIES})
-	target_compile_definitions(EGLBindingTest PRIVATE COIN_INTERNAL)
-	target_include_directories(EGLBindingTest PRIVATE
+# OpenGL tests which only need a real context use GLFW.  Keep this optional for
+# ordinary developer builds, while allowing CI to make the dependency
+# mandatory with -DCOIN_BUILD_GL_TESTS=ON.
+set(COIN_BUILD_GL_TESTS "AUTO" CACHE STRING
+	"Build generic GLFW OpenGL integration tests (AUTO, ON, or OFF).")
+set_property(CACHE COIN_BUILD_GL_TESTS PROPERTY STRINGS AUTO ON OFF)
+string(TOUPPER "${COIN_BUILD_GL_TESTS}" COIN_BUILD_GL_TESTS)
+if(NOT COIN_BUILD_GL_TESTS STREQUAL "AUTO" AND
+	NOT COIN_BUILD_GL_TESTS STREQUAL "ON" AND
+	NOT COIN_BUILD_GL_TESTS STREQUAL "OFF")
+	message(FATAL_ERROR "COIN_BUILD_GL_TESTS must be AUTO, ON, or OFF")
+endif()
+
+set(COIN_BUILD_GL_TESTS_EFFECTIVE OFF)
+set(COIN_GLFW_TARGET "")
+if(NOT COIN_BUILD_GL_TESTS STREQUAL "OFF")
+	find_package(glfw3 3.3 QUIET)
+	if(TARGET glfw)
+		set(COIN_GLFW_TARGET glfw)
+	elseif(TARGET glfw3::glfw)
+		set(COIN_GLFW_TARGET glfw3::glfw)
+	endif()
+	if(COIN_GLFW_TARGET)
+		set(COIN_BUILD_GL_TESTS_EFFECTIVE ON)
+	elseif(COIN_BUILD_GL_TESTS STREQUAL "ON")
+		message(FATAL_ERROR
+			"COIN_BUILD_GL_TESTS=ON requires GLFW 3.3 or newer")
+	else()
+		message(STATUS "GLFW not found; generic OpenGL tests are disabled")
+	endif()
+endif()
+
+if(COIN_BUILD_GL_TESTS_EFFECTIVE)
+	add_library(CoinGLTestSupport STATIC
+		support/GLTestContext.cpp
+		support/GLTestFramebuffer.cpp)
+	target_include_directories(CoinGLTestSupport PUBLIC
+		${CMAKE_CURRENT_SOURCE_DIR}/support
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES})
+	target_link_libraries(CoinGLTestSupport PUBLIC
+		${COIN_GLFW_TARGET}
+		${COIN_TARGET_LINK_LIBRARIES})
+
+	function(coin_add_gl_test)
+		cmake_parse_arguments(ARG "" "NAME;PROFILE" "SOURCES" ${ARGN})
+		if(NOT ARG_NAME OR NOT ARG_PROFILE OR NOT ARG_SOURCES)
+			message(FATAL_ERROR "coin_add_gl_test requires NAME, PROFILE, and SOURCES")
+		endif()
+		string(TOLOWER "${ARG_PROFILE}" profile)
+		if(NOT profile STREQUAL "core" AND NOT profile STREQUAL "compat")
+			message(FATAL_ERROR "GL test PROFILE must be core or compat")
+		endif()
+		add_executable(${ARG_NAME} ${ARG_SOURCES})
+		target_link_libraries(${ARG_NAME} CoinGLTestSupport Coin
+			${COIN_TARGET_LINK_LIBRARIES})
+		target_compile_definitions(${ARG_NAME} PRIVATE COIN_INTERNAL)
+		target_include_directories(${ARG_NAME} PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR}/support
+			${PROJECT_SOURCE_DIR}/src
+			${PROJECT_SOURCE_DIR}/include
+			${PROJECT_BINARY_DIR}/include
+			${COIN_TARGET_INCLUDE_DIRECTORIES})
+		add_test(NAME ${ARG_NAME} COMMAND ${ARG_NAME})
+		set_tests_properties(${ARG_NAME} PROPERTIES
+			SKIP_RETURN_CODE 77 LABELS "gl-${profile}")
+	endfunction()
+endif()
+
+function(coin_add_egl_test)
+	cmake_parse_arguments(ARG "" "NAME" "SOURCES" ${ARGN})
+	if(NOT ARG_NAME OR NOT ARG_SOURCES)
+		message(FATAL_ERROR "coin_add_egl_test requires NAME and SOURCES")
+	endif()
+	add_executable(${ARG_NAME} ${ARG_SOURCES})
+	target_link_libraries(${ARG_NAME} Coin ${COIN_TARGET_LINK_LIBRARIES})
+	target_compile_definitions(${ARG_NAME} PRIVATE COIN_INTERNAL)
+	target_include_directories(${ARG_NAME} PRIVATE
 		${PROJECT_SOURCE_DIR}/src
 		${PROJECT_SOURCE_DIR}/include
 		${PROJECT_BINARY_DIR}/include
-		${COIN_TARGET_INCLUDE_DIRECTORIES}
-	)
-	add_test(NAME EGLBindingTest COMMAND EGLBindingTest)
-	set_tests_properties(EGLBindingTest PROPERTIES SKIP_RETURN_CODE 77)
+		${COIN_TARGET_INCLUDE_DIRECTORIES})
+	add_test(NAME ${ARG_NAME} COMMAND ${ARG_NAME})
+	set_tests_properties(${ARG_NAME} PROPERTIES
+		SKIP_RETURN_CODE 77 LABELS "egl")
+endfunction()
+
+if(HAVE_EGL)
+	coin_add_egl_test(NAME EGLBindingTest SOURCES EGLBindingTest.cpp)
+endif()
+
+if(COIN_BUILD_GL_TESTS_EFFECTIVE)
+	coin_add_gl_test(
+		NAME GLSLRuntimeTest
+		PROFILE core
+		SOURCES GLSLRuntimeTest.cpp)
 endif()
 
 # Many warnings are generated from test macros on macOS with Xcode.
