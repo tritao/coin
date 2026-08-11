@@ -76,9 +76,11 @@
 #include <Inventor/elements/SoTextureQualityElement.h>
 #include <Inventor/elements/SoLightModelElement.h>
 #include <Inventor/elements/SoLazyElement.h>
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/actions/SoGLRenderAction.h>
+#endif
 #include <Inventor/actions/SoAudioRenderAction.h>
-#include <Inventor/actions/SoGLRenderAction.h>
+#include <Inventor/errors/SoDebugError.h>
 #include <Inventor/sensors/SoOneShotSensor.h>
 #include <Inventor/fields/SoSFTime.h>
 #include <Inventor/misc/SoAudioDevice.h>
@@ -261,10 +263,13 @@ SoRenderManager::SoRenderManager(void)
 
   PRIVATE(this)->stereostencilmask = NULL;
   PRIVATE(this)->superimpositions = NULL;
+  PRIVATE(this)->viewport = SbViewportRegion(SbVec2s(400, 400));
 
   PRIVATE(this)->doublebuffer = TRUE;
   PRIVATE(this)->deleteaudiorenderaction = TRUE;
+#if COIN_BUILD_LEGACY_GL_RENDERER
   PRIVATE(this)->deleteglaction = TRUE;
+#endif
   PRIVATE(this)->isactive = TRUE;
   PRIVATE(this)->texturesenabled = TRUE;
 
@@ -285,7 +290,9 @@ SoRenderManager::SoRenderManager(void)
     new SoOneShotSensor(SoRenderManagerP::redrawshotTriggeredCB, this);
   PRIVATE(this)->redrawshot->setPriority(PRIVATE(this)->redrawpri);
 
-  PRIVATE(this)->glaction = new SoGLRenderAction(SbViewportRegion(400, 400));
+#if COIN_BUILD_LEGACY_GL_RENDERER
+  PRIVATE(this)->glaction = new SoGLRenderAction(PRIVATE(this)->viewport);
+#endif
   PRIVATE(this)->audiorenderaction = new SoAudioRenderAction;
 
   PRIVATE(this)->clipsensor = NULL;
@@ -301,7 +308,9 @@ SoRenderManager::~SoRenderManager()
 {
   PRIVATE(this)->dummynode->unref();
 
+#if COIN_BUILD_LEGACY_GL_RENDERER
   if (PRIVATE(this)->deleteglaction) delete PRIVATE(this)->glaction;
+#endif
   if (PRIVATE(this)->deleteaudiorenderaction) delete PRIVATE(this)->audiorenderaction;
   delete PRIVATE(this)->rootsensor;
   delete PRIVATE(this)->redrawshot;
@@ -476,6 +485,7 @@ SoRenderManager::detachClipSensor(void)
   \param[in] color Set to \c TRUE if color buffer should be cleared
   \param[in] depth Set to \c TRUE if depth buffer should be cleared
 */
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoRenderManager::clearBuffers(SbBool color, SbBool depth)
 {
@@ -486,6 +496,7 @@ SoRenderManager::clearBuffers(SbBool color, SbBool depth)
   glClearColor(bgcol[0], bgcol[1], bgcol[2], bgcol[3]);
   glClear(mask);
 }
+#endif
 
 /*
   Internal callback
@@ -495,6 +506,7 @@ SoRenderManager::clearBuffers(SbBool color, SbBool depth)
 
   \deprecated Will be made private in a later version of Coin
 */
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoRenderManager::prerendercb(void * userdata, SoGLRenderAction * action)
 {
@@ -515,6 +527,7 @@ SoRenderManager::prerendercb(void * userdata, SoGLRenderAction * action)
   // clear the viewport
   glClear(mask);
 }
+#endif
 
 /*!
   Add a superimposition for this scene graph. A superimposition can
@@ -588,6 +601,11 @@ SoRenderManager::removeSuperimposition(Superimposition * s)
 void
 SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
 {
+#if !COIN_BUILD_LEGACY_GL_RENDERER
+  (void) clearwindow;
+  (void) clearzbuffer;
+  return;
+#else
   // FIXME: according to a user, TGS Inventor seems to disable the
   // redraw SoOneShotSensor while the scene graph is being rendered,
   // which Coin does not do. SGI Inventor probably has the same
@@ -656,6 +674,7 @@ SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
     // let SoGLRenderAction handle the accumulation buffer
     this->render(PRIVATE(this)->glaction, TRUE, clearwindow, clearzbuffer);
   }
+#endif // COIN_BUILD_LEGACY_GL_RENDERER
 }
 
 /*!
@@ -665,6 +684,7 @@ SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
   matrices are reset to identity.
   \param[in] action Renders with a user supplied action.
 */
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoRenderManager::render(SoGLRenderAction * action,
                         const SbBool initmatrices,
@@ -699,6 +719,7 @@ SoRenderManager::render(SoGLRenderAction * action,
 
   PRIVATE(this)->invokePostRenderCallbacks();
 }
+#endif
 
 /*!
   Convenience function for \ref SoRenderManager::renderScene
@@ -714,6 +735,7 @@ SoRenderManager::render(SoGLRenderAction * action,
   \param[in] clearzbuffer If set to \c TRUE, clear the depth buffer
   values before rendering.
 */
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoRenderManager::actuallyRender(SoGLRenderAction * action,
                                 const SbBool initmatrices,
@@ -767,6 +789,7 @@ SoRenderManager::actuallyRender(SoGLRenderAction * action,
     }
   }
 }
+#endif
 
 /*!
   Renders a scene and applies clear state as given by this renderManager
@@ -775,6 +798,7 @@ SoRenderManager::actuallyRender(SoGLRenderAction * action,
   \param[in] scene Scene to render
   \param[in] clearmask mask to pass to glClear
 */
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoRenderManager::renderScene( SoGLRenderAction * action,
                               SoNode * scene,
@@ -803,12 +827,14 @@ SoRenderManager::renderScene( SoGLRenderAction * action,
 
   action->apply(scene);
 }
+#endif
 
 /*!
   \brief Render once in correct draw style
 
   \copydoc SoRenderManager::actuallyRender
 */
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoRenderManager::renderSingle(SoGLRenderAction * action,
                               SbBool initmatrices,
@@ -952,12 +978,14 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
   }
   state->pop();
 }
+#endif
 
 /*!
   \brief Render scene according to current stereo mode
 
   \copydoc SoRenderManager::actuallyRender
 */
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoRenderManager::renderStereo(SoGLRenderAction * action,
                               SbBool initmatrices,
@@ -1040,6 +1068,7 @@ SoRenderManager::renderStereo(SoGLRenderAction * action,
     break;
   }
 }
+#endif
 
 /*!
   Sets strategy for adjusting camera clipping plane
@@ -1070,6 +1099,7 @@ SoRenderManager::setAutoClipping(AutoClippingStrategy autoclipping)
 /*!
   Initializes stencil buffers for interleaved stereo
 */
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoRenderManager::initStencilBufferForInterleavedStereo(void)
 {
@@ -1165,6 +1195,7 @@ SoRenderManager::initStencilBufferForInterleavedStereo(void)
     glPopMatrix();
   }
 }
+#endif
 
 /*!
   Reinitialize after parameters affecting the OpenGL context have
@@ -1173,7 +1204,9 @@ SoRenderManager::initStencilBufferForInterleavedStereo(void)
 void
 SoRenderManager::reinitialize(void)
 {
+#if COIN_BUILD_LEGACY_GL_RENDERER
   PRIVATE(this)->glaction->invalidateState();
+#endif
 }
 
 /*!
@@ -1214,9 +1247,12 @@ SoRenderManager::setWindowSize(const SbVec2s & newsize)
                          "(%d, %d)", newsize[0], newsize[1]);
 #endif // debug
 
-  SbViewportRegion region = PRIVATE(this)->glaction->getViewportRegion();
+  SbViewportRegion region = PRIVATE(this)->viewport;
   region.setWindowSize(newsize[0], newsize[1]);
+  PRIVATE(this)->viewport = region;
+#if COIN_BUILD_LEGACY_GL_RENDERER
   PRIVATE(this)->glaction->setViewportRegion(region);
+#endif
 }
 
 /*!
@@ -1227,7 +1263,7 @@ SoRenderManager::setWindowSize(const SbVec2s & newsize)
 const SbVec2s &
 SoRenderManager::getWindowSize(void) const
 {
-  return PRIVATE(this)->glaction->getViewportRegion().getWindowSize();
+  return PRIVATE(this)->viewport.getWindowSize();
 }
 
 /*!
@@ -1242,10 +1278,13 @@ SoRenderManager::setSize(const SbVec2s & newsize)
                          "(%d, %d)", newsize[0], newsize[1]);
 #endif // debug
 
-  SbViewportRegion region = PRIVATE(this)->glaction->getViewportRegion();
+  SbViewportRegion region = PRIVATE(this)->viewport;
   SbVec2s origin = region.getViewportOriginPixels();
   region.setViewportPixels(origin, newsize);
+  PRIVATE(this)->viewport = region;
+#if COIN_BUILD_LEGACY_GL_RENDERER
   PRIVATE(this)->glaction->setViewportRegion(region);
+#endif
 }
 
 /*!
@@ -1254,7 +1293,7 @@ SoRenderManager::setSize(const SbVec2s & newsize)
 const SbVec2s &
 SoRenderManager::getSize(void) const
 {
-  return PRIVATE(this)->glaction->getViewportRegion().getViewportSizePixels();
+  return PRIVATE(this)->viewport.getViewportSizePixels();
 }
 
 /*!
@@ -1271,10 +1310,13 @@ SoRenderManager::setOrigin(const SbVec2s & newOrigin)
                          "(%d, %d)", newOrigin[0], newOrigin[1]);
 #endif // debug
 
-  SbViewportRegion region = PRIVATE(this)->glaction->getViewportRegion();
+  SbViewportRegion region = PRIVATE(this)->viewport;
   SbVec2s size = region.getViewportSizePixels();
   region.setViewportPixels(newOrigin, size);
+  PRIVATE(this)->viewport = region;
+#if COIN_BUILD_LEGACY_GL_RENDERER
   PRIVATE(this)->glaction->setViewportRegion(region);
+#endif
 }
 
 /*!
@@ -1285,7 +1327,7 @@ SoRenderManager::setOrigin(const SbVec2s & newOrigin)
 const SbVec2s &
 SoRenderManager::getOrigin(void) const
 {
-  return PRIVATE(this)->glaction->getViewportRegion().getViewportOriginPixels();
+  return PRIVATE(this)->viewport.getViewportOriginPixels();
 }
 
 /*!
@@ -1299,7 +1341,10 @@ SoRenderManager::getOrigin(void) const
 void
 SoRenderManager::setViewportRegion(const SbViewportRegion & newregion)
 {
+  PRIVATE(this)->viewport = newregion;
+#if COIN_BUILD_LEGACY_GL_RENDERER
   PRIVATE(this)->glaction->setViewportRegion(newregion);
+#endif
 }
 
 /*!
@@ -1311,7 +1356,7 @@ SoRenderManager::setViewportRegion(const SbViewportRegion & newregion)
 const SbViewportRegion &
 SoRenderManager::getViewportRegion(void) const
 {
-  return PRIVATE(this)->glaction->getViewportRegion();
+  return PRIVATE(this)->viewport;
 }
 
 /*!
@@ -1547,8 +1592,13 @@ SoRenderManager::getStereoOffset(void) const
 void
 SoRenderManager::setAntialiasing(const SbBool smoothing, const int numpasses)
 {
+#if COIN_BUILD_LEGACY_GL_RENDERER
   PRIVATE(this)->glaction->setSmoothing(smoothing);
   PRIVATE(this)->glaction->setNumPasses(numpasses);
+#else
+  (void) smoothing;
+  (void) numpasses;
+#endif
   this->scheduleRedraw();
 }
 
@@ -1560,14 +1610,20 @@ SoRenderManager::setAntialiasing(const SbBool smoothing, const int numpasses)
 void
 SoRenderManager::getAntialiasing(SbBool & smoothing, int & numpasses) const
 {
+#if COIN_BUILD_LEGACY_GL_RENDERER
   smoothing = PRIVATE(this)->glaction->isSmoothing();
   numpasses = PRIVATE(this)->glaction->getNumPasses();
+#else
+  smoothing = FALSE;
+  numpasses = 1;
+#endif
 }
 
 /*!
   Set the \a action to use for rendering. Overrides the default action
   made in the constructor.
  */
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoRenderManager::setGLRenderAction(SoGLRenderAction * const action)
 {
@@ -1593,15 +1649,18 @@ SoRenderManager::setGLRenderAction(SoGLRenderAction * const action)
   if (PRIVATE(this)->glaction && haveregion)
     PRIVATE(this)->glaction->setViewportRegion(region);
 }
+#endif
 
 /*!
   Returns pointer to render action.
  */
+#if COIN_BUILD_LEGACY_GL_RENDERER
 SoGLRenderAction *
 SoRenderManager::getGLRenderAction(void) const
 {
   return PRIVATE(this)->glaction;
 }
+#endif
 
 /*!
   This method returns the current auto clipping strategy.

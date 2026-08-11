@@ -39,11 +39,12 @@
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include "Inventor/nodes/SoOrthographicCamera.h"
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/actions/SoGLRenderAction.h>
+#endif
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
 #include <Inventor/actions/SoGetMatrixAction.h>
 #include <Inventor/actions/SoSearchAction.h>
-#include <Inventor/actions/SoGLRenderAction.h>
 
 SbBool SoRenderManagerP::touchtimer = TRUE;
 SbBool SoRenderManagerP::cleanupfunctionset = FALSE;
@@ -107,11 +108,14 @@ SoRenderManagerP::updateClippingPlanesCB(void * COIN_UNUSED_ARG(closure), SoSens
 void
 SoRenderManagerP::setClippingPlanes(void)
 {
+#if !COIN_BUILD_LEGACY_GL_RENDERER
+  return;
+#else
   SoCamera * camera = this->camera;
   SoNode * scene = this->scene;
   if (!camera || !scene) return;
 
-  SbViewportRegion vp = this->glaction->getViewportRegion();
+  SbViewportRegion vp = this->viewport;
 
   if (!this->getbboxaction) {
     this->getbboxaction = new SoGetBoundingBoxAction(vp);
@@ -190,12 +194,17 @@ SoRenderManagerP::setClippingPlanes(void)
   if (SbAbs(oldfar - newfar) > SbAbs(fareps)) {
     camera->farDistance = newfar;
   }
+#endif
 }
 
 void
 SoRenderManagerP::getCameraCoordinateSystem(SbMatrix & matrix,
                                             SbMatrix & inverse)
 {
+#if !COIN_BUILD_LEGACY_GL_RENDERER
+  matrix = inverse = SbMatrix::identity();
+  return;
+#else
   SoCamera * camera = this->camera;
   SoNode * scene = this->scene;
   assert(camera && scene);
@@ -215,15 +224,16 @@ SoRenderManagerP::getCameraCoordinateSystem(SbMatrix & matrix,
   if (this->searchaction->getPath()) {
     if (!this->getmatrixaction) {
       this->getmatrixaction =
-        new SoGetMatrixAction(this->glaction->getViewportRegion());
+        new SoGetMatrixAction(this->viewport);
     } else {
-      this->getmatrixaction->setViewportRegion(this->glaction->getViewportRegion());
+      this->getmatrixaction->setViewportRegion(this->viewport);
     }
     this->getmatrixaction->apply(this->searchaction->getPath());
     matrix = this->getmatrixaction->getMatrix();
     inverse = this->getmatrixaction->getInverse();
   }
   this->searchaction->reset();
+#endif
 }
 
 //**********************************************************************************
@@ -274,6 +284,7 @@ SoRenderManager::Superimposition::getStateFlags(void) const
   return PRIVATE(this)->stateflags;
 }
 
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoRenderManager::Superimposition::render(SoGLRenderAction * action, SbBool clearcolorbuffer)
 {
@@ -304,6 +315,7 @@ SoRenderManager::Superimposition::render(SoGLRenderAction * action, SbBool clear
     action->setTransparencyType(oldttype);
   }
 }
+#endif
 
 void
 SoRenderManager::Superimposition::setEnabled(SbBool yes)
@@ -321,11 +333,13 @@ SoRenderManager::Superimposition::changeCB(void * data, SoSensor * COIN_UNUSED_A
   }
 }
 
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoRenderManager::Superimposition::setTransparencyType(SoGLRenderAction::TransparencyType type)
 {
   PRIVATE(this)->transparencytype = (int) type;
 }
+#endif
 
 void
 SoRenderManagerP::invokePreRenderCallbacks(void)
