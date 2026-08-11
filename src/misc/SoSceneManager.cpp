@@ -598,6 +598,18 @@ SoSceneManager::getGLRenderAction(void) const
 }
 #endif
 
+void
+SoSceneManager::setRenderPipeline(const SoRenderManager::RenderPipeline pipeline)
+{
+  PRIVATE(this)->rendermanager->setRenderPipeline(pipeline);
+}
+
+SoRenderManager::RenderPipeline
+SoSceneManager::getRenderPipeline(void) const
+{
+  return PRIVATE(this)->rendermanager->getRenderPipeline();
+}
+
 /*!
   Set the \a action to use for rendering audio. Overrides the default action
   made in the constructor.

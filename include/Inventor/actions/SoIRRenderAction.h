@@ -14,6 +14,7 @@
 class SoPrimitiveVertex;
 class SoPath;
 class SoPathList;
+class SoCamera;
 class SoIRRenderActionP;
 
 /*!
@@ -65,6 +66,11 @@ public:
   void setViewportRegion(const SbViewportRegion & vp);
   const SbViewportRegion & getViewportRegion(void) const { return this->vpRegion; }
 
+  void setCamera(SoCamera * camera) { this->camera = camera; }
+  SoCamera * getCamera(void) const { return this->camera; }
+  void setDevicePixelRatio(float dpr) { this->devicePixelRatio = dpr; }
+  float getDevicePixelRatio(void) const { return this->devicePixelRatio; }
+
   // Standard entry points, mirroring SoGLRenderAction
   virtual void apply(SoNode * root) override;
   virtual void apply(SoPath * path) override;
@@ -115,6 +121,8 @@ private:
   void resetFrameResources();
 
   SbViewportRegion vpRegion;
+  SoCamera *       camera = nullptr;
+  float            devicePixelRatio = 1.0f;
   SoDrawList       drawlist;
   SoIRRenderActionP * pimpl;
 };
