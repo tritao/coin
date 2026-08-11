@@ -53,6 +53,9 @@ public:
   /// Initialize GL resources (shader, FBO). Requires valid GL context.
   SbBool initialize(const cc_glglue * glue);
 
+  /// Invalidate all GPU handles without calling into a possibly dead context.
+  void discard();
+
   /// Resize FBO when viewport changes. No-op if size unchanged.
   void resize(int width, int height);
 

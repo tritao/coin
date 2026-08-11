@@ -67,6 +67,7 @@ public:
 
   SbBool initialize(const SoRenderBackendInitParams & params) override;
   void shutdown() override;
+  void discard() override;
   SbBool render(const SoDrawList & drawlist,
                 const SoRenderParams & params) override;
   void resizeTarget(const SoRenderTargetInfo & info) override;

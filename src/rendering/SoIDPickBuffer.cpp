@@ -166,6 +166,45 @@ SoIDPickBuffer::~SoIDPickBuffer()
   if (lineShaderProgram) cc_glglue_glDeleteProgram(this->glue, lineShaderProgram);
 }
 
+void
+SoIDPickBuffer::discard()
+{
+  // The context may already be gone. Do not attempt even best-effort GL
+  // deletion here; all names become invalid with the context itself.
+  this->glue = nullptr;
+  this->fbo = 0;
+  this->colorTex = 0;
+  this->depthRbo = 0;
+  this->fbWidth = 0;
+  this->fbHeight = 0;
+  this->shaderInitialized = FALSE;
+  this->cachedColor.clear();
+  this->pbo[0] = this->pbo[1] = 0;
+  this->pboIndex = 0;
+  this->pboInitialized = FALSE;
+  this->pboSize = 0;
+  this->idColorVBOs.clear();
+  this->idColorVertexCounts.clear();
+  this->tempPosVBO = 0;
+  this->tempIdxVBO = 0;
+  this->idVAOs.clear();
+  this->idVAOColorKey.clear();
+  this->idVAOPosKey.clear();
+  this->idVAOIdxKey.clear();
+  this->cachedPosLoc = -1;
+  this->cachedIdColorLoc = -1;
+  this->lineShaderProgram = 0;
+  this->lineUView = -1;
+  this->lineUProj = -1;
+  this->lineUModel = -1;
+  this->lineUVpSize = -1;
+  this->lineULineWidth = -1;
+  this->shaderProgram = 0;
+  this->uIdView = -1;
+  this->uIdProj = -1;
+  this->uIdModel = -1;
+}
+
 // -----------------------------------------------------------------------
 // Initialize
 // -----------------------------------------------------------------------
