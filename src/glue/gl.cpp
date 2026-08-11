@@ -2391,7 +2391,10 @@ cc_glglue_instance(int contextid)
     }
 
     gi->rendererstr = (const char *)glGetString(GL_RENDERER);
-    gi->extensionsstr = (const char *)glGetString(GL_EXTENSIONS);
+    // GL_EXTENSIONS is invalid in an OpenGL core context. Use the indexed
+    // query path below for OpenGL 3.0 and newer contexts.
+    gi->extensionsstr = cc_glglue_glversion_matches_at_least(gi, 3, 0, 0) ?
+      NULL : (const char *)glGetString(GL_EXTENSIONS);
 
     /* Randall O'Reilly reports that the above call is deprecated from OpenGL 3.0
        onwards and may, particularly on some Linux systems, return NULL.
