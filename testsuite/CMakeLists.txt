@@ -193,6 +193,10 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		SOURCES GLSLDiagnosticsTest.cpp)
 endif()
 
+if(HAVE_EGL)
+	coin_add_egl_test(NAME OffscreenReadbackTest SOURCES OffscreenReadbackTest.cpp)
+endif()
+
 # Many warnings are generated from test macros on macOS with Xcode.
 include(CheckCXXCompilerFlag)
 CHECK_CXX_COMPILER_FLAG(-Wtautological-compare DISABLE_WARNING_TAUTOLOGCOMPARE)
