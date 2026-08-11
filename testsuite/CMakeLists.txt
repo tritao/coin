@@ -183,6 +183,15 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		SKIP_RETURN_CODE 77 LABELS "gl-core")
 endif()
 
+add_executable(CoreTraversalTest CoreTraversalTest.cpp)
+target_link_libraries(CoreTraversalTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(CoreTraversalTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+add_test(NAME CoreTraversalTest COMMAND CoreTraversalTest)
+
 if(HAVE_EGL)
 	add_executable(EGLBindingTest EGLBindingTest.cpp)
 	target_link_libraries(EGLBindingTest CoinTestInternals Coin ${COIN_TARGET_LINK_LIBRARIES})
