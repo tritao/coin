@@ -939,6 +939,7 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
     // Do not shut down or replace a backend after its context disappeared.
     // Lost-context handling discards those resources when that lifecycle path
     // is explicitly requested.
+    PRIVATE(this)->drawListCallbackScope = FALSE;
     return;
   }
 

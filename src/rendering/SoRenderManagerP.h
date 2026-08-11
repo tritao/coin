@@ -57,6 +57,7 @@ class SoInfo;
 class SoNode;
 class SoPath;
 class SoDetail;
+class SoAction;
 class SoGetBoundingBoxAction;
 class SoGetMatrixAction;
 class SoSearchAction;
@@ -120,13 +121,20 @@ public:
 #endif
   SbViewportRegion viewport;
   float devicePixelRatio;
+  SbBool cameraInSceneGraph;
   SoRenderManager::RenderPipeline renderPipeline;
+  SoRenderManager::LightingMode lightingmode;
   SoIRRenderAction * irAction;
   SoRenderBackend * renderBackend;
   uint32_t renderBackendContextId;
   SbBool drawListCallbackScope;
   SbBool pickTargetDirty;
   uint32_t pickTargetGeneration;
+
+  SoNode * renderLayerBackgroundRoot;
+  SoNode * renderLayerForegroundRoot;
+  SoNodeSensor * renderLayerBackgroundSensor;
+  SoNodeSensor * renderLayerForegroundSensor;
 
   SoRenderManager::StereoMode stereostenciltype;
   SoRenderManager::RenderMode rendermode;
@@ -141,9 +149,12 @@ public:
 
   void invokePreRenderCallbacks(void);
   void invokePostRenderCallbacks(void);
+  void invokeAfterMainSceneCallbacks(SoAction * action);
   typedef std::pair<SoRenderManagerRenderCB *, void *> RenderCBTouple;
   std::vector<RenderCBTouple> preRenderCallbacks;
   std::vector<RenderCBTouple> postRenderCallbacks;
+  typedef std::pair<SoRenderManagerStageCB *, void *> StageCBTouple;
+  std::vector<StageCBTouple> afterMainSceneCallbacks;
 
   // "private" data
   static SbBool touchtimer;
