@@ -427,6 +427,7 @@ SoElement::initElements(void)
   SoComplexityElement::initClass();
   SoCreaseAngleElement::initClass();
   SoDecimationPercentageElement::initClass();
+  SoDevicePixelRatioElement::initClass();
   SoFocalDistanceElement::initClass();
   SoFontSizeElement::initClass();
   SoLineWidthElement::initClass();

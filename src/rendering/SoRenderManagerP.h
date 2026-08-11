@@ -114,6 +114,7 @@ public:
   SbBool deleteglaction;
 #endif
   SbViewportRegion viewport;
+  float devicePixelRatio;
 
   SoRenderManager::StereoMode stereostenciltype;
   SoRenderManager::RenderMode rendermode;

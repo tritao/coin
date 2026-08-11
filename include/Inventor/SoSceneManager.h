@@ -75,6 +75,8 @@ public:
   virtual SoNode * getSceneGraph(void) const;
   void setWindowSize(const SbVec2s & newsize);
   const SbVec2s & getWindowSize(void) const;
+  void setDevicePixelRatio(float dpr);
+  float getDevicePixelRatio(void) const;
   void setSize(const SbVec2s & newsize);
   const SbVec2s & getSize(void) const;
   void setOrigin(const SbVec2s & newOrigin);

@@ -58,6 +58,7 @@
 #include <Inventor/elements/SoTextureQualityElement.h>
 #include <Inventor/elements/SoTextureOverrideElement.h>
 #include <Inventor/elements/SoComplexityTypeElement.h>
+#include <Inventor/elements/SoDevicePixelRatioElement.h>
 #include <Inventor/elements/SoLazyElement.h>
 
 #include <algorithm>
@@ -264,6 +265,7 @@ SoRenderManager::SoRenderManager(void)
   PRIVATE(this)->stereostencilmask = NULL;
   PRIVATE(this)->superimpositions = NULL;
   PRIVATE(this)->viewport = SbViewportRegion(SbVec2s(400, 400));
+  PRIVATE(this)->devicePixelRatio = 1.0f;
 
   PRIVATE(this)->doublebuffer = TRUE;
   PRIVATE(this)->deleteaudiorenderaction = TRUE;
@@ -698,7 +700,13 @@ SoRenderManager::render(SoGLRenderAction * action,
     for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
       Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
       if (s->getStateFlags() & Superimposition::BACKGROUND) {
+        SoState * state = action->getState();
+        state->push();
+        SoDevicePixelRatioElement::set(state,
+                                       PRIVATE(this)->dummynode,
+                                       PRIVATE(this)->devicePixelRatio);
         s->render(action, clearwindow_tmp);
+        state->pop();
         clearwindow_tmp = FALSE;
       }
     }
@@ -712,7 +720,13 @@ SoRenderManager::render(SoGLRenderAction * action,
     for (int i = 0; i < PRIVATE(this)->superimpositions->getLength(); i++) {
       Superimposition * s = (Superimposition *) (*PRIVATE(this)->superimpositions)[i];
       if (!(s->getStateFlags() & Superimposition::BACKGROUND)) {
+        SoState * state = action->getState();
+        state->push();
+        SoDevicePixelRatioElement::set(state,
+                                       PRIVATE(this)->dummynode,
+                                       PRIVATE(this)->devicePixelRatio);
         s->render(action);
+        state->pop();
       }
     }
   }
@@ -845,6 +859,7 @@ SoRenderManager::renderSingle(SoGLRenderAction * action,
   state->push();
 
   SoNode * node = PRIVATE(this)->dummynode;
+  SoDevicePixelRatioElement::set(state, node, PRIVATE(this)->devicePixelRatio);
 
   if (!this->isTexturesEnabled()) {
     SoTextureQualityElement::set(state, node, 0.0f);
@@ -1264,6 +1279,20 @@ const SbVec2s &
 SoRenderManager::getWindowSize(void) const
 {
   return PRIVATE(this)->viewport.getWindowSize();
+}
+
+void
+SoRenderManager::setDevicePixelRatio(float dpr)
+{
+  if (PRIVATE(this)->devicePixelRatio == dpr) return;
+  PRIVATE(this)->devicePixelRatio = dpr;
+  this->scheduleRedraw();
+}
+
+float
+SoRenderManager::getDevicePixelRatio(void) const
+{
+  return PRIVATE(this)->devicePixelRatio;
 }
 
 /*!
