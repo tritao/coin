@@ -159,13 +159,20 @@ endif()
 
 set(ADDITIONAL_HDRS ${PROJECT_SOURCE_DIR}/include/SoWinEnterScope.h ${PROJECT_SOURCE_DIR}/include/SoWinLeaveScope.h ${PROJECT_SOURCE_DIR}/include/SoDebug.h ${PROJECT_BINARY_DIR}/src/config.h)
 
-if(COIN_BUILD_LEGACY_GL_RENDERER)
+set(COIN_GLELEMENTS_OBJECTS "")
+if(NOT COIN_BUILD_SINGLE_LIB)
   set(COIN_GLELEMENTS_OBJECTS $<TARGET_OBJECTS:glelements>)
+endif()
+
+set(COIN_SHADOWS_OBJECTS "")
+if(NOT COIN_BUILD_SINGLE_LIB AND COIN_BUILD_LEGACY_GL_RENDERER)
+  set(COIN_SHADOWS_OBJECTS $<TARGET_OBJECTS:shadows>)
 endif()
 
 # Create the library target
 if(COIN_BUILD_SINGLE_LIB)
-  add_library(${PROJECT_NAME} ${COIN_LIBRARY_TYPE} ${COIN_SOURCE} ${COMMON_HDRS} ${ADDITIONAL_HDRS} ${COMMON_RESOURCES})
+  add_library(${PROJECT_NAME} ${COIN_LIBRARY_TYPE} ${COIN_SOURCE} ${COMMON_HDRS} ${ADDITIONAL_HDRS} ${COMMON_RESOURCES}
+    )
 else()
   if(NOT COIN_USE_SYSTEM_EXPAT)
     set(expat_target $<TARGET_OBJECTS:expat>)
@@ -205,7 +212,7 @@ else()
     $<TARGET_OBJECTS:scxml>
     $<TARGET_OBJECTS:sensors>
     $<TARGET_OBJECTS:shaders>
-    $<TARGET_OBJECTS:shadows>
+    ${COIN_SHADOWS_OBJECTS}
     $<TARGET_OBJECTS:shapenodes>
     $<TARGET_OBJECTS:soscxml>
     $<TARGET_OBJECTS:threads>
@@ -213,6 +220,19 @@ else()
     $<TARGET_OBJECTS:vrml97>
     $<TARGET_OBJECTS:xml>
   )
+endif()
+
+# Keep the renderer selection attached to the final library target as well as
+# the directory scope.  This is important for single-library generators,
+# where all translation units are linked through this target.
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+  COIN_BUILD_LEGACY_GL_RENDERER=${COIN_BUILD_LEGACY_GL_RENDERER_VALUE}
+)
+
+if(NOT COIN_BUILD_LEGACY_GL_RENDERER AND
+   CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND
+   CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  target_link_options(${PROJECT_NAME} PRIVATE LINKER:-z,defs)
 endif()
 
 # Export a Coin::Coin target when the library is built as a cmake subdirectory

@@ -64,6 +64,8 @@
 
 #include <Inventor/SoDB.h>
 
+class SoVBO;
+
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif // HAVE_CONFIG_H
@@ -89,8 +91,12 @@
 #include <Inventor/errors/SoReadError.h>
 #include <Inventor/events/SoEvent.h>
 #include <Inventor/fields/SoSFTime.h>
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/misc/SoGLBigImage.h>
+#endif
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/misc/SoGLImage.h>
+#endif
 #include <Inventor/misc/SoProto.h>
 #include <Inventor/misc/SoProtoInstance.h>
 #include <Inventor/nodes/SoSeparator.h>
@@ -117,7 +123,9 @@
 #include "misc/SoDBP.h"
 #include "misc/SbHash.h"
 #include "misc/SoConfigSettings.h"
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include "rendering/SoVBO.h"
+#endif
 
 #ifdef HAVE_VRML97
 #include <Inventor/VRMLnodes/SoVRML.h>
@@ -335,16 +343,22 @@ SoDB::init(void)
   SoProtoInstance::initClass();
 
   SoGLDriverDatabase::init();
+#if COIN_BUILD_LEGACY_GL_RENDERER
   SoGLImage::initClass();
   SoGLBigImage::initClass();
+#endif
 
   SoHardCopy::init();
 
   SoShader::init();
+#if COIN_BUILD_LEGACY_GL_RENDERER
   SoVBO::init();
+#endif
 
   // FIXME: probably temporary. Add FXViz::init() or something? pederb, 2007-03-09
+#if COIN_BUILD_LEGACY_GL_RENDERER
   SoShadowGroup::init();
+#endif
   SoGeo::init();
 
 #ifdef HAVE_VRML97

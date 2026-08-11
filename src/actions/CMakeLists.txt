@@ -2,17 +2,13 @@
 set(COIN_ACTIONS_FILES
 	SoAction.cpp
 	SoActionP.cpp
-	SoBoxHighlightRenderAction.cpp
 	SoCallbackAction.cpp
-	SoGLRenderAction.cpp
 	SoGetBoundingBoxAction.cpp
 	SoGetMatrixAction.cpp
 	SoGetPrimitiveCountAction.cpp
 	SoHandleEventAction.cpp
-	SoLineHighlightRenderAction.cpp
 	SoPickAction.cpp
 	SoRayPickAction.cpp
-	SoReorganizeAction.cpp
 	SoSearchAction.cpp
 	SoSimplifyAction.cpp
 	SoToVRMLAction.cpp
@@ -20,6 +16,16 @@ set(COIN_ACTIONS_FILES
 	SoWriteAction.cpp
 	SoAudioRenderAction.cpp
 )
+
+if(COIN_BUILD_LEGACY_GL_RENDERER)
+	list(APPEND COIN_ACTIONS_FILES
+		SoBoxHighlightRenderAction.cpp
+		SoGLRenderAction.cpp
+		SoLineHighlightRenderAction.cpp
+		# Reorganization currently depends on the LegacyGL primitive cache.
+		SoReorganizeAction.cpp
+	)
+endif()
 
 # Files excluded from public API documentation, included in complete documentation.
 set(COIN_ACTIONS_INTERNAL_FILES
