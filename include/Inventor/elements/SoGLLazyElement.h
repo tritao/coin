@@ -84,6 +84,7 @@ public:
     float shininess;
     int32_t lightmodel;
     int32_t blending;
+    int32_t separateblending;
     int32_t blend_sfactor;
     int32_t blend_dfactor;
     int32_t alpha_blend_sfactor;
@@ -115,7 +116,9 @@ public:
   void setSpecularElt(const SbColor* color) override;
   void setShininessElt(float value) override;
   void setColorMaterialElt(SbBool value) override;
-  void enableBlendingElt(int sfactor, int dfactor, int alpha_sfactor, int alpha_dfactor) override;
+  void enableBlendingElt(int sfactor, int dfactor,
+                         int alpha_sfactor, int alpha_dfactor,
+                         SbBool separate) override;
   void disableBlendingElt(void) override;
   void setLightModelElt(SoState *state, int32_t model) override;
   virtual void setMaterialElt(SoNode * node, uint32_t bitmask,

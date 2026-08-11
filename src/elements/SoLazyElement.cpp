@@ -168,6 +168,7 @@ SoLazyElement::init(SoState * COIN_UNUSED_ARG(state))
   this->coinstate.emissive = this->getDefaultEmissive();
   this->coinstate.shininess = this->getDefaultShininess();
   this->coinstate.blending = FALSE;
+  this->coinstate.separateblending = FALSE;
   this->coinstate.blend_sfactor = 0;
   this->coinstate.blend_dfactor = 0;
   this->coinstate.alpha_blend_sfactor = 0;
@@ -401,7 +402,17 @@ SoLazyElement::setColorMaterial(SoState * COIN_UNUSED_ARG(state), SbBool COIN_UN
 void
 SoLazyElement::enableBlending(SoState * state,  int sfactor, int dfactor)
 {
-  SoLazyElement::enableSeparateBlending(state, sfactor, dfactor, 0, 0);
+  SoLazyElement * elem = SoLazyElement::getInstance(state);
+  if (!elem->coinstate.blending || elem->coinstate.separateblending ||
+      elem->coinstate.blend_sfactor != sfactor ||
+      elem->coinstate.blend_dfactor != dfactor) {
+    elem = getWInstance(state);
+    elem->enableBlendingElt(sfactor, dfactor, 0, 0, FALSE);
+    if (state->isCacheOpen()) elem->lazyDidSet(BLENDING_MASK);
+  }
+  else if (state->isCacheOpen()) {
+    elem->lazyDidntSet(BLENDING_MASK);
+  }
 }
 
 void
@@ -410,13 +421,13 @@ SoLazyElement::enableSeparateBlending(SoState * state,
                                       int alpha_sfactor, int alpha_dfactor)
 {
   SoLazyElement * elem = SoLazyElement::getInstance(state);
-  if (!elem->coinstate.blending ||
+  if (!elem->coinstate.blending || !elem->coinstate.separateblending ||
       elem->coinstate.blend_sfactor != sfactor ||
       elem->coinstate.blend_dfactor != dfactor ||
       elem->coinstate.alpha_blend_sfactor != alpha_sfactor ||
       elem->coinstate.alpha_blend_dfactor != alpha_dfactor) {
     elem = getWInstance(state);
-    elem->enableBlendingElt(sfactor, dfactor, alpha_sfactor, alpha_dfactor);
+    elem->enableBlendingElt(sfactor, dfactor, alpha_sfactor, alpha_dfactor, TRUE);
     if (state->isCacheOpen()) elem->lazyDidSet(BLENDING_MASK);
   }
   else if (state->isCacheOpen()) {
@@ -576,7 +587,7 @@ SoLazyElement::getAlphaBlending(SoState * state, int & sfactor, int & dfactor)
   sfactor = elem->coinstate.alpha_blend_sfactor;
   dfactor = elem->coinstate.alpha_blend_dfactor;
 
-  return elem->coinstate.blending && (sfactor != 0) && (dfactor != 0);
+  return elem->coinstate.blending && elem->coinstate.separateblending;
 }
 
 // ! FIXME: write doc
@@ -1036,9 +1047,12 @@ SoLazyElement::setColorMaterialElt(SbBool COIN_UNUSED_ARG(value))
 }
 
 void
-SoLazyElement::enableBlendingElt(int sfactor, int dfactor, int alpha_sfactor, int alpha_dfactor)
+SoLazyElement::enableBlendingElt(int sfactor, int dfactor,
+                                 int alpha_sfactor, int alpha_dfactor,
+                                 SbBool separate)
 {
   this->coinstate.blending = TRUE;
+  this->coinstate.separateblending = separate;
   this->coinstate.blend_sfactor = sfactor;
   this->coinstate.blend_dfactor = dfactor;
   this->coinstate.alpha_blend_sfactor = alpha_sfactor;
@@ -1049,6 +1063,7 @@ void
 SoLazyElement::disableBlendingElt(void)
 {
   this->coinstate.blending = FALSE;
+  this->coinstate.separateblending = FALSE;
 }
 
 void
