@@ -144,6 +144,18 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 	add_test(NAME GLSLRuntimeTest COMMAND GLSLRuntimeTest)
 	set_tests_properties(GLSLRuntimeTest PROPERTIES
 		SKIP_RETURN_CODE 77 LABELS "gl-core")
+
+	add_executable(GLSLDiagnosticsTest GLSLDiagnosticsTest.cpp)
+	target_link_libraries(GLSLDiagnosticsTest PRIVATE
+		CoinGLTestSupport CoinTestInternals Coin ${COIN_TARGET_LINK_LIBRARIES})
+	target_include_directories(GLSLDiagnosticsTest PRIVATE
+		${PROJECT_SOURCE_DIR}/src
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES})
+	add_test(NAME GLSLDiagnosticsTest COMMAND GLSLDiagnosticsTest)
+	set_tests_properties(GLSLDiagnosticsTest PROPERTIES
+		SKIP_RETURN_CODE 77 LABELS "gl-core")
 endif()
 
 if(HAVE_EGL)
