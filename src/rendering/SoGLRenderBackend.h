@@ -1,0 +1,167 @@
+// src/rendering/SoGLRenderBackend.h
+
+#ifndef COIN_SOGLRENDERBACKEND_H
+#define COIN_SOGLRENDERBACKEND_H
+
+#include "rendering/SoRenderBackend.h"
+
+#include <Inventor/system/gl.h>
+
+#include <memory>
+#include <unordered_map>
+#include <vector>
+
+struct cc_glglue;
+
+/// Per-command GPU resource cache entry.
+/// Caches VBOs and VAOs for a single draw command, keyed by CPU data pointer.
+struct CachedGPUCommand {
+  GLuint posVBO = 0;
+  GLuint normVBO = 0;
+  GLuint colorVBO = 0;
+  GLuint texcoordVBO = 0;
+  GLuint lineDistVBO = 0;  // cumulative object-space distance for line stipple
+  GLuint textureId = 0;  // GL texture for embedded textures (SoImage)
+  GLuint idxVBO = 0;
+  GLuint vao = 0;       // visual pass VAO (pos + norm + color + idx)
+
+  // Cache invalidation keys (CPU pointer addresses + counts)
+  const float *    posKey = nullptr;
+  const float *    normKey = nullptr;
+  const float *    colorKey = nullptr;
+  const uint32_t * idxKey = nullptr;
+  uint32_t vertexCount = 0;
+  uint32_t indexCount = 0;
+  uint32_t vertexStride = 0;
+
+  int lastUsedFrame = 0;
+
+  bool isGeometryValid(const float * pos, const float * norm,
+                       const uint32_t * idx, uint32_t vCount,
+                       uint32_t iCount, uint32_t vStride,
+                       uint32_t gen) const {
+    return posVBO != 0 && gen == cacheGeneration
+        && pos == posKey && norm == normKey
+        && idx == idxKey && vCount == vertexCount
+        && iCount == indexCount && vStride == vertexStride;
+  }
+  uint32_t cacheGeneration = 0;
+};
+
+/*!
+  \class SoGLRenderBackend
+  \brief OpenGL backend that renders IR draw lists.
+
+  Implements the SoRenderBackend interface with real GPU rendering:
+  - Per-command VBO/VAO caching (GL_STATIC_DRAW, only re-upload on change)
+*/
+class SoGLRenderBackend : public SoRenderBackend {
+public:
+  SoGLRenderBackend();
+  ~SoGLRenderBackend() override;
+
+  const char * getName() const override;
+
+  SbBool initialize(const SoRenderBackendInitParams & params) override;
+  void shutdown() override;
+  SbBool render(const SoDrawList & drawlist,
+                const SoRenderParams & params) override;
+  void resizeTarget(const SoRenderTargetInfo & info) override;
+
+
+  /// Get cached GPU entry for a command index (for ID pass sharing).
+  const CachedGPUCommand * getCachedCommand(int cmdIndex) const;
+
+private:
+  void logFrameStats(const SoDrawList & drawlist,
+                     const SoRenderParams & params) const;
+  bool createShaders();
+  void uploadLighting(const SoLightingData & lighting);
+  void applyLighting(const SoDrawList & drawlist, const SoRenderCommand & cmd);
+
+  /// Draw a single cached command — sets per-command GL state, draws, restores.
+  void drawCommand(const SoDrawList & drawlist,
+                   const SoRenderCommand & cmd,
+                   const SbMat & viewMat,
+                   const SbMat & projMat,
+                   const SoRenderParams & params);
+
+  // --- Render pass methods ---
+  void beginFrame(const SoDrawList & drawlist, const SoRenderParams & params);
+  void updateGeometryCache(const SoDrawList & drawlist);
+  void renderOpaquePass(const SoDrawList & drawlist,
+                        const SbMat & viewMat, const SbMat & projMat,
+                        const SoRenderParams & params);
+  void renderTransparentPass(const SoDrawList & drawlist,
+                             const SbMat & viewMat, const SbMat & projMat,
+                             const SoRenderParams & params);
+  void renderOverlayPass(const SoDrawList & drawlist,
+                         const SbMat & viewMat, const SbMat & projMat,
+                         const SoRenderParams & params);
+  void endFrame();
+
+  CachedGPUCommand & getOrCreateCache(const float * posPtr, const uint32_t * idxPtr);
+  void uploadGeometry(CachedGPUCommand & entry, const SoRenderCommand & cmd);
+  void setupVisualVAO(CachedGPUCommand & entry, const SoRenderCommand & cmd);
+  void gcStaleEntries(int currentFrame);
+  void destroyCacheEntry(CachedGPUCommand & entry);
+
+  SoRenderBackendInitParams storedparams;
+  // Dispatch table for the context that owns this backend's GPU resources.
+  // All rendering calls must use this table instead of linking post-1.1 GL
+  // entry points directly.
+  const cc_glglue * glue = nullptr;
+
+  // Unified shader program (lit + flat + billboard + textured)
+  GLuint shaderProgram = 0;
+  GLint  uViewLocation = -1;
+  GLint  uProjLocation = -1;
+  GLint  uModelLocation = -1;
+  GLint  uColorLocation = -1;
+  GLint  uRenderModeLocation = -1;
+  GLint  uEmissiveColorLocation = -1;
+  GLint  uUseVertexColorLocation = -1;
+  GLint  uTextureLocation = -1;
+  GLint  uTexModColorLocation = -1;
+  GLint  uQuadCenterLocation = -1;
+  GLint  uTexSizeLocation = -1;
+  GLint  uVpSizeLocation = -1;
+  GLint  uStipplePeriodLocation = -1;
+  GLint  uShadingModelLocation = -1;
+  GLint  uAmbientLightLocation = -1;
+  GLint  uLightCountLocation = -1;
+  GLint  uLightTypeLocation = -1;
+  GLint  uLightColorLocation = -1;
+  GLint  uLightDirectionLocation = -1;
+  GLint  uLightPositionLocation = -1;
+  GLint  uLightAttenuationLocation = -1;
+  GLint  uLightSpotParamsLocation = -1;
+  GLint posLoc = -1;
+  GLint normLoc = -1;
+  GLint colorLoc = -1;
+  GLint texcoordLoc = -1;
+  GLint lineDistLoc = -1;
+
+  // Per-command GPU cache, keyed by (positions ptr, indices ptr) pair.
+  // Two commands may share the same coordinate data but have different
+  // index buffers (e.g., face set and edge set on same shape).
+  struct CacheKey {
+    const float * pos;
+    const uint32_t * idx;
+    bool operator==(const CacheKey & o) const { return pos == o.pos && idx == o.idx; }
+  };
+  struct CacheKeyHash {
+    size_t operator()(const CacheKey & k) const {
+      auto h1 = std::hash<const void *>()(k.pos);
+      auto h2 = std::hash<const void *>()(k.idx);
+      return h1 ^ (h2 << 1);
+    }
+  };
+  std::vector<CachedGPUCommand> gpuCache;
+  std::unordered_map<CacheKey, int, CacheKeyHash> ptrToCacheIndex;
+  int currentFrame = 0;
+
+
+};
+
+#endif // COIN_SOGLRENDERBACKEND_H
