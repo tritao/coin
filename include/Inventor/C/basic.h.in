@@ -40,6 +40,9 @@
 #endif
 #define COIN_HAVE_LEGACY_GL_RENDERER 1
 
+#define COIN_RENDERER_API_VERSION 1
+#define COIN_HAVE_DEVICE_PIXEL_RATIO 1
+
 /*
   NOTE: basic.h is automatically generated from basic.h.in, so don't
   edit basic.h directly.

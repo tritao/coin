@@ -314,6 +314,18 @@ SoSceneManager::getWindowSize(void) const
   return PRIVATE(this)->rendermanager->getWindowSize();
 }
 
+void
+SoSceneManager::setDevicePixelRatio(float dpr)
+{
+  PRIVATE(this)->rendermanager->setDevicePixelRatio(dpr);
+}
+
+float
+SoSceneManager::getDevicePixelRatio(void) const
+{
+  return PRIVATE(this)->rendermanager->getDevicePixelRatio();
+}
+
 /*!
   Set size of rendering area for the viewport within the current
   window.
