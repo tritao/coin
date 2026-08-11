@@ -110,7 +110,7 @@
 #include <Inventor/actions/SoSearchAction.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
 #include <Inventor/elements/SoGLShaderProgramElement.h>
-#include <Inventor/elements/SoGLMultiTextureImageElement.h>
+#include <Inventor/elements/SoMultiTextureImageElement.h>
 #include <Inventor/elements/SoLazyElement.h>
 #include <Inventor/misc/SoContextHandler.h>
 #include <Inventor/misc/SoGLDriverDatabase.h>
@@ -606,7 +606,8 @@ SoShaderObjectP::isSupported(SoShaderObject::SourceType sourceType, const cc_glg
       return SoGLDriverDatabase::isSupported(glue, SO_GL_ARB_VERTEX_PROGRAM);
     }
     else if (sourceType == SoShaderObject::GLSL_PROGRAM) {
-      return SoGLDriverDatabase::isSupported(glue, SO_GL_ARB_SHADER_OBJECT);
+      return cc_glglue_glversion_matches_at_least(glue, 2, 0, 0) ||
+        SoGLDriverDatabase::isSupported(glue, SO_GL_ARB_SHADER_OBJECT);
     }
     // FIXME: Add support for detecting missing Cg support
     // (20050427 handegar)
@@ -621,7 +622,8 @@ SoShaderObjectP::isSupported(SoShaderObject::SourceType sourceType, const cc_glg
       return SoGLDriverDatabase::isSupported(glue, SO_GL_ARB_FRAGMENT_PROGRAM);
     }
     else if (sourceType == SoShaderObject::GLSL_PROGRAM) {
-      return SoGLDriverDatabase::isSupported(glue, SO_GL_ARB_SHADER_OBJECT);
+      return cc_glglue_glversion_matches_at_least(glue, 2, 0, 0) ||
+        SoGLDriverDatabase::isSupported(glue, SO_GL_ARB_SHADER_OBJECT);
     }
     // FIXME: Add support for detecting missing Cg support (20050427
     // handegar)
@@ -631,9 +633,11 @@ SoShaderObjectP::isSupported(SoShaderObject::SourceType sourceType, const cc_glg
   else {
     assert(this->owner->isOfType(SoGeometryShader::getClassTypeId()));
     if (sourceType == SoShaderObject::GLSL_PROGRAM) {
-      return
-        SoGLDriverDatabase::isSupported(glue, "GL_EXT_geometry_shader4") &&
+      const SbBool shaderObjects =
+        cc_glglue_glversion_matches_at_least(glue, 2, 0, 0) ||
         SoGLDriverDatabase::isSupported(glue, SO_GL_ARB_SHADER_OBJECT);
+      return shaderObjects &&
+        SoGLDriverDatabase::isSupported(glue, "GL_EXT_geometry_shader4");
     }
     return FALSE;
   }
@@ -674,27 +678,35 @@ SoShaderObjectP::updateCoinParameters(const uint32_t cachecontext, SoState * sta
     
     if (strncmp(name.getString(), "coin_", 5) == 0) {
       if (name == "coin_texunit0_model") {
-        SoMultiTextureImageElement::Model model;
-        SbColor dummy;
-        SbBool tex = SoGLMultiTextureImageElement::get(state, model, dummy) != NULL;
+        SoMultiTextureImageElement::Model model =
+          SoMultiTextureImageElement::getModel(state, 0);
+        SbVec2s size;
+        int numcomponents;
+        SbBool tex = SoMultiTextureImageElement::getImage(state, 0, size, numcomponents) != NULL;
         shaderobject->updateCoinParameter(state, name, NULL, tex ? model : 0);
       }
       else if (name == "coin_texunit1_model") {
-        SoMultiTextureImageElement::Model model;
-        SbColor dummy;
-        SbBool tex = SoGLMultiTextureImageElement::get(state, 1, model, dummy) != NULL;
+        SoMultiTextureImageElement::Model model =
+          SoMultiTextureImageElement::getModel(state, 1);
+        SbVec2s size;
+        int numcomponents;
+        SbBool tex = SoMultiTextureImageElement::getImage(state, 1, size, numcomponents) != NULL;
         shaderobject->updateCoinParameter(state, name, NULL, tex ? model : 0);
       }
       else if (name == "coin_texunit2_model") {
-        SoMultiTextureImageElement::Model model;
-        SbColor dummy;
-        SbBool tex = SoGLMultiTextureImageElement::get(state, 2, model, dummy) != NULL;
+        SoMultiTextureImageElement::Model model =
+          SoMultiTextureImageElement::getModel(state, 2);
+        SbVec2s size;
+        int numcomponents;
+        SbBool tex = SoMultiTextureImageElement::getImage(state, 2, size, numcomponents) != NULL;
         shaderobject->updateCoinParameter(state, name, NULL, tex ? model : 0);
       }
       else if (name == "coin_texunit3_model") {
-        SoMultiTextureImageElement::Model model;
-        SbColor dummy;
-        SbBool tex = SoGLMultiTextureImageElement::get(state, 3, model, dummy) != NULL;
+        SoMultiTextureImageElement::Model model =
+          SoMultiTextureImageElement::getModel(state, 3);
+        SbVec2s size;
+        int numcomponents;
+        SbBool tex = SoMultiTextureImageElement::getImage(state, 3, size, numcomponents) != NULL;
         shaderobject->updateCoinParameter(state, name, NULL, tex ? model : 0);
       }
       else if (name == "coin_light_model") {

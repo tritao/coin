@@ -33,12 +33,20 @@
 #include "shaders/SoGLSLShaderObject.h"
 #include "coindefs.h"
 
+#include <Inventor/system/gl.h>
 #include <cassert>
 #include <cstdio>
 #include <Inventor/errors/SoDebugError.h>
-#include <Inventor/system/gl.h>
+
+// GL 3.2+ shader types not in macOS legacy GL headers
+#ifdef __APPLE__
+#ifndef GL_GEOMETRY_SHADER
+#define GL_GEOMETRY_SHADER 0x8DD9
+#endif
+#endif
 
 #include "glue/glp.h"
+#include "glue/glslp.h"
 #include "rendering/SoGL.h"
 #include "shaders/SoGLSLShaderParameter.h"
 
@@ -91,46 +99,52 @@ SoGLSLShaderObject::load(const char* srcStr)
   default:
     assert(0 &&" unknown shader type");
   case VERTEX:
-    sType = GL_VERTEX_SHADER_ARB;
+    sType = GL_VERTEX_SHADER;
     break;
   case FRAGMENT:
-    sType = GL_FRAGMENT_SHADER_ARB;
+    sType = GL_FRAGMENT_SHADER;
     break;
   case GEOMETRY:
-    sType = GL_GEOMETRY_SHADER_EXT;
+    sType = GL_GEOMETRY_SHADER;
     break;
   }
 
   SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::load() : previous errors");
 
-  this->shaderHandle = this->glctx->glCreateShaderObjectARB(sType);
+  this->shaderHandle = (COIN_GLhandle) cc_glglue_glCreateShader(this->glctx, sType);
   this->programid = 0;
 
   if (this->shaderHandle == 0) return;
   this->programid = soglshaderobject_idcounter++;
 
-  this->glctx->glShaderSourceARB(this->shaderHandle, 1, (const COIN_GLchar **)&srcStr, NULL);
-  this->glctx->glCompileShaderARB(this->shaderHandle);
+  const char * preparedSourcePtr = srcStr;
+  cc_glglue_glShaderSource(this->glctx, (GLuint) this->shaderHandle, 1,
+                           &preparedSourcePtr, NULL);
+  cc_glglue_glCompileShader(this->glctx, (GLuint) this->shaderHandle);
 
   if (SoGLSLShaderObject::didOpenGLErrorOccur("SoGLSLShaderObject::load()")) {
     this->shaderHandle = 0;
     return;
   }
 
-  this->glctx->glGetObjectParameterivARB(this->shaderHandle,
-                                         GL_OBJECT_COMPILE_STATUS_ARB,
-                                         &flag);
-  SoGLSLShaderObject::printInfoLog(this->GLContext(), this->shaderHandle,
+  cc_glglue_glGetShaderiv(this->glctx, (GLuint) this->shaderHandle,
+                          GL_COMPILE_STATUS, &flag);
+  SoGLSLShaderObject::printInfoLog(this->GLContext(),
+                                   this->shaderHandle,
                                    this->getShaderType());
 
-  if (!flag) this->shaderHandle = 0;
+  if (!flag) {
+    this->shaderHandle = 0;
+  }
 }
 
 void
 SoGLSLShaderObject::unload(void)
 {
   this->detach();
-  if (this->shaderHandle) { this->glctx->glDeleteObjectARB(this->shaderHandle); }
+  if (this->shaderHandle) {
+    cc_glglue_glDeleteShader(this->glctx, (GLuint) this->shaderHandle);
+  }
   this->shaderHandle = 0;
   this->programHandle = 0;
   this->programid = 0;
@@ -153,7 +167,9 @@ SoGLSLShaderObject::attach(COIN_GLhandle programHandle)
 
   if (this->shaderHandle) {
     this->programHandle = programHandle;
-    this->glctx->glAttachObjectARB(this->programHandle, this->shaderHandle);
+    cc_glglue_glAttachShader(this->glctx,
+                             (GLuint) this->programHandle,
+                             (GLuint) this->shaderHandle);
     this->isattached = TRUE;
   }
 }
@@ -162,7 +178,9 @@ void
 SoGLSLShaderObject::detach(void)
 {
   if (this->isattached && this->programHandle && this->shaderHandle) {
-    this->glctx->glDetachObjectARB(this->programHandle, this->shaderHandle);
+    cc_glglue_glDetachShader(this->glctx,
+                             (GLuint) this->programHandle,
+                             (GLuint) this->shaderHandle);
     this->isattached = FALSE;
     this->programHandle = 0;
   }
@@ -175,16 +193,19 @@ SoGLSLShaderObject::isAttached(void) const
 }
 
 void
-SoGLSLShaderObject::printInfoLog(const cc_glglue * g, COIN_GLhandle handle, int objType)
+SoGLSLShaderObject::printInfoLog(const cc_glglue * g,
+                                 COIN_GLhandle handle,
+                                 int objType)
 {
   GLint length = 0;
 
-  g->glGetObjectParameterivARB(handle, GL_OBJECT_INFO_LOG_LENGTH_ARB, &length);
+  cc_glglue_glGetShaderiv(g, (GLuint) handle, GL_INFO_LOG_LENGTH, &length);
 
   if (length > 1) {
     COIN_GLchar *infoLog = new COIN_GLchar[length];
     GLsizei charsWritten = 0;
-    g->glGetInfoLogARB(handle, length, &charsWritten, infoLog);
+    cc_glglue_glGetShaderInfoLog(g, (GLuint) handle, length, &charsWritten,
+                                 (char *) infoLog);
     SbString s("GLSL");
     switch (objType) {
     case 0: s += "vertexShader "; break;
@@ -249,8 +270,8 @@ SoGLSLShaderObject::updateCoinParameter(SoState * COIN_UNUSED_ARG(state), const 
       if (p->value.getValue() != value) p->value = value;
     }
     else {
-      GLint location = glue->glGetUniformLocationARB(pHandle,
-                                                     (const COIN_GLchar *)name.getString());
+      GLint location = cc_glglue_glGetUniformLocation(
+        glue, (GLuint) pHandle, name.getString());
 
 #if 0
       fprintf(stderr,"action: %s, name: %s, loc: %d, handle: %p\n",
@@ -258,7 +279,7 @@ SoGLSLShaderObject::updateCoinParameter(SoState * COIN_UNUSED_ARG(state), const 
               name.getString(), location, pHandle);
 #endif
       if (location >= 0) {
-        glue->glUniform1iARB(location, value);
+        glue->glUniform1i(location, value);
       }
     }
   }
