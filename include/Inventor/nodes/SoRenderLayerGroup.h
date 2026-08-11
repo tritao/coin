@@ -1,0 +1,96 @@
+#ifndef COIN_SORENDERLAYERGROUP_H
+#define COIN_SORENDERLAYERGROUP_H
+
+/**************************************************************************\
+ * Copyright (c) Kongsberg Oil & Gas Technologies AS
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are
+ * met:
+ *
+ * Redistributions of source code must retain the above copyright notice,
+ * this list of conditions and the following disclaimer.
+ *
+ * Redistributions in binary form must reproduce the above copyright
+ * notice, this list of conditions and the following disclaimer in the
+ * documentation and/or other materials provided with the distribution.
+ *
+ * Neither the name of the copyright holder nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+\**************************************************************************/
+
+#define COIN_HAVE_RENDER_LAYER_GROUP 1
+
+#include <Inventor/fields/SoSFBool.h>
+#include <Inventor/fields/SoSFEnum.h>
+#include <Inventor/fields/SoSFVec4f.h>
+#include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoSubNode.h>
+
+/*!
+  \class SoRenderLayerGroup SoRenderLayerGroup.h
+  \brief Places a subtree in a retained render stage with optional viewport
+  and depth-clear semantics.
+
+  The node carries placement, not a second material or camera system.
+  clearDepthBuffer is an explicit traversal-position barrier; it does not
+  mean “clear before the first drawable child”.
+
+  \ingroup coin_retained_rendering
+*/
+class COIN_DLL_API SoRenderLayerGroup : public SoSeparator {
+  typedef SoSeparator inherited;
+
+  SO_NODE_HEADER(SoRenderLayerGroup);
+
+public:
+  static void initClass(void);
+  SoRenderLayerGroup(void);
+
+  enum Layer {
+    INHERIT,
+    FOREGROUND,
+    OVERLAY = FOREGROUND
+  };
+
+  //! Retained stage placement. FOREGROUND and OVERLAY are equivalent.
+  SoSFEnum layer;
+  //! If TRUE, use viewportPixels for this subtree's local placement.
+  SoSFBool viewportOverride;
+  //! Local viewport rectangle in framebuffer pixels: x, y, width, height.
+  SoSFVec4f viewportPixels;
+  //! Request an explicit depth-clear barrier at this traversal position.
+  SoSFBool clearDepthBuffer;
+
+#if COIN_HAVE_LEGACY_GL_RENDERER
+  void GLRender(SoGLRenderAction * action) override;
+  void GLRenderBelowPath(SoGLRenderAction * action) override;
+  void GLRenderInPath(SoGLRenderAction * action) override;
+  void GLRenderOffPath(SoGLRenderAction * action) override;
+#endif
+  void doAction(SoAction * action) override;
+
+protected:
+  virtual ~SoRenderLayerGroup();
+
+private:
+#if COIN_HAVE_LEGACY_GL_RENDERER
+  void GLRenderLayer(SoGLRenderAction * action);
+#endif
+};
+
+#endif // !COIN_SORENDERLAYERGROUP_H
