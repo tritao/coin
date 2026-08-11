@@ -199,6 +199,15 @@ if(NOT COIN_BUILD_LEGACY_GL_RENDERER)
     set_tests_properties(SceneManagerCoreTest PROPERTIES LABELS "unit")
 endif()
 
+	add_executable(LegacyBlendingTest LegacyBlendingTest.cpp)
+target_link_libraries(LegacyBlendingTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(LegacyBlendingTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+add_test(NAME LegacyBlendingTest COMMAND LegacyBlendingTest)
+
 if(HAVE_EGL)
 	coin_add_egl_test(NAME EGLBindingTest SOURCES EGLBindingTest.cpp)
 endif()
