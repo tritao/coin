@@ -48,11 +48,10 @@
 #include "glue/glp.h"
 #include "glue/glslp.h"
 #include "rendering/SoGL.h"
+#include "shaders/SoGLSLShaderDiagnostics.h"
 #include "shaders/SoGLSLShaderParameter.h"
 
 static int32_t soglshaderobject_idcounter = 1;
-
-// *************************************************************************
 
 SoGLSLShaderObject::SoGLSLShaderObject(const uint32_t cachecontext)
   : SoGLShaderObject(cachecontext)
@@ -131,7 +130,9 @@ SoGLSLShaderObject::load(const char* srcStr)
                           GL_COMPILE_STATUS, &flag);
   SoGLSLShaderObject::printInfoLog(this->GLContext(),
                                    this->shaderHandle,
-                                   this->getShaderType());
+                                   this->getShaderType(),
+                                   this->sourceHint,
+                                   !flag);
 
   if (!flag) {
     this->shaderHandle = 0;
@@ -195,28 +196,35 @@ SoGLSLShaderObject::isAttached(void) const
 void
 SoGLSLShaderObject::printInfoLog(const cc_glglue * g,
                                  COIN_GLhandle handle,
-                                 int objType)
+                                 const ShaderType shaderType,
+                                 const SbString & sourceHint,
+                                 const SbBool failed)
 {
-  GLint length = 0;
+  const char * sourceName = sourceHint.getLength() > 0 ?
+    sourceHint.getString() : "<unnamed>";
+  const SbString infoLog = soglsl_get_info_log(g, (GLuint) handle, FALSE);
 
-  cc_glglue_glGetShaderiv(g, (GLuint) handle, GL_INFO_LOG_LENGTH, &length);
-
-  if (length > 1) {
-    COIN_GLchar *infoLog = new COIN_GLchar[length];
-    GLsizei charsWritten = 0;
-    cc_glglue_glGetShaderInfoLog(g, (GLuint) handle, length, &charsWritten,
-                                 (char *) infoLog);
-    SbString s("GLSL");
-    switch (objType) {
-    case 0: s += "vertexShader "; break;
-    case 1: s += "fragmentShader "; break;
-    case 2: s += "geometryShader "; break;
-    default: ;// do nothing
+  if (infoLog.getLength() > 0) {
+    if (failed) {
+      SoDebugError::postWarning("SoGLSLShaderObject::printInfoLog",
+                                "%s '%s' failed to compile: %s",
+                                soglsl_stage_name(shaderType),
+                                sourceName,
+                                infoLog.getString());
     }
-    SoDebugError::postInfo("SoGLSLShaderObject::printInfoLog",
-                           "%s log: '%s'",
-                           s.getString(), infoLog);
-    delete [] infoLog;
+    else {
+      SoDebugError::postInfo("SoGLSLShaderObject::printInfoLog",
+                             "%s '%s' log: %s",
+                             soglsl_stage_name(shaderType),
+                             sourceName,
+                             infoLog.getString());
+    }
+  }
+  else if (failed) {
+    SoDebugError::postWarning("SoGLSLShaderObject::printInfoLog",
+                              "%s '%s' failed to compile with no compiler log",
+                              soglsl_stage_name(shaderType),
+                              sourceName);
   }
 }
 
