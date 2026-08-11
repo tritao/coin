@@ -40,7 +40,6 @@ public:
   void shutdown() override;
   void discard() override;
   SbBool render(const SoDrawList & drawlist,
-                const SoRenderPlan & plan,
                 const SoRenderParams & params) override;
 
   //! Render the current DrawList into the explicit integer picking buffer.
@@ -305,6 +304,13 @@ private:
     bool ready = false;
   } pickTarget;
 
+  struct CommandFrame {
+    SbMat view;
+    SbMat projection;
+    SbVec2s viewportOrigin;
+    SbVec2s viewportSize;
+  };
+
   bool createShaders();
   bool ensurePickFramebuffer(const SbVec2s & size);
   void destroyPickFramebuffer();
@@ -343,6 +349,21 @@ private:
                                      const SbVec2s & viewportSize);
   void setupLineRasterVAO(CachedCommand & entry);
   void destroyLineRasterStream(CachedCommand & entry);
+  CommandFrame effectiveCommandFrame(const SoRenderCommand & command,
+                                      const SoRenderParams & params,
+                                      bool framebufferLocal) const;
+  void clearDepthEvent(const SoDepthClearEvent & event,
+                       const SoRenderParams & params,
+                       bool framebufferLocal);
+  void renderStage(const SoDrawList & drawlist,
+                   SoRenderStage stage,
+                   const SoRenderParams & params,
+                   bool framebufferLocal = false);
+  void renderStageRange(const SoDrawList & drawlist,
+                        SoRenderStage stage,
+                        uint32_t begin,
+                        uint32_t end,
+                        const SoRenderParams & params);
   void drawCommand(const SoDrawList & drawlist,
                    const SoRenderCommand & command,
                    const SbMat & viewMat,
@@ -354,7 +375,8 @@ private:
   void applyDepthState(const SoRenderCommand & command);
   void applyRasterState(const SoRenderCommand & command,
                         const RasterPath & path);
-  void applyBlendState(const SoRenderCommand & command);
+  void applyBlendState(const SoRenderCommand & command,
+                       const SbVec4f & color);
   bool applyPolygonOffset(const SoRenderCommand & command,
                           const RasterPath & path,
                           GLenum & target);

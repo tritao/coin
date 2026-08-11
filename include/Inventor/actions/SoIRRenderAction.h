@@ -134,6 +134,8 @@ public:
   SoRenderStage getRenderStage() const { return this->renderStage; }
   void setRenderStage(SoRenderStage stage) { this->renderStage = stage; }
   void applyRenderStage(SoRenderCommand & command);
+  //! Record a depth-clear barrier at the current traversal position.
+  void requestDepthClear();
 
 
   //! Return the generated draw list for the current frame.

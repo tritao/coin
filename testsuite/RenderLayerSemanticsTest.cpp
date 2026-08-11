@@ -2,13 +2,14 @@
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/nodes/SoCube.h>
+#include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoRenderLayerGroup.h>
 #include <Inventor/nodes/SoSeparator.h>
 
 #include <iostream>
 
-int
-main()
+static int
+runTest()
 {
   SoDB::init();
 
@@ -25,6 +26,9 @@ main()
   foreground->viewportOverride = TRUE;
   foreground->viewportPixels.setValue(5.0f, 6.0f, 10.0f, 11.0f);
   foreground->clearDepthBuffer = TRUE;
+  SoMaterial * foregroundMaterial = new SoMaterial;
+  foregroundMaterial->transparency = 0.5f;
+  foreground->addChild(foregroundMaterial);
   foreground->addChild(new SoCube);
   root->addChild(foreground);
 
@@ -62,8 +66,7 @@ main()
         main.state.raster.viewportWidth != 20 ||
         main.state.raster.viewportHeight != 21 ||
         firstForeground.stage != SoRenderStage::Foreground ||
-        firstForeground.pass != SO_RENDERPASS_OVERLAY ||
-        !firstForeground.clearDepthBefore ||
+        firstForeground.pass != SO_RENDERPASS_TRANSPARENT ||
         !firstForeground.state.raster.viewportOverride ||
         !firstForeground.state.useCommandMatrices ||
         firstForeground.state.raster.viewportX != 5 ||
@@ -71,14 +74,34 @@ main()
         firstForeground.state.raster.viewportWidth != 10 ||
         firstForeground.state.raster.viewportHeight != 11 ||
         secondForegroundCommand.stage != SoRenderStage::Foreground ||
-        !secondForegroundCommand.clearDepthBefore ||
         secondForegroundCommand.state.useCommandMatrices) {
       std::cerr << "FAIL: retained layer placement state was not preserved" << std::endl;
+      result = 1;
+    }
+    const std::vector<SoDepthClearEvent> & events =
+      action.getDrawList().getDepthClearEvents();
+    if (events.size() != 2 ||
+        events[0].stage != SoRenderStage::Foreground ||
+        events[0].sequence != 1 ||
+        !events[0].viewportOverride ||
+        events[0].viewportX != 5 || events[0].viewportY != 6 ||
+        events[0].viewportWidth != 10 || events[0].viewportHeight != 11 ||
+        events[1].stage != SoRenderStage::Foreground ||
+        events[1].sequence != 2 || events[1].viewportOverride) {
+      std::cerr << "FAIL: retained depth-clear barriers were not preserved"
+                << std::endl;
       result = 1;
     }
   }
 
   root->unref();
+  return result;
+}
+
+int
+main()
+{
+  const int result = runTest();
   SoDB::finish();
   return result;
 }
