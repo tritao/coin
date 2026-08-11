@@ -45,6 +45,7 @@
 // *************************************************************************
 
 #include <Inventor/nodes/SoVertexShape.h>
+#include <Inventor/elements/SoShapeHintsElement.h>
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -55,7 +56,9 @@
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/elements/SoCoordinateElement.h>
 #include <Inventor/elements/SoCreaseAngleElement.h>
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLShapeHintsElement.h>
+#endif
 #include <Inventor/elements/SoNormalElement.h>
 #include <Inventor/misc/SoState.h>
 #include <Inventor/nodes/SoVertexProperty.h>
