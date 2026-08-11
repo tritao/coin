@@ -172,6 +172,15 @@ target_include_directories(RetainedRasterTextTest PRIVATE
 )
 add_test(NAME RetainedRasterTextTest COMMAND RetainedRasterTextTest)
 
+add_executable(RenderLayerSemanticsTest render-layer-semantics-test.cpp)
+target_link_libraries(RenderLayerSemanticsTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(RenderLayerSemanticsTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+add_test(NAME RenderLayerSemanticsTest COMMAND RenderLayerSemanticsTest)
+
 add_executable(RenderManagerPipelineTest render-manager-pipeline-test.cpp)
 target_link_libraries(RenderManagerPipelineTest Coin ${COIN_TARGET_LINK_LIBRARIES})
 target_include_directories(RenderManagerPipelineTest PRIVATE
@@ -183,7 +192,9 @@ add_test(NAME RenderManagerPipelineTest COMMAND RenderManagerPipelineTest)
 if(HAVE_EGL)
 	add_executable(DrawListGLTest drawlist-gl-test.cpp)
 	target_link_libraries(DrawListGLTest Coin ${COIN_TARGET_LINK_LIBRARIES})
-	target_compile_definitions(DrawListGLTest PRIVATE COIN_INTERNAL)
+	target_compile_definitions(DrawListGLTest PRIVATE
+		COIN_INTERNAL
+	)
 	target_include_directories(DrawListGLTest PRIVATE
 		${PROJECT_SOURCE_DIR}/src
 		${PROJECT_SOURCE_DIR}/include
@@ -217,6 +228,20 @@ if(HAVE_EGL)
 	)
 	add_test(NAME DrawListManagerTest COMMAND DrawListManagerTest)
 	set_tests_properties(DrawListManagerTest PROPERTIES SKIP_RETURN_CODE 77)
+
+	add_executable(RenderLayerLifecycleTest render-layer-lifecycle-test.cpp)
+	target_link_libraries(RenderLayerLifecycleTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+	target_compile_definitions(RenderLayerLifecycleTest PRIVATE
+		COIN_INTERNAL
+	)
+	target_include_directories(RenderLayerLifecycleTest PRIVATE
+		${PROJECT_SOURCE_DIR}/src
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES}
+	)
+	add_test(NAME RenderLayerLifecycleTest COMMAND RenderLayerLifecycleTest)
+	set_tests_properties(RenderLayerLifecycleTest PROPERTIES SKIP_RETURN_CODE 77)
 
 	add_executable(EGLBindingTest egl-binding-test.cpp)
 	target_link_libraries(EGLBindingTest Coin ${COIN_TARGET_LINK_LIBRARIES})

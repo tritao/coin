@@ -483,10 +483,8 @@ SoGLRenderBackend::shutdown()
 void
 SoGLRenderBackend::discard()
 {
-#if defined(COIN_DRAW_LIST_PICKING)
   if (this->pickBuffer) this->pickBuffer->discard();
   this->pickBuffer.reset();
-#endif
   this->gpuCache.clear();
   this->ptrToCacheIndex.clear();
   this->shaderProgram = 0;
@@ -497,10 +495,8 @@ SoGLRenderBackend::discard()
   this->lastViewMatrix.makeIdentity();
   this->lastProjMatrix.makeIdentity();
   this->matricesInitialized = false;
-#if defined(COIN_DRAW_LIST_PICKING)
   this->pickBufferDirty = true;
   this->lastPickLUTSize = 0;
-#endif
   this->setInitialized(FALSE);
 }
 
