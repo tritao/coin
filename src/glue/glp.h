@@ -241,6 +241,12 @@ typedef void (APIENTRY * COIN_PFNGLDRAWELEMENTSPROC)(GLenum mode, GLsizei count,
 typedef void (APIENTRY * COIN_PFNGLDRAWRANGEELEMENTSPROC)(GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const GLvoid * indices);
 typedef void (APIENTRY * COIN_PFNGLARRAYELEMENTPROC)(GLint i);
 
+/* Modern entry points which are not exported by the Windows OpenGL 1.1
+   import library and therefore must be resolved through the active context. */
+typedef void (APIENTRY * COIN_PFNGLBINDVERTEXARRAYPROC)(GLuint array);
+typedef void (APIENTRY * COIN_PFNGLDELETEVERTEXARRAYSPROC)(GLsizei n, const GLuint * arrays);
+typedef void (APIENTRY * COIN_PFNGLGENVERTEXARRAYSPROC)(GLsizei n, GLuint * arrays);
+
 typedef void (APIENTRY * COIN_PFNGLMULTIDRAWARRAYSPROC)(GLenum mode, const GLint * first,
                                                         const GLsizei * count, GLsizei primcount);
 typedef void (APIENTRY * COIN_PFNGLMULTIDRAWELEMENTSPROC)(GLenum mode, const GLsizei * count,
@@ -565,6 +571,15 @@ typedef void (APIENTRY * COIN_PFNGLUSEPROGRAMPROC)(GLuint);
 typedef void (APIENTRY * COIN_PFNGLDELETEPROGRAMPROC)(GLuint);
 typedef void (APIENTRY * COIN_PFNGLGETPROGRAMIVPROC)(GLuint, GLenum, GLint *);
 typedef void (APIENTRY * COIN_PFNGLGETPROGRAMINFOLOGPROC)(GLuint, GLsizei, GLsizei *, char *);
+typedef void (APIENTRY * COIN_PFNGLBINDATTRIBLOCATIONPROC)(GLuint, GLuint, const char *);
+typedef GLint (APIENTRY * COIN_PFNGLGETATTRIBLOCATIONPROC)(GLuint, const char *);
+typedef void (APIENTRY * COIN_PFNGLVERTEXATTRIB1FPROC)(GLuint, GLfloat);
+typedef void (APIENTRY * COIN_PFNGLVERTEXATTRIB2FPROC)(GLuint, GLfloat, GLfloat);
+typedef void (APIENTRY * COIN_PFNGLVERTEXATTRIB3FPROC)(GLuint, GLfloat, GLfloat, GLfloat);
+typedef void (APIENTRY * COIN_PFNGLVERTEXATTRIB4FPROC)(GLuint, GLfloat, GLfloat, GLfloat, GLfloat);
+typedef void (APIENTRY * COIN_PFNGLVERTEXATTRIBPOINTERPROC)(GLuint, GLint, GLenum, GLboolean, GLsizei, const GLvoid *);
+typedef void (APIENTRY * COIN_PFNGLENABLEVERTEXATTRIBARRAYPROC)(GLuint);
+typedef void (APIENTRY * COIN_PFNGLDISABLEVERTEXATTRIBARRAYPROC)(GLuint);
 
 
 /* Typedefs for occlusion queries -- GL_ARB_occlusion_query */
@@ -699,6 +714,10 @@ struct cc_glglue {
   COIN_PFNGLDRAWELEMENTSPROC glDrawElements;
   COIN_PFNGLDRAWRANGEELEMENTSPROC glDrawRangeElements;
   COIN_PFNGLARRAYELEMENTPROC glArrayElement;
+
+  COIN_PFNGLBINDVERTEXARRAYPROC glBindVertexArray;
+  COIN_PFNGLDELETEVERTEXARRAYSPROC glDeleteVertexArrays;
+  COIN_PFNGLGENVERTEXARRAYSPROC glGenVertexArrays;
 
   COIN_PFNGLMULTIDRAWARRAYSPROC glMultiDrawArrays;
   COIN_PFNGLMULTIDRAWELEMENTSPROC glMultiDrawElements;
@@ -874,6 +893,15 @@ struct cc_glglue {
   COIN_PFNGLDELETEPROGRAMPROC glDeleteProgram;
   COIN_PFNGLGETPROGRAMIVPROC glGetProgramiv;
   COIN_PFNGLGETPROGRAMINFOLOGPROC glGetProgramInfoLog;
+  COIN_PFNGLBINDATTRIBLOCATIONPROC glBindAttribLocation;
+  COIN_PFNGLGETATTRIBLOCATIONPROC glGetAttribLocation;
+  COIN_PFNGLVERTEXATTRIB1FPROC glVertexAttrib1f;
+  COIN_PFNGLVERTEXATTRIB2FPROC glVertexAttrib2f;
+  COIN_PFNGLVERTEXATTRIB3FPROC glVertexAttrib3f;
+  COIN_PFNGLVERTEXATTRIB4FPROC glVertexAttrib4f;
+  COIN_PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer;
+  COIN_PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray;
+  COIN_PFNGLDISABLEVERTEXATTRIBARRAYPROC glDisableVertexAttribArray;
 
   COIN_PFNGLPUSHCLIENTATTRIBPROC glPushClientAttrib;
   COIN_PFNGLPOPCLIENTATTRIBPROC glPopClientAttrib;
