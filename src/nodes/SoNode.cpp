@@ -994,7 +994,6 @@ SoNode::GLRenderS(SoAction * action, SoNode * node)
 }
 #endif
 
-#if COIN_BUILD_LEGACY_GL_RENDERER
 // Note that this documentation will also be used for all subclasses
 // which reimplements the method, so keep the doc "generic enough".
 /*!
@@ -1044,7 +1043,6 @@ SoNode::GLRenderOffPath(SoGLRenderAction * action)
 {
   this->GLRender(action);
 }
-#endif
 
 // *************************************************************************
 
