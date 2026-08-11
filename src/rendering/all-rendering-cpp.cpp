@@ -50,4 +50,7 @@
 #include "SoGLDriverDatabase.cpp"
 #include "SoRenderIR.cpp"
 #include "SoRenderBackend.cpp"
+#define COIN_DRAW_LIST_PICKING 1
 #include "SoGLRenderBackend.cpp"
+#include "SoIDPickBuffer.cpp"
+#undef COIN_DRAW_LIST_PICKING
