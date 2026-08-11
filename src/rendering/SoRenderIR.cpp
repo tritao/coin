@@ -26,6 +26,8 @@
 #include <Inventor/nodes/SoShape.h>
 #include <Inventor/nodes/SoSpotLight.h>
 
+#include "elements/SoRenderPlacementElement.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -687,15 +689,29 @@ fillRenderStateFromState(SoState * state, SoRenderState & rs)
   rs.raster.linePattern = static_cast<uint16_t>(SoLinePatternElement::get(mutableState));
   rs.raster.linePatternScale = static_cast<int16_t>(SoLinePatternElement::getScaleFactor(mutableState));
 
-  const SbViewportRegion & viewport = SoViewportRegionElement::get(mutableState);
-  const SbVec2s & viewportOrigin = viewport.getViewportOriginPixels();
-  const SbVec2s & viewportSize = viewport.getViewportSizePixels();
-  rs.raster.viewportEnabled = viewportSize[0] > 0 && viewportSize[1] > 0;
-  rs.raster.viewportX = viewportOrigin[0];
-  rs.raster.viewportY = viewportOrigin[1];
-  rs.raster.viewportWidth = viewportSize[0];
-  rs.raster.viewportHeight = viewportSize[1];
-  rs.raster.clearDepth = FALSE;
+  int viewportX = 0;
+  int viewportY = 0;
+  int viewportWidth = 0;
+  int viewportHeight = 0;
+  if (SoRenderPlacementElement::getViewport(mutableState,
+                                            viewportX, viewportY,
+                                            viewportWidth, viewportHeight)) {
+    rs.raster.viewportEnabled = viewportWidth > 0 && viewportHeight > 0;
+    rs.raster.viewportX = viewportX;
+    rs.raster.viewportY = viewportY;
+    rs.raster.viewportWidth = viewportWidth;
+    rs.raster.viewportHeight = viewportHeight;
+  } else {
+    const SbViewportRegion & viewport = SoViewportRegionElement::get(mutableState);
+    const SbVec2s & viewportOrigin = viewport.getViewportOriginPixels();
+    const SbVec2s & viewportSize = viewport.getViewportSizePixels();
+    rs.raster.viewportEnabled = viewportSize[0] > 0 && viewportSize[1] > 0;
+    rs.raster.viewportX = viewportOrigin[0];
+    rs.raster.viewportY = viewportOrigin[1];
+    rs.raster.viewportWidth = viewportSize[0];
+    rs.raster.viewportHeight = viewportSize[1];
+  }
+  rs.raster.clearDepth = SoRenderPlacementElement::getClearDepth(mutableState);
 
   float offsetfactor = 0.0f;
   float offsetunits = 0.0f;

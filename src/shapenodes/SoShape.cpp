@@ -233,6 +233,7 @@ public:
     SoRenderIR::ensureMaterialBlendState(command.state, command.material);
     command.pass = SoRenderIR::isMaterialTransparent(command.material)
       ? SO_RENDERPASS_TRANSPARENT : SO_RENDERPASS_OPAQUE;
+    this->action->applyRenderStage(command);
     command.lightingHandle = SoRenderIR::fillLightingFromState(
       state, this->action->getMutableDrawList());
     command.sortKey = SoIRComputeSortKey(command,
