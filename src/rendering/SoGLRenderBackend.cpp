@@ -543,7 +543,12 @@ SoGLRenderBackend::SoGLRenderBackend()
 {
 }
 
-SoGLRenderBackend::~SoGLRenderBackend() = default;
+SoGLRenderBackend::~SoGLRenderBackend()
+{
+  if (!this->isInitialized()) return;
+  if (coin_gl_current_context() == this->context) this->shutdown();
+  else this->discard();
+}
 
 const char *
 SoGLRenderBackend::getName() const
@@ -557,8 +562,9 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
   if (this->isInitialized()) return TRUE;
 
   this->setInitParams(params);
-  void * context = coin_gl_current_context();
-  this->glue = context ? cc_glglue_instance_from_context_ptr(context) : nullptr;
+  this->context = coin_gl_current_context();
+  this->glue = this->context
+    ? cc_glglue_instance_from_context_ptr(this->context) : nullptr;
   if (!this->glue) {
     this->emitError("active context does not provide retained-renderer GL dispatch");
     return FALSE;
@@ -587,12 +593,14 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
       !this->glue->glBlendFuncSeparate) {
     this->emitError("active context does not provide retained-renderer GL dispatch");
     this->glue = nullptr;
+    this->context = nullptr;
     return FALSE;
   }
 
   if (!this->createShaders()) {
     this->emitError("failed to create retained OpenGL 3.3 shaders");
     this->glue = nullptr;
+    this->context = nullptr;
     return FALSE;
   }
 
@@ -685,7 +693,10 @@ void
 SoGLRenderBackend::shutdown()
 {
   if (!this->isInitialized()) return;
-
+  if (coin_gl_current_context() != this->context) {
+    this->discard();
+    return;
+  }
   this->invalidateCache();
   if (this->visualProgram.handle) {
     cc_glglue_glDeleteProgram(this->glue, this->visualProgram.handle);
@@ -755,10 +766,28 @@ SoGLRenderBackend::shutdown()
   this->pickTarget.generation = 0;
   this->pickTarget.ready = false;
   this->glue = nullptr;
+  this->context = nullptr;
   this->setInitialized(FALSE);
   this->emitLog("shutdown");
 }
 
+void
+SoGLRenderBackend::discard()
+{
+  this->gpuCache.clear();
+  this->commandToCache.clear();
+  this->cachedCommandCount = 0;
+  this->haveCacheGeneration = false;
+  this->cacheGeneration = 0;
+  this->visualProgram = VisualProgram();
+  this->rasterPrograms = RasterPrograms();
+  this->pickPrograms = PickPrograms();
+  this->selectionPrograms = PickPrograms();
+  this->pickTarget = PickTarget();
+  this->glue = nullptr;
+  this->context = nullptr;
+  this->setInitialized(FALSE);
+}
 SoGLRenderBackend::CachedCommand &
 SoGLRenderBackend::getOrCreateCache(const SoRenderCommand * command)
 {

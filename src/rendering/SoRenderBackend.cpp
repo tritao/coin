@@ -21,6 +21,11 @@ SoRenderBackend::~SoRenderBackend()
 #endif // COIN_DEBUG
 }
 
+void
+SoRenderBackend::discard()
+{
+  this->setInitialized(FALSE);
+}
 SbBool
 SoRenderBackend::updatePickBuffer(const SoDrawList &,
                                    const SoRenderPlan &,
