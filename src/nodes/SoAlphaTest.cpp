@@ -174,6 +174,7 @@ SoAlphaTest::~SoAlphaTest()
 }
 
 // Doc from parent
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoAlphaTest::GLRender(SoGLRenderAction * action)
 {
@@ -213,3 +214,4 @@ SoAlphaTest::GLRender(SoGLRenderAction * action)
   SoLazyElement::setAlphaTest(action->getState(),
                               glfunc, this->value.getValue());
 }
+#endif
