@@ -230,6 +230,12 @@ target_include_directories(LegacyBlendingTest PRIVATE
 )
 add_test(NAME LegacyBlendingTest COMMAND LegacyBlendingTest)
 
+if(COIN_BUILD_LEGACY_GL_RENDERER)
+	coin_add_gl_test(
+		NAME DevicePixelRatioTraversalTest
+		PROFILE compat
+		SOURCES DevicePixelRatioTraversalTest.cpp)
+endif()
 if(HAVE_EGL)
 	add_executable(EGLBindingTest EGLBindingTest.cpp)
 	target_link_libraries(EGLBindingTest CoinTestInternals Coin ${COIN_TARGET_LINK_LIBRARIES})
