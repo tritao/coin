@@ -183,6 +183,19 @@ if(HAVE_EGL)
 	)
 	add_test(NAME DrawListGLTest COMMAND DrawListGLTest)
 	set_tests_properties(DrawListGLTest PROPERTIES SKIP_RETURN_CODE 77)
+	add_executable(DrawListPickingTest drawlist-picking-test.cpp)
+	target_link_libraries(DrawListPickingTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+	target_compile_definitions(DrawListPickingTest PRIVATE
+		COIN_INTERNAL
+	)
+	target_include_directories(DrawListPickingTest PRIVATE
+		${PROJECT_SOURCE_DIR}/src
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES}
+	)
+	add_test(NAME DrawListPickingTest COMMAND DrawListPickingTest)
+	set_tests_properties(DrawListPickingTest PROPERTIES SKIP_RETURN_CODE 77)
 
 	add_executable(EGLBindingTest egl-binding-test.cpp)
 	target_link_libraries(EGLBindingTest Coin ${COIN_TARGET_LINK_LIBRARIES})
