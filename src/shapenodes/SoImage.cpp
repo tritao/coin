@@ -146,6 +146,7 @@
 */
 
 #include <Inventor/nodes/SoImage.h>
+#include <Inventor/elements/SoLazyElement.h>
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -163,7 +164,9 @@
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLLazyElement.h>
+#endif
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/errors/SoReadError.h>
 #include <Inventor/lists/SbStringList.h>
@@ -328,6 +331,7 @@ SoImage::computeBBox(SoAction * action,
 }
 
 // doc from parent
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoImage::GLRender(SoGLRenderAction * action)
 {
@@ -524,7 +528,9 @@ SoImage::GLRender(SoGLRenderAction * action)
   SoGLCacheContextElement::shouldAutoCache(action->getState(),
                                            SoGLCacheContextElement::DONT_AUTO_CACHE);
 }
+#endif
 
+  // doc from parent
 // doc from parent
 void
 SoImage::rayPick(SoRayPickAction * action)
