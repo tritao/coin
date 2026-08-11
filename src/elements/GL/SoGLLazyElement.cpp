@@ -67,6 +67,7 @@
 #include <Inventor/misc/SoState.h>
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/C/tidbits.h>
+#include "rendering/SoGL.h"
 #include "rendering/SoVBO.h"
 #include <coindefs.h> // COIN_OBSOLETED
 
@@ -422,13 +423,18 @@ SoGLLazyElement::init(SoState * stateptr)
   // a cache though.
   this->cachebitmask = 0;
 
-  glDisable(GL_POLYGON_STIPPLE);
+  if (sogl_context_supports_legacy_rendering(stateptr)) {
+    glDisable(GL_POLYGON_STIPPLE);
 
-  GLboolean rgba;
-  glGetBooleanv(GL_RGBA_MODE, &rgba);
-  if (!rgba) this->colorindex = TRUE;
-  else {
-    this->sendPackedDiffuse(0xccccccff);
+    GLboolean rgba;
+    glGetBooleanv(GL_RGBA_MODE, &rgba);
+
+    if (!rgba) {
+      this->colorindex = TRUE;
+    }
+    else {
+      this->sendPackedDiffuse(0xccccccff);
+    }
   }
 }
 

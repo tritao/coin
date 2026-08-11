@@ -49,11 +49,10 @@
 #include <Inventor/elements/SoGLDisplayList.h>
 #include <Inventor/lists/SbList.h>
 #include <Inventor/misc/SoState.h>
-#include <Inventor/system/gl.h>
 #include <Inventor/misc/SoContextHandler.h>
 #include <Inventor/misc/SoGLDriverDatabase.h>
 
-#include "rendering/SoGL.h"
+#include "glue/glp.h"
 #include "threads/threadsutilp.h"
 #include "tidbitsp.h"
 
@@ -319,7 +318,7 @@ SoGLCacheContextElement::extSupported(SoState * state, int extid)
       return info->supported[i];
     }
   }
-  const cc_glglue * w = sogl_glue_instance(state);
+  const cc_glglue * w = cc_glglue_instance(currcontext);
   SbBool supported = SoGLDriverDatabase::isSupported(w, info->extname.getString());
   info->context.append(currcontext);
   info->supported.append(supported);
@@ -441,7 +440,7 @@ SoGLCacheContextElement::isDirectRendering(SoState * state) const
 {
   SbBool isdirect;
   if (this->rendering == RENDERING_UNSET) {
-    const cc_glglue * w = sogl_glue_instance(state);
+    const cc_glglue * w = cc_glglue_instance(this->context);
     isdirect = cc_glglue_isdirect(w);
   }
   else {
