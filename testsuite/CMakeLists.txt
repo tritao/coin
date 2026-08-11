@@ -186,6 +186,17 @@ target_include_directories(CoreTraversalTest PRIVATE
 	${COIN_TARGET_INCLUDE_DIRECTORIES}
 )
 add_test(NAME CoreTraversalTest COMMAND CoreTraversalTest)
+set_tests_properties(CoreTraversalTest PROPERTIES LABELS "unit")
+
+add_executable(SceneManagerCoreTest scene-manager-core-test.cpp)
+target_link_libraries(SceneManagerCoreTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(SceneManagerCoreTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+add_test(NAME SceneManagerCoreTest COMMAND SceneManagerCoreTest)
+set_tests_properties(SceneManagerCoreTest PROPERTIES LABELS "unit")
 
 if(HAVE_EGL)
 	coin_add_egl_test(NAME EGLBindingTest SOURCES EGLBindingTest.cpp)
