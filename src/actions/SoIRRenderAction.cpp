@@ -202,6 +202,18 @@ SoIRRenderAction::traverseAdditionalRoot(SoNode * root)
   this->state->push();
   SoViewportRegionElement::set(this->state, this->vpRegion);
   SoDevicePixelRatioElement::set(this->state, this->devicePixelRatio);
+  if (this->camera) {
+    SbViewportRegion cameraViewport = this->vpRegion;
+    const SbViewVolume viewVolume =
+      this->camera->getViewVolume(this->vpRegion, cameraViewport);
+    SbMatrix viewingMatrix;
+    SbMatrix projectionMatrix;
+    viewVolume.getMatrices(viewingMatrix, projectionMatrix);
+    SoViewportRegionElement::set(this->state, cameraViewport);
+    SoViewVolumeElement::set(this->state, this->camera, viewVolume);
+    SoViewingMatrixElement::set(this->state, this->camera, viewingMatrix);
+    SoProjectionMatrixElement::set(this->state, this->camera, projectionMatrix);
+  }
   this->switchToNodeTraversal(root);
   this->state->pop();
 }

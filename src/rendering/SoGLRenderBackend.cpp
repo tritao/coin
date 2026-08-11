@@ -1224,6 +1224,7 @@ SoGLRenderBackend::renderOpaquePass(const SoDrawList & drawlist,
     int ci = (si < static_cast<int>(order.size())) ? order[si] : si;
     if (ci < bgCount) continue;
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
+    if (cmd.stage != SoRenderStage::Main) continue;
     if (cmd.pass != SO_RENDERPASS_OPAQUE) continue;
     drawCommand(drawlist, cmd, viewMat, projMat, params);
   }
@@ -1247,6 +1248,7 @@ SoGLRenderBackend::renderTransparentPass(const SoDrawList & drawlist,
     int ci = (si < static_cast<int>(order.size())) ? order[si] : si;
     if (ci < bgCount) continue;
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
+    if (cmd.stage != SoRenderStage::Main) continue;
     if (cmd.pass != SO_RENDERPASS_TRANSPARENT) continue;
     drawCommand(drawlist, cmd, viewMat, projMat, params);
   }
@@ -1254,6 +1256,36 @@ SoGLRenderBackend::renderTransparentPass(const SoDrawList & drawlist,
   // Restore default state
   glDepthMask(GL_TRUE);
   glDisable(GL_BLEND);
+}
+
+void
+SoGLRenderBackend::renderAfterMainPass(const SoDrawList & drawlist,
+                                       const SbMat & viewMat,
+                                       const SbMat & projMat,
+                                       const SoRenderParams & params)
+{
+  const int count = drawlist.getNumCommands();
+  const auto & order = drawlist.getSortedOrder();
+
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LEQUAL);
+  glDepthMask(GL_TRUE);
+  glDisable(GL_BLEND);
+  for (int si = 0; si < count; ++si) {
+    int ci = (si < static_cast<int>(order.size())) ? order[si] : si;
+    const SoRenderCommand & cmd = drawlist.getCommand(ci);
+    if (cmd.stage != SoRenderStage::AfterMain) continue;
+    coin_clear_overlay_depth(cmd, params);
+    if (cmd.pass == SO_RENDERPASS_TRANSPARENT ||
+        cmd.pass == SO_RENDERPASS_OVERLAY) {
+      glDepthMask(GL_FALSE);
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+    drawCommand(drawlist, cmd, viewMat, projMat, params);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_BLEND);
+  }
 }
 
 void
@@ -1274,6 +1306,7 @@ SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
     int ci = (si < static_cast<int>(order.size())) ? order[si] : si;
     if (ci < bgCount) continue;
     const SoRenderCommand & cmd = drawlist.getCommand(ci);
+    if (cmd.stage == SoRenderStage::AfterMain) continue;
     if (cmd.pass != SO_RENDERPASS_OVERLAY) continue;
     // 3D overlays have their own camera (viewMatrix differs from main scene)
     if (cmd.viewMatrix != mainView) {
@@ -1372,6 +1405,7 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
 
   for (int i = 0; i < count; ++i) {
     const SoRenderCommand & cmd = drawlist.getCommand(i);
+    if (cmd.stage != SoRenderStage::Main) continue;
     int hlElem = cmd.selection.highlightedElements.empty()
       ? -1 : cmd.selection.highlightedElements.front();
     bool hasHighlight = cmd.selection.highlightWholeObject
@@ -1653,6 +1687,7 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
   renderBackgroundPass(drawlist, viewMat, projMat, params);
   renderOpaquePass(drawlist, viewMat, projMat, params);
   renderTransparentPass(drawlist, viewMat, projMat, params);
+  renderAfterMainPass(drawlist, viewMat, projMat, params);
 #if defined(COIN_DRAW_LIST_SELECTION)
   renderSelectionPass(drawlist, viewMat, projMat, params);
 #endif
