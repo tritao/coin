@@ -46,6 +46,8 @@
 #define COIN_HAVE_RENDER_PIPELINES 1
 #define COIN_HAVE_RETAINED_PICKING 1
 #define COIN_HAVE_RENDER_LAYER_GROUP 1
+#define COIN_HAVE_RENDER_BACKEND_LIFECYCLE 1
+#define COIN_HAVE_RENDER_MANAGER_STAGES 1
 
 /*
   NOTE: basic.h is automatically generated from basic.h.in, so don't
