@@ -1,0 +1,23 @@
+#Inventor V2.1 ascii
+
+Separator {
+  PerspectiveCamera {
+    position 0 0 6
+    heightAngle 0.785398
+    nearDistance 0.1
+    farDistance 20
+  }
+  LightModel { model BASE_COLOR }
+  Material { diffuseColor 0.1 0.3 0.9 }
+  Cube { }
+  RenderLayerGroup {
+    layer FOREGROUND
+    viewportOverride TRUE
+    viewportPixels 128 128 256 256
+    clearDepthBuffer TRUE
+    Material { diffuseColor 0.9 0.1 0.1 }
+    Translation { translation 0 0 1.0 }
+    Scale { scaleFactor 0.65 0.65 0.65 }
+    Cube { }
+  }
+}

@@ -201,6 +201,8 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		SOURCES DrawListPickingTest.cpp)
 	coin_add_gl_test(NAME DrawListManagerTest PROFILE core
 		SOURCES DrawListManagerTest.cpp)
+	coin_add_gl_test(NAME RenderLayerLifecycleTest PROFILE core
+		SOURCES RenderLayerLifecycleTest.cpp)
 	if(COIN_BUILD_LEGACY_GL_RENDERER)
 		coin_add_gl_test(NAME LegacySoText2RasterLayoutTest PROFILE compat
 			SOURCES LegacySoText2RasterLayoutTest.cpp LABELS requires-legacygl)
@@ -355,6 +357,31 @@ if(HAVE_EGL)
 	coin_add_egl_test(NAME OffscreenContextTest SOURCES OffscreenContextTest.cpp
 		LABELS offscreen requires-egl)
 endif()
+
+add_executable(RenderLayerSemanticsTest RenderLayerSemanticsTest.cpp)
+target_link_libraries(RenderLayerSemanticsTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(RenderLayerSemanticsTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES})
+add_test(NAME RenderLayerSemanticsTest COMMAND RenderLayerSemanticsTest)
+set_tests_properties(RenderLayerSemanticsTest PROPERTIES LABELS "unit")
+
+add_executable(RenderManagerPipelineTest RenderManagerPipelineTest.cpp)
+target_link_libraries(RenderManagerPipelineTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(RenderManagerPipelineTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES})
+add_test(NAME RenderManagerPipelineTest COMMAND RenderManagerPipelineTest)
+
+get_property(COIN_REGISTERED_TESTS DIRECTORY PROPERTY TESTS)
+foreach(COIN_REGISTERED_TEST IN LISTS COIN_REGISTERED_TESTS)
+	get_property(COIN_HAS_LABELS TEST "${COIN_REGISTERED_TEST}" PROPERTY LABELS SET)
+	if(NOT COIN_HAS_LABELS)
+		set_tests_properties(${COIN_REGISTERED_TEST} PROPERTIES LABELS "unit")
+	endif()
+endforeach()
 
 # Many warnings are generated from test macros on macOS with Xcode.
 include(CheckCXXCompilerFlag)

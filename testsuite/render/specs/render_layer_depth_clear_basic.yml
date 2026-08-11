@@ -1,0 +1,3 @@
+id: render_layer_depth_clear_basic
+scene: ../scenes/render_layer_depth_clear_basic.iv
+baseline: ../baselines/gl/render_layer_depth_clear_basic.png

@@ -1,0 +1,3 @@
+id: render_layer_viewport_basic
+scene: ../scenes/render_layer_viewport_basic.iv
+baseline: ../baselines/gl/render_layer_viewport_basic.png
