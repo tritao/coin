@@ -178,6 +178,15 @@ function(coin_add_egl_test)
 		SKIP_RETURN_CODE 77 LABELS "egl")
 endfunction()
 
+	add_executable(CoreTraversalTest CoreTraversalTest.cpp)
+target_link_libraries(CoreTraversalTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(CoreTraversalTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+add_test(NAME CoreTraversalTest COMMAND CoreTraversalTest)
+
 if(HAVE_EGL)
 	coin_add_egl_test(NAME EGLBindingTest SOURCES EGLBindingTest.cpp)
 endif()
