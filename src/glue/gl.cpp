@@ -281,6 +281,7 @@
 #include "glue/khronos/GL/wglext.h"
 #endif
 #include "glue/glp.h"
+#include "glue/glslp.h"
 #include "glue/dlp.h"
 #include "glue/gl_agl.h"
 #include "glue/gl_cgl.h"
@@ -1677,6 +1678,77 @@ glglue_resolve_symbols(cc_glglue * w)
   w->glUniformMatrix3fvARB = NULL;
   w->glUniformMatrix4fvARB = NULL;
 
+  w->glCreateShader = NULL;
+  w->glShaderSource = NULL;
+  w->glCompileShader = NULL;
+  w->glGetShaderiv = NULL;
+  w->glGetShaderInfoLog = NULL;
+  w->glDeleteShader = NULL;
+  w->glAttachShader = NULL;
+  w->glDetachShader = NULL;
+  w->glGetUniformLocation = NULL;
+  w->glGetActiveUniform = NULL;
+  w->glUniform1f = NULL;
+  w->glUniform2f = NULL;
+  w->glUniform3f = NULL;
+  w->glUniform4f = NULL;
+  w->glUniform1fv = NULL;
+  w->glUniform2fv = NULL;
+  w->glUniform3fv = NULL;
+  w->glUniform4fv = NULL;
+  w->glUniform1i = NULL;
+  w->glUniform2i = NULL;
+  w->glUniform3i = NULL;
+  w->glUniform4i = NULL;
+  w->glUniform1iv = NULL;
+  w->glUniform2iv = NULL;
+  w->glUniform3iv = NULL;
+  w->glUniform4iv = NULL;
+  w->glUniformMatrix4fv = NULL;
+  w->glCreateProgram = NULL;
+  w->glLinkProgram = NULL;
+  w->glUseProgram = NULL;
+  w->glDeleteProgram = NULL;
+  w->glGetProgramiv = NULL;
+  w->glGetProgramInfoLog = NULL;
+
+  /* Resolve standard GLSL entry points independently of the active profile.
+     The wrappers below fall back to the ARB_shader_objects aliases when a
+     driver only exposes those names. */
+  w->glCreateShader = (COIN_PFNGLCREATESHADERPROC) PROC(w, glCreateShader);
+  w->glShaderSource = (COIN_PFNGLSHADERSOURCEPROC) PROC(w, glShaderSource);
+  w->glCompileShader = (COIN_PFNGLCOMPILESHADERPROC) PROC(w, glCompileShader);
+  w->glGetShaderiv = (COIN_PFNGLGETSHADERIVPROC) PROC(w, glGetShaderiv);
+  w->glGetShaderInfoLog = (COIN_PFNGLGETSHADERINFOLOGPROC) PROC(w, glGetShaderInfoLog);
+  w->glDeleteShader = (COIN_PFNGLDELETESHADERPROC) PROC(w, glDeleteShader);
+  w->glAttachShader = (COIN_PFNGLATTACHSHADERPROC) PROC(w, glAttachShader);
+  w->glDetachShader = (COIN_PFNGLDETACHSHADERPROC) PROC(w, glDetachShader);
+  w->glGetUniformLocation = (COIN_PFNGLGETUNIFORMLOCATIONPROC) PROC(w, glGetUniformLocation);
+  w->glGetActiveUniform = (COIN_PFNGLGETACTIVEUNIFORMPROC) PROC(w, glGetActiveUniform);
+  w->glUniform1f = (COIN_PFNGLUNIFORM1FPROC) PROC(w, glUniform1f);
+  w->glUniform2f = (COIN_PFNGLUNIFORM2FPROC) PROC(w, glUniform2f);
+  w->glUniform3f = (COIN_PFNGLUNIFORM3FPROC) PROC(w, glUniform3f);
+  w->glUniform4f = (COIN_PFNGLUNIFORM4FPROC) PROC(w, glUniform4f);
+  w->glUniform1fv = (COIN_PFNGLUNIFORM1FVPROC) PROC(w, glUniform1fv);
+  w->glUniform2fv = (COIN_PFNGLUNIFORM2FVPROC) PROC(w, glUniform2fv);
+  w->glUniform3fv = (COIN_PFNGLUNIFORM3FVPROC) PROC(w, glUniform3fv);
+  w->glUniform4fv = (COIN_PFNGLUNIFORM4FVPROC) PROC(w, glUniform4fv);
+  w->glUniform1i = (COIN_PFNGLUNIFORM1IPROC) PROC(w, glUniform1i);
+  w->glUniform2i = (COIN_PFNGLUNIFORM2IPROC) PROC(w, glUniform2i);
+  w->glUniform3i = (COIN_PFNGLUNIFORM3IPROC) PROC(w, glUniform3i);
+  w->glUniform4i = (COIN_PFNGLUNIFORM4IPROC) PROC(w, glUniform4i);
+  w->glUniform1iv = (COIN_PFNGLUNIFORM1IVPROC) PROC(w, glUniform1iv);
+  w->glUniform2iv = (COIN_PFNGLUNIFORM2IVPROC) PROC(w, glUniform2iv);
+  w->glUniform3iv = (COIN_PFNGLUNIFORM3IVPROC) PROC(w, glUniform3iv);
+  w->glUniform4iv = (COIN_PFNGLUNIFORM4IVPROC) PROC(w, glUniform4iv);
+  w->glUniformMatrix4fv = (COIN_PFNGLUNIFORMMATRIX4FVPROC) PROC(w, glUniformMatrix4fv);
+  w->glCreateProgram = (COIN_PFNGLCREATEPROGRAMPROC) PROC(w, glCreateProgram);
+  w->glLinkProgram = (COIN_PFNGLLINKPROGRAMPROC) PROC(w, glLinkProgram);
+  w->glUseProgram = (COIN_PFNGLUSEPROGRAMPROC) PROC(w, glUseProgram);
+  w->glDeleteProgram = (COIN_PFNGLDELETEPROGRAMPROC) PROC(w, glDeleteProgram);
+  w->glGetProgramiv = (COIN_PFNGLGETPROGRAMIVPROC) PROC(w, glGetProgramiv);
+  w->glGetProgramInfoLog = (COIN_PFNGLGETPROGRAMINFOLOGPROC) PROC(w, glGetProgramInfoLog);
+
 
 #ifdef GL_ARB_shader_objects
 
@@ -1741,6 +1813,27 @@ glglue_resolve_symbols(cc_glglue * w)
 #undef BIND_FUNCTION_WITH_WARN
   }
 #endif /* GL_ARB_shader_objects */
+
+  /* The uniform entry points have compatible core and ARB signatures. Keep
+     the normalized pointer in the glue object so callers do not need a
+     wrapper for every trivial uniform variant. */
+  if (!w->glUniform1f) w->glUniform1f = w->glUniform1fARB;
+  if (!w->glUniform2f) w->glUniform2f = w->glUniform2fARB;
+  if (!w->glUniform3f) w->glUniform3f = w->glUniform3fARB;
+  if (!w->glUniform4f) w->glUniform4f = w->glUniform4fARB;
+  if (!w->glUniform1fv) w->glUniform1fv = w->glUniform1fvARB;
+  if (!w->glUniform2fv) w->glUniform2fv = w->glUniform2fvARB;
+  if (!w->glUniform3fv) w->glUniform3fv = w->glUniform3fvARB;
+  if (!w->glUniform4fv) w->glUniform4fv = w->glUniform4fvARB;
+  if (!w->glUniform1i) w->glUniform1i = w->glUniform1iARB;
+  if (!w->glUniform2i) w->glUniform2i = w->glUniform2iARB;
+  if (!w->glUniform3i) w->glUniform3i = w->glUniform3iARB;
+  if (!w->glUniform4i) w->glUniform4i = w->glUniform4iARB;
+  if (!w->glUniform1iv) w->glUniform1iv = w->glUniform1ivARB;
+  if (!w->glUniform2iv) w->glUniform2iv = w->glUniform2ivARB;
+  if (!w->glUniform3iv) w->glUniform3iv = w->glUniform3ivARB;
+  if (!w->glUniform4iv) w->glUniform4iv = w->glUniform4ivARB;
+  if (!w->glUniformMatrix4fv) w->glUniformMatrix4fv = w->glUniformMatrix4fvARB;
 
   w->glGenQueries = NULL; /* so that cc_glglue_has_occlusion_query() works  */
 #if defined(GL_VERSION_1_5)
@@ -2491,6 +2584,173 @@ cc_glglue_isdirect(const cc_glglue * w)
   return w->glx.isdirect;
 }
 
+
+/* Standard-facing shader wrappers.  Keeping the fallback here means shader
+   code does not need to know whether the driver exposed core or ARB names. */
+GLuint
+cc_glglue_glCreateShader(const cc_glglue * glue, GLenum type)
+{
+  if (glue->glCreateShader) return glue->glCreateShader(type);
+  if (glue->glCreateShaderObjectARB) {
+    return (GLuint) glue->glCreateShaderObjectARB(type);
+  }
+  return 0;
+}
+
+void
+cc_glglue_glShaderSource(const cc_glglue * glue, GLuint shader, GLsizei count,
+                         const char * const * string, const GLint * length)
+{
+  if (glue->glShaderSource) {
+    glue->glShaderSource(shader, count, string, length);
+  }
+  else if (glue->glShaderSourceARB) {
+    glue->glShaderSourceARB((COIN_GLhandle) shader, count,
+                            (const COIN_GLchar **) string, length);
+  }
+}
+
+void
+cc_glglue_glCompileShader(const cc_glglue * glue, GLuint shader)
+{
+  if (glue->glCompileShader) glue->glCompileShader(shader);
+  else if (glue->glCompileShaderARB) glue->glCompileShaderARB((COIN_GLhandle) shader);
+}
+
+void
+cc_glglue_glGetShaderiv(const cc_glglue * glue, GLuint shader, GLenum pname,
+                        GLint * params)
+{
+  if (glue->glGetShaderiv) glue->glGetShaderiv(shader, pname, params);
+  else if (glue->glGetObjectParameterivARB) {
+    glue->glGetObjectParameterivARB((COIN_GLhandle) shader, pname, params);
+  }
+}
+
+void
+cc_glglue_glGetShaderInfoLog(const cc_glglue * glue, GLuint shader,
+                             GLsizei maxLength, GLsizei * length, char * infoLog)
+{
+  if (glue->glGetShaderInfoLog) {
+    glue->glGetShaderInfoLog(shader, maxLength, length, infoLog);
+  }
+  else if (glue->glGetInfoLogARB) {
+    glue->glGetInfoLogARB((COIN_GLhandle) shader, maxLength, length,
+                          (COIN_GLchar *) infoLog);
+  }
+}
+
+void
+cc_glglue_glDeleteShader(const cc_glglue * glue, GLuint shader)
+{
+  if (glue->glDeleteShader) glue->glDeleteShader(shader);
+  else if (glue->glDeleteObjectARB) glue->glDeleteObjectARB((COIN_GLhandle) shader);
+}
+
+void
+cc_glglue_glAttachShader(const cc_glglue * glue, GLuint program, GLuint shader)
+{
+  if (glue->glAttachShader) glue->glAttachShader(program, shader);
+  else if (glue->glAttachObjectARB) {
+    glue->glAttachObjectARB((COIN_GLhandle) program, (COIN_GLhandle) shader);
+  }
+}
+
+void
+cc_glglue_glDetachShader(const cc_glglue * glue, GLuint program, GLuint shader)
+{
+  if (glue->glDetachShader) glue->glDetachShader(program, shader);
+  else if (glue->glDetachObjectARB) {
+    glue->glDetachObjectARB((COIN_GLhandle) program, (COIN_GLhandle) shader);
+  }
+}
+
+GLint
+cc_glglue_glGetUniformLocation(const cc_glglue * glue, GLuint program,
+                               const char * name)
+{
+  if (glue->glGetUniformLocation) return glue->glGetUniformLocation(program, name);
+  if (glue->glGetUniformLocationARB) {
+    return glue->glGetUniformLocationARB((COIN_GLhandle) program,
+                                         (const COIN_GLchar *) name);
+  }
+  return -1;
+}
+
+void
+cc_glglue_glGetActiveUniform(const cc_glglue * glue, GLuint program, GLuint index,
+                             GLsizei maxLength, GLsizei * length, GLint * size,
+                             GLenum * type, char * name)
+{
+  if (glue->glGetActiveUniform) {
+    glue->glGetActiveUniform(program, index, maxLength, length, size, type, name);
+  }
+  else if (glue->glGetActiveUniformARB) {
+    glue->glGetActiveUniformARB((COIN_GLhandle) program, index, maxLength,
+                                length, size, type, (COIN_GLchar *) name);
+  }
+}
+
+GLuint
+cc_glglue_glCreateProgram(const cc_glglue * glue)
+{
+  if (glue->glCreateProgram) return glue->glCreateProgram();
+  if (glue->glCreateProgramObjectARB) return (GLuint) glue->glCreateProgramObjectARB();
+  return 0;
+}
+
+void
+cc_glglue_glLinkProgram(const cc_glglue * glue, GLuint program)
+{
+  if (glue->glLinkProgram) glue->glLinkProgram(program);
+  else if (glue->glLinkProgramARB) glue->glLinkProgramARB((COIN_GLhandle) program);
+}
+
+void
+cc_glglue_glUseProgram(const cc_glglue * glue, GLuint program)
+{
+  if (glue->glUseProgram) glue->glUseProgram(program);
+  else if (glue->glUseProgramObjectARB) glue->glUseProgramObjectARB((COIN_GLhandle) program);
+}
+
+void
+cc_glglue_glDeleteProgram(const cc_glglue * glue, GLuint program)
+{
+  if (glue->glDeleteProgram) glue->glDeleteProgram(program);
+  else if (glue->glDeleteObjectARB) glue->glDeleteObjectARB((COIN_GLhandle) program);
+}
+
+void
+cc_glglue_glGetGLSLProgramiv(const cc_glglue * glue, GLuint program, GLenum pname,
+                             GLint * params)
+{
+  if (glue->glGetProgramiv) glue->glGetProgramiv(program, pname, params);
+  else if (glue->glGetObjectParameterivARB) {
+    glue->glGetObjectParameterivARB((COIN_GLhandle) program, pname, params);
+  }
+}
+
+void
+cc_glglue_glGetProgramInfoLog(const cc_glglue * glue, GLuint program,
+                              GLsizei maxLength, GLsizei * length, char * infoLog)
+{
+  if (glue->glGetProgramInfoLog) {
+    glue->glGetProgramInfoLog(program, maxLength, length, infoLog);
+  }
+  else if (glue->glGetInfoLogARB) {
+    glue->glGetInfoLogARB((COIN_GLhandle) program, maxLength, length,
+                          (COIN_GLchar *) infoLog);
+  }
+}
+
+void
+cc_glglue_glProgramParameteriEXT(const cc_glglue * glue, GLuint program, GLenum pname,
+                                 GLint value)
+{
+  if (glue->glProgramParameteriEXT) {
+    glue->glProgramParameteriEXT((COIN_GLhandle) program, pname, value);
+  }
+}
 
 /*!
   Whether glPolygonOffset() is available or not: either we're on OpenGL
