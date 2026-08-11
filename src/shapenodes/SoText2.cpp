@@ -133,7 +133,9 @@
 #include <Inventor/sensors/SoFieldSensor.h>
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/elements/SoMultiTextureEnabledElement.h>
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLMultiTextureEnabledElement.h>
+#endif
 
 #ifdef COIN_THREADSAFE
 #include <Inventor/threads/SbMutex.h>
@@ -330,6 +332,7 @@ SoText2::initClass(void)
 // **************************************************************************
 
 // doc in super
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoText2::GLRender(SoGLRenderAction * action)
 {
@@ -566,7 +569,9 @@ SoText2::GLRender(SoGLRenderAction * action)
   SoGLCacheContextElement::shouldAutoCache(action->getState(),
                                            SoGLCacheContextElement::DONT_AUTO_CACHE);
 }
+#endif
 
+  // **************************************************************************
 // **************************************************************************
 
 // doc in super
@@ -972,6 +977,12 @@ SoText2P::computeBBox(SoAction * action, SbBox3f & box, SbVec3f & center)
 void
 SoText2P::setRasterPos3f(GLfloat x, GLfloat y, GLfloat z)
 {
+#if !COIN_BUILD_LEGACY_GL_RENDERER
+  (void) x;
+  (void) y;
+  (void) z;
+  return;
+#else
   float rpx = x >= 0 ? x : 0;
   int offvp = x < 0 ? 1 : 0;
   float offsetx = x >= 0 ? 0 : x;
@@ -982,6 +993,7 @@ SoText2P::setRasterPos3f(GLfloat x, GLfloat y, GLfloat z)
 
   glRasterPos3f(rpx,rpy,z);
   if (offvp) { glBitmap(0, 0, 0, 0,offsetx,offsety, NULL); }
+#endif
 }
 
 #undef PRIVATE

@@ -370,6 +370,7 @@ SoTabPlaneDragger::valueChangedCB(void *, SoDragger * d)
 }
 
 // Doc in superclass.
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoTabPlaneDragger::GLRender(SoGLRenderAction * action)
 {
@@ -390,6 +391,7 @@ SoTabPlaneDragger::GLRender(SoGLRenderAction * action)
   }
   inherited::GLRender(action);
 }
+#endif
 
 /*!
   Signals the dragger to recalculate the size of its tabs. This method

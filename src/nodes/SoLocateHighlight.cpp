@@ -270,6 +270,7 @@ SoLocateHighlight::handleEvent(SoHandleEventAction * action)
 }
 
 // doc from parent
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoLocateHighlight::GLRenderBelowPath(SoGLRenderAction * action)
 {
@@ -281,8 +282,10 @@ SoLocateHighlight::GLRenderBelowPath(SoGLRenderAction * action)
   inherited::GLRenderBelowPath(action);
   state->pop();
 }
+#endif
 
 // doc from parent
+#if COIN_BUILD_LEGACY_GL_RENDERER
 void
 SoLocateHighlight::GLRenderInPath(SoGLRenderAction * action)
 {
@@ -294,6 +297,7 @@ SoLocateHighlight::GLRenderInPath(SoGLRenderAction * action)
   inherited::GLRenderInPath(action);
   state->pop();
 }
+#endif
 
 /*!
   Empty method in Coin. Can be used by subclasses to be told
