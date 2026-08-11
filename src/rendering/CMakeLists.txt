@@ -1,5 +1,6 @@
 # source files
 set(COIN_RENDERING_FILES
+	SoGLContext.cpp
 	SoGL.cpp
 	SoGLBigImage.cpp
 	SoGLDriverDatabase.cpp
@@ -21,6 +22,7 @@ set(COIN_RENDERING_FILES
 set(COIN_RENDERING_INTERNAL_FILES
 	SoGL.h
 	SoGL.cpp
+	SoGLContext.cpp
 	SoGLNurbs.h
 	SoGLNurbs.cpp
 	SoRenderManagerP.h

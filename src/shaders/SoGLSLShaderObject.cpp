@@ -31,6 +31,7 @@
 \**************************************************************************/
 
 #include "shaders/SoGLSLShaderObject.h"
+#include <Inventor/elements/SoMultiTextureImageElement.h>
 #include "coindefs.h"
 
 #include <Inventor/system/gl.h>
@@ -259,7 +260,9 @@ SoGLSLShaderObject::didOpenGLErrorOccur(const SbString & source)
 #include <cstdio>
 #include <Inventor/SbName.h>
 #include <Inventor/nodes/SoShaderParameter.h>
+#if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLMultiTextureImageElement.h>
+#endif
 #include <Inventor/elements/SoLightModelElement.h>
 #include <Inventor/actions/SoAction.h>
 #include <cstdio>

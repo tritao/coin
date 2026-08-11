@@ -31,6 +31,7 @@
 \**************************************************************************/
 
 #include "CoinOffscreenGLCanvas.cpp"
+#include "SoGLContext.cpp"
 #include "SoGL.cpp"
 #include "SoGLBigImage.cpp"
 #include "SoGLCubeMapImage.cpp"

@@ -80,9 +80,9 @@ jobs:
           sudo apt-get -y install freeglut3-dev
           cmake -S . -B cmake_build_dir -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release -DCOIN_BUILD_LEGACY_GL_RENDERER=ON -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_EXAMPLES=OFF -DCOIN_BUILD_DOCUMENTATION=OFF
       - name: Build EGL binding test
-        run: cmake --build cmake_build_dir --target EGLBindingTest GLSLRuntimeTest --config Release -- -j4
+        run: cmake --build cmake_build_dir --target EGLBindingTest GLSLRuntimeTest OffscreenReadbackTest --config Release -- -j4
       - name: Run core-profile OpenGL tests
-        run: ctest -C Release -R '^(EGLBindingTest|GLSLRuntimeTest)$' --output-on-failure
+        run: ctest -C Release -R '^(EGLBindingTest|GLSLRuntimeTest|OffscreenReadbackTest)$' --output-on-failure
         working-directory: cmake_build_dir
         env:
           COIN_EGL: 1
