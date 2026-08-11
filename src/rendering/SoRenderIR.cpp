@@ -208,6 +208,7 @@ SoDrawList::clear()
 {
   this->commands.clear();
   this->lightingSetups.clear();
+  this->pickLUT.clear();
   this->sortedOrder.clear();
   this->generation++;
 }
@@ -352,6 +353,77 @@ SoDrawList::buildSortedOrder(const SbMatrix & viewMatrix)
     [arr](int a, int b) {
       return arr[a].sortKey < arr[b].sortKey;
     });
+}
+
+void
+SoDrawList::buildPickLUT()
+{
+  this->pickLUT.clear();
+  this->pickLUTGeneration++;
+
+  for (int commandIndex = 0; commandIndex < this->getNumCommands(); ++commandIndex) {
+    SoRenderCommand & command = this->getCommand(commandIndex);
+    command.pick.pickLutBase = static_cast<uint32_t>(this->pickLUT.size());
+
+    if (!command.pick.elementRanges.empty()) {
+      for (const SoRenderElementRange & range : command.pick.elementRanges) {
+        SoPickLUTEntry entry;
+        entry.commandIndex = commandIndex;
+        entry.elementType = range.elementType;
+        entry.elementIndex = range.elementIndex;
+        entry.drawStart = range.drawStart;
+        entry.drawCount = range.drawCount;
+        this->pickLUT.push_back(entry);
+      }
+    }
+    else if (command.geometry.topology != SO_TOPOLOGY_POINTS ||
+             command.geometry.vertexCount != 0) {
+      SoPickLUTEntry entry;
+      entry.commandIndex = commandIndex;
+      entry.elementType = SO_PICK_WHOLE_BODY;
+      entry.elementIndex = 0;
+      entry.drawStart = 0;
+      entry.drawCount = 0;
+      this->pickLUT.push_back(entry);
+    }
+
+    command.pick.pickLutCount = static_cast<uint32_t>(this->pickLUT.size()) -
+                                command.pick.pickLutBase;
+  }
+}
+
+std::string
+SoDrawList::resolvePickIdentity(uint32_t lutIndex) const
+{
+  if (lutIndex == 0 || lutIndex > this->pickLUT.size()) {
+    return std::string();
+  }
+
+  const SoPickLUTEntry & entry = this->pickLUT[lutIndex - 1];
+  if (entry.commandIndex < 0 || entry.commandIndex >= this->getNumCommands()) {
+    return std::string();
+  }
+
+  const SoPickData & pick = this->getCommand(entry.commandIndex).pick;
+  if (pick.pickIdentity.empty()) {
+    return std::string();
+  }
+
+  std::string result = pick.pickIdentity;
+  switch (entry.elementType) {
+  case SO_PICK_FACE:
+    result += "Face" + std::to_string(entry.elementIndex + 1);
+    break;
+  case SO_PICK_EDGE:
+    result += "Edge" + std::to_string(entry.elementIndex + 1);
+    break;
+  case SO_PICK_VERTEX:
+    result += "Vertex" + std::to_string(entry.elementIndex + 1);
+    break;
+  case SO_PICK_WHOLE_BODY:
+    break;
+  }
+  return result;
 }
 
 uint64_t

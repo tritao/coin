@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 /*!
@@ -188,7 +189,9 @@ enum SoAlphaTestPolicy : uint8_t {
 
 // --- Render param flags (SoRenderParams::flags) ---
 static constexpr uint32_t SO_PARAM_CLEAR_WINDOW = 1u;
+static constexpr uint32_t SO_PARAM_INTERACTIVE  = 2u;  //!< Camera orbiting/panning — skip ID buffer
 static constexpr uint32_t SO_PARAM_CLEAR_DEPTH  = 4u;  //!< Clear depth buffer before rendering
+static constexpr uint32_t SO_PARAM_SKIP_ID      = 8u;  //!< Skip ID buffer rendering entirely
 
 /*!
   \struct SoTextureData
@@ -388,6 +391,70 @@ struct SoLightingData {
 };
 
 /*! 
+  \enum SoPickElementType
+  \brief Element types for pick identification.
+*/
+enum SoPickElementType : uint8_t {
+  SO_PICK_FACE = 0,
+  SO_PICK_EDGE = 1,
+  SO_PICK_VERTEX = 2,
+  SO_PICK_WHOLE_BODY = 3
+};
+
+/*! 
+  \struct SoRenderElementRange
+  \brief Maps one logical subelement to a draw subrange within a command.
+*/
+struct SoRenderElementRange {
+  SoPickElementType elementType = SO_PICK_WHOLE_BODY;
+  int elementIndex = -1;
+  int drawStart = 0;
+  int drawCount = 0;
+};
+
+/*! 
+  \struct SoPickData
+  \brief Per-command pick identification data for GPU ID-buffer picking.
+*/
+struct SoPickData {
+  uint32_t pickLutBase = 0;
+  uint32_t pickLutCount = 0;
+  std::string pickIdentity;
+  std::vector<SoRenderElementRange> elementRanges;
+};
+
+/*! 
+  \struct SoSelectionData
+  \brief Mutable selection and preselection state for a render command.
+*/
+struct SoSelectionData {
+  bool highlightWholeObject = false;
+  std::vector<int> highlightedElements;
+  SbVec4f highlightColor;
+  bool selectWholeObject = false;
+  std::vector<int> selectedElements;
+  SbVec4f selectionColor;
+
+  void setHighlightedElement(int element)
+  {
+    highlightedElements.clear();
+    if (element >= 0) highlightedElements.push_back(element);
+  }
+};
+
+/*! 
+  \struct SoPickLUTEntry
+  \brief Maps a sequential render ID to a draw command element.
+*/
+struct SoPickLUTEntry {
+  int commandIndex;
+  SoPickElementType elementType;
+  int elementIndex;
+  int drawStart;
+  int drawCount;
+};
+
+/*! 
   \struct SoRenderCommand
   \brief Complete description of a single draw call in the IR.
 */
@@ -405,6 +472,8 @@ struct SoRenderCommand {
   SoRenderPassType pass = SO_RENDERPASS_OPAQUE;
   SoLightingHandle lightingHandle = 0;
   SoPipelineKey    pipelineKey = 0;
+  SoPickData       pick;
+  SoSelectionData  selection;
   SoPixelTextData  pixelText;  //!< Placement for SO_MAT_IS_PIXEL_TEXT
 
   uint64_t         sortKey = 0; //!< Backend-computed key used by sorting.
@@ -452,6 +521,10 @@ public:
   const SoRenderCommand * begin() const;
   const SoRenderCommand * end() const;
 
+  //! Access the pick lookup table built from the current commands.
+  const std::vector<SoPickLUTEntry> & getPickLUT() const { return pickLUT; }
+  std::vector<SoPickLUTEntry> & getMutablePickLUT() { return pickLUT; }
+
   //! Build a sorted index array for correct render ordering.
   //! The draw list itself is NOT reordered — command indices stay stable.
   void buildSortedOrder(const SbMatrix & viewMatrix);
@@ -459,11 +532,20 @@ public:
   //! Get the sorted rendering order (indices into the command list).
   const std::vector<int> & getSortedOrder() const { return sortedOrder; }
 
+  //! Return the generation of the most recently built pick lookup table.
+  uint64_t getPickLUTGeneration() const { return pickLUTGeneration; }
+  //! Build stable 1-based IDs for whole-command and subelement picking.
+  void buildPickLUT();
+  //! Resolve a 1-based pick ID to its application identity.
+  std::string resolvePickIdentity(uint32_t lutIndex) const;
+
 private:
   std::vector<SoRenderCommand> commands;
   std::vector<SoLightingData> lightingSetups;
+  std::vector<SoPickLUTEntry> pickLUT;
   std::vector<int> sortedOrder;
   uint32_t generation = 0;
+  uint64_t pickLUTGeneration = 0;
 };
 
 #endif // COIN_SORENDERIR_H
