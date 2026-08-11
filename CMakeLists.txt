@@ -1069,6 +1069,8 @@ if(COIN_BUILD_VISUAL_TESTS)
     "raster_wide_line_basic,raster_line_pattern_basic,raster_points_basic,raster_wireframe_basic,image_basic")
   set(COIN_TEXT_VISUAL_SPECS
     "text2_layout_basic")
+  set(COIN_RENDER_LAYER_VISUAL_SPECS
+    "render_layer_viewport_basic,render_layer_depth_clear_basic")
   add_test(NAME visual_smoke COMMAND CoinVisualTests snapshot --help)
   set_tests_properties(visual_smoke PROPERTIES LABELS "visual-contract")
   if(COIN_BUILD_LEGACY_GL_RENDERER)
@@ -1168,6 +1170,26 @@ if(COIN_BUILD_VISUAL_TESTS)
   )
   set_tests_properties(visual_gl_drawlist_raster_core
     PROPERTIES LABELS "visual-render;visual-raster")
+  add_test(
+    NAME visual_gl_drawlist_layers_compat
+    COMMAND CoinVisualTests run
+      --renderer drawlist
+      --gl-profile compat
+      --only ${COIN_RENDER_LAYER_VISUAL_SPECS}
+      --artifacts-dir ${CMAKE_BINARY_DIR}/render_artifacts
+  )
+  set_tests_properties(visual_gl_drawlist_layers_compat
+    PROPERTIES LABELS "visual-render;visual-layers")
+  add_test(
+    NAME visual_gl_drawlist_layers_core
+    COMMAND CoinVisualTests run
+      --renderer drawlist
+      --gl-profile core
+      --only ${COIN_RENDER_LAYER_VISUAL_SPECS}
+      --artifacts-dir ${CMAKE_BINARY_DIR}/render_artifacts
+  )
+  set_tests_properties(visual_gl_drawlist_layers_core
+    PROPERTIES LABELS "visual-render;visual-layers")
   add_test(
     NAME visual_gl_invalid_legacy_profile
     COMMAND CoinVisualTests run
