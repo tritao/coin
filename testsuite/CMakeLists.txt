@@ -217,6 +217,11 @@ target_link_libraries(CoreTraversalTest PRIVATE Coin)
 add_test(NAME CoreTraversalTest COMMAND CoreTraversalTest)
 set_tests_properties(CoreTraversalTest PROPERTIES LABELS unit)
 
+add_executable(SceneManagerCoreTest scene-manager-core-test.cpp)
+target_link_libraries(SceneManagerCoreTest PRIVATE Coin)
+add_test(NAME SceneManagerCoreTest COMMAND SceneManagerCoreTest)
+set_tests_properties(SceneManagerCoreTest PROPERTIES LABELS unit)
+
 if(HAVE_EGL AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	coin_add_egl_test(NAME EGLBindingTest SOURCES EGLBindingTest.cpp
 		LABELS requires-egl)
