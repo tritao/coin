@@ -5,6 +5,10 @@
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
 
+#if COIN_HAVE_LEGACY_GL_RENDERER
+#error "SceneManagerCoreTest requires LegacyGL to be disabled"
+#endif
+
 static void
 renderManagerCallback(void *, SoRenderManager *)
 {

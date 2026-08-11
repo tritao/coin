@@ -201,14 +201,25 @@ target_include_directories(CoreTraversalTest PRIVATE
 )
 add_test(NAME CoreTraversalTest COMMAND CoreTraversalTest)
 
-add_executable(SceneManagerCoreTest scene-manager-core-test.cpp)
-target_link_libraries(SceneManagerCoreTest Coin ${COIN_TARGET_LINK_LIBRARIES})
-target_include_directories(SceneManagerCoreTest PRIVATE
+add_executable(LegacyGLABITest LegacyGLABITest.cpp)
+target_link_libraries(LegacyGLABITest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(LegacyGLABITest PRIVATE
 	${PROJECT_SOURCE_DIR}/include
 	${PROJECT_BINARY_DIR}/include
 	${COIN_TARGET_INCLUDE_DIRECTORIES}
 )
-add_test(NAME SceneManagerCoreTest COMMAND SceneManagerCoreTest)
+add_test(NAME LegacyGLABITest COMMAND LegacyGLABITest)
+
+if(NOT COIN_BUILD_LEGACY_GL_RENDERER)
+	add_executable(SceneManagerCoreTest SceneManagerCoreTest.cpp)
+	target_link_libraries(SceneManagerCoreTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+	target_include_directories(SceneManagerCoreTest PRIVATE
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES}
+	)
+	add_test(NAME SceneManagerCoreTest COMMAND SceneManagerCoreTest)
+endif()
 
 if(HAVE_EGL)
 	add_executable(EGLBindingTest EGLBindingTest.cpp)
