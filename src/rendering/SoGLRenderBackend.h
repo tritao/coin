@@ -123,12 +123,17 @@ private:
   GLint  uUseVertexColorLocation = -1;
   GLint  uTextureLocation = -1;
   GLint  uTexModColorLocation = -1;
+  GLint  uVertexColorAlphaIncludesOpacityLocation = -1;
   GLint  uQuadCenterLocation = -1;
   GLint  uTexSizeLocation = -1;
   GLint  uVpSizeLocation = -1;
   GLint  uStipplePeriodLocation = -1;
   GLint  uShadingModelLocation = -1;
   GLint  uAmbientLightLocation = -1;
+  GLint  uMaterialAmbientLocation = -1;
+  GLint  uMaterialSpecularLocation = -1;
+  GLint  uMaterialShininessLocation = -1;
+  GLint  uTwoSidedLightingLocation = -1;
   GLint  uLightCountLocation = -1;
   GLint  uLightTypeLocation = -1;
   GLint  uLightColorLocation = -1;

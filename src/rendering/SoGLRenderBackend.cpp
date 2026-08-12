@@ -768,6 +768,10 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   const SbVec4f & diffuse = cmd.material.diffuse;
   this->glue->glUniform4f(this->uColorLocation,
               diffuse[0], diffuse[1], diffuse[2], diffuse[3]);
+  this->glue->glUniform1f(this->uVertexColorAlphaIncludesOpacityLocation,
+                          cmd.material.vertexColorAlphaIncludesOpacity ? 1.0f : 0.0f);
+  this->glue->glUniform1i(this->uShadingModelLocation,
+                          static_cast<GLint>(cmd.material.shadingModel));
   this->applyLighting(drawlist, cmd);
 
   GLenum prim = topologyToGL(cmd.geometry.topology);
@@ -815,6 +819,16 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   // Per-command emissive color (added to lighting result)
   const SbVec4f & ec = cmd.material.emissive;
   this->glue->glUniform3f(this->uEmissiveColorLocation, ec[0], ec[1], ec[2]);
+  const SbVec4f & ambient = cmd.material.ambient;
+  this->glue->glUniform3f(this->uMaterialAmbientLocation,
+                          ambient[0], ambient[1], ambient[2]);
+  const SbVec4f & specular = cmd.material.specular;
+  this->glue->glUniform3f(this->uMaterialSpecularLocation,
+                          specular[0], specular[1], specular[2]);
+  this->glue->glUniform1f(this->uMaterialShininessLocation,
+                          cmd.material.shininess);
+  this->glue->glUniform1f(this->uTwoSidedLightingLocation,
+                          cmd.material.twoSidedLighting ? 1.0f : 0.0f);
 
   // Wireframe draw style: render triangles as lines
   uint8_t fillMode = cmd.state.raster.fillMode;
@@ -1329,12 +1343,17 @@ SoGLRenderBackend::createShaders()
   this->uUseVertexColorLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_useVertexColor");
   this->uTextureLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_texture");
   this->uTexModColorLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_texModColor");
+  this->uVertexColorAlphaIncludesOpacityLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_vertexColorAlphaIncludesOpacity");
   this->uQuadCenterLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_quadCenter");
   this->uTexSizeLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_texSize");
   this->uVpSizeLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_vpSize");
   this->uStipplePeriodLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_stipplePeriod");
   this->uShadingModelLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_shadingModel");
   this->uAmbientLightLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_ambientLight");
+  this->uMaterialAmbientLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_materialAmbient");
+  this->uMaterialSpecularLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_materialSpecular");
+  this->uMaterialShininessLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_materialShininess");
+  this->uTwoSidedLightingLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_twoSidedLighting");
   this->uLightCountLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_lightCount");
   this->uLightTypeLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_lightType[0]");
   this->uLightColorLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_lightColor[0]");
