@@ -12,6 +12,8 @@
 #include <Inventor/elements/SoLightModelElement.h>
 #include <Inventor/elements/SoLinePatternElement.h>
 #include <Inventor/elements/SoLineWidthElement.h>
+#include <Inventor/elements/SoMultiTextureEnabledElement.h>
+#include <Inventor/elements/SoMultiTextureImageElement.h>
 #include <Inventor/elements/SoPointSizeElement.h>
 #include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoProjectionMatrixElement.h>
@@ -445,15 +447,31 @@ SoIRDumpFirstN(const SoDrawList & drawlist, int count)
 
 namespace SoRenderIR {
 
+static SoTextureWrap
+textureWrapFromLegacy(SoMultiTextureImageElement::Wrap wrap)
+{
+  switch (wrap) {
+  case SoMultiTextureImageElement::REPEAT:
+    return SO_TEXTURE_WRAP_REPEAT;
+  case SoMultiTextureImageElement::CLAMP_TO_BORDER:
+    return SO_TEXTURE_WRAP_CLAMP_TO_BORDER;
+  case SoMultiTextureImageElement::CLAMP:
+  default:
+    // GL_CLAMP is the historical Coin spelling for edge clamping here.
+    return SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+  }
+}
+
 void
-fillMaterialFromState(SoState * state, SoMaterialData & material)
+fillMaterialFromState(SoState * state, SoMaterialData & material,
+                      int materialIndex)
 {
   SoState * mutableState = state;
-  const SbColor & diffuse = SoLazyElement::getDiffuse(mutableState, 0);
+  const SbColor & diffuse = SoLazyElement::getDiffuse(mutableState, materialIndex);
   const SbColor & ambient = SoLazyElement::getAmbient(mutableState);
   const SbColor & specular = SoLazyElement::getSpecular(mutableState);
   const SbColor & emissive = SoLazyElement::getEmissive(mutableState);
-  const float transparency = SoLazyElement::getTransparency(mutableState, 0);
+  const float transparency = SoLazyElement::getTransparency(mutableState, materialIndex);
 
   // When light model is BASE_COLOR, use emissive as the display color
   // and flag for flat (unlit) rendering. This handles materials that only
@@ -484,6 +502,44 @@ fillMaterialFromState(SoState * state, SoMaterialData & material)
 }
 
 void
+fillTextureFromState(SoState * state, SoIRRenderAction * action,
+                     SoMaterialData & material)
+{
+  if (!state || !action || !SoMultiTextureEnabledElement::get(state, 0)) {
+    return;
+  }
+
+  SbVec2s size;
+  int numComponents = 0;
+  SoMultiTextureImageElement::Wrap wrapS;
+  SoMultiTextureImageElement::Wrap wrapT;
+  SoMultiTextureImageElement::Model model;
+  SbColor blendColor;
+  const unsigned char * bytes = SoMultiTextureImageElement::get(
+    state, 0, size, numComponents, wrapS, wrapT, model, blendColor);
+  (void) model;
+  (void) blendColor;
+  if (!bytes || size[0] <= 0 || size[1] <= 0 ||
+      numComponents < 1 || numComponents > 4) {
+    return;
+  }
+
+  const size_t pixelCount = static_cast<size_t>(size[0]) *
+                            static_cast<size_t>(size[1]);
+  const size_t byteCount = pixelCount * static_cast<size_t>(numComponents);
+  const unsigned char * copy = action->retainTextureData(bytes, byteCount);
+  if (!copy) return;
+
+  material.texture.pixels = copy;
+  material.texture.width = size[0];
+  material.texture.height = size[1];
+  material.texture.numComponents = numComponents;
+  material.texture.wrapS = textureWrapFromLegacy(wrapS);
+  material.texture.wrapT = textureWrapFromLegacy(wrapT);
+  material.flags |= SO_MAT_HAS_TEXTURE;
+}
+
+void
 fillRenderStateFromState(SoState * state, SoRenderState & rs)
 {
   SoState * mutableState = state;
@@ -497,6 +553,7 @@ fillRenderStateFromState(SoState * state, SoRenderState & rs)
   rs.depth.enabled = depthtest;
   rs.depth.writeEnabled = depthwrite;
   rs.depth.func = static_cast<SoDepthFunction>(depthfunc);
+  rs.depth.range = range;
 
   int srcfactor = 0;
   int dstfactor = 0;

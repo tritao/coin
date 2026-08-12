@@ -5,6 +5,7 @@
 
 #include <Inventor/SbBasic.h>
 #include <Inventor/SbMatrix.h>
+#include <Inventor/SbVec2f.h>
 #include <Inventor/SbVec3f.h>
 #include <Inventor/SbVec4f.h>
 
@@ -241,6 +242,7 @@ struct SoDepthState {
   SbBool  enabled = TRUE;
   SbBool  writeEnabled = TRUE;
   SoDepthFunction func = SO_DEPTH_LEQUAL;
+  SbVec2f range = SbVec2f(0.0f, 1.0f);
 };
 
 /*!
