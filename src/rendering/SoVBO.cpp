@@ -269,6 +269,18 @@ SoVBO::setBufferData(const GLvoid * data, intptr_t size, SbUniqueId dataid)
   this->didalloc = FALSE;
 }
 
+void
+SoVBO::setVertexLayout(const SoVertexLayout& layout)
+{
+  this->vertexlayout = layout;
+}
+
+SoVertexLayout&
+SoVBO::getVertexLayout()
+{
+  return this->vertexlayout;
+}
+
 /*!
   Returns the buffer data id.
 
