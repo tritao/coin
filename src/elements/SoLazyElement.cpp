@@ -193,6 +193,7 @@ SoLazyElement::init(SoState * COIN_UNUSED_ARG(state))
   this->coinstate.culling = FALSE;
   this->coinstate.flatshading = FALSE;
   this->coinstate.alphatestfunc = 0;
+  this->coinstate.semanticalphatestfunc = 0;
   this->coinstate.alphatestvalue = 0.5f;
 }
 
@@ -615,6 +616,14 @@ SoLazyElement::getAlphaTest(SoState * state, float & value)
   return elem->coinstate.alphatestfunc;
 }
 
+int
+SoLazyElement::getAlphaTestSemantic(SoState * state, float & value)
+{
+  SoLazyElement * elem = getInstance(state);
+  value = elem->coinstate.alphatestvalue;
+  return elem->coinstate.semanticalphatestfunc;
+}
+
 // ! FIXME: write doc
 
 int32_t
@@ -897,6 +906,21 @@ SoLazyElement::setAlphaTest(SoState * state, int func, float value)
   }
 }
 
+void
+SoLazyElement::setAlphaTestSemantic(SoState * state, int function, float value)
+{
+  SoLazyElement * elem = SoLazyElement::getInstance(state);
+  if (elem->coinstate.semanticalphatestfunc != function ||
+      elem->coinstate.alphatestvalue != value) {
+    elem = getWInstance(state);
+    elem->setAlphaTestSemanticElt(function, value);
+    if (state->isCacheOpen()) elem->lazyDidSet(ALPHATEST_MASK);
+  }
+  else if (state->isCacheOpen()) {
+    elem->lazyDidntSet(ALPHATEST_MASK);
+  }
+}
+
 
 // ! FIXME: write doc
 
@@ -1146,6 +1170,13 @@ void
 SoLazyElement::setAlphaTestElt(int func, float value)
 {
   this->coinstate.alphatestfunc = func;
+  this->coinstate.alphatestvalue = value;
+}
+
+void
+SoLazyElement::setAlphaTestSemanticElt(int function, float value)
+{
+  this->coinstate.semanticalphatestfunc = function;
   this->coinstate.alphatestvalue = value;
 }
 
