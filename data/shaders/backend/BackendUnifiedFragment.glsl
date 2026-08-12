@@ -5,6 +5,7 @@ const int COIN_MAX_LIGHTS = 8;
 uniform float u_renderMode;
 uniform sampler2D u_texture;
 uniform vec4 u_texModColor;
+uniform vec2 u_pixelOrigin;
 uniform vec4 u_color;
 uniform float u_useVertexColor;
 uniform float u_vertexColorAlphaIncludesOpacity;
@@ -84,6 +85,19 @@ void main()
     vec4 outputColor = composeTexture(c);
     if (!passesAlphaTest(outputColor.a)) discard;
     fragColor = outputColor;
+    return;
+  }
+
+  if (u_renderMode > 3.5) {
+    ivec2 pixel = ivec2(floor(gl_FragCoord.xy - u_pixelOrigin));
+    ivec2 textureSizePixels = textureSize(u_texture, 0);
+    if (pixel.x < 0 || pixel.y < 0 ||
+        pixel.x >= textureSizePixels.x || pixel.y >= textureSizePixels.y) {
+      discard;
+    }
+    vec4 c = texelFetch(u_texture, pixel, 0);
+    if (c.a < 0.3) discard;
+    fragColor = composeTexture(c);
     return;
   }
 

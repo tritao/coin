@@ -31,6 +31,7 @@ uniform vec2 u_lightSpotParams[COIN_MAX_LIGHTS];
 uniform vec3 u_quadCenter;
 uniform vec2 u_texSize;
 uniform vec2 u_vpSize;
+uniform vec2 u_pixelOrigin;
 
 out vec3 v_litColor;
 out vec4 v_color;
@@ -101,7 +102,19 @@ void main()
   v_litColor = vec3(0.0);
   v_texcoord = a_texcoord;
 
-  if (u_renderMode > 1.5 && u_renderMode < 2.5) {
+  if (u_renderMode > 3.5) {
+    // SoText2 is rasterized into a CPU glyph texture.  Place that texture at
+    // the exact integer framebuffer origin recorded by the producer while
+    // retaining the projected depth of the text origin.
+    vec2 pixelPosition = u_pixelOrigin + a_texcoord * u_texSize;
+    vec2 ndcPosition = 2.0 * pixelPosition / u_vpSize - 1.0;
+    vec4 centerClip = u_proj * u_view * u_model * vec4(u_quadCenter, 1.0);
+    gl_Position = vec4(ndcPosition * centerClip.w,
+                       centerClip.z, centerClip.w);
+    v_litColor = v_color.rgb;
+    v_lineDistance = 0.0;
+  }
+  else if (u_renderMode > 1.5 && u_renderMode < 2.5) {
     vec4 centerClip = u_proj * u_view * u_model * vec4(u_quadCenter, 1.0);
     vec2 pixelOffset = (a_texcoord - vec2(0.5)) * u_texSize;
     vec2 ndcOffset = 2.0 * pixelOffset / u_vpSize;

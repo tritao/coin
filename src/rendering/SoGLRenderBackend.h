@@ -173,6 +173,7 @@ private:
   GLint  uQuadCenterLocation = -1;
   GLint  uTexSizeLocation = -1;
   GLint  uVpSizeLocation = -1;
+  GLint  uPixelOriginLocation = -1;
   GLint  uStipplePeriodLocation = -1;
   GLint  uShadingModelLocation = -1;
   GLint  uAmbientLightLocation = -1;

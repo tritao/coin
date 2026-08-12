@@ -995,11 +995,15 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
 
   // Textured commands: set renderMode and bind texture (same shader program)
   if (isTextured) {
-    // renderMode: 2=billboard, 3=world-space textured
-    this->glue->glUniform1f(this->uRenderModeLocation, isBillboard ? 2.0f : 3.0f);
+    bool isPixelText = (cmd.material.flags & SO_MAT_IS_PIXEL_TEXT) != 0;
+    // renderMode: 2=billboard, 3=world-space textured, 4=pixel text
+    this->glue->glUniform1f(this->uRenderModeLocation,
+                            isPixelText ? 4.0f : isBillboard ? 2.0f : 3.0f);
 
-    if (isBillboard) {
-      // Compute quad center from vertex positions (average of all vertices)
+    if (isPixelText || isBillboard) {
+      // Compute the projected quad center from the command geometry. Pixel
+      // text uses this only for depth; its x/y placement comes from the
+      // integer framebuffer origin below.
       float cx = 0, cy = 0, cz = 0;
       GLsizei stride = static_cast<GLsizei>(
         cmd.geometry.vertexStride ? cmd.geometry.vertexStride : sizeof(float) * 3);
@@ -1008,9 +1012,26 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
           reinterpret_cast<const char *>(cmd.geometry.positions) + vi * stride);
         cx += p[0]; cy += p[1]; cz += p[2];
       }
-      float n = static_cast<float>(cmd.geometry.vertexCount);
-      this->glue->glUniform3f(this->uQuadCenterLocation, cx / n, cy / n, cz / n);
+      const float n = static_cast<float>(cmd.geometry.vertexCount);
+      this->glue->glUniform3f(this->uQuadCenterLocation,
+                              cx / n, cy / n, cz / n);
+    }
 
+    if (isPixelText) {
+      this->glue->glUniform2f(
+        this->uPixelOriginLocation,
+        static_cast<float>(cmd.pixelText.originX),
+        static_cast<float>(cmd.pixelText.originY));
+      this->glue->glUniform2f(
+        this->uTexSizeLocation,
+        static_cast<float>(cmd.material.texture.width),
+        static_cast<float>(cmd.material.texture.height));
+      SbVec2s vpSz = coin_command_viewport_size(cmd, params);
+      this->glue->glUniform2f(this->uVpSizeLocation,
+                              static_cast<float>(vpSz[0]),
+                              static_cast<float>(vpSz[1]));
+    }
+    else if (isBillboard) {
       // Texture pixel size and viewport size
       this->glue->glUniform2f(this->uTexSizeLocation,
                   static_cast<float>(cmd.material.texture.width),
@@ -1027,7 +1048,7 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
     // Modulate texture with diffuse color (MODULATE mode for NaviCube labels).
     // Billboard textures (SoImage, SoText2) use white modulation (pass-through).
     const SbVec4f & diff = cmd.material.diffuse;
-    if (isBillboard || hasVertexColors) {
+    if (isBillboard || isPixelText || hasVertexColors) {
       this->glue->glUniform4f(this->uTexModColorLocation, 1.0f, 1.0f, 1.0f, 1.0f);
     } else {
       this->glue->glUniform4f(this->uTexModColorLocation, diff[0], diff[1], diff[2], diff[3]);
@@ -1486,6 +1507,7 @@ SoGLRenderBackend::createShaders()
   this->uQuadCenterLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_quadCenter");
   this->uTexSizeLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_texSize");
   this->uVpSizeLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_vpSize");
+  this->uPixelOriginLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_pixelOrigin");
   this->uStipplePeriodLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_stipplePeriod");
   this->uShadingModelLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_shadingModel");
   this->uAmbientLightLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_ambientLight");

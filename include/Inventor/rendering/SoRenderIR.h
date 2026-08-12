@@ -85,6 +85,7 @@ struct SoGeometryDesc {
 // --- Material flags (SoMaterialData::flags) ---
 static constexpr uint32_t SO_MAT_HAS_TEXTURE = 0x1;  //!< Command carries embedded texture data
 static constexpr uint32_t SO_MAT_IS_BILLBOARD = 0x2;  //!< Screen-space billboard sizing
+static constexpr uint32_t SO_MAT_IS_PIXEL_TEXT = 0x4; //!< Integer-aligned pixel text
 
 // --- Feature flags (SoMaterialData::featureFlags) ---
 static constexpr uint32_t SO_FEAT_BASE_COLOR = 0x1;   //!< Flat/unlit rendering (BASE_COLOR light model)
@@ -239,6 +240,14 @@ struct SoMaterialData {
   uint32_t flags = 0;
   uint32_t featureFlags = 0;
   bool     twoSidedLighting = false;
+};
+
+/*! \struct SoPixelTextData
+  \brief Pixel-space placement metadata for a text texture.
+*/
+struct SoPixelTextData {
+  int originX = 0;
+  int originY = 0;
 };
 
 /*!
@@ -396,6 +405,7 @@ struct SoRenderCommand {
   SoRenderPassType pass = SO_RENDERPASS_OPAQUE;
   SoLightingHandle lightingHandle = 0;
   SoPipelineKey    pipelineKey = 0;
+  SoPixelTextData  pixelText;  //!< Placement for SO_MAT_IS_PIXEL_TEXT
 
   uint64_t         sortKey = 0; //!< Backend-computed key used by sorting.
   void *           userData = nullptr; //!< Opaque, non-owned producer data.
