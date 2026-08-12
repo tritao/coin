@@ -146,7 +146,6 @@ public:
   static void setTwosideLighting(SoState * state, SbBool onoff);
   static void setShadeModel(SoState * state, SbBool flatshading);
   static void setAlphaTest(SoState * state, int func, float value);
-  static void setAlphaTestSemantic(SoState * state, int function, float value);
 
   static const SbColor & getDiffuse(SoState* state, int index);
   static float getTransparency(SoState*, int index);
@@ -165,7 +164,6 @@ public:
   
   static int32_t getLightModel(SoState*);
   static int getAlphaTest(SoState * state, float & value);
-  static int getAlphaTestSemantic(SoState * state, float & value);
   static SbBool getTwoSidedLighting(SoState * state);
 
   int32_t getNumDiffuse(void) const;
@@ -238,7 +236,6 @@ protected:
     SbBool culling;
     SbBool flatshading;
     int alphatestfunc;
-    int semanticalphatestfunc;
     float alphatestvalue;
   } coinstate;
 
@@ -280,10 +277,10 @@ protected:
   virtual void setTwosideLightingElt(SbBool onoff);
   virtual void setShadeModelElt(SbBool flatshading);
   virtual void setAlphaTestElt(int func, float value);
-  virtual void setAlphaTestSemanticElt(int function, float value);
 
 private:
-  SoLazyElementP * pimpl; // for future use
+  friend class SoLazyElementP;
+  SoLazyElementP * pimpl = nullptr;
 
 };
 

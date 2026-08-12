@@ -219,6 +219,7 @@
 
 #include "tidbitsp.h"
 #include "rendering/SoGL.h"
+#include "rendering/SoTextureQualityPolicy.h"
 #include "elements/SoTextureScaleQualityElement.h"
 #include "glue/GLUWrapper.h"
 #include "glue/glp.h"
@@ -233,11 +234,7 @@
 
 // *************************************************************************
 
-static float DEFAULT_LINEAR_LIMIT = 0.2f;
-static float DEFAULT_MIPMAP_LIMIT = 0.5f;
-static float DEFAULT_LINEAR_MIPMAP_LIMIT = 0.8f;
 static float DEFAULT_SCALEUP_LIMIT = 0.7f;
-static float DEFAULT_ANISOTROPIC_LIMIT = 0.85f;
 
 static float COIN_TEX2_LINEAR_LIMIT = -1.0f;
 static float COIN_TEX2_MIPMAP_LIMIT = -1.0f;
@@ -741,26 +738,16 @@ SoGLImage::SoGLImage(void)
   PRIVATE(this)->owner = this;
 
   // check environment variables
+  const CoinTextureQualityLimits qualityLimits =
+    coin_get_texture_quality_limits();
   if (COIN_TEX2_LINEAR_LIMIT < 0.0f) {
-    const char *env = coin_getenv("COIN_TEX2_LINEAR_LIMIT");
-    if (env) COIN_TEX2_LINEAR_LIMIT = (float) atof(env);
-    if (COIN_TEX2_LINEAR_LIMIT < 0.0f || COIN_TEX2_LINEAR_LIMIT > 1.0f) {
-      COIN_TEX2_LINEAR_LIMIT = DEFAULT_LINEAR_LIMIT;
-    }
+    COIN_TEX2_LINEAR_LIMIT = qualityLimits.linear;
   }
   if (COIN_TEX2_MIPMAP_LIMIT < 0.0f) {
-    const char *env = coin_getenv("COIN_TEX2_MIPMAP_LIMIT");
-    if (env) COIN_TEX2_MIPMAP_LIMIT = (float) atof(env);
-    if (COIN_TEX2_MIPMAP_LIMIT < 0.0f || COIN_TEX2_MIPMAP_LIMIT > 1.0f) {
-      COIN_TEX2_MIPMAP_LIMIT = DEFAULT_MIPMAP_LIMIT;
-    }
+    COIN_TEX2_MIPMAP_LIMIT = qualityLimits.mipmap;
   }
   if (COIN_TEX2_LINEAR_MIPMAP_LIMIT < 0.0f) {
-    const char *env = coin_getenv("COIN_TEX2_LINEAR_MIPMAP_LIMIT");
-    if (env) COIN_TEX2_LINEAR_MIPMAP_LIMIT = (float) atof(env);
-    if (COIN_TEX2_LINEAR_MIPMAP_LIMIT < 0.0f || COIN_TEX2_LINEAR_MIPMAP_LIMIT > 1.0f) {
-      COIN_TEX2_LINEAR_MIPMAP_LIMIT = DEFAULT_LINEAR_MIPMAP_LIMIT;
-    }
+    COIN_TEX2_LINEAR_MIPMAP_LIMIT = qualityLimits.linearMipmap;
   }
 
   if (COIN_TEX2_SCALEUP_LIMIT < 0.0f) {
@@ -794,9 +781,7 @@ SoGLImage::SoGLImage(void)
     else COIN_ENABLE_CONFORMANT_GL_CLAMP = 0;
   }
   if (COIN_TEX2_ANISOTROPIC_LIMIT < 0.0f) {
-    const char *env = coin_getenv("COIN_TEX2_ANISOTROPIC_LIMIT");
-    if (env) COIN_TEX2_ANISOTROPIC_LIMIT = (float) atof(env);
-    else COIN_TEX2_ANISOTROPIC_LIMIT = DEFAULT_ANISOTROPIC_LIMIT;
+    COIN_TEX2_ANISOTROPIC_LIMIT = qualityLimits.anisotropic;
   }
 }
 

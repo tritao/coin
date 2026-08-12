@@ -215,7 +215,8 @@ private:
     SoRenderCommand command = {};
     this->fillGeometry(command.geometry);
     SoRenderIR::fillCommandStateFromState(
-      this->action->getState(), this->action->getMutableDrawList(), command);
+      this->action->getState(), this->action,
+      this->action->getMutableDrawList(), command);
     command.material.vertexColorAlphaIncludesOpacity =
       command.geometry.colors != nullptr;
     command.userData = this->shape;

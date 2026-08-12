@@ -99,7 +99,6 @@ class SoVBO;
 #include <Inventor/elements/SoCoordinateElement.h>
 #include <Inventor/elements/SoMultiTextureCoordinateElement.h>
 #include <Inventor/elements/SoNormalElement.h>
-
 #include <Inventor/actions/SoCallbackAction.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
@@ -126,6 +125,7 @@ class SoVBO;
 #include <Inventor/errors/SoDebugError.h>
 
 #include "nodes/SoSubNodeP.h"
+#include "elements/SoLazyElementP.h"
 #if COIN_BUILD_LEGACY_GL_RENDERER
 #include "rendering/SoVBO.h"
 #endif
@@ -621,10 +621,9 @@ SoVertexProperty::updateMaterial(SoState * state, uint32_t overrideflags, SbBool
   int num = this->orderedRGBA.getNum();
   if (num > 0 && 
       !TEST_OVERRIDE(DIFFUSE_COLOR, overrideflags)) {
-    
-    SoLazyElement::setPacked(state, this, num,
-                             this->orderedRGBA.getValues(0),
-                             PRIVATE(this)->transparent);
+    SoLazyElementP::setPackedVertexColors(
+      state, this, num, this->orderedRGBA.getValues(0),
+      PRIVATE(this)->transparent);
     if (this->isOverride()) {
       SoOverrideElement::setDiffuseColorOverride(state, this, TRUE);
     }

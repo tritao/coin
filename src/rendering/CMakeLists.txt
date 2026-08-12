@@ -53,6 +53,7 @@ set(COIN_RENDERING_INTERNAL_FILES
 	CoinGLReadback.h
 	SoRenderIRP.h
 	SoRenderPlan.h
+	SoTextureQualityPolicy.h
 	SoRenderBackend.h
 	SoGLRenderBackend.h
 )
