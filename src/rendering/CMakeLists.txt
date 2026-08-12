@@ -52,6 +52,7 @@ set(COIN_RENDERING_INTERNAL_FILES
 	CoinOffscreenGLCanvas.cpp
 	SoRenderIRP.h
 	SoRenderPlan.h
+	SoTextureQualityPolicy.h
 	SoRenderBackend.h
 	SoGLRenderBackend.h
 )

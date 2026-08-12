@@ -72,8 +72,11 @@
 
 #include <Inventor/elements/SoLazyElement.h>
 
+#include "elements/SoLazyElementP.h"
+
 #include <cassert>
 #include <cstring>
+#include <algorithm>
 
 #include <Inventor/elements/SoShapeStyleElement.h>
 #if COIN_BUILD_LEGACY_GL_RENDERER
@@ -156,6 +159,8 @@ SoLazyElement::initClass()
 
 SoLazyElement::~SoLazyElement()
 {
+  delete this->pimpl;
+  this->pimpl = NULL;
 }
 
 // ! FIXME: write doc
@@ -163,6 +168,9 @@ SoLazyElement::~SoLazyElement()
 void
 SoLazyElement::init(SoState * COIN_UNUSED_ARG(state))
 {
+  if (!this->pimpl) this->pimpl = new SoLazyElementP;
+  this->pimpl->packedColor = SoLazyElementP::PackedColorState();
+  this->pimpl->semanticAlphaTest = SoLazyElementP::SemanticAlphaTestState();
   this->coinstate.ambient = this->getDefaultAmbient();
   this->coinstate.specular = this->getDefaultSpecular();
   this->coinstate.emissive = this->getDefaultEmissive();
@@ -193,7 +201,6 @@ SoLazyElement::init(SoState * COIN_UNUSED_ARG(state))
   this->coinstate.culling = FALSE;
   this->coinstate.flatshading = FALSE;
   this->coinstate.alphatestfunc = 0;
-  this->coinstate.semanticalphatestfunc = 0;
   this->coinstate.alphatestvalue = 0.5f;
 }
 
@@ -205,6 +212,9 @@ SoLazyElement::push(SoState *state)
   inherited::push(state);
   const SoLazyElement * prev = coin_assert_cast<const SoLazyElement *>(this->getNextInStack());
   this->coinstate = prev->coinstate;
+  if (!this->pimpl) this->pimpl = new SoLazyElementP;
+  if (prev->pimpl) *this->pimpl = *prev->pimpl;
+  else *this->pimpl = SoLazyElementP();
 }
 
 
@@ -254,6 +264,7 @@ SoLazyElement::setDiffuse(SoState * state, SoNode * node, int32_t numcolors,
   if (numcolors && (elem->coinstate.diffusenodeid !=
                     get_diffuse_node_id(node, numcolors, colors))) {
     elem = getWInstance(state);
+    SoLazyElementP::clearPackedVertexColorState(state);
     elem->setDiffuseElt(node, numcolors, colors, packer);
     if (state->isCacheOpen()) elem->lazyDidSet(DIFFUSE_MASK);
   }
@@ -277,6 +288,7 @@ SoLazyElement::setTransparency(SoState *state, SoNode *node, int32_t numvalues,
   if (numvalues && (elem->coinstate.transpnodeid !=
                     get_transp_node_id(node, numvalues, transparency))) {
     elem = getWInstance(state);
+    SoLazyElementP::clearPackedVertexColorState(state);
     elem->setTranspElt(node, numvalues, transparency, packer);
     if (state->isCacheOpen()) elem->lazyDidSet(TRANSPARENCY_MASK);
   }
@@ -301,6 +313,7 @@ SoLazyElement::setPacked(SoState * state, SoNode * node,
   SoLazyElement * elem = SoLazyElement::getInstance(state);
   if (numcolors && elem->coinstate.diffusenodeid != node->getNodeId()) {
     elem = getWInstance(state);
+    SoLazyElementP::clearPackedVertexColorState(state);
     elem->setPackedElt(node, numcolors, colors, packedtransparency);
     if (state->isCacheOpen()) elem->lazyDidSet(TRANSPARENCY_MASK|DIFFUSE_MASK);
   }
@@ -308,6 +321,86 @@ SoLazyElement::setPacked(SoState * state, SoNode * node,
     elem->lazyDidntSet(TRANSPARENCY_MASK|DIFFUSE_MASK);
   }
   SoShapeStyleElement::setTransparentMaterial(state, elem->coinstate.istransparent);
+}
+
+void
+SoLazyElementP::setPackedVertexColors(
+  SoState * state, SoNode * node, int32_t numcolors,
+  const uint32_t * colors, const SbBool packedtransparency)
+{
+  SbList<float> inheritedOpacities;
+  SoLazyElementP::capturePackedVertexColorOpacities(
+    state, inheritedOpacities);
+  SoLazyElement::setPacked(state, node, numcolors, colors,
+                           packedtransparency);
+  SoLazyElementP::setPackedVertexColorState(state, inheritedOpacities);
+}
+
+void
+SoLazyElementP::capturePackedVertexColorOpacities(
+  SoState * state, SbList<float> & opacities)
+{
+  opacities.truncate(0);
+  SoLazyElement * lazy = SoLazyElement::getInstance(state);
+  if (lazy->pimpl && lazy->pimpl->packedColor.fromVertexProperty) {
+    opacities = lazy->pimpl->packedColor.inheritedOpacities;
+    return;
+  }
+
+  // A packed color written by another node is vertex data, not a material
+  // opacity source. Start a new composition from neutral opacity.
+  if (lazy->isPacked()) {
+    opacities.append(1.0f);
+    return;
+  }
+
+  const int count = std::max(1, lazy->getNumTransparencies());
+  for (int i = 0; i < count; ++i) {
+    opacities.append(1.0f - SoLazyElement::getTransparency(state, i));
+  }
+}
+
+void
+SoLazyElementP::setPackedVertexColorState(
+  SoState * state, const SbList<float> & opacities)
+{
+  SoLazyElement * lazy = SoLazyElement::getWInstance(state);
+  if (!lazy->pimpl) lazy->pimpl = new SoLazyElementP;
+  lazy->pimpl->packedColor.fromVertexProperty = opacities.getLength() > 0;
+  lazy->pimpl->packedColor.inheritedOpacities = opacities;
+}
+
+void
+SoLazyElementP::clearPackedVertexColorState(SoState * state)
+{
+  SoLazyElement * lazy = SoLazyElement::getWInstance(state);
+  if (!lazy->pimpl) lazy->pimpl = new SoLazyElementP;
+  lazy->pimpl->packedColor.fromVertexProperty = FALSE;
+  lazy->pimpl->packedColor.inheritedOpacities.truncate(0);
+}
+
+SbBool
+SoLazyElementP::hasPackedVertexColorState(SoState * state)
+{
+  const SoLazyElement * lazy = SoLazyElement::getInstance(state);
+  return lazy->pimpl && lazy->pimpl->packedColor.fromVertexProperty &&
+    lazy->isPacked();
+}
+
+float
+SoLazyElementP::getPackedVertexColorOpacity(SoState * state,
+                                            const int materialIndex)
+{
+  const SoLazyElement * lazy = SoLazyElement::getInstance(state);
+  if (!lazy->pimpl || !lazy->pimpl->packedColor.fromVertexProperty ||
+      !lazy->isPacked() ||
+      lazy->pimpl->packedColor.inheritedOpacities.getLength() == 0) {
+    return 1.0f;
+  }
+  const int index = std::max(
+    0, std::min(materialIndex,
+                lazy->pimpl->packedColor.inheritedOpacities.getLength() - 1));
+  return lazy->pimpl->packedColor.inheritedOpacities[index];
 }
 
 // ! FIXME: write doc
@@ -319,6 +412,7 @@ SoLazyElement::setColorIndices(SoState *state, SoNode *node,
   SoLazyElement * elem = SoLazyElement::getInstance(state);
   if (numindices && elem->coinstate.diffusenodeid != node->getNodeId()) {
     elem = getWInstance(state);
+    SoLazyElementP::clearPackedVertexColorState(state);
     elem->setColorIndexElt(node, numindices, indices);
     if (state->isCacheOpen()) elem->lazyDidSet(DIFFUSE_MASK);
   }
@@ -617,11 +711,15 @@ SoLazyElement::getAlphaTest(SoState * state, float & value)
 }
 
 int
-SoLazyElement::getAlphaTestSemantic(SoState * state, float & value)
+SoLazyElementP::getAlphaTestSemantic(SoState * state, float & value)
 {
-  SoLazyElement * elem = getInstance(state);
-  value = elem->coinstate.alphatestvalue;
-  return elem->coinstate.semanticalphatestfunc;
+  const SoLazyElement * elem = SoLazyElement::getInstance(state);
+  if (!elem->pimpl) {
+    value = 0.5f;
+    return 0;
+  }
+  value = elem->pimpl->semanticAlphaTest.value;
+  return elem->pimpl->semanticAlphaTest.function;
 }
 
 // ! FIXME: write doc
@@ -818,6 +916,9 @@ SoLazyElement::setMaterials(SoState * state, SoNode *node, uint32_t bitmask,
 
   if (eltbitmask) {
     welem = getWInstance(state);
+    if (eltbitmask & (DIFFUSE_MASK | TRANSPARENCY_MASK)) {
+      SoLazyElementP::clearPackedVertexColorState(state);
+    }
     welem->setMaterialElt(node, eltbitmask, packer, diffuse,
                           numdiffuse, transp, numtransp,
                           ambient, emissive, specular, shininess,
@@ -899,25 +1000,26 @@ SoLazyElement::setAlphaTest(SoState * state, int func, float value)
       elem->coinstate.alphatestvalue != value) {
     elem = getWInstance(state);
     elem->setAlphaTestElt(func, value);
-    if (state->isCacheOpen()) elem->lazyDidSet(ALPHATEST_MASK);
+    if (state->isCacheOpen()) elem->lazyDidSet(SoLazyElement::ALPHATEST_MASK);
   }
   else if (state->isCacheOpen()) {
-    elem->lazyDidntSet(ALPHATEST_MASK);
+    elem->lazyDidntSet(SoLazyElement::ALPHATEST_MASK);
   }
 }
 
 void
-SoLazyElement::setAlphaTestSemantic(SoState * state, int function, float value)
+SoLazyElementP::setAlphaTestSemantic(SoState * state, int function, float value)
 {
   SoLazyElement * elem = SoLazyElement::getInstance(state);
-  if (elem->coinstate.semanticalphatestfunc != function ||
-      elem->coinstate.alphatestvalue != value) {
-    elem = getWInstance(state);
-    elem->setAlphaTestSemanticElt(function, value);
-    if (state->isCacheOpen()) elem->lazyDidSet(ALPHATEST_MASK);
+  if (!elem->pimpl || elem->pimpl->semanticAlphaTest.function != function ||
+      elem->pimpl->semanticAlphaTest.value != value) {
+    elem = SoLazyElement::getWInstance(state);
+    elem->pimpl->semanticAlphaTest.function = function;
+    elem->pimpl->semanticAlphaTest.value = value;
+    if (state->isCacheOpen()) elem->lazyDidSet(SoLazyElement::ALPHATEST_MASK);
   }
   else if (state->isCacheOpen()) {
-    elem->lazyDidntSet(ALPHATEST_MASK);
+    elem->lazyDidntSet(SoLazyElement::ALPHATEST_MASK);
   }
 }
 
@@ -1172,14 +1274,6 @@ SoLazyElement::setAlphaTestElt(int func, float value)
   this->coinstate.alphatestfunc = func;
   this->coinstate.alphatestvalue = value;
 }
-
-void
-SoLazyElement::setAlphaTestSemanticElt(int function, float value)
-{
-  this->coinstate.semanticalphatestfunc = function;
-  this->coinstate.alphatestvalue = value;
-}
-
 
 // SoColorPacker class. FIXME: move to separate file and document, pederb, 2002-09-09
 

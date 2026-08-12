@@ -65,10 +65,12 @@ SbBool coin_render_ir_trace_enabled();
 */
 namespace SoRenderIR {
 //! Capture the ordinary traversal state shared by retained shape producers.
-void fillCommandStateFromState(SoState * state, SoDrawList & drawlist,
-                               SoRenderCommand & command);
+void fillCommandStateFromAction(SoIRRenderAction * action,
+                                SoRenderCommand & command,
+                                int materialIndex = 0);
 //! Fill a material snapshot from the current Inventor traversal state.
-void fillMaterialFromState(SoState * state, SoMaterialData & material);
+void fillMaterialFromState(SoState * state, SoMaterialData & material,
+                           int materialIndex = 0);
 //! Fill render-state fields from the current Inventor traversal state.
 void fillRenderStateFromState(SoState * state, SoRenderState & renderState);
 //! Complete blend state after material opacity has been captured.
@@ -78,6 +80,8 @@ void ensureMaterialBlendState(SoRenderState & renderState,
 SoLightingHandle fillLightingFromState(SoState * state, SoDrawList & drawlist);
 //! Return whether the material should be treated as translucent.
 bool isMaterialTransparent(const SoMaterialData & material);
+//! Complete derived command state after producer-specific adjustments.
+void finalizeCommand(SoRenderCommand & command);
 }
 
 #endif // COIN_SORENDERIRP_H
