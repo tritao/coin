@@ -1346,18 +1346,22 @@ SoAction::switchToPathTraversal(SoPath * path)
 void
 SoAction::switchToNodeTraversal(SoNode * node)
 {
+  if (!node) return;
+
   // Store current state.
   SoActionP::AppliedData storeddata = PRIVATE(this)->applieddata;
   AppliedCode storedcode = PRIVATE(this)->appliedcode;
   PathCode storedpathcode = this->currentpathcode;
   SoTempPath storedpath = this->currentpath;
 
+  node->ref();
   PRIVATE(this)->appliedcode = SoAction::NODE;
   PRIVATE(this)->applieddata.node = node;
   this->currentpathcode = SoAction::NO_PATH;
-  this->currentpath.truncate(0);
+  this->currentpath.setHead(node);
 
   this->traverse(node);
+  node->unrefNoDelete();
 
   // Restore previous state.
   this->currentpath = storedpath;

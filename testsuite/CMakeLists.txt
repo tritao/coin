@@ -127,6 +127,14 @@ target_include_directories(LegacyBlendingTest PRIVATE
 )
 add_test(NAME LegacyBlendingTest COMMAND LegacyBlendingTest)
 
+add_executable(ActionSwitchedTraversalTest action-switched-traversal-test.cpp)
+target_link_libraries(ActionSwitchedTraversalTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(ActionSwitchedTraversalTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+add_test(NAME ActionSwitchedTraversalTest COMMAND ActionSwitchedTraversalTest)
 if(HAVE_EGL)
 	add_executable(EGLBindingTest egl-binding-test.cpp)
 	target_link_libraries(EGLBindingTest Coin ${COIN_TARGET_LINK_LIBRARIES})
