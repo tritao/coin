@@ -53,6 +53,14 @@ foreach(_subdir ${SUBDIRS})
 endforeach()
 add_subdirectory(doc)
 
+if(TARGET coin_generated_data_headers)
+  foreach(_subdir ${SUBDIRS})
+    if(TARGET ${_subdir})
+      add_dependencies(${_subdir} coin_generated_data_headers)
+    endif()
+  endforeach()
+endif()
+
 # Adding source groups for IDE's (Visual Studio, XCode, Qt Creator, etc.)
 source_group("Header Files\\Inventor"                            REGULAR_EXPRESSION ".*/include/Inventor/.*[.]h")
 source_group("Header Files\\Inventor\\actions"                   REGULAR_EXPRESSION ".*/include/Inventor/actions/.*[.]h")
@@ -215,6 +223,10 @@ else()
     $<TARGET_OBJECTS:vrml97>
     $<TARGET_OBJECTS:xml>
   )
+endif()
+
+if(TARGET coin_generated_data_headers)
+  add_dependencies(${PROJECT_NAME} coin_generated_data_headers)
 endif()
 
 # Keep the renderer selection attached to the final library target as well as
