@@ -78,6 +78,14 @@ private:
   bool createShaders();
   void uploadLighting(const SoLightingData & lighting);
   void applyLighting(const SoDrawList & drawlist, const SoRenderCommand & cmd);
+  void bindPointShader(const SoRenderCommand & cmd,
+                       const SbMat & viewMat,
+                       const SbMat & projMat,
+                       const SbVec4f & color,
+                       bool useVertexColor,
+                       bool roundPoints,
+                       float pointSize,
+                       const SbVec2s & viewportSize);
 
   /// Draw a single cached command — sets per-command GL state, draws, restores.
   void drawCommand(const SoDrawList & drawlist,
@@ -105,6 +113,12 @@ private:
   void setupVisualVAO(CachedGPUCommand & entry, const SoRenderCommand & cmd);
   void gcStaleEntries(int currentFrame);
   void destroyCacheEntry(CachedGPUCommand & entry);
+  bool shouldUseWideLineShader(float width) const
+  {
+    return this->lineShaderProgram != 0
+        && width > 1.0f
+        && width > this->nativeLineWidthMax;
+  }
 
   SoRenderBackendInitParams storedparams;
   // Dispatch table for the context that owns this backend's GPU resources.
@@ -114,6 +128,35 @@ private:
 
   // Unified shader program (lit + flat + billboard + textured)
   GLuint shaderProgram = 0;
+  // Line shader program (with geometry shader for screen-space width)
+  GLuint lineShaderProgram = 0;
+  // Preserve native line rasterization unless the driver clamps the requested
+  // semantic width below the required value.
+  float nativeLineWidthMax = 1.0f;
+  // Point shader program (with geometry shader for screen-space billboards)
+  GLuint pointShaderProgram = 0;
+  GLint  lineUViewLocation = -1;
+  GLint  lineUProjLocation = -1;
+  GLint  lineUModelLocation = -1;
+  GLint  lineUColorLocation = -1;
+  GLint  lineULineWidthLocation = -1;
+  GLint  lineUVpSizeLocation = -1;
+  GLint  lineURenderModeLocation = -1;
+  GLint  lineUStipplePeriodLocation = -1;
+  GLint  lineUEmissiveColorLocation = -1;
+  GLint  lineUUseVertexColorLocation = -1;
+  GLint  lineUAlphaTestFunctionLocation = -1;
+  GLint  lineUAlphaTestReferenceLocation = -1;
+  GLint  pointUViewLocation = -1;
+  GLint  pointUProjLocation = -1;
+  GLint  pointUModelLocation = -1;
+  GLint  pointUColorLocation = -1;
+  GLint  pointUPointSizeLocation = -1;
+  GLint  pointURoundPointsLocation = -1;
+  GLint  pointUVpSizeLocation = -1;
+  GLint  pointUUseVertexColorLocation = -1;
+  GLint  pointUAlphaTestFunctionLocation = -1;
+  GLint  pointUAlphaTestReferenceLocation = -1;
   GLint  uViewLocation = -1;
   GLint  uProjLocation = -1;
   GLint  uModelLocation = -1;

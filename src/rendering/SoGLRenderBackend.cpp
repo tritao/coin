@@ -2,6 +2,11 @@
 
 #include "rendering/SoGLRenderBackend.h"
 
+// GL_GEOMETRY_SHADER may not be defined in macOS legacy GL headers
+#ifndef GL_GEOMETRY_SHADER
+#define GL_GEOMETRY_SHADER 0x8DD9
+#endif
+
 #include <Inventor/SbBasic.h>
 #include <Inventor/C/tidbits.h>
 #include <Inventor/errors/SoDebugError.h>
@@ -16,6 +21,12 @@
 
 #include <data/shaders/backend/BackendUnifiedFragment.h>
 #include <data/shaders/backend/BackendUnifiedVertex.h>
+#include <data/shaders/backend/BackendWideLineFragment.h>
+#include <data/shaders/backend/BackendWideLineGeometry.h>
+#include <data/shaders/backend/BackendWideLineVertex.h>
+#include <data/shaders/backend/BackendWidePointFragment.h>
+#include <data/shaders/backend/BackendWidePointGeometry.h>
+#include <data/shaders/backend/BackendWidePointVertex.h>
 
 #include "shaders/SoGLShaderProgram.h"
 
@@ -392,6 +403,14 @@ SoGLRenderBackend::shutdown()
   if (this->shaderProgram) {
     cc_glglue_glDeleteProgram(this->glue, this->shaderProgram);
     this->shaderProgram = 0;
+  }
+  if (this->lineShaderProgram) {
+    cc_glglue_glDeleteProgram(this->glue, this->lineShaderProgram);
+    this->lineShaderProgram = 0;
+  }
+  if (this->pointShaderProgram) {
+    cc_glglue_glDeleteProgram(this->glue, this->pointShaderProgram);
+    this->pointShaderProgram = 0;
   }
   this->setInitialized(FALSE);
   this->emitLog("shutdown");
@@ -855,16 +874,70 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
 
   const float dpr = params.devicePixelRatio > 0.0f
     ? params.devicePixelRatio : 1.0f;
+  bool usePointShader = false;
   if (prim == GL_POINTS || fillMode == 2) {
     float ps = cmd.state.raster.pointSize;
     if (ps < 1.0f) ps = cmd.state.raster.lineWidth;
     float pointSize = std::max(ps, 1.0f) * dpr;
-    glPointSize(pointSize);
-    this->glue->glUniform1f(this->uRenderModeLocation, 1.0f);
+    if (prim == GL_POINTS && this->pointShaderProgram) {
+      usePointShader = true;
+      this->bindPointShader(cmd,
+                            viewMat,
+                            projMat,
+                            diffuse,
+                            entry.colorVBO != 0,
+                            cmd.state.raster.pointShape == SO_POINT_SHAPE_ROUND,
+                            pointSize,
+                            coin_command_viewport_size(cmd, params));
+      this->glue->glUniform1i(this->pointUAlphaTestFunctionLocation,
+                              static_cast<GLint>(cmd.state.alphaTest.function));
+      this->glue->glUniform1f(this->pointUAlphaTestReferenceLocation,
+                              cmd.state.alphaTest.reference);
+    } else {
+      glPointSize(pointSize);
+      this->glue->glUniform1f(this->uRenderModeLocation, 1.0f);
+    }
   }
-  if (prim == GL_LINES || prim == GL_LINE_STRIP || fillMode == 1) {
+  bool useLineShader = false;
+  const bool linePrimitive = prim == GL_LINES || prim == GL_LINE_STRIP;
+  if (linePrimitive || fillMode == 1) {
     float lw = std::max(cmd.state.raster.lineWidth, 1.0f) * dpr;
-    glLineWidth(lw);
+    if (linePrimitive && this->shouldUseWideLineShader(lw)) {
+      // The geometry shader accepts GL_LINES input only. Polygon wireframe
+      // remains on the ordinary triangle path.
+      useLineShader = true;
+      cc_glglue_glUseProgram(this->glue, this->lineShaderProgram);
+      this->glue->glUniform1i(this->lineUAlphaTestFunctionLocation,
+                              static_cast<GLint>(cmd.state.alphaTest.function));
+      this->glue->glUniform1f(this->lineUAlphaTestReferenceLocation,
+                              cmd.state.alphaTest.reference);
+      SbMat modelMat2;
+      cmd.modelMatrix.getValue(modelMat2);
+      this->glue->glUniformMatrix4fv(this->lineUModelLocation, 1, GL_FALSE, &modelMat2[0][0]);
+      if (cmd.pass == SO_RENDERPASS_OVERLAY) {
+        SbMat cmdV, cmdP;
+        cmd.viewMatrix.getValue(cmdV);
+        cmd.projMatrix.getValue(cmdP);
+        this->glue->glUniformMatrix4fv(this->lineUViewLocation, 1, GL_FALSE, &cmdV[0][0]);
+        this->glue->glUniformMatrix4fv(this->lineUProjLocation, 1, GL_FALSE, &cmdP[0][0]);
+      } else {
+        this->glue->glUniformMatrix4fv(this->lineUViewLocation, 1, GL_FALSE, &viewMat[0][0]);
+        this->glue->glUniformMatrix4fv(this->lineUProjLocation, 1, GL_FALSE, &projMat[0][0]);
+      }
+      bool hasVC = (entry.colorVBO != 0);
+      this->glue->glUniform1f(this->lineUUseVertexColorLocation, hasVC ? 1.0f : 0.0f);
+      this->glue->glUniform4f(this->lineUColorLocation,
+                  diffuse[0], diffuse[1], diffuse[2], diffuse[3]);
+      SbVec2s vpSz = coin_command_viewport_size(cmd, params);
+      this->glue->glUniform2f(this->lineUVpSizeLocation,
+                  static_cast<float>(vpSz[0]),
+                  static_cast<float>(vpSz[1]));
+      this->glue->glUniform1f(this->lineULineWidthLocation, lw);
+      this->glue->glUniform1f(this->lineUStipplePeriodLocation, 0.0f);
+      this->glue->glUniform3f(this->lineUEmissiveColorLocation, 0.0f, 0.0f, 0.0f);
+    } else {
+      glLineWidth(lw);
+    }
   }
 
   // Line stipple pattern (dashed/dotted lines) — shader-based via u_stipplePeriod.
@@ -902,7 +975,11 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
     float pixPerUnit = (ndc1 - ndc0).length() * vpSz[0] * 0.5f;
     float objectPeriod = (pixPerUnit > 0.001f) ? pixelPeriod / pixPerUnit : 1.0f;
 
-    this->glue->glUniform1f(this->uStipplePeriodLocation, objectPeriod);
+    if (useLineShader) {
+      this->glue->glUniform1f(this->lineUStipplePeriodLocation, objectPeriod);
+    } else {
+      this->glue->glUniform1f(this->uStipplePeriodLocation, objectPeriod);
+    }
   }
 
   // Polygon offset: push faces back so coplanar edges render on top
@@ -985,19 +1062,65 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   if (useOffset) {
     glDisable(GL_POLYGON_OFFSET_FILL);
   }
-    if (useStipple) this->glue->glUniform1f(this->uStipplePeriodLocation, 0.0f);
+  if (useStipple) {
+    if (useLineShader) {
+      this->glue->glUniform1f(this->lineUStipplePeriodLocation, 0.0f);
+    } else {
+      this->glue->glUniform1f(this->uStipplePeriodLocation, 0.0f);
+    }
+  }
   if (fillMode != 0 && (prim == GL_TRIANGLES || prim == GL_TRIANGLE_STRIP)) {
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
   }
   if (prim == GL_POINTS || fillMode == 2) {
+    if (usePointShader) {
+      cc_glglue_glUseProgram(this->glue, this->shaderProgram);
+    }
     glPointSize(1.0f);
   }
   if (prim == GL_LINES || prim == GL_LINE_STRIP || fillMode == 1) {
+    if (useLineShader) {
+      cc_glglue_glUseProgram(this->glue, this->shaderProgram);
+    }
     glLineWidth(1.0f);
   }
   if (cmd.state.raster.cullMode != 0) {
     glDisable(GL_CULL_FACE);
   }
+}
+
+void
+SoGLRenderBackend::bindPointShader(const SoRenderCommand & cmd,
+                                   const SbMat & viewMat,
+                                   const SbMat & projMat,
+                                   const SbVec4f & color,
+                                   bool useVertexColor,
+                                   bool roundPoints,
+                                   float pointSize,
+                                   const SbVec2s & viewportSize)
+{
+  cc_glglue_glUseProgram(this->glue, this->pointShaderProgram);
+
+  SbMat modelMat;
+  cmd.modelMatrix.getValue(modelMat);
+  this->glue->glUniformMatrix4fv(this->pointUModelLocation, 1, GL_FALSE, &modelMat[0][0]);
+  if (cmd.pass == SO_RENDERPASS_OVERLAY) {
+    SbMat cmdViewMat, cmdProjMat;
+    cmd.viewMatrix.getValue(cmdViewMat);
+    cmd.projMatrix.getValue(cmdProjMat);
+    this->glue->glUniformMatrix4fv(this->pointUViewLocation, 1, GL_FALSE, &cmdViewMat[0][0]);
+    this->glue->glUniformMatrix4fv(this->pointUProjLocation, 1, GL_FALSE, &cmdProjMat[0][0]);
+  } else {
+    this->glue->glUniformMatrix4fv(this->pointUViewLocation, 1, GL_FALSE, &viewMat[0][0]);
+    this->glue->glUniformMatrix4fv(this->pointUProjLocation, 1, GL_FALSE, &projMat[0][0]);
+  }
+  this->glue->glUniform4f(this->pointUColorLocation, color[0], color[1], color[2], color[3]);
+  this->glue->glUniform1f(this->pointUUseVertexColorLocation, useVertexColor ? 1.0f : 0.0f);
+  this->glue->glUniform1f(this->pointURoundPointsLocation, roundPoints ? 1.0f : 0.0f);
+  this->glue->glUniform1f(this->pointUPointSizeLocation, std::max(pointSize, 1.0f));
+  this->glue->glUniform2f(this->pointUVpSizeLocation,
+              static_cast<float>(viewportSize[0]),
+              static_cast<float>(viewportSize[1]));
 }
 
 // -----------------------------------------------------------------------
@@ -1379,6 +1502,87 @@ SoGLRenderBackend::createShaders()
   this->uLightSpotParamsLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_lightSpotParams[0]");
   this->texcoordLoc = this->glue->glGetAttribLocation(this->shaderProgram, "a_texcoord");
   this->lineDistLoc = this->glue->glGetAttribLocation(this->shaderProgram, "a_lineDistance");
+
+  // Line shader — geometry shader expands lines into screen-space quads
+  // for wide lines on Core Profile where glLineWidth is clamped to 1.0.
+  static const char * lineVertSource = BACKENDWIDELINEVERTEX_shadersource;
+  static const char * lineGeomSource = BACKENDWIDELINEGEOMETRY_shadersource;
+  static const char * lineFragSource = BACKENDWIDELINEFRAGMENT_shadersource;
+
+  GLuint lvs = coin_compile_shader(this->glue, GL_VERTEX_SHADER, lineVertSource);
+  GLuint lgs = coin_compile_shader(this->glue, GL_GEOMETRY_SHADER, lineGeomSource);
+  GLuint lfs = coin_compile_shader(this->glue, GL_FRAGMENT_SHADER, lineFragSource);
+  if (lvs && lgs && lfs) {
+    GLuint lprog = cc_glglue_glCreateProgram(this->glue);
+    cc_glglue_glAttachShader(this->glue, lprog, lvs);
+    cc_glglue_glAttachShader(this->glue, lprog, lgs);
+    cc_glglue_glAttachShader(this->glue, lprog, lfs);
+    this->glue->glBindAttribLocation(lprog, 0, "a_position");
+    this->glue->glBindAttribLocation(lprog, 2, "a_color");
+    this->glue->glBindAttribLocation(lprog, 4, "a_lineDistance");
+    cc_glglue_glLinkProgram(this->glue, lprog);
+    GLint linkOk = GL_FALSE;
+    cc_glglue_glGetGLSLProgramiv(this->glue, lprog, GL_LINK_STATUS, &linkOk);
+    if (linkOk) {
+      this->lineShaderProgram = lprog;
+      this->lineUViewLocation = cc_glglue_glGetUniformLocation(this->glue, lprog, "u_view");
+      this->lineUProjLocation = cc_glglue_glGetUniformLocation(this->glue, lprog, "u_proj");
+      this->lineUModelLocation = cc_glglue_glGetUniformLocation(this->glue, lprog, "u_model");
+      this->lineUColorLocation = cc_glglue_glGetUniformLocation(this->glue, lprog, "u_color");
+      this->lineULineWidthLocation = cc_glglue_glGetUniformLocation(this->glue, lprog, "u_lineWidth");
+      this->lineUVpSizeLocation = cc_glglue_glGetUniformLocation(this->glue, lprog, "u_vpSize");
+      this->lineURenderModeLocation = cc_glglue_glGetUniformLocation(this->glue, lprog, "u_renderMode");
+      this->lineUStipplePeriodLocation = cc_glglue_glGetUniformLocation(this->glue, lprog, "u_stipplePeriod");
+      this->lineUEmissiveColorLocation = cc_glglue_glGetUniformLocation(this->glue, lprog, "u_emissiveColor");
+      this->lineUUseVertexColorLocation = cc_glglue_glGetUniformLocation(this->glue, lprog, "u_useVertexColor");
+      this->lineUAlphaTestFunctionLocation = cc_glglue_glGetUniformLocation(this->glue, lprog, "u_alphaTestFunction");
+      this->lineUAlphaTestReferenceLocation = cc_glglue_glGetUniformLocation(this->glue, lprog, "u_alphaTestReference");
+    } else {
+      cc_glglue_glDeleteProgram(this->glue, lprog);
+    }
+  }
+  cc_glglue_glDeleteShader(this->glue, lvs);
+  cc_glglue_glDeleteShader(this->glue, lgs);
+  cc_glglue_glDeleteShader(this->glue, lfs);
+
+  // Point shader — geometry shader expands points into screen-space quads
+  // for stable marker sizing and circular vertex overlays.
+  static const char * pointVertSource = BACKENDWIDEPOINTVERTEX_shadersource;
+  static const char * pointGeomSource = BACKENDWIDEPOINTGEOMETRY_shadersource;
+  static const char * pointFragSource = BACKENDWIDEPOINTFRAGMENT_shadersource;
+
+  GLuint pvs = coin_compile_shader(this->glue, GL_VERTEX_SHADER, pointVertSource);
+  GLuint pgs = coin_compile_shader(this->glue, GL_GEOMETRY_SHADER, pointGeomSource);
+  GLuint pfs = coin_compile_shader(this->glue, GL_FRAGMENT_SHADER, pointFragSource);
+  if (pvs && pgs && pfs) {
+    GLuint pprog = cc_glglue_glCreateProgram(this->glue);
+    cc_glglue_glAttachShader(this->glue, pprog, pvs);
+    cc_glglue_glAttachShader(this->glue, pprog, pgs);
+    cc_glglue_glAttachShader(this->glue, pprog, pfs);
+    this->glue->glBindAttribLocation(pprog, 0, "a_position");
+    this->glue->glBindAttribLocation(pprog, 2, "a_color");
+    cc_glglue_glLinkProgram(this->glue, pprog);
+    GLint linkOk = GL_FALSE;
+    cc_glglue_glGetGLSLProgramiv(this->glue, pprog, GL_LINK_STATUS, &linkOk);
+    if (linkOk) {
+      this->pointShaderProgram = pprog;
+      this->pointUViewLocation = cc_glglue_glGetUniformLocation(this->glue, pprog, "u_view");
+      this->pointUProjLocation = cc_glglue_glGetUniformLocation(this->glue, pprog, "u_proj");
+      this->pointUModelLocation = cc_glglue_glGetUniformLocation(this->glue, pprog, "u_model");
+      this->pointUColorLocation = cc_glglue_glGetUniformLocation(this->glue, pprog, "u_color");
+      this->pointUPointSizeLocation = cc_glglue_glGetUniformLocation(this->glue, pprog, "u_pointSize");
+      this->pointURoundPointsLocation = cc_glglue_glGetUniformLocation(this->glue, pprog, "u_roundPoints");
+      this->pointUVpSizeLocation = cc_glglue_glGetUniformLocation(this->glue, pprog, "u_vpSize");
+      this->pointUUseVertexColorLocation = cc_glglue_glGetUniformLocation(this->glue, pprog, "u_useVertexColor");
+      this->pointUAlphaTestFunctionLocation = cc_glglue_glGetUniformLocation(this->glue, pprog, "u_alphaTestFunction");
+      this->pointUAlphaTestReferenceLocation = cc_glglue_glGetUniformLocation(this->glue, pprog, "u_alphaTestReference");
+    } else {
+      cc_glglue_glDeleteProgram(this->glue, pprog);
+    }
+  }
+  cc_glglue_glDeleteShader(this->glue, pvs);
+  cc_glglue_glDeleteShader(this->glue, pgs);
+  cc_glglue_glDeleteShader(this->glue, pfs);
 
   return TRUE;
 }
