@@ -55,6 +55,7 @@ set(COIN_RENDERING_INTERNAL_FILES
 	CoinGLReadback.cpp
 	SoRenderIRP.h
 	SoRenderPlan.h
+	SoTextureQualityPolicy.h
 	SoRenderBackend.h
 	SoGLRenderBackend.h
 )
