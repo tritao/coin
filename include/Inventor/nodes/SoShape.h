@@ -72,6 +72,9 @@ public:
   void GLRender(SoGLRenderAction * action) override;
 #endif
   virtual void IRRender(SoIRRenderAction * action);
+  //! Return an override for one generated primitive's material index.
+  //! Return -1 to preserve the indices carried by the generated vertices.
+  virtual int getIRMaterialIndex(SoState * state, int primitiveIndex) const;
   void rayPick(SoRayPickAction * action) override;
   void callback(SoCallbackAction * action) override;
   virtual void computeBBox(SoAction * action, SbBox3f & box,
