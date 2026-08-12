@@ -501,8 +501,16 @@ SoGLRenderBackend::uploadGeometry(CachedGPUCommand & entry,
     GLenum fmt = (nc == 3) ? GL_RGB : GL_RGBA;
     glTexImage2D(GL_TEXTURE_2D, 0, fmt, tw, th, 0, fmt,
                  GL_UNSIGNED_BYTE, src);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    const GLenum minFilter = cmd.material.texture.minFilter == SO_TEXTURE_FILTER_LINEAR
+      || cmd.material.texture.minFilter == SO_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST
+      || cmd.material.texture.minFilter == SO_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR
+      ? GL_LINEAR : GL_NEAREST;
+    const GLenum magFilter = cmd.material.texture.magFilter == SO_TEXTURE_FILTER_LINEAR
+      || cmd.material.texture.magFilter == SO_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST
+      || cmd.material.texture.magFilter == SO_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR
+      ? GL_LINEAR : GL_NEAREST;
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, 0);
@@ -770,8 +778,14 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
               diffuse[0], diffuse[1], diffuse[2], diffuse[3]);
   this->glue->glUniform1f(this->uVertexColorAlphaIncludesOpacityLocation,
                           cmd.material.vertexColorAlphaIncludesOpacity ? 1.0f : 0.0f);
+  this->glue->glUniform1f(this->uTextureAlphaIncludesOpacityLocation,
+                          cmd.material.textureAlphaIncludesOpacity ? 1.0f : 0.0f);
   this->glue->glUniform1i(this->uShadingModelLocation,
                           static_cast<GLint>(cmd.material.shadingModel));
+  this->glue->glUniform1i(this->uAlphaTestFunctionLocation,
+                          static_cast<GLint>(cmd.state.alphaTest.function));
+  this->glue->glUniform1f(this->uAlphaTestReferenceLocation,
+                          cmd.state.alphaTest.reference);
   this->applyLighting(drawlist, cmd);
 
   GLenum prim = topologyToGL(cmd.geometry.topology);
@@ -903,9 +917,7 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   }
 
   // Textured commands: set renderMode and bind texture (same shader program)
-  bool isTextured = (entry.textureId != 0 && entry.texcoordVBO != 0);
   if (isTextured) {
-    bool isBillboard = (cmd.material.flags & SO_MAT_IS_BILLBOARD) != 0;
     // renderMode: 2=billboard, 3=world-space textured
     this->glue->glUniform1f(this->uRenderModeLocation, isBillboard ? 2.0f : 3.0f);
 
@@ -938,16 +950,17 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
     // Modulate texture with diffuse color (MODULATE mode for NaviCube labels).
     // Billboard textures (SoImage, SoText2) use white modulation (pass-through).
     const SbVec4f & diff = cmd.material.diffuse;
-    if (isBillboard) {
+    if (isBillboard || hasVertexColors) {
       this->glue->glUniform4f(this->uTexModColorLocation, 1.0f, 1.0f, 1.0f, 1.0f);
     } else {
       this->glue->glUniform4f(this->uTexModColorLocation, diff[0], diff[1], diff[2], diff[3]);
     }
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    if (isBillboard) {
-      glDepthFunc(GL_ALWAYS);  // billboards render on top
-    }
+  }
+
+  // Screen-space billboards historically render on top of the scene. Keep
+  // that semantic while restoring the retained depth function below.
+  if (isBillboard && !passOwnsDepth) {
+    glDepthFunc(GL_ALWAYS);
   }
 
   this->glue->glBindVertexArray(entry.vao);
@@ -963,10 +976,10 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   // --- State restore ---
   if (isTextured) {
     cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, 0);
-    glDisable(GL_BLEND);
-    glDepthFunc(GL_LEQUAL);
-    glDepthMask(GL_TRUE);
     this->glue->glUniform1f(this->uRenderModeLocation, 0.0f);  // restore to lit mode
+  }
+  if (isBillboard && !passOwnsDepth) {
+    glDepthFunc(depthFunctionToGL(cmd.state.depth.func));
   }
 
   if (useOffset) {
@@ -1344,6 +1357,9 @@ SoGLRenderBackend::createShaders()
   this->uTextureLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_texture");
   this->uTexModColorLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_texModColor");
   this->uVertexColorAlphaIncludesOpacityLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_vertexColorAlphaIncludesOpacity");
+  this->uTextureAlphaIncludesOpacityLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_textureAlphaIncludesOpacity");
+  this->uAlphaTestFunctionLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_alphaTestFunction");
+  this->uAlphaTestReferenceLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_alphaTestReference");
   this->uQuadCenterLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_quadCenter");
   this->uTexSizeLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_texSize");
   this->uVpSizeLocation = cc_glglue_glGetUniformLocation(this->glue, this->shaderProgram, "u_vpSize");

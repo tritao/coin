@@ -8,9 +8,10 @@ uniform vec4 u_texModColor;
 uniform vec4 u_color;
 uniform float u_useVertexColor;
 uniform float u_vertexColorAlphaIncludesOpacity;
+uniform float u_textureAlphaIncludesOpacity;
+uniform int u_alphaTestFunction;
+uniform float u_alphaTestReference;
 uniform float u_stipplePeriod;
-uniform float u_metalness;
-uniform float u_roughness;
 
 in vec3 v_litColor;
 in vec4 v_color;
@@ -23,8 +24,33 @@ out vec4 fragColor;
 
 vec4 composeTexture(vec4 texel)
 {
-  return vec4(texel.rgb * u_texModColor.rgb,
-              texel.a * u_texModColor.a * v_vertexAlpha);
+  bool hasVertexColor = u_useVertexColor > 0.5;
+  bool vertexColorCarriesMaterial =
+    hasVertexColor && u_vertexColorAlphaIncludesOpacity > 0.5;
+  vec3 materialColor = hasVertexColor ? v_color.rgb : u_texModColor.rgb;
+  float materialAlpha = hasVertexColor
+    ? (vertexColorCarriesMaterial ? 1.0 : u_color.a)
+    : u_texModColor.a;
+  float vertexAlpha = hasVertexColor ? v_vertexAlpha : 1.0;
+  float textureAlpha = u_textureAlphaIncludesOpacity > 0.5
+    ? 1.0 : materialAlpha;
+  return vec4(texel.rgb * materialColor,
+              texel.a * textureAlpha * vertexAlpha);
+}
+
+bool passesAlphaTest(float alpha)
+{
+  switch (u_alphaTestFunction) {
+  case 1: return false; // NEVER
+  case 2: return true;  // ALWAYS
+  case 3: return alpha < u_alphaTestReference;
+  case 4: return alpha <= u_alphaTestReference;
+  case 5: return abs(alpha - u_alphaTestReference) < 0.0001;
+  case 6: return alpha >= u_alphaTestReference;
+  case 7: return alpha > u_alphaTestReference;
+  case 8: return abs(alpha - u_alphaTestReference) >= 0.0001;
+  default: return true; // NONE
+  }
 }
 
 void main()
@@ -46,14 +72,18 @@ void main()
       if (mod(v_lineDistance, u_stipplePeriod) > u_stipplePeriod * 0.5) discard;
     }
 
-    fragColor = vec4(v_color.rgb, v_color.a * materialAlpha);
+    vec4 outputColor = vec4(v_color.rgb, v_color.a * materialAlpha);
+    if (!passesAlphaTest(outputColor.a)) discard;
+    fragColor = outputColor;
     return;
   }
 
   if (u_renderMode > 1.8 && u_renderMode < 2.5) {
     vec4 c = texture(u_texture, v_texcoord);
-    if (c.a < 0.3) discard;
-    fragColor = composeTexture(c);
+    if (u_alphaTestFunction == 0 && c.a < 0.3) discard;
+    vec4 outputColor = composeTexture(c);
+    if (!passesAlphaTest(outputColor.a)) discard;
+    fragColor = outputColor;
     return;
   }
 
@@ -62,10 +92,14 @@ void main()
     // World-space textured annotations (e.g. SoDatumLabel) use normal
     // blending, so preserve their antialiased glyph edge pixels. Billboard
     // text above retains the legacy alpha-test threshold.
-    if (c.a <= 0.0) discard;
-    fragColor = composeTexture(c);
+    if (u_alphaTestFunction == 0 && c.a <= 0.0) discard;
+    vec4 outputColor = composeTexture(c);
+    if (!passesAlphaTest(outputColor.a)) discard;
+    fragColor = outputColor;
     return;
   }
 
-  fragColor = vec4(v_litColor, v_color.a * materialAlpha);
+  vec4 outputColor = vec4(v_litColor, v_color.a * materialAlpha);
+  if (!passesAlphaTest(outputColor.a)) discard;
+  fragColor = outputColor;
 }

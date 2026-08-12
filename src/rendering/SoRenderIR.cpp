@@ -18,6 +18,7 @@
 #include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoProjectionMatrixElement.h>
 #include <Inventor/elements/SoShapeHintsElement.h>
+#include <Inventor/elements/SoTextureQualityElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
@@ -534,6 +535,15 @@ fillTextureFromState(SoState * state, SoIRRenderAction * action,
   material.texture.width = size[0];
   material.texture.height = size[1];
   material.texture.numComponents = numComponents;
+  // Keep the retained sampler contract aligned with Coin's legacy texture
+  // quality policy.  The default quality (and SoDatumLabel's explicit 0.49)
+  // selects linear filtering; the retained backend must not silently fall
+  // back to nearest-neighbour sampling.
+  const float quality = SoTextureQualityElement::get(state);
+  const SoTextureFilter filter = quality >= 0.2f
+    ? SO_TEXTURE_FILTER_LINEAR : SO_TEXTURE_FILTER_NEAREST;
+  material.texture.minFilter = filter;
+  material.texture.magFilter = filter;
   material.texture.wrapS = textureWrapFromLegacy(wrapS);
   material.texture.wrapT = textureWrapFromLegacy(wrapT);
   material.flags |= SO_MAT_HAS_TEXTURE;

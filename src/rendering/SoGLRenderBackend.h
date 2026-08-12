@@ -124,6 +124,9 @@ private:
   GLint  uTextureLocation = -1;
   GLint  uTexModColorLocation = -1;
   GLint  uVertexColorAlphaIncludesOpacityLocation = -1;
+  GLint  uTextureAlphaIncludesOpacityLocation = -1;
+  GLint  uAlphaTestFunctionLocation = -1;
+  GLint  uAlphaTestReferenceLocation = -1;
   GLint  uQuadCenterLocation = -1;
   GLint  uTexSizeLocation = -1;
   GLint  uVpSizeLocation = -1;
