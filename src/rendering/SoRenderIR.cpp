@@ -31,6 +31,7 @@
 #include <Inventor/nodes/SoSpotLight.h>
 
 #include "elements/SoRenderPlacementElement.h"
+#include "rendering/SoTextureQualityPolicy.h"
 
 #include <algorithm>
 #include <cmath>
@@ -630,14 +631,12 @@ fillTextureFromState(SoState * state, SoIRRenderAction * action,
   material.texture.height = size[1];
   material.texture.numComponents = numComponents;
   // Keep the retained sampler contract aligned with Coin's legacy texture
-  // quality policy.  The default quality (and SoDatumLabel's explicit 0.49)
-  // selects linear filtering; the retained backend must not silently fall
-  // back to nearest-neighbour sampling.
+  // quality policy.  In particular, high quality textures use mipmaps when
+  // they are minified.  Fixed-resolution overlay labels are a common example
+  // of this path.
   const float quality = SoTextureQualityElement::get(state);
-  const SoTextureFilter filter = quality >= 0.2f
-    ? SO_TEXTURE_FILTER_LINEAR : SO_TEXTURE_FILTER_NEAREST;
-  material.texture.minFilter = filter;
-  material.texture.magFilter = filter;
+  material.texture.minFilter = coin_texture_min_filter_for_quality(quality);
+  material.texture.magFilter = coin_texture_mag_filter_for_quality(quality);
   material.texture.wrapS = textureWrapFromLegacy(wrapS);
   material.texture.wrapT = textureWrapFromLegacy(wrapT);
   material.flags |= SO_MAT_HAS_TEXTURE;

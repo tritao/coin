@@ -4,6 +4,7 @@ set(COIN_RENDERING_FILES
 	SoGLDriverDatabase.cpp
 	SoGLNurbs.cpp
 	CoinOffscreenGLCanvas.cpp
+	SoTextureQualityPolicy.cpp
 	SoRenderManager.cpp
 	SoRenderManagerP.cpp
 	SoRenderIR.cpp
@@ -52,6 +53,7 @@ set(COIN_RENDERING_INTERNAL_FILES
 	CoinOffscreenGLCanvas.h
 	CoinOffscreenGLCanvas.cpp
 	SoRenderIRP.h
+	SoTextureQualityPolicy.h
 	SoTransparencySortP.h
 	SoRenderBackend.h
 	SoGLRenderBackend.h

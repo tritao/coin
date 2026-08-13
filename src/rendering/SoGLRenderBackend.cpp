@@ -14,6 +14,7 @@
 
 #include "glue/glp.h"
 #include "glue/glslp.h"
+#include "rendering/SoTextureQualityPolicy.h"
 
 #include <cstdio>
 #include <cstring>
@@ -62,6 +63,26 @@ static constexpr float DEFAULT_PICK_SIZE = 7.0f;
 
 // Maximum number of scene lights uploaded to the unified shader.
 static constexpr int MAX_SHADER_LIGHTS = 8;
+
+static GLenum
+textureFilterToGL(const SoTextureFilter filter)
+{
+  switch (filter) {
+  case SO_TEXTURE_FILTER_NEAREST:
+    return GL_NEAREST;
+  case SO_TEXTURE_FILTER_LINEAR:
+    return GL_LINEAR;
+  case SO_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST:
+    return GL_NEAREST_MIPMAP_NEAREST;
+  case SO_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST:
+    return GL_LINEAR_MIPMAP_NEAREST;
+  case SO_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR:
+    return GL_NEAREST_MIPMAP_LINEAR;
+  case SO_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR:
+    return GL_LINEAR_MIPMAP_LINEAR;
+  }
+  return GL_NEAREST;
+}
 
 static const SoLightingData &
 coin_fallback_lighting()
@@ -613,14 +634,23 @@ SoGLRenderBackend::uploadGeometry(CachedGPUCommand & entry,
     GLenum fmt = (nc == 3) ? GL_RGB : GL_RGBA;
     glTexImage2D(GL_TEXTURE_2D, 0, fmt, tw, th, 0, fmt,
                  GL_UNSIGNED_BYTE, src);
-    const GLenum minFilter = cmd.material.texture.minFilter == SO_TEXTURE_FILTER_LINEAR
-      || cmd.material.texture.minFilter == SO_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST
-      || cmd.material.texture.minFilter == SO_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR
-      ? GL_LINEAR : GL_NEAREST;
-    const GLenum magFilter = cmd.material.texture.magFilter == SO_TEXTURE_FILTER_LINEAR
-      || cmd.material.texture.magFilter == SO_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST
-      || cmd.material.texture.magFilter == SO_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR
-      ? GL_LINEAR : GL_NEAREST;
+    const bool mipmapsRequested =
+      coin_texture_filter_uses_mipmap(cmd.material.texture.minFilter);
+    const bool mipmapsAvailable = mipmapsRequested &&
+      coin_glglue_has_generate_mipmap(this->glue);
+    if (mipmapsAvailable) {
+      cc_glglue_glGenerateMipmap(this->glue, GL_TEXTURE_2D);
+    }
+    const SoTextureFilter effectiveMinFilter = mipmapsAvailable
+      ? cmd.material.texture.minFilter
+      : coin_texture_filter_without_mipmaps(cmd.material.texture.minFilter);
+    const GLenum minFilter = textureFilterToGL(effectiveMinFilter);
+    // OpenGL ignores the mipmap portion of a magnification filter, but Coin's
+    // IR keeps the semantic value.  Resolve it to the valid GL magnification
+    // filter here rather than passing a mipmap enum to GL.
+    const GLenum magFilter =
+      (cmd.material.texture.magFilter == SO_TEXTURE_FILTER_NEAREST)
+      ? GL_NEAREST : GL_LINEAR;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -1148,7 +1178,7 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
     cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
     cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, entry.textureId);
     this->glue->glUniform1i(this->uTextureLocation, 0);
-    // Modulate texture with diffuse color (MODULATE mode for NaviCube labels).
+    // Modulate regular textured geometry with its diffuse color.
     // Billboard textures (SoImage, SoText2) use white modulation (pass-through).
     const SbVec4f & diff = cmd.material.diffuse;
     if (isBillboard || isPixelText || hasVertexColors) {
@@ -1538,7 +1568,7 @@ SoGLRenderBackend::renderOverlayPass(const SoDrawList & drawlist,
     if (command3D != in3D) {
       in3D = command3D;
       if (in3D) {
-        // 3D foreground (NaviCube): depth-test for self-occlusion.
+        // 3D foreground: depth-test for self-occlusion.
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);
         glDepthMask(GL_TRUE);

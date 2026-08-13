@@ -225,6 +225,7 @@
 #include "glue/simage_wrapper.h"
 #include "threads/threadsutilp.h"
 #include "coindefs.h"
+#include "rendering/SoTextureQualityPolicy.h"
 
 #if COIN_WORKAROUND(COIN_MSVC, <= COIN_MSVC_6_0_VERSION)
 // symbol length truncation
@@ -233,9 +234,6 @@
 
 // *************************************************************************
 
-static float DEFAULT_LINEAR_LIMIT = 0.2f;
-static float DEFAULT_MIPMAP_LIMIT = 0.5f;
-static float DEFAULT_LINEAR_MIPMAP_LIMIT = 0.8f;
 static float DEFAULT_SCALEUP_LIMIT = 0.7f;
 static float DEFAULT_ANISOTROPIC_LIMIT = 0.85f;
 
@@ -740,28 +738,11 @@ SoGLImage::SoGLImage(void)
   PRIVATE(this)->init(); // init members to default values
   PRIVATE(this)->owner = this;
 
-  // check environment variables
-  if (COIN_TEX2_LINEAR_LIMIT < 0.0f) {
-    const char *env = coin_getenv("COIN_TEX2_LINEAR_LIMIT");
-    if (env) COIN_TEX2_LINEAR_LIMIT = (float) atof(env);
-    if (COIN_TEX2_LINEAR_LIMIT < 0.0f || COIN_TEX2_LINEAR_LIMIT > 1.0f) {
-      COIN_TEX2_LINEAR_LIMIT = DEFAULT_LINEAR_LIMIT;
-    }
-  }
-  if (COIN_TEX2_MIPMAP_LIMIT < 0.0f) {
-    const char *env = coin_getenv("COIN_TEX2_MIPMAP_LIMIT");
-    if (env) COIN_TEX2_MIPMAP_LIMIT = (float) atof(env);
-    if (COIN_TEX2_MIPMAP_LIMIT < 0.0f || COIN_TEX2_MIPMAP_LIMIT > 1.0f) {
-      COIN_TEX2_MIPMAP_LIMIT = DEFAULT_MIPMAP_LIMIT;
-    }
-  }
-  if (COIN_TEX2_LINEAR_MIPMAP_LIMIT < 0.0f) {
-    const char *env = coin_getenv("COIN_TEX2_LINEAR_MIPMAP_LIMIT");
-    if (env) COIN_TEX2_LINEAR_MIPMAP_LIMIT = (float) atof(env);
-    if (COIN_TEX2_LINEAR_MIPMAP_LIMIT < 0.0f || COIN_TEX2_LINEAR_MIPMAP_LIMIT > 1.0f) {
-      COIN_TEX2_LINEAR_MIPMAP_LIMIT = DEFAULT_LINEAR_MIPMAP_LIMIT;
-    }
-  }
+  // Keep the legacy renderer and the retained backend on the same policy.
+  const SoTextureQualityPolicy & texturepolicy = coin_texture_quality_policy();
+  COIN_TEX2_LINEAR_LIMIT = texturepolicy.linearLimit;
+  COIN_TEX2_MIPMAP_LIMIT = texturepolicy.mipmapLimit;
+  COIN_TEX2_LINEAR_MIPMAP_LIMIT = texturepolicy.linearMipmapLimit;
 
   if (COIN_TEX2_SCALEUP_LIMIT < 0.0f) {
     const char *env = coin_getenv("COIN_TEX2_SCALEUP_LIMIT");
