@@ -175,6 +175,8 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		SOURCES OffscreenReadbackTest.cpp)
 	coin_add_gl_test(NAME DrawListGLTest PROFILE core
 		SOURCES DrawListGLTest.cpp)
+	coin_add_gl_test(NAME RetainedMaterialLightingGLTest PROFILE core
+		SOURCES retained-material-lighting-gl-test.cpp)
 endif()
 
 function(coin_add_egl_test)

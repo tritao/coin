@@ -1,0 +1,7 @@
+id: two_lights
+scene: ../scenes/two_lights.iv
+
+viewport:
+  background: [0.08, 0.08, 0.08, 1.0]
+
+baseline: ../baselines/gl/two_lights.png

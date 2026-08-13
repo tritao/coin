@@ -1,0 +1,7 @@
+id: texture_rgb
+scene: ../scenes/texture_rgb.iv
+
+viewport:
+  background: [0.5, 0.5, 0.5, 1.0]
+
+baseline: ../baselines/gl/texture_rgb.png

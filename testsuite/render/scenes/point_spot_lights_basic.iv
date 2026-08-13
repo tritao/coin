@@ -1,0 +1,31 @@
+#Inventor V2.1 ascii
+
+Separator {
+  PerspectiveCamera {
+    position 0 0 5.5
+    heightAngle 0.7
+    nearDistance 0.1
+    farDistance 20
+  }
+  LightModel { model PHONG }
+  PointLight {
+    location 2 1.5 3
+    color 1 0.18 0.05
+    intensity 0.9
+  }
+  SpotLight {
+    location -2 1.5 3
+    direction 0.5 -0.4 -1
+    color 0.1 0.3 1
+    intensity 1
+    cutOffAngle 0.9
+    dropOffRate 0.35
+  }
+  Material {
+    ambientColor 0 0 0
+    diffuseColor 0.65 0.65 0.65
+    specularColor 0.25 0.25 0.25
+    shininess 0.35
+  }
+  Sphere { radius 1.25 }
+}

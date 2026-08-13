@@ -1,0 +1,7 @@
+id: material_emissive
+scene: ../scenes/material_emissive.iv
+
+viewport:
+  background: [0.03, 0.03, 0.03, 1.0]
+
+baseline: ../baselines/gl/material_emissive.png

@@ -1,0 +1,19 @@
+#Inventor V2.1 ascii
+
+Separator {
+  PerspectiveCamera {
+    position 0 0 5
+    heightAngle 0.785398
+    nearDistance 0.1
+    farDistance 10
+  }
+  LightModel { model BASE_COLOR }
+  Material { diffuseColor 1 1 1 }
+  Texture2 {
+    model MODULATE
+    image 2 2 3
+      0x00e63b3b 0x003b6ee6
+      0x003be66e 0x00e6c93b
+  }
+  Cube { }
+}
