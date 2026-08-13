@@ -630,6 +630,7 @@ SoImage::IRRender(SoIRRenderAction * action)
   command.opacityClass = (this->transparency ||
                           SoRenderIR::isMaterialTransparent(command.material))
     ? SO_OPACITY_TRANSPARENT : SO_OPACITY_OPAQUE;
+  action->applyRenderStage(command);
   action->addCommand(command);
 }
 

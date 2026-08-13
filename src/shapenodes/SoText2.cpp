@@ -553,6 +553,7 @@ SoText2::IRRender(SoIRRenderAction * action)
 
     command.opacityClass = transparent
       ? SO_OPACITY_TRANSPARENT : SO_OPACITY_OPAQUE;
+    action->applyRenderStage(command);
     action->addCommand(command);
   };
 
