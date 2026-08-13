@@ -258,7 +258,25 @@ if(COIN_BUILD_LEGACY_GL_RENDERER)
 		SOURCES DevicePixelRatioTraversalTest.cpp)
 endif()
 
-add_executable(RetainedMixedTopologyTest retained-mixed-topology-test.cpp)
+add_executable(RetainedIRTest RetainedIRTest.cpp)
+target_link_libraries(RetainedIRTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(RetainedIRTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+add_test(NAME RetainedIRTest COMMAND RetainedIRTest)
+
+add_executable(RetainedNodeTest RetainedNodeTest.cpp)
+target_link_libraries(RetainedNodeTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(RetainedNodeTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+add_test(NAME RetainedNodeTest COMMAND RetainedNodeTest)
+
+add_executable(RetainedMixedTopologyTest RetainedMixedTopologyTest.cpp)
 target_link_libraries(RetainedMixedTopologyTest Coin ${COIN_TARGET_LINK_LIBRARIES})
 target_include_directories(RetainedMixedTopologyTest PRIVATE
 	${PROJECT_SOURCE_DIR}/include
