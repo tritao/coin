@@ -52,6 +52,7 @@ class SoVBO;
 
 #include <cstring>
 #include <cstdlib>
+#include <vector>
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -69,6 +70,7 @@ class SoVBO;
 #if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/actions/SoGLRenderAction.h>
 #endif
+#include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
 #include <Inventor/actions/SoRayPickAction.h>
@@ -141,6 +143,7 @@ class SoVBO;
 
 #include "nodes/SoSubNodeP.h"
 #include "rendering/SoGL.h"
+#include "rendering/SoRenderIRP.h"
 #include "glue/glp.h"
 #include "threads/threadsutilp.h"
 #include "tidbitsp.h"
@@ -148,6 +151,117 @@ class SoVBO;
 #include "rendering/SoVBO.h"
 #endif
 #include "coindefs.h" // COIN_OBSOLETED()
+
+namespace {
+
+struct SoIRVertex {
+  SbVec3f position;
+  SbVec3f normal;
+  SbVec4f texcoord;
+};
+
+class SoIRPrimitiveAssembler : public SoIRRenderAction::PrimitiveCollector {
+public:
+  SoIRPrimitiveAssembler(SoIRRenderAction * action, SoShape * shape)
+    : action(action), shape(shape), topology(SO_TOPOLOGY_COUNT) {}
+
+  void onTriangle(const SoPrimitiveVertex * v1,
+                  const SoPrimitiveVertex * v2,
+                  const SoPrimitiveVertex * v3) override
+  {
+    if (this->ensureTopology(SO_TOPOLOGY_TRIANGLES)) {
+      this->append(v1);
+      this->append(v2);
+      this->append(v3);
+    }
+  }
+
+  void onLine(const SoPrimitiveVertex * v1,
+              const SoPrimitiveVertex * v2) override
+  {
+    if (this->ensureTopology(SO_TOPOLOGY_LINES)) {
+      this->append(v1);
+      this->append(v2);
+    }
+  }
+
+  void onPoint(const SoPrimitiveVertex * v) override
+  {
+    if (this->ensureTopology(SO_TOPOLOGY_POINTS)) this->append(v);
+  }
+
+  void finalize()
+  {
+    if (this->vertices.empty()) return;
+
+    SoRenderCommand command = {};
+    this->fillGeometry(command.geometry);
+    SoRenderIR::fillCommandStateFromState(
+      this->action->getState(), this->action->getMutableDrawList(), command);
+    command.userData = this->shape;
+    this->action->addCommand(command);
+  }
+
+  void fillGeometry(SoGeometryDesc & geometry)
+  {
+    const size_t count = this->vertices.size();
+    geometry.topology = this->topology;
+    geometry.vertexCount = static_cast<uint32_t>(count);
+    geometry.normalCount = geometry.vertexCount;
+    geometry.vertexStride = sizeof(float) * 3;
+    geometry.texcoordStride = sizeof(float) * 4;
+
+    float * positions = static_cast<float *>(
+      this->action->allocateGeometryStorage(sizeof(float) * 3 * count));
+    float * normals = static_cast<float *>(
+      this->action->allocateGeometryStorage(sizeof(float) * 3 * count));
+    float * texcoords = static_cast<float *>(
+      this->action->allocateGeometryStorage(sizeof(float) * 4 * count));
+
+    for (size_t i = 0; i < count; ++i) {
+      const SoIRVertex & vertex = this->vertices[i];
+      positions[i * 3 + 0] = vertex.position[0];
+      positions[i * 3 + 1] = vertex.position[1];
+      positions[i * 3 + 2] = vertex.position[2];
+      normals[i * 3 + 0] = vertex.normal[0];
+      normals[i * 3 + 1] = vertex.normal[1];
+      normals[i * 3 + 2] = vertex.normal[2];
+      texcoords[i * 4 + 0] = vertex.texcoord[0];
+      texcoords[i * 4 + 1] = vertex.texcoord[1];
+      texcoords[i * 4 + 2] = vertex.texcoord[2];
+      texcoords[i * 4 + 3] = vertex.texcoord[3];
+    }
+
+    geometry.positions = positions;
+    geometry.normals = normals;
+    geometry.texcoords = texcoords;
+  }
+
+  bool ensureTopology(SoPrimitiveTopology candidate)
+  {
+    if (this->topology == SO_TOPOLOGY_COUNT) {
+      this->topology = candidate;
+      return true;
+    }
+    return this->topology == candidate;
+  }
+
+  void append(const SoPrimitiveVertex * vertex)
+  {
+    SoIRVertex copy;
+    copy.position = vertex->getPoint();
+    copy.normal = vertex->getNormal();
+    copy.texcoord = vertex->getTextureCoords();
+    this->vertices.push_back(copy);
+  }
+
+  SoIRRenderAction * action;
+  SoShape * shape;
+  SoPrimitiveTopology topology;
+  std::vector<SoIRVertex> vertices;
+};
+
+}
 
 // SoShape.cpp grew too big, so I had to move some code into new
 // files. pederb, 2001-07-18
@@ -484,6 +598,30 @@ SoShape::GLRender(SoGLRenderAction * action)
   if (vp) action->getState()->pop();
 }
 #endif
+
+void
+SoShape::IRRender(SoIRRenderAction * action)
+{
+  if (!action) return;
+
+  SoState * state = action->getState();
+  SoVertexProperty * vertexProperty =
+    this->isOfType(SoVertexShape::getClassTypeId())
+      ? (SoVertexProperty *) static_cast<SoVertexShape *>(this)->vertexProperty.getValue()
+      : NULL;
+  if (vertexProperty) {
+    state->push();
+    vertexProperty->doAction(action);
+  }
+
+  SoIRPrimitiveAssembler assembler(action, this);
+  action->pushPrimitiveCollector(&assembler);
+  this->generatePrimitives(action);
+  action->popPrimitiveCollector(&assembler);
+  assembler.finalize();
+
+  if (vertexProperty) state->pop();
+}
 
 // Doc in parent.
 void
@@ -1116,6 +1254,12 @@ SoShape::invokeTriangleCallbacks(SoAction * const action,
     SoGetPrimitiveCountAction * ga = (SoGetPrimitiveCountAction *) action;
     ga->incNumTriangles();
   }
+  else if (action->getTypeId().isDerivedFrom(SoIRRenderAction::getClassTypeId())) {
+    SoIRRenderAction * ir = static_cast<SoIRRenderAction *>(action);
+    SoIRRenderAction::PrimitiveCollector * collector =
+      ir->getActivePrimitiveCollector();
+    if (collector) collector->onTriangle(v1, v2, v3);
+  }
 #if COIN_BUILD_LEGACY_GL_RENDERER
   else if (action->getTypeId().isDerivedFrom(SoGLRenderAction::getClassTypeId())) {
     soshape_staticdata * shapedata = soshape_get_staticdata();
@@ -1211,6 +1355,12 @@ SoShape::invokeLineSegmentCallbacks(SoAction * const action,
     SoGetPrimitiveCountAction * ga = (SoGetPrimitiveCountAction *) action;
     ga->incNumLines();
   }
+  else if (action->getTypeId().isDerivedFrom(SoIRRenderAction::getClassTypeId())) {
+    SoIRRenderAction * ir = static_cast<SoIRRenderAction *>(action);
+    SoIRRenderAction::PrimitiveCollector * collector =
+      ir->getActivePrimitiveCollector();
+    if (collector) collector->onLine(v1, v2);
+  }
 #if COIN_BUILD_LEGACY_GL_RENDERER
   else if (action->getTypeId().isDerivedFrom(SoGLRenderAction::getClassTypeId())) {
     soshape_staticdata * shapedata = soshape_get_staticdata();
@@ -1266,6 +1416,12 @@ SoShape::invokePointCallbacks(SoAction * const action,
   else if (action->getTypeId().isDerivedFrom(SoGetPrimitiveCountAction::getClassTypeId())) {
     SoGetPrimitiveCountAction * ga = (SoGetPrimitiveCountAction *) action;
     ga->incNumPoints();
+  }
+  else if (action->getTypeId().isDerivedFrom(SoIRRenderAction::getClassTypeId())) {
+    SoIRRenderAction * ir = static_cast<SoIRRenderAction *>(action);
+    SoIRRenderAction::PrimitiveCollector * collector =
+      ir->getActivePrimitiveCollector();
+    if (collector) collector->onPoint(v);
   }
 #if COIN_BUILD_LEGACY_GL_RENDERER
   else if (action->getTypeId().isDerivedFrom(SoGLRenderAction::getClassTypeId())) {
@@ -1779,8 +1935,8 @@ void
 SoShape::finishVertexArray(SoGLRenderAction * action,
                            const SbBool vbo,
                            const SbBool normpervertex,
-  const SbBool texpervertex,
-  const SbBool colorpervertex)
+                           const SbBool texpervertex,
+                           const SbBool colorpervertex)
 {
   SoState * state = action->getState();
   const cc_glglue * glue = sogl_glue_instance(state);

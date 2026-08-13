@@ -57,6 +57,9 @@ SbBool coin_render_ir_trace_enabled();
   \brief Helper functions for converting Coin state and caches into render IR.
 */
 namespace SoRenderIR {
+//! Capture the ordinary traversal state shared by retained shape producers.
+void fillCommandStateFromState(SoState * state, SoDrawList & drawlist,
+                               SoRenderCommand & command);
 //! Fill a material snapshot from the current Inventor traversal state.
 void fillMaterialFromState(SoState * state, SoMaterialData & material);
 //! Fill render-state fields from the current Inventor traversal state.
