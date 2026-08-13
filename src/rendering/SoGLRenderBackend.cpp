@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <mutex>
 #include <utility>
 #include <string>
@@ -172,6 +173,56 @@ applyViewport(const SoRenderParams & params)
   const SbVec2s & origin = params.viewport.getViewportOriginPixels();
   const SbVec2s & size = params.viewport.getViewportSizePixels();
   glViewport(origin[0], origin[1], size[0], size[1]);
+}
+
+void
+applyCommandViewport(const SoRenderCommand & command,
+                     const SoRenderParams & params)
+{
+  if (command.state.raster.viewportOverride) {
+    if (!command.state.raster.viewportEnabled) return;
+    glViewport(command.state.raster.viewportX,
+               command.state.raster.viewportY,
+               command.state.raster.viewportWidth,
+               command.state.raster.viewportHeight);
+    return;
+  }
+  applyViewport(params);
+}
+
+void
+clearCommandDepth(const SoRenderCommand & command,
+                  const SoRenderParams & params)
+{
+  if (!command.clearDepthBefore) return;
+
+  GLint oldScissor[4] = {0, 0, 0, 0};
+  glGetIntegerv(GL_SCISSOR_BOX, oldScissor);
+  const GLboolean oldScissorEnabled = glIsEnabled(GL_SCISSOR_TEST);
+  GLboolean oldDepthMask = GL_TRUE;
+  glGetBooleanv(GL_DEPTH_WRITEMASK, &oldDepthMask);
+
+  GLint x = params.viewport.getViewportOriginPixels()[0];
+  GLint y = params.viewport.getViewportOriginPixels()[1];
+  GLint width = params.viewport.getViewportSizePixels()[0];
+  GLint height = params.viewport.getViewportSizePixels()[1];
+  if (command.state.raster.viewportOverride) {
+    if (!command.state.raster.viewportEnabled) return;
+    x = command.state.raster.viewportX;
+    y = command.state.raster.viewportY;
+    width = command.state.raster.viewportWidth;
+    height = command.state.raster.viewportHeight;
+  }
+  if (width <= 0 || height <= 0) return;
+  glEnable(GL_SCISSOR_TEST);
+  glScissor(x, y, width, height);
+  glDepthMask(GL_TRUE);
+  glClearDepth(params.clearDepth);
+  glClear(GL_DEPTH_BUFFER_BIT);
+  glScissor(oldScissor[0], oldScissor[1], oldScissor[2], oldScissor[3]);
+  if (oldScissorEnabled) glEnable(GL_SCISSOR_TEST);
+  else glDisable(GL_SCISSOR_TEST);
+  glDepthMask(oldDepthMask);
 }
 
 void
@@ -1785,29 +1836,51 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   if (!command.state.raster.visible) return;
   if ((!command.geometry.positions && command.geometry.cacheKey == 0) ||
       command.geometry.vertexCount == 0) return;
+  if (command.state.raster.viewportOverride &&
+      !command.state.raster.viewportEnabled) return;
+  clearCommandDepth(command, params);
   const auto found = this->commandToCache.find(&command);
   if (found == this->commandToCache.end()) return;
   CachedCommand & entry = this->gpuCache[found->second];
   if (!entry.vertexArray) return;
 
   RasterPath path = this->selectRasterPath(entry, command, params);
+  const SbVec2s defaultViewportSize = params.viewport.getViewportSizePixels();
+  const SbVec2s commandViewportSize = command.state.raster.viewportOverride
+    ? SbVec2s(static_cast<short>(command.state.raster.viewportWidth),
+              static_cast<short>(command.state.raster.viewportHeight))
+    : defaultViewportSize;
+  const SbVec2s & viewportSize = commandViewportSize;
+  SbMat effectiveView;
+  SbMat effectiveProj;
+  std::memcpy(effectiveView, viewMat, sizeof(effectiveView));
+  std::memcpy(effectiveProj, projMat, sizeof(effectiveProj));
+  if (command.state.useCommandMatrices) {
+    command.viewMatrix.getValue(effectiveView);
+    command.projMatrix.getValue(effectiveProj);
+  }
+
+  applyCommandViewport(command, params);
   if (path.useLineShader &&
       (path.primitive == GL_LINES || path.primitive == GL_LINE_STRIP)) {
-    this->updateLineDistances(entry, command, viewMat, projMat,
-                              params.viewport.getViewportSizePixels());
+    this->updateLineDistances(entry, command, effectiveView, effectiveProj,
+                              viewportSize);
     path.expandedLineStream = command.geometry.indices &&
       command.geometry.indexCount && entry.lineRasterVertexArray != 0;
   }
 
-  applyViewport(params);
   this->applyDepthState(command);
   this->applyRasterState(command, path);
   this->applyBlendState(command);
   GLenum polygonOffsetTarget = GL_POLYGON_OFFSET_FILL;
   const bool polygonOffset = this->applyPolygonOffset(
     command, path, polygonOffsetTarget);
-  this->bindCommandProgram(drawlist, command, path, viewMat, projMat,
-                            params, entry);
+  const SbVec2s commandViewportOrigin = command.state.raster.viewportOverride
+    ? SbVec2s(static_cast<short>(command.state.raster.viewportX),
+              static_cast<short>(command.state.raster.viewportY))
+    : params.viewport.getViewportOriginPixels();
+  this->bindCommandProgram(drawlist, command, path, effectiveView, effectiveProj,
+                           commandViewportOrigin, viewportSize, entry);
   this->drawGeometry(command, path, entry);
   this->restoreRasterState(path, polygonOffsetTarget, polygonOffset);
 }
@@ -1963,7 +2036,8 @@ SoGLRenderBackend::bindCommandProgram(const SoDrawList & drawlist,
                                       const RasterPath & path,
                                       const SbMat & viewMat,
                                       const SbMat & projMat,
-                                      const SoRenderParams & params,
+                                      const SbVec2s & viewportOrigin,
+                                      const SbVec2s & viewportSize,
                                       const CachedCommand & entry)
 {
   if (path.textured) {
@@ -1973,19 +2047,19 @@ SoGLRenderBackend::bindCommandProgram(const SoDrawList & drawlist,
   const SbVec4f & color = command.material.diffuse;
   if (path.pixelRaster) {
     this->bindPixelShader(command, viewMat, projMat,
-                          params.viewport.getViewportOriginPixels(),
-                          params.viewport.getViewportSizePixels());
+                          viewportOrigin,
+                          viewportSize);
   }
   else if (path.usePointShader) {
     this->bindPointShader(command, viewMat, projMat, color,
                           entry.colorBuffer != 0, path.pointSize,
-                          params.viewport.getViewportSizePixels(),
+                          viewportSize,
                           path.pointTriangleInput, drawlist, path.textured);
   }
   else if (path.useLineShader) {
     this->bindLineShader(command, viewMat, projMat, color,
                          entry.colorBuffer != 0, path.lineWidth,
-                         params.viewport.getViewportSizePixels(),
+                         viewportSize,
                          path.lineTriangleInput, drawlist, path.textured);
   }
   else {

@@ -366,7 +366,8 @@ private:
                           const RasterPath & path,
                           const SbMat & viewMat,
                           const SbMat & projMat,
-                          const SoRenderParams & params,
+                          const SbVec2s & viewportOrigin,
+                          const SbVec2s & viewportSize,
                           const CachedCommand & entry);
   void drawGeometry(const SoRenderCommand & command,
                     const RasterPath & path,
