@@ -1319,6 +1319,10 @@ SoAction::shouldCompactPathList(void) const
 void
 SoAction::switchToPathTraversal(SoPath * path)
 {
+  if (!path || path->getLength() == 0 || !path->getNode(0)) {
+    return;
+  }
+
   // Store current state.
   SoActionP::AppliedData storeddata = PRIVATE(this)->applieddata;
   AppliedCode storedcode = PRIVATE(this)->appliedcode;
@@ -1327,10 +1331,14 @@ SoAction::switchToPathTraversal(SoPath * path)
 
   // Start path traversal. Don't use beginTraversal() (the user might
   // have overridden it).
+  path->ref();
   PRIVATE(this)->appliedcode = SoAction::PATH;
   PRIVATE(this)->applieddata.path = path;
-  this->currentpathcode = SoAction::IN_PATH;
+  this->currentpathcode = path->getFullLength() > 1
+    ? SoAction::IN_PATH : SoAction::BELOW_PATH;
+  this->currentpath.setHead(path->getNode(0));
   this->traverse(path->getNode(0));
+  path->unrefNoDelete();
 
   // Restore previous state.
   this->currentpath = storedpath;
