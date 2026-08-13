@@ -91,6 +91,10 @@ jobs:
         run: ctest --test-dir cmake_build_dir_rt -L visual-contract --output-on-failure -VV
       - name: Run DrawList visual suite
         run: xvfb-run -a ctest --test-dir cmake_build_dir_rt -L visual-drawlist --output-on-failure -VV
+      - name: Run material and lighting DrawList visual suite
+        if: matrix.renderer_state == 'enabled'
+        run: xvfb-run -a ctest --test-dir cmake_build_dir_rt \
+          -L visual-material --output-on-failure -VV
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
