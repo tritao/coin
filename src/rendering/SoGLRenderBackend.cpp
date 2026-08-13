@@ -40,8 +40,7 @@ static constexpr float DIFFUSE_COEFF  = 0.85f;
 static constexpr float SPECULAR_COEFF = 0.12f;
 static constexpr float DEFAULT_SHININESS = 64.0f;
 
-// Alpha thresholds for selection/highlight overlays
-static constexpr float HIGHLIGHT_ALPHA = 0.6f;
+// Alpha threshold for selection overlays
 static constexpr float SELECTION_ALPHA = 0.5f;
 
 // Texture alpha discard threshold (shader-side)
@@ -104,6 +103,16 @@ coin_command_viewport_size(const SoRenderCommand & cmd,
                    static_cast<short>(cmd.state.raster.viewportHeight));
   }
   return params.viewport.getViewportSizePixels();
+}
+
+// A command can carry a complete placement that is independent of the frame
+// camera.  Screen-space nodes use this for viewport-pixel geometry; overlay
+// passes have historically used it as well.  Keep this decision in one place
+// so the main, line, and point shader paths cannot disagree about placement.
+static bool
+coin_command_uses_captured_matrices(const SoRenderCommand & cmd)
+{
+  return cmd.state.useCommandMatrices || cmd.pass == SO_RENDERPASS_OVERLAY;
 }
 
 static void
@@ -859,12 +868,12 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
 
   coin_apply_command_viewport(cmd, params);
 
-  // Per-command model matrix; view/proj from params (auto-clipped) for
-  // main scene, or per-command for overlay/background (different camera).
+  // Per-command model matrix; use params for ordinary scene commands and the
+  // captured command placement for screen-space and overlay commands.
   SbMat modelMat;
   cmd.modelMatrix.getValue(modelMat);
   this->glue->glUniformMatrix4fv(this->uModelLocation, 1, GL_FALSE, &modelMat[0][0]);
-  if (cmd.pass == SO_RENDERPASS_OVERLAY) {
+  if (coin_command_uses_captured_matrices(cmd)) {
     SbMat cmdViewMat, cmdProjMat;
     cmd.viewMatrix.getValue(cmdViewMat);
     cmd.projMatrix.getValue(cmdProjMat);
@@ -1003,7 +1012,7 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
       SbMat modelMat2;
       cmd.modelMatrix.getValue(modelMat2);
       this->glue->glUniformMatrix4fv(this->lineUModelLocation, 1, GL_FALSE, &modelMat2[0][0]);
-      if (cmd.pass == SO_RENDERPASS_OVERLAY) {
+      if (coin_command_uses_captured_matrices(cmd)) {
         SbMat cmdV, cmdP;
         cmd.viewMatrix.getValue(cmdV);
         cmd.projMatrix.getValue(cmdP);
@@ -1055,8 +1064,12 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
 
     // Project origin and unit X through MVP to get screen scale
     SbMatrix mvp = cmd.modelMatrix;
-    mvp.multRight(params.viewMatrix);
-    mvp.multRight(params.projMatrix);
+    const SbMatrix & commandView = coin_command_uses_captured_matrices(cmd)
+      ? cmd.viewMatrix : params.viewMatrix;
+    const SbMatrix & commandProj = coin_command_uses_captured_matrices(cmd)
+      ? cmd.projMatrix : params.projMatrix;
+    mvp.multRight(commandView);
+    mvp.multRight(commandProj);
     SbVec3f ndc0, ndc1;
     mvp.multVecMatrix(SbVec3f(0, 0, 0), ndc0);
     mvp.multVecMatrix(SbVec3f(1, 0, 0), ndc1);
@@ -1214,7 +1227,7 @@ SoGLRenderBackend::bindPointShader(const SoRenderCommand & cmd,
   SbMat modelMat;
   cmd.modelMatrix.getValue(modelMat);
   this->glue->glUniformMatrix4fv(this->pointUModelLocation, 1, GL_FALSE, &modelMat[0][0]);
-  if (cmd.pass == SO_RENDERPASS_OVERLAY) {
+  if (coin_command_uses_captured_matrices(cmd)) {
     SbMat cmdViewMat, cmdProjMat;
     cmd.viewMatrix.getValue(cmdViewMat);
     cmd.projMatrix.getValue(cmdProjMat);
@@ -1622,8 +1635,18 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
     SbMat modelMat;
     cmd.modelMatrix.getValue(modelMat);
     this->glue->glUniformMatrix4fv(this->uModelLocation, 1, GL_FALSE, &modelMat[0][0]);
-    this->glue->glUniformMatrix4fv(this->uViewLocation, 1, GL_FALSE, &viewMat[0][0]);
-    this->glue->glUniformMatrix4fv(this->uProjLocation, 1, GL_FALSE, &projMat[0][0]);
+    SbMat commandViewMat;
+    SbMat commandProjMat;
+    if (coin_command_uses_captured_matrices(cmd)) {
+      cmd.viewMatrix.getValue(commandViewMat);
+      cmd.projMatrix.getValue(commandProjMat);
+      this->glue->glUniformMatrix4fv(this->uViewLocation, 1, GL_FALSE, &commandViewMat[0][0]);
+      this->glue->glUniformMatrix4fv(this->uProjLocation, 1, GL_FALSE, &commandProjMat[0][0]);
+    }
+    else {
+      this->glue->glUniformMatrix4fv(this->uViewLocation, 1, GL_FALSE, &viewMat[0][0]);
+      this->glue->glUniformMatrix4fv(this->uProjLocation, 1, GL_FALSE, &projMat[0][0]);
+    }
 
     GLenum prim = topologyToGL(cmd.geometry.topology);
     bool pointShaderActive = false;
@@ -1760,7 +1783,7 @@ SoGLRenderBackend::renderSelectionPass(const SoDrawList & drawlist,
 
     if (hasHighlight) {
       const SbVec4f & hc = cmd.selection.highlightColor;
-      setSelColor(hc[0], hc[1], hc[2], HIGHLIGHT_ALPHA);
+      setSelColor(hc[0], hc[1], hc[2], hc[3]);
       if (prim == GL_POINTS) {
         // Match the legacy point overlay path: committed selection respects
         // depth, while the live highlight renders on top.
