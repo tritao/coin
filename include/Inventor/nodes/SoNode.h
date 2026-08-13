@@ -53,6 +53,7 @@ class SoRayPickAction;
 class SoSearchAction;
 class SoWriteAction;
 class SoAudioRenderAction;
+class SoIRRenderAction;
 class SbDict;
 
 class COIN_DLL_API SoNode : public SoFieldContainer {
@@ -97,6 +98,7 @@ public:
   virtual SbBool affectsState(void) const;
 
   virtual void doAction(SoAction * action);
+  virtual void IRRender(SoIRRenderAction * action);
 #if COIN_HAVE_LEGACY_GL_RENDERER
   virtual void GLRender(SoGLRenderAction * action);
   virtual void GLRenderBelowPath(SoGLRenderAction * action);
@@ -141,6 +143,7 @@ public:
   static int getActionMethodIndex(const SoType type);
 
   static void getBoundingBoxS(SoAction * action, SoNode * node);
+  static void IRRenderS(SoAction * action, SoNode * node);
 #if COIN_HAVE_LEGACY_GL_RENDERER
   static void GLRenderS(SoAction * action, SoNode * node);
 #endif
