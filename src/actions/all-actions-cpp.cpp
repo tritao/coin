@@ -59,5 +59,6 @@
 #include "SoToVRMLAction.cpp"
 #include "SoWriteAction.cpp"
 #include "SoAudioRenderAction.cpp"
+#include "SoIRRenderAction.cpp"
 #include "SoToVRML2Action.cpp"
 // #include "SoIntersectionDetectionAction.cpp"

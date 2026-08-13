@@ -205,6 +205,7 @@ SbUniqueId is not really a class, just a \c typedef.
 #include <Inventor/SoInput.h>
 #include <Inventor/SoOutput.h>
 #include <Inventor/actions/SoActions.h>
+#include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/misc/SoChildList.h>
@@ -859,6 +860,20 @@ SoNode::getByName(const SbName & name, SoNodeList & l)
 void
 SoNode::doAction(SoAction * COIN_UNUSED_ARG(action))
 {
+}
+
+void
+SoNode::IRRender(SoIRRenderAction * action)
+{
+  this->doAction(action);
+}
+
+void
+SoNode::IRRenderS(SoAction * action, SoNode * node)
+{
+  assert(action != NULL);
+  assert(node != NULL);
+  node->IRRender(static_cast<SoIRRenderAction *>(action));
 }
 
 // Note that this documentation will also be used for all subclasses

@@ -202,6 +202,7 @@
 */
 
 #include <Inventor/nodes/SoShaderProgram.h>
+#include <Inventor/actions/SoIRRenderAction.h>
 #include "coindefs.h"
 
 #include <cassert>
@@ -284,6 +285,15 @@ SoShaderProgram::SoShaderProgram(void)
 SoShaderProgram::~SoShaderProgram()
 {
   delete PRIVATE(this);
+}
+
+void
+SoShaderProgram::IRRender(SoIRRenderAction * action)
+{
+  if (action) {
+    action->markUnsupported(this,
+      "SoShaderProgram is only supported by the LegacyGL renderer");
+  }
 }
 
 // doc from parent
