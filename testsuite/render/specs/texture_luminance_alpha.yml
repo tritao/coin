@@ -1,0 +1,7 @@
+id: texture_luminance_alpha
+scene: ../scenes/texture_luminance_alpha.iv
+
+viewport:
+  background: [0.5, 0.5, 0.5, 1.0]
+
+baseline: ../baselines/gl/texture_luminance_alpha.png
