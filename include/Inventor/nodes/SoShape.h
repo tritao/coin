@@ -48,6 +48,7 @@ class SoCoordinateElement;
 class SbVec2f;
 class SoMaterialBundle;
 class SoBoundingBoxCache;
+class SoIRRenderAction;
 
 class COIN_DLL_API SoShape : public SoNode {
   typedef SoNode inherited;
@@ -70,6 +71,7 @@ public:
 #if COIN_HAVE_LEGACY_GL_RENDERER
   void GLRender(SoGLRenderAction * action) override;
 #endif
+  void IRRender(SoIRRenderAction * action) override;
   void rayPick(SoRayPickAction * action) override;
   void callback(SoCallbackAction * action) override;
   virtual void computeBBox(SoAction * action, SbBox3f & box,
