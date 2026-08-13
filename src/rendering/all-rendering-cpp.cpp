@@ -48,3 +48,4 @@
 #include "SoRenderManager.cpp"
 #include "SoRenderManagerP.cpp"
 #include "SoGLDriverDatabase.cpp"
+#include "SoRenderIR.cpp"

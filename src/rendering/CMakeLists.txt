@@ -6,6 +6,7 @@ set(COIN_RENDERING_FILES
 	CoinOffscreenGLCanvas.cpp
 	SoRenderManager.cpp
 	SoRenderManagerP.cpp
+	SoRenderIR.cpp
 )
 
 if(COIN_BUILD_LEGACY_GL_RENDERER)
@@ -47,6 +48,7 @@ set(COIN_RENDERING_INTERNAL_FILES
 	CoinOffscreenGLCanvas.h
 	CoinOffscreenGLCanvas.cpp
 	CoinGLReadback.h
+	SoRenderIRP.h
 )
 
 # build library
