@@ -195,8 +195,13 @@ SoIRRenderAction::beginFrame()
 {
   this->drawlist.clear();
   this->resetFrameResources();
-  SoShapeStyleElement::setTransparencyType(this->state, PRIVATE(this)->transparencyType);
-  SoLazyElement::setTransparencyType(this->state, PRIVATE(this)->transparencyType);
+  // SoAction creates its state lazily.  Direct SoIRRenderAction users call
+  // beginFrame() through apply() before SoAction::beginTraversal() has had a
+  // chance to create that state, unlike SoRenderManager which obtains it
+  // explicitly first.
+  SoState * state = this->getState();
+  SoShapeStyleElement::setTransparencyType(state, PRIVATE(this)->transparencyType);
+  SoLazyElement::setTransparencyType(state, PRIVATE(this)->transparencyType);
 }
 
 void
