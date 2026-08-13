@@ -189,6 +189,20 @@ target_include_directories(RenderManagerPipelineTest PRIVATE
 	${COIN_TARGET_INCLUDE_DIRECTORIES}
 )
 add_test(NAME RenderManagerPipelineTest COMMAND RenderManagerPipelineTest)
+
+add_executable(TextureQualityPolicyTest texture-quality-policy-test.cpp)
+target_link_libraries(TextureQualityPolicyTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_compile_definitions(TextureQualityPolicyTest PRIVATE COIN_INTERNAL)
+target_include_directories(TextureQualityPolicyTest PRIVATE
+	${PROJECT_SOURCE_DIR}/src
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+add_test(NAME TextureQualityPolicyDefault COMMAND TextureQualityPolicyTest default)
+add_test(NAME TextureQualityPolicyOverride COMMAND TextureQualityPolicyTest override)
+add_test(NAME TextureQualityPolicyInvalid COMMAND TextureQualityPolicyTest invalid)
+
 if(HAVE_EGL)
 	add_executable(DrawListGLTest drawlist-gl-test.cpp)
 	target_link_libraries(DrawListGLTest Coin ${COIN_TARGET_LINK_LIBRARIES})
@@ -290,6 +304,18 @@ if(HAVE_EGL)
 	)
 	add_test(NAME OffscreenReadbackTest COMMAND OffscreenReadbackTest)
 	set_tests_properties(OffscreenReadbackTest PROPERTIES SKIP_RETURN_CODE 77)
+
+	add_executable(MinifiedTextureQualityTest minified-texture-quality-test.cpp)
+	target_link_libraries(MinifiedTextureQualityTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+	target_compile_definitions(MinifiedTextureQualityTest PRIVATE COIN_INTERNAL)
+	target_include_directories(MinifiedTextureQualityTest PRIVATE
+		${PROJECT_SOURCE_DIR}/src
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES}
+	)
+	add_test(NAME MinifiedTextureQualityTest COMMAND MinifiedTextureQualityTest)
+	set_tests_properties(MinifiedTextureQualityTest PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 
 # Many warnings are generated from test macros on macOS with Xcode.
