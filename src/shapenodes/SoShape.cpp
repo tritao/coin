@@ -169,28 +169,33 @@ public:
                   const SoPrimitiveVertex * v2,
                   const SoPrimitiveVertex * v3) override
   {
-    if (this->ensureTopology(SO_TOPOLOGY_TRIANGLES)) {
-      this->append(v1);
-      this->append(v2);
-      this->append(v3);
-    }
+    this->setTopology(SO_TOPOLOGY_TRIANGLES);
+    this->append(v1);
+    this->append(v2);
+    this->append(v3);
   }
 
   void onLine(const SoPrimitiveVertex * v1,
               const SoPrimitiveVertex * v2) override
   {
-    if (this->ensureTopology(SO_TOPOLOGY_LINES)) {
-      this->append(v1);
-      this->append(v2);
-    }
+    this->setTopology(SO_TOPOLOGY_LINES);
+    this->append(v1);
+    this->append(v2);
   }
 
   void onPoint(const SoPrimitiveVertex * v) override
   {
-    if (this->ensureTopology(SO_TOPOLOGY_POINTS)) this->append(v);
+    this->setTopology(SO_TOPOLOGY_POINTS);
+    this->append(v);
   }
 
   void finalize()
+  {
+    this->flushRun();
+  }
+
+private:
+  void flushRun()
   {
     if (this->vertices.empty()) return;
 
@@ -200,6 +205,8 @@ public:
       this->action->getState(), this->action->getMutableDrawList(), command);
     command.userData = this->shape;
     this->action->addCommand(command);
+
+    this->vertices.clear();
   }
 
   void fillGeometry(SoGeometryDesc & geometry)
@@ -237,13 +244,12 @@ public:
     geometry.texcoords = texcoords;
   }
 
-  bool ensureTopology(SoPrimitiveTopology candidate)
+  void setTopology(SoPrimitiveTopology candidate)
   {
-    if (this->topology == SO_TOPOLOGY_COUNT) {
-      this->topology = candidate;
-      return true;
-    }
-    return this->topology == candidate;
+    if (this->topology == candidate) return;
+
+    if (this->topology != SO_TOPOLOGY_COUNT) this->flushRun();
+    this->topology = candidate;
   }
 
   void append(const SoPrimitiveVertex * vertex)

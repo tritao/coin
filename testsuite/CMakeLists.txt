@@ -236,6 +236,15 @@ target_include_directories(LegacyBlendingTest PRIVATE
 )
 add_test(NAME LegacyBlendingTest COMMAND LegacyBlendingTest)
 
+add_executable(RetainedMixedTopologyTest retained-mixed-topology-test.cpp)
+target_link_libraries(RetainedMixedTopologyTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(RetainedMixedTopologyTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+add_test(NAME RetainedMixedTopologyTest COMMAND RetainedMixedTopologyTest)
+
 if(HAVE_EGL)
 	coin_add_egl_test(NAME EGLBindingTest SOURCES EGLBindingTest.cpp
 		LABELS requires-egl)
