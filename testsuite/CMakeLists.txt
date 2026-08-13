@@ -358,6 +358,19 @@ if(HAVE_EGL)
 		LABELS offscreen requires-egl)
 endif()
 
+add_executable(RetainedReplayContextTest RetainedReplayContextTest.cpp)
+target_link_libraries(RetainedReplayContextTest $<LINK_ONLY:Coin>
+	${COIN_TARGET_LINK_LIBRARIES})
+target_compile_definitions(RetainedReplayContextTest PRIVATE
+	COIN_ALLOW_PRIVATE_HEADERS)
+target_include_directories(RetainedReplayContextTest PRIVATE
+	${PROJECT_SOURCE_DIR}/src
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES})
+add_test(NAME RetainedReplayContextTest COMMAND RetainedReplayContextTest)
+set_tests_properties(RetainedReplayContextTest PROPERTIES LABELS "unit")
+
 add_executable(RenderLayerSemanticsTest RenderLayerSemanticsTest.cpp)
 target_link_libraries(RenderLayerSemanticsTest Coin ${COIN_TARGET_LINK_LIBRARIES})
 target_include_directories(RenderLayerSemanticsTest PRIVATE

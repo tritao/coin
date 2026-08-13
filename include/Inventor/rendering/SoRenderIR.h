@@ -7,6 +7,8 @@
 #include <Inventor/SbColor4f.h>
 #include <Inventor/SbMatrix.h>
 #include <Inventor/SbVec2f.h>
+#include <Inventor/SbViewVolume.h>
+#include <Inventor/SbViewportRegion.h>
 #include <Inventor/SbVec3f.h>
 #include <Inventor/SbVec4f.h>
 
@@ -17,6 +19,7 @@
 using SoNodeId = uint64_t;
 using SoInstanceId = uint64_t;
 using SoObjectId = uint64_t;
+class SoState;
 
 /*!
   \file SoRenderIR.h
@@ -373,6 +376,7 @@ struct SoRasterState {
   SbBool  cullBackFaces = FALSE;
   SbBool  frontFaceCCW = TRUE;
   SbBool  scissorEnabled = FALSE;
+  SbBool  viewportOverride = FALSE;
   SbBool  viewportEnabled = FALSE;
   int     viewportX = 0;
   int     viewportY = 0;
@@ -398,8 +402,19 @@ struct SoRenderState {
   SoBlendState blend;
   SoAlphaTestState alphaTest;
   SoRasterState raster;
-  //! Use view/projection matrices captured with this command.
+  //! Use the view/projection matrices captured with the command.
   SbBool useCommandMatrices = FALSE;
+};
+
+/*!
+  \enum SoRenderStage
+  \brief Ordered scene stage containing one or more render passes.
+*/
+enum class SoRenderStage : uint8_t {
+  Background,
+  Main,
+  AfterMain,
+  Foreground
 };
 
 /*!
@@ -453,7 +468,46 @@ struct SoLightingData {
   std::vector<SoLightData> lights;
 };
 
-/*! \enum SoPickElementType
+/*!
+  \struct SoIRRenderContext
+  \brief State that must survive when a path is replayed after traversal.
+
+  A delayed path is traversed after the original scene traversal has moved on.
+  These values preserve the camera, model, and lighting context that cannot
+  reliably be reconstructed when a delayed path is replayed. A full path
+  replay reconstructs its model state from the path, so callers can suppress
+  the model transform when applying the context. The validity flags allow the
+  same delayed path element to remain usable by actions which do not enable
+  every IR state element.
+*/
+struct COIN_DLL_API SoIRRenderContext {
+  SoLightingData lighting;
+  SbMatrix modelMatrix;
+  SbViewportRegion viewport;
+  SbViewVolume viewVolume;
+  SbMatrix viewingMatrix;
+  SbMatrix projectionMatrix;
+  float devicePixelRatio = 1.0f;
+  SbBool hasLighting = FALSE;
+  SbBool hasModelMatrix = FALSE;
+  SbBool hasViewport = FALSE;
+  SbBool hasViewVolume = FALSE;
+  SbBool hasViewingMatrix = FALSE;
+  SbBool hasProjectionMatrix = FALSE;
+  SbBool hasDevicePixelRatio = FALSE;
+
+  // This is a replay supplement, not a complete SoState snapshot. Material,
+  // texture, draw-style, pick-style, and other inherited state are rebuilt by
+  // traversing the retained path; these fields preserve frame/view state that
+  // cannot safely be reconstructed after the original traversal.
+  //! Capture the replay-relevant state enabled on an Inventor traversal.
+  void captureFromState(SoState * state);
+  //! Apply the captured state to an active Inventor traversal.
+  void applyToState(SoState * state, SbBool applyModelMatrix = TRUE) const;
+};
+
+/*!
+  \enum SoPickElementType
   \brief Backend-neutral identity kinds retained for picking.
 */
 enum SoPickElementType : uint8_t {
@@ -590,6 +644,9 @@ struct SoRenderCommand {
   SbMatrix         projMatrix;
 
   SoOpacityClass   opacityClass = SO_OPACITY_OPAQUE;
+  SoRenderStage    stage = SoRenderStage::Main;
+  //! Clear depth once immediately before this command's scoped placement.
+  SbBool           clearDepthBefore = FALSE;
   SoLightingHandle lightingHandle = 0;
   SoNodeId         nodeId = 0;     //!< Identity of the underlying scene node.
   SoInstanceId     instanceId = 0; //!< Identity of this rendered occurrence.

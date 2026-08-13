@@ -5,6 +5,7 @@
 #include "elements/SoLazyElementP.h"
 
 #include <Inventor/C/tidbits.h>
+#include <Inventor/elements/SoDevicePixelRatioElement.h>
 #include <Inventor/elements/SoDepthBufferElement.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
 #include <Inventor/elements/SoEnvironmentElement.h>
@@ -24,6 +25,7 @@
 #include <Inventor/elements/SoShapeHintsElement.h>
 #include <Inventor/elements/SoShapeStyleElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
+#include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
 #include <Inventor/errors/SoDebugError.h>
@@ -508,6 +510,70 @@ SoIRDumpFirstN(const SoDrawList & drawlist, int count)
   }
 }
 
+void
+SoIRRenderContext::captureFromState(SoState * state)
+{
+  *this = SoIRRenderContext();
+  if (!state) return;
+
+  if (state->isElementEnabled(SoEnvironmentElement::getClassStackIndex()) &&
+      state->isElementEnabled(SoLightAttenuationElement::getClassStackIndex()) &&
+      state->isElementEnabled(SoLightElement::getClassStackIndex())) {
+    SoRenderIR::captureLightingFromState(state, this->lighting);
+    this->hasLighting = TRUE;
+  }
+
+  if (state->isElementEnabled(SoViewportRegionElement::getClassStackIndex())) {
+    this->viewport = SoViewportRegionElement::get(state);
+    this->hasViewport = TRUE;
+  }
+  if (state->isElementEnabled(SoModelMatrixElement::getClassStackIndex())) {
+    this->modelMatrix = SoModelMatrixElement::get(state);
+    this->hasModelMatrix = TRUE;
+  }
+  if (state->isElementEnabled(SoViewVolumeElement::getClassStackIndex())) {
+    this->viewVolume = SoViewVolumeElement::get(state);
+    this->hasViewVolume = TRUE;
+  }
+  if (state->isElementEnabled(SoViewingMatrixElement::getClassStackIndex())) {
+    this->viewingMatrix = SoViewingMatrixElement::get(state);
+    this->hasViewingMatrix = TRUE;
+  }
+  if (state->isElementEnabled(SoProjectionMatrixElement::getClassStackIndex())) {
+    this->projectionMatrix = SoProjectionMatrixElement::get(state);
+    this->hasProjectionMatrix = TRUE;
+  }
+  if (state->isElementEnabled(SoDevicePixelRatioElement::getClassStackIndex())) {
+    this->devicePixelRatio = SoDevicePixelRatioElement::get(state);
+    this->hasDevicePixelRatio = TRUE;
+  }
+}
+
+void
+SoIRRenderContext::applyToState(SoState * state, SbBool applyModelMatrix) const
+{
+  if (!state) return;
+
+  if (applyModelMatrix && this->hasModelMatrix) {
+    SoModelMatrixElement::set(state, nullptr, this->modelMatrix);
+  }
+  if (this->hasViewport) {
+    SoViewportRegionElement::set(state, this->viewport);
+  }
+  if (this->hasViewVolume) {
+    SoViewVolumeElement::set(state, nullptr, this->viewVolume);
+  }
+  if (this->hasViewingMatrix) {
+    SoViewingMatrixElement::set(state, nullptr, this->viewingMatrix);
+  }
+  if (this->hasProjectionMatrix) {
+    SoProjectionMatrixElement::set(state, nullptr, this->projectionMatrix);
+  }
+  if (this->hasDevicePixelRatio) {
+    SoDevicePixelRatioElement::set(state, this->devicePixelRatio);
+  }
+}
+
 namespace SoRenderIR {
 
 static void fillTextureFromState(SoState * state, SoIRRenderAction * action,
@@ -777,11 +843,9 @@ fillRenderStateFromState(SoState * state, SoRenderState & rs)
     (offsetstyle & SoPolygonOffsetElement::POINTS);
 }
 
-SoLightingHandle
-fillLightingFromState(SoState * state, SoDrawList & drawlist)
+void
+captureLightingFromState(SoState * state, SoLightingData & lighting)
 {
-  SoLightingData lighting;
-
   const SbColor & ambientColor = SoEnvironmentElement::getAmbientColor(state);
   const float ambientIntensity = SoEnvironmentElement::getAmbientIntensity(state);
   lighting.ambient.setValue(ambientColor[0] * ambientIntensity,
@@ -846,6 +910,33 @@ fillLightingFromState(SoState * state, SoDrawList & drawlist)
     lighting.lights.push_back(lightData);
   }
 
+}
+
+void
+captureRenderContextFromState(SoState * state, SoIRRenderContext & context)
+{
+  context.captureFromState(state);
+}
+
+void
+applyRenderContextToState(SoState * state, const SoIRRenderContext & context)
+{
+  context.applyToState(state);
+}
+
+SoLightingHandle
+fillLightingFromState(SoState * state, SoDrawList & drawlist)
+{
+  SoLightingData lighting;
+  captureLightingFromState(state, lighting);
+  return drawlist.addLightingSetup(lighting);
+}
+
+SoLightingHandle
+fillLightingFromState(SoState * /* state */,
+                      SoDrawList & drawlist,
+                      const SoLightingData & lighting)
+{
   return drawlist.addLightingSetup(lighting);
 }
 

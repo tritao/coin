@@ -57,6 +57,15 @@ SbBool coin_render_ir_trace_enabled();
   \brief Helper functions for converting Coin state and caches into render IR.
 */
 namespace SoRenderIR {
+// Source-private state capture helpers. These are implementation seams for
+// retained traversal and are intentionally not part of the installed API.
+void captureLightingFromState(SoState * state, SoLightingData & lighting);
+void captureRenderContextFromState(SoState * state,
+                                   SoIRRenderContext & context);
+void applyRenderContextToState(SoState * state,
+                               const SoIRRenderContext & context);
+void setCommandMatricesOverride(SoState * state, SbBool enabled);
+
 //! Capture matrices, render state, and lighting shared by retained producers.
 void fillCommandTraversalStateFromAction(SoIRRenderAction * action,
                                          SoRenderCommand & command);
@@ -74,6 +83,9 @@ void ensureMaterialBlendState(SoRenderState & renderState,
                               const SoMaterialData & material);
 //! Extract the current lighting setup, append/deduplicate it, and return its handle.
 SoLightingHandle fillLightingFromState(SoState * state, SoDrawList & drawlist);
+//! Append a previously captured lighting setup and return its handle.
+SoLightingHandle fillLightingFromState(SoState * state, SoDrawList & drawlist,
+                                       const SoLightingData & lighting);
 //! Return whether the material should be treated as translucent.
 bool isMaterialTransparent(const SoMaterialData & material);
 //! Complete derived command state after producer-specific adjustments.
