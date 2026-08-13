@@ -50,6 +50,7 @@ class SoVBO;
 #include <Inventor/elements/SoMultiTextureImageElement.h>
 #include <Inventor/elements/SoVertexAttributeElement.h>
 
+#include <algorithm>
 #include <cstring>
 #include <cstdlib>
 #include <vector>
@@ -142,6 +143,7 @@ class SoVBO;
 #include "nodes/SoSubNodeP.h"
 #include "rendering/SoGL.h"
 #include "rendering/SoRenderIRP.h"
+#include "rendering/SoTransparencySortP.h"
 #include "glue/glp.h"
 #include "threads/threadsutilp.h"
 #include "tidbitsp.h"
@@ -163,9 +165,14 @@ struct SoIRBatch {
   size_t first = 0;
   size_t count = 0;
   int materialIndex = -1;
+  int sourcePrimitiveStart = -1;
+  int sourcePrimitiveCount = 0;
 
-  SoIRBatch(size_t first, size_t count, int materialIndex)
-    : first(first), count(count), materialIndex(materialIndex) {}
+  SoIRBatch(size_t first, size_t count, int materialIndex,
+            int sourcePrimitiveStart = -1, int sourcePrimitiveCount = 0)
+    : first(first), count(count), materialIndex(materialIndex),
+      sourcePrimitiveStart(sourcePrimitiveStart),
+      sourcePrimitiveCount(sourcePrimitiveCount) {}
 };
 
 struct SoIRPrimitiveRun {
@@ -173,8 +180,22 @@ struct SoIRPrimitiveRun {
     : topology(topology) {}
 
   SoPrimitiveTopology topology;
+  int firstPrimitive = 0;
   std::vector<SoIRVertex> vertices;
 };
+
+// Legacy material bundles clamp indices before looking up the active
+// material array.  Retained rendering must apply the same rule: indexed
+// bindings commonly fall back to coordinate indices, while a scene may only
+// provide one material.  Keeping the normalization here also protects the
+// renderer-neutral path from malformed or stale index data.
+static int
+so_ir_normalize_material_index(const SoLazyElement * materials, int index)
+{
+  const int materialCount = materials ? materials->getNumDiffuse() : 0;
+  if (materialCount <= 0) return 0;
+  return std::max(0, std::min(index, materialCount - 1));
+}
 
 class SoIRPrimitiveAssembler : public SoIRRenderAction::PrimitiveCollector {
 public:
@@ -228,6 +249,24 @@ private:
 
     SoState * state = this->action->getState();
     const size_t count = run.vertices.size();
+    const bool sortTriangles =
+      run.topology == SO_TOPOLOGY_TRIANGLES &&
+      (SoShapeStyleElement::get(state)->getFlags() &
+       SoShapeStyleElement::TRANSP_SORTED_TRIANGLES) != 0 &&
+      count >= 3 && count % 3 == 0;
+
+    std::vector<int> triangleOrder;
+    if (sortTriangles) {
+      std::vector<SbVec3f> triangleVertices;
+      triangleVertices.reserve(count);
+      for (const SoIRVertex & vertex : run.vertices) {
+        triangleVertices.push_back(vertex.position);
+      }
+      SoTransparencySortTriangles(
+        state, triangleVertices.data(), static_cast<int>(count / 3),
+        triangleOrder);
+    }
+
     float * positions = static_cast<float *>(
       this->action->allocateGeometryStorage(sizeof(float) * 3 * count));
     float * normals = static_cast<float *>(
@@ -238,7 +277,8 @@ private:
     const size_t primitiveWidth = run.topology == SO_TOPOLOGY_TRIANGLES ? 3
       : run.topology == SO_TOPOLOGY_LINES ? 2 : 1;
     std::vector<SoIRBatch> batches;
-    batches.reserve((count + primitiveWidth - 1) / primitiveWidth);
+    batches.reserve(sortTriangles ? triangleOrder.size()
+                                  : (count + primitiveWidth - 1) / primitiveWidth);
     bool hasMixedMaterials = false;
 
     const SoMaterialBindingElement::Binding materialBinding =
@@ -252,10 +292,34 @@ private:
     const bool hasPerVertexMaterials =
       materialBinding == SoMaterialBindingElement::PER_VERTEX ||
       materialBinding == SoMaterialBindingElement::PER_VERTEX_INDEXED;
-    if (!hasExplicitMaterialIndices) {
+    if (sortTriangles) {
+      int previousMaterialIndex = -1;
+      for (size_t sortedTriangle = 0;
+           sortedTriangle < triangleOrder.size(); ++sortedTriangle) {
+        const size_t first = static_cast<size_t>(triangleOrder[sortedTriangle]) * 3;
+        int materialIndex = run.vertices[first].materialIndex;
+        for (size_t i = 1; i < 3; ++i) {
+          if (run.vertices[first + i].materialIndex != materialIndex) {
+            materialIndex = -1;
+            hasMixedMaterials = true;
+            break;
+          }
+        }
+        if (batches.empty() || previousMaterialIndex != materialIndex) {
+          batches.emplace_back(sortedTriangle, 1, materialIndex);
+        }
+        else {
+          batches.back().count += 1;
+          batches.back().sourcePrimitiveCount += 1;
+        }
+        previousMaterialIndex = materialIndex;
+      }
+    }
+    else if (!hasExplicitMaterialIndices) {
       batches.push_back(SoIRBatch(0, count, 0));
     }
-    for (size_t first = 0; hasExplicitMaterialIndices && first < count;) {
+    for (size_t first = 0;
+         !sortTriangles && hasExplicitMaterialIndices && first < count;) {
       const size_t primitiveCount = std::min(primitiveWidth, count - first);
       int materialIndex = run.vertices[first].materialIndex;
       for (size_t i = 1; i < primitiveCount; ++i) {
@@ -267,12 +331,43 @@ private:
       }
 
       if (batches.empty() || batches.back().materialIndex != materialIndex) {
-        batches.push_back(SoIRBatch(first, primitiveCount, materialIndex));
+        const size_t primitiveStart = first / primitiveWidth;
+        batches.push_back(SoIRBatch(
+          first, primitiveCount, materialIndex,
+          run.firstPrimitive + static_cast<int>(primitiveStart), 1));
       }
       else {
         batches.back().count += primitiveCount;
+        batches.back().sourcePrimitiveCount += 1;
       }
       first += primitiveCount;
+    }
+
+    if (!sortTriangles && !hasExplicitMaterialIndices && !batches.empty()) {
+      batches.front().sourcePrimitiveStart = run.firstPrimitive;
+      batches.front().sourcePrimitiveCount =
+        static_cast<int>((count + primitiveWidth - 1) / primitiveWidth);
+    }
+
+    int32_t * sourcePrimitiveOrder = nullptr;
+    uint32_t * sortedIndices = nullptr;
+    if (sortTriangles) {
+      sourcePrimitiveOrder = static_cast<int32_t *>(
+        this->action->allocateGeometryStorage(
+          sizeof(int32_t) * triangleOrder.size(), alignof(int32_t)));
+      sortedIndices = static_cast<uint32_t *>(
+        this->action->allocateGeometryStorage(
+          sizeof(uint32_t) * triangleOrder.size() * 3, alignof(uint32_t)));
+      for (size_t sortedTriangle = 0;
+           sortedTriangle < triangleOrder.size(); ++sortedTriangle) {
+        const int sourceTriangle = triangleOrder[sortedTriangle];
+        sourcePrimitiveOrder[sortedTriangle] =
+          run.firstPrimitive + sourceTriangle;
+        for (int vertex = 0; vertex < 3; ++vertex) {
+          sortedIndices[sortedTriangle * 3 + vertex] =
+            static_cast<uint32_t>(sourceTriangle * 3 + vertex);
+        }
+      }
     }
 
     float * colors = nullptr;
@@ -294,7 +389,8 @@ private:
       texcoords[i * 4 + 2] = vertex.texcoord[2];
       texcoords[i * 4 + 3] = vertex.texcoord[3];
       if (colors) {
-        const int materialIndex = std::max(vertex.materialIndex, 0);
+        const int materialIndex = so_ir_normalize_material_index(
+          SoLazyElement::getInstance(state), vertex.materialIndex);
         const SbColor & color = SoLazyElement::getDiffuse(state, materialIndex);
         const float alpha = 1.0f - SoLazyElement::getTransparency(state, materialIndex);
         colors[i * 4 + 0] = color[0];
@@ -307,19 +403,36 @@ private:
     for (const SoIRBatch & batch : batches) {
       SoRenderCommand command = {};
       command.geometry.topology = run.topology;
-      command.geometry.vertexCount = static_cast<uint32_t>(batch.count);
+      command.geometry.vertexCount = static_cast<uint32_t>(
+        sortTriangles ? count : batch.count);
       command.geometry.normalCount = command.geometry.vertexCount;
       command.geometry.vertexStride = sizeof(float) * 3;
       command.geometry.texcoordStride = sizeof(float) * 4;
-      command.geometry.positions = positions + batch.first * 3;
-      command.geometry.normals = normals + batch.first * 3;
-      command.geometry.texcoords = texcoords + batch.first * 4;
-      command.geometry.colors = colors ? colors + batch.first * 4 : nullptr;
+      command.geometry.positions = sortTriangles ? positions
+                                                 : positions + batch.first * 3;
+      command.geometry.normals = sortTriangles ? normals
+                                               : normals + batch.first * 3;
+      command.geometry.texcoords = sortTriangles ? texcoords
+                                                 : texcoords + batch.first * 4;
+      command.geometry.colors = colors
+        ? (sortTriangles ? colors : colors + batch.first * 4) : nullptr;
+      if (sortTriangles) {
+        command.geometry.indexCount = static_cast<uint32_t>(batch.count * 3);
+        command.geometry.indices = sortedIndices + batch.first * 3;
+      }
+      command.sourcePrimitiveStart = batch.sourcePrimitiveStart;
+      command.sourcePrimitiveCount = batch.sourcePrimitiveCount;
+      if (sourcePrimitiveOrder) {
+        command.sourcePrimitiveOrder = sourcePrimitiveOrder + batch.first;
+        command.sourcePrimitiveOrderCount = static_cast<uint32_t>(batch.count);
+      }
       command.modelMatrix = SoModelMatrixElement::get(state);
       command.viewMatrix = SoViewingMatrixElement::get(state);
       command.projMatrix = SoProjectionMatrixElement::get(state);
+      const int materialIndex = so_ir_normalize_material_index(
+        SoLazyElement::getInstance(state), batch.materialIndex);
       SoRenderIR::fillMaterialFromState(
-        state, command.material, std::max(batch.materialIndex, 0));
+        state, command.material, materialIndex);
       command.material.vertexColorAlphaIncludesOpacity =
         command.geometry.colors != nullptr;
       SoRenderIR::fillTextureFromState(state, this->action, command.material);
@@ -352,6 +465,7 @@ private:
   {
     if (this->runs.empty() || this->runs.back().topology != candidate) {
       this->runs.emplace_back(candidate);
+      this->runs.back().firstPrimitive = this->primitiveIndex;
     }
     return true;
   }
@@ -363,7 +477,8 @@ private:
     copy.normal = vertex->getNormal();
     copy.texcoord = vertex->getTextureCoords();
     assert(!this->runs.empty());
-    copy.materialIndex = materialIndex;
+    copy.materialIndex = so_ir_normalize_material_index(
+      SoLazyElement::getInstance(this->action->getState()), materialIndex);
     this->runs.back().vertices.push_back(copy);
   }
 
@@ -711,6 +826,14 @@ SoShape::GLRender(SoGLRenderAction * action)
 }
 #endif
 
+#if COIN_BUILD_LEGACY_GL_RENDERER
+SbBool
+SoShape::canRenderSortedTriangles(void) const
+{
+  return TRUE;
+}
+#endif
+
 void
 SoShape::IRRender(SoIRRenderAction * action)
 {
@@ -911,7 +1034,8 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
   }
 
   // test if we should sort triangles before rendering
-  if (transparent && (shapestyleflags & SoShapeStyleElement::TRANSP_SORTED_TRIANGLES)) {
+  if (transparent && (shapestyleflags & SoShapeStyleElement::TRANSP_SORTED_TRIANGLES) &&
+      this->canRenderSortedTriangles()) {
     // lock since pvcache is shared among all threads
     PRIVATE(this)->lock();
     this->validatePVCache(action);

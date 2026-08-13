@@ -334,6 +334,8 @@ struct SoRenderState {
   SoRasterState raster;
   //! Use the view/projection matrices captured with the command.
   SbBool useCommandMatrices = FALSE;
+  //! Legacy sorted-object/sorted-triangle transparency is active.
+  SbBool sortedTriangles = FALSE;
   uint32_t opaqueKey = 0;
   uint32_t translucentKey = 0;
 };
@@ -493,6 +495,14 @@ struct SoRenderCommand {
   SoPickData       pick;
   SoSelectionData  selection;
   SoPixelTextData  pixelText;  //!< Placement for SO_MAT_IS_PIXEL_TEXT
+
+  // Source primitive range used by shape-specific picking metadata. A
+  // sorted-triangle command may be emitted out of source order, so geometry
+  // order alone is not sufficient to recover the originating face/part.
+  int32_t          sourcePrimitiveStart = -1;
+  int32_t          sourcePrimitiveCount = 0;
+  const int32_t *   sourcePrimitiveOrder = nullptr;
+  uint32_t          sourcePrimitiveOrderCount = 0;
 
   uint64_t         sortKey = 0; //!< Backend-computed key used by sorting.
   void *           userData = nullptr; //!< Opaque, non-owned producer data.

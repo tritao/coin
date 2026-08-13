@@ -18,6 +18,7 @@
 #include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoProjectionMatrixElement.h>
 #include <Inventor/elements/SoShapeHintsElement.h>
+#include <Inventor/elements/SoShapeStyleElement.h>
 #include <Inventor/elements/SoTextureQualityElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
@@ -648,6 +649,9 @@ fillRenderStateFromState(SoState * state, SoRenderState & rs)
   SoState * mutableState = state;
   rs.useCommandMatrices =
     SoRenderPlacementElement::getCommandMatricesOverride(mutableState);
+  rs.sortedTriangles =
+    (SoShapeStyleElement::get(mutableState)->getFlags() &
+     SoShapeStyleElement::TRANSP_SORTED_TRIANGLES) != 0;
   SbBool depthtest = TRUE;
   SbBool depthwrite = TRUE;
   SoDepthBufferElement::DepthWriteFunction depthfunc =

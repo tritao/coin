@@ -94,6 +94,10 @@ protected:
   virtual void generatePrimitives(SoAction * action) =  0;
 #if COIN_HAVE_LEGACY_GL_RENDERER
   virtual SbBool shouldGLRender(SoGLRenderAction * action);
+  // Return whether the shape can be rendered through the primitive cache
+  // used by sorted-triangle transparency. Nodes with a custom raster path
+  // and no generated primitives can opt out.
+  virtual SbBool canRenderSortedTriangles(void) const;
   void beginSolidShape(SoGLRenderAction * action);
   void endSolidShape(SoGLRenderAction * action);
   void GLRenderBoundingBox(SoGLRenderAction * action);
