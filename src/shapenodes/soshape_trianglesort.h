@@ -56,16 +56,9 @@ public:
                 const SoPrimitiveVertex * v3);
   void endShape(SoState * state, SoMaterialBundle & mb);
 
-  typedef struct {
-    signed int idx : 31;
-    unsigned int backface : 1;
-    float dist;
-  } sorted_triangle;
-
 private:
 
   SbList <SoPrimitiveVertex> * pvlist;
-  SbList <sorted_triangle> * trianglelist;
 };
 
 #endif // !COIN_SOSHAPE_TRIANGLESORT_H
