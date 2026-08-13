@@ -38,6 +38,7 @@
 #include <Inventor/fields/SoMFNode.h>
 
 class SoState;
+class SoIRRenderAction;
 #if COIN_HAVE_LEGACY_GL_RENDERER
 class SoGLRenderAction;
 #endif
@@ -62,6 +63,7 @@ public:
                          void * closure);
 
 SoEXTENDER public:
+  void IRRender(SoIRRenderAction * action) override;
 #if COIN_HAVE_LEGACY_GL_RENDERER
   void GLRender(SoGLRenderAction * action) override;
 #endif
