@@ -1,6 +1,7 @@
 // src/actions/SoIRRenderAction.cpp
 
 #include <Inventor/actions/SoIRRenderAction.h>
+#include <Inventor/actions/SoGLRenderAction.h>
 
 #include <Inventor/SoDB.h>
 #include <Inventor/C/tidbits.h>
@@ -100,6 +101,7 @@ public:
     textureCopies;
   SbList<SoIRRenderAction::PrimitiveCollector *> collectorStack;
   std::vector<SoPath *> commandPaths;
+  int transparencyType = SoGLRenderAction::BLEND;
 };
 
 #define PRIVATE(obj) (obj->pimpl)
@@ -193,6 +195,20 @@ SoIRRenderAction::beginFrame()
 {
   this->drawlist.clear();
   this->resetFrameResources();
+  SoShapeStyleElement::setTransparencyType(this->state, PRIVATE(this)->transparencyType);
+  SoLazyElement::setTransparencyType(this->state, PRIVATE(this)->transparencyType);
+}
+
+void
+SoIRRenderAction::setTransparencyType(int type)
+{
+  PRIVATE(this)->transparencyType = type;
+}
+
+int
+SoIRRenderAction::getTransparencyType(void) const
+{
+  return PRIVATE(this)->transparencyType;
 }
 
 void

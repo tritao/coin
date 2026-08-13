@@ -81,6 +81,10 @@ public:
   void setDevicePixelRatio(float dpr) { this->devicePixelRatio = dpr; }
   float getDevicePixelRatio(void) const { return this->devicePixelRatio; }
 
+  //! Set the legacy-compatible transparency mode used during traversal.
+  void setTransparencyType(int type);
+  int getTransparencyType(void) const;
+
   // Standard entry points, mirroring SoGLRenderAction
   virtual void apply(SoNode * root) override;
   virtual void apply(SoPath * path) override;

@@ -879,6 +879,12 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
       ? SoIRRenderAction::CameraPolicy::CAMERA_IN_ROOT
       : SoIRRenderAction::CameraPolicy::USE_CONFIGURED_CAMERA);
   PRIVATE(this)->irAction->setDevicePixelRatio(PRIVATE(this)->devicePixelRatio);
+#if COIN_BUILD_LEGACY_GL_RENDERER
+  if (PRIVATE(this)->glaction) {
+    PRIVATE(this)->irAction->setTransparencyType(
+      static_cast<int>(PRIVATE(this)->glaction->getTransparencyType()));
+  }
+#endif
 
   SoIRRenderAction * action = PRIVATE(this)->irAction;
   SoState * state = action->getState();
@@ -1009,6 +1015,7 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   params.state = PRIVATE(this)->irAction->getState();
   params.flags = (clearwindow ? SO_PARAM_CLEAR_WINDOW : 0u) |
                  (clearzbuffer ? SO_PARAM_CLEAR_DEPTH : 0u);
+  drawlist.buildSortedOrder(params.viewMatrix);
   PRIVATE(this)->renderBackend->render(drawlist, params);
   PRIVATE(this)->invokePostRenderCallbacks();
   PRIVATE(this)->drawListCallbackScope = FALSE;
