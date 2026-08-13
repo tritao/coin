@@ -191,6 +191,7 @@ SoIDPickBuffer::discard()
   this->idVAOColorKey.clear();
   this->idVAOPosKey.clear();
   this->idVAOIdxKey.clear();
+  this->idVAOGeneration.clear();
   this->cachedPosLoc = -1;
   this->cachedIdColorLoc = -1;
   this->lineShaderProgram = 0;
@@ -522,6 +523,7 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
     idVAOColorKey.resize(numCmds, 0);
     idVAOPosKey.resize(numCmds, 0);
     idVAOIdxKey.resize(numCmds, 0);
+    idVAOGeneration.resize(numCmds, 0);
   }
 
   // Helper: draw one command using cached VBOs + ID VAO when available
@@ -556,9 +558,13 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
       uint32_t curPosVBO = vboCache[ci].posVBO;
       uint32_t curColorVBO = idColorVBOs[ci];
       uint32_t curIdxVBO = vboCache[ci].idxVBO;
+      // Buffer names are intentionally stable across uploads. The generation
+      // distinguishes a new buffer store from a cached VAO layout, including
+      // drivers that retain stale indexed-array state after glBufferData().
       if (idVAOs[ci] == 0 || idVAOColorKey[ci] != curColorVBO
           || idVAOPosKey[ci] != curPosVBO
-          || idVAOIdxKey[ci] != curIdxVBO) {
+          || idVAOIdxKey[ci] != curIdxVBO
+          || idVAOGeneration[ci] != vboCache[ci].geometryGeneration) {
         // Build/rebuild the ID VAO
         if (idVAOs[ci] == 0) this->glue->glGenVertexArrays(1, &idVAOs[ci]);
         this->glue->glBindVertexArray(idVAOs[ci]);
@@ -584,6 +590,7 @@ SoIDPickBuffer::renderIdPass(const float * viewMatrix, const float * projMatrix,
         idVAOColorKey[ci] = curColorVBO;
         idVAOPosKey[ci] = curPosVBO;
         idVAOIdxKey[ci] = curIdxVBO;
+        idVAOGeneration[ci] = vboCache[ci].geometryGeneration;
       }
 
       // Fast path: bind VAO + draw (3 GL calls)

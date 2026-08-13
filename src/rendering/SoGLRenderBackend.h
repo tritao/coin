@@ -34,6 +34,7 @@ struct CachedGPUCommand {
   uint32_t vertexCount = 0;
   uint32_t indexCount = 0;
   uint32_t vertexStride = 0;
+  uint64_t geometryGeneration = 0;
 
   int lastUsedFrame = 0;
 
@@ -239,6 +240,7 @@ private:
   std::vector<CachedGPUCommand> gpuCache;
   std::unordered_map<CacheKey, int, CacheKeyHash> ptrToCacheIndex;
   int currentFrame = 0;
+  uint64_t nextGeometryGeneration = 1;
 
   // GPU picking
   std::unique_ptr<SoIDPickBuffer> pickBuffer;

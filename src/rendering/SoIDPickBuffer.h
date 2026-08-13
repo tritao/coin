@@ -18,6 +18,7 @@ struct SoIDPassVBOInfo {
   uint32_t posVBO;        ///< GL buffer name for positions (0 = not cached)
   uint32_t idxVBO;        ///< GL buffer name for indices (0 = not cached)
   uint32_t vertexStride;  ///< Stride used when VBO was uploaded
+  uint64_t geometryGeneration; ///< Changes whenever cached geometry is uploaded
 };
 
 /*!
@@ -157,6 +158,7 @@ private:
   std::vector<uint32_t> idVAOColorKey;  // idColorVBO bound when VAO was built
   std::vector<uint32_t> idVAOPosKey;    // posVBO bound when VAO was built
   std::vector<uint32_t> idVAOIdxKey;    // idxVBO bound when VAO was built
+  std::vector<uint64_t> idVAOGeneration; // cached geometry generation at build time
 
   // Cached attribute locations for the ID shader
   int cachedPosLoc = -1;

@@ -812,6 +812,7 @@ SoGLRenderBackend::destroyCacheEntry(CachedGPUCommand & entry)
   if (entry.textureId) { cc_glglue_glDeleteTextures(this->glue, 1, &entry.textureId); entry.textureId = 0; }
   if (entry.idxVBO) { cc_glglue_glDeleteBuffers(this->glue, 1, &entry.idxVBO); entry.idxVBO = 0; }
   if (entry.vao) { this->glue->glDeleteVertexArrays(1, &entry.vao); entry.vao = 0; }
+  entry.geometryGeneration = 0;
 }
 
 void
@@ -1392,6 +1393,7 @@ SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
       uploadGeometry(entry, cmd);
       setupVisualVAO(entry, cmd);
       entry.cacheGeneration = gen;
+      entry.geometryGeneration = this->nextGeometryGeneration++;
     }
     entry.lastUsedFrame = this->currentFrame;
   }
@@ -1863,7 +1865,7 @@ SoGLRenderBackend::renderIDBufferPass(const SoDrawList & drawlist,
     std::vector<SoIDPassVBOInfo> vboInfo(count);
     for (int i = 0; i < count; ++i) {
       const SoRenderCommand & cmd = drawlist.getCommand(i);
-      vboInfo[i] = {0, 0, 0};
+      vboInfo[i] = {0, 0, 0, 0};
       if (!cmd.geometry.positions) continue;
       auto it = ptrToCacheIndex.find(
         CacheKey{cmd.geometry.positions, cmd.geometry.indices});
@@ -1872,6 +1874,7 @@ SoGLRenderBackend::renderIDBufferPass(const SoDrawList & drawlist,
         vboInfo[i].posVBO = entry.posVBO;
         vboInfo[i].idxVBO = entry.idxVBO;
         vboInfo[i].vertexStride = entry.vertexStride;
+        vboInfo[i].geometryGeneration = entry.geometryGeneration;
       }
     }
     pickBuffer->render(&viewMat[0][0], &projMat[0][0], drawlist,

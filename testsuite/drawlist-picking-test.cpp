@@ -56,7 +56,7 @@ runTest()
      1.0f,  1.0f, 0.0f,
     -1.0f,  1.0f, 0.0f
   };
-  const uint32_t indices[] = { 0, 1, 2, 0, 2, 3 };
+  uint32_t indices[] = { 0, 1, 2, 0, 2, 3 };
 
   SoRenderCommand command;
   command.geometry.topology = SO_TOPOLOGY_TRIANGLES;
@@ -121,6 +121,32 @@ runTest()
     if (pickId != 1) {
       std::cerr << "FAIL: GPU pick did not return the expected LUT ID" << std::endl;
       result = 1;
+    }
+
+    // Start a new draw-list generation while retaining the same CPU geometry
+    // pointers. The backend must upload the changed indexed data and refresh
+    // the ID VAO even when the underlying GL buffer names are reused.
+    indices[0] = 0;
+    indices[1] = 2;
+    indices[2] = 1;
+    indices[3] = 0;
+    indices[4] = 3;
+    indices[5] = 2;
+    drawlist.clear();
+    drawlist.addCommand(command);
+    drawlist.buildPickLUT();
+    params.viewMatrix.setTranslate(SbVec3f(0.0f, 0.0f, 0.1f));
+    params.viewProjMatrix = params.viewMatrix;
+    if (!backend.render(drawlist, params)) {
+      std::cerr << "FAIL: indexed geometry update render failed" << std::endl;
+      result = 1;
+    }
+    else {
+      glFinish();
+      if (backend.pick(16, 16, 2) != 1) {
+        std::cerr << "FAIL: GPU pick failed after indexed geometry update" << std::endl;
+        result = 1;
+      }
     }
   }
 
