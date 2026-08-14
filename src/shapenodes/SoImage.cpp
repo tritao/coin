@@ -158,9 +158,12 @@
 #include <Inventor/SoPrimitiveVertex.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
+#include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/actions/SoRayPickAction.h>
 #include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoMultiTextureImageElement.h>
+#include <Inventor/elements/SoProjectionMatrixElement.h>
+#include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
@@ -177,6 +180,9 @@
 #include "nodes/SoSubNodeP.h"
 #include "glue/GLUWrapper.h"
 #include "glue/simage_wrapper.h"
+#include "rendering/SoRenderIRP.h"
+
+#include <cstring>
 
 
 /*!
@@ -530,7 +536,100 @@ SoImage::GLRender(SoGLRenderAction * action)
 }
 #endif
 
-  // doc from parent
+void
+SoImage::IRRender(SoIRRenderAction * action)
+{
+  if (!action) return;
+
+  const SbVec2s size = this->getSize();
+  SbVec2s sourceSize;
+  int numComponents = 0;
+  const unsigned char * dataptr = this->image.getValue(sourceSize,
+                                                       numComponents);
+  if (!dataptr || sourceSize[0] <= 0 || sourceSize[1] <= 0 ||
+      size[0] <= 0 || size[1] <= 0) return;
+
+  SoState * state = action->getState();
+  const SbVec3f nilpoint = SoImage::getNilpoint(state);
+  int originX = static_cast<int>(nilpoint[0]);
+  switch (this->horAlignment.getValue()) {
+  case SoImage::RIGHT: originX -= size[0]; break;
+  case SoImage::CENTER: originX -= size[0] >> 1; break;
+  case SoImage::LEFT: break;
+  }
+  int originY = static_cast<int>(nilpoint[1]);
+  switch (this->vertAlignment.getValue()) {
+  case SoImage::TOP: originY -= size[1]; break;
+  case SoImage::HALF: originY -= size[1] >> 1; break;
+  case SoImage::BOTTOM: break;
+  }
+
+  SbVec3f v0, v1, v2, v3;
+  this->getQuad(state, v0, v1, v2, v3);
+  const float positionData[] = {
+    v0[0], v0[1], v0[2], v1[0], v1[1], v1[2], v2[0], v2[1], v2[2],
+    v0[0], v0[1], v0[2], v2[0], v2[1], v2[2], v3[0], v3[1], v3[2]
+  };
+  const float normalData[] = {
+    0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f
+  };
+  const float texcoordData[] = {
+    0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+    1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+    0.0f, 1.0f, 0.0f, 1.0f
+  };
+  float * positions = static_cast<float *>(
+    action->allocateGeometryStorage(sizeof(positionData), alignof(float)));
+  float * normals = static_cast<float *>(
+    action->allocateGeometryStorage(sizeof(normalData), alignof(float)));
+  float * texcoords = static_cast<float *>(
+    action->allocateGeometryStorage(sizeof(texcoordData), alignof(float)));
+  std::memcpy(positions, positionData, sizeof(positionData));
+  std::memcpy(normals, normalData, sizeof(normalData));
+  std::memcpy(texcoords, texcoordData, sizeof(texcoordData));
+
+  this->testTransparency();
+  const size_t byteCount = static_cast<size_t>(sourceSize[0]) *
+                           static_cast<size_t>(sourceSize[1]) *
+                           static_cast<size_t>(numComponents);
+  unsigned char * pixels = static_cast<unsigned char *>(
+    action->allocateGeometryStorage(byteCount, alignof(unsigned char)));
+  std::memcpy(pixels, dataptr, byteCount);
+
+  SoRenderCommand command = {};
+  command.geometry.topology = SO_TOPOLOGY_TRIANGLES;
+  command.geometry.vertexCount = 6;
+  command.geometry.normalCount = 6;
+  command.geometry.vertexStride = sizeof(float) * 3;
+  command.geometry.texcoordStride = sizeof(float) * 4;
+  command.geometry.positions = positions;
+  command.geometry.normals = normals;
+  command.geometry.texcoords = texcoords;
+  SoRenderIR::fillCommandTraversalStateFromAction(action, command);
+  SoRenderIR::fillMaterialFromState(state, command.material);
+  command.material.diffuse.setValue(1.0f, 1.0f, 1.0f, 1.0f);
+  command.material.opacity = 1.0f;
+  command.material.shadingModel = SO_SHADING_UNLIT;
+  command.material.textureAlphaIncludesOpacity = true;
+  command.material.texture.pixels = pixels;
+  command.material.texture.width = sourceSize[0];
+  command.material.texture.height = sourceSize[1];
+  command.material.texture.numComponents = numComponents;
+  command.material.texture.wrapS = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+  command.material.texture.wrapT = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+  command.pixelRaster.enabled = TRUE;
+  command.pixelRaster.originX = originX;
+  command.pixelRaster.originY = originY;
+  command.pixelRaster.width = size[0];
+  command.pixelRaster.height = size[1];
+  SoRenderIR::ensureMaterialBlendState(command.state, command.material);
+  command.opacityClass = (this->transparency ||
+                          SoRenderIR::isMaterialTransparent(command.material))
+    ? SO_OPACITY_TRANSPARENT : SO_OPACITY_OPAQUE;
+  action->addCommand(command);
+}
+
 // doc from parent
 void
 SoImage::rayPick(SoRayPickAction * action)

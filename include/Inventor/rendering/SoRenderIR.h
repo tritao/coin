@@ -267,8 +267,8 @@ struct SoPixelRasterData {
   // identity. The texture retains the source dimensions; these dimensions
   // describe the desired on-screen footprint.
   SbBool enabled = FALSE;
-  int originX = 0;
-  int originY = 0;
+  float originX = 0.0f;
+  float originY = 0.0f;
   int width = 0;
   int height = 0;
 };
