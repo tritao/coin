@@ -2,6 +2,7 @@
 #define COIN_VISUAL_TESTS_SPEC_LOADER_H
 
 #include <array>
+#include <map>
 #include <optional>
 #include <string>
 #include <utility>
@@ -37,6 +38,7 @@ struct VisualTestSpec {
   std::optional<CameraSpec> camera;
   ViewportSpec viewport;
   std::string baseline;
+  std::map<std::string, std::string> renderer_baselines;
   ComparisonPolicy comparison = ComparisonPolicy::Default;
 };
 

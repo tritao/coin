@@ -1,0 +1,23 @@
+#Inventor V2.1 ascii
+
+Separator {
+  PerspectiveCamera {
+    position 0 0 7
+    heightAngle 0.785398
+    nearDistance 0.1
+    farDistance 20
+  }
+  LightModel { model BASE_COLOR }
+  Separator {
+    Translation { translation -1.25 0 0 }
+    Scale { scaleFactor 0.8 1.2 0.8 }
+    Material { diffuseColor 0.12156863 0.24313726 0.40784314 }
+    Cube { }
+  }
+  Separator {
+    Translation { translation 1.25 0 0 }
+    Scale { scaleFactor 1.15 0.65 1.15 }
+    Material { diffuseColor 0.72 0.28 0.12 }
+    Cube { }
+  }
+}

@@ -173,6 +173,8 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		SOURCES GLSLDiagnosticsTest.cpp)
 	coin_add_gl_test(NAME OffscreenReadbackTest PROFILE core
 		SOURCES OffscreenReadbackTest.cpp)
+	coin_add_gl_test(NAME DrawListGLTest PROFILE core
+		SOURCES DrawListGLTest.cpp)
 endif()
 
 function(coin_add_egl_test)
