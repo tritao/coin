@@ -217,6 +217,10 @@ else()
   )
 endif()
 
+if(COIN_BUILD_SINGLE_LIB AND TARGET coin_generated_gl_shaders)
+  add_dependencies(${PROJECT_NAME} coin_generated_gl_shaders)
+endif()
+
 # Keep the renderer selection attached to the final library target as well as
 # the directory scope.  This is important for single-library generators,
 # where all translation units are linked through this target.

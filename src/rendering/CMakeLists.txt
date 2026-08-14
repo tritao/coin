@@ -58,6 +58,7 @@ if(COIN_BUILD_SINGLE_LIB)
 	endforeach(SRCFILE)
 else()
 	add_library(rendering OBJECT ${COIN_RENDERING_FILES})
+	add_dependencies(rendering coin_generated_gl_shaders)
 endif()
 
 # define documentation

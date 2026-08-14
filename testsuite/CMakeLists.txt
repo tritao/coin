@@ -198,6 +198,15 @@ function(coin_add_egl_test)
 		SKIP_RETURN_CODE 77 LABELS "${test_labels}")
 endfunction()
 
+add_test(
+	NAME ShaderGeneratorTest
+	COMMAND "${CMAKE_COMMAND}"
+		-DCOIN_SOURCE_DIR=${PROJECT_SOURCE_DIR}
+		-DCOIN_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+		"-DCOIN_GENERATOR=${CMAKE_GENERATOR}"
+		-P "${CMAKE_CURRENT_SOURCE_DIR}/shader-generator-test.cmake"
+)
+
 	add_executable(CoreTraversalTest CoreTraversalTest.cpp)
 target_link_libraries(CoreTraversalTest Coin ${COIN_TARGET_LINK_LIBRARIES})
 target_include_directories(CoreTraversalTest PRIVATE
