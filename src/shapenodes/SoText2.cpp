@@ -116,6 +116,7 @@
 #include <Inventor/SoPickedPoint.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
+#include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/actions/SoRayPickAction.h>
 #include <Inventor/bundles/SoMaterialBundle.h>
 #include <Inventor/details/SoTextDetail.h>
@@ -128,6 +129,7 @@
 #include <Inventor/elements/SoLazyElement.h>
 #include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoProjectionMatrixElement.h>
+#include <Inventor/elements/SoShapeStyleElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
@@ -135,6 +137,7 @@
 #include <Inventor/sensors/SoFieldSensor.h>
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/elements/SoMultiTextureEnabledElement.h>
+#include <Inventor/elements/SoMultiTextureImageElement.h>
 #if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLMultiTextureEnabledElement.h>
 #endif
@@ -146,6 +149,7 @@
 #include "nodes/SoSubNodeP.h"
 #include "caches/SoGlyphCache.h"
 #include "shapenodes/SoShapeGLRenderP.h"
+#include "rendering/SoRenderIRP.h"
 
 // The "lean and mean" define is a workaround for a Cygwin bug: when
 // windows.h is included _after_ one of the X11 or GLX headers above
@@ -246,6 +250,35 @@ struct SoTextRasterResult {
     this->antialiasedGlyphs.clear();
   }
 };
+
+static SbBool
+so_text2_texture_has_transparency(SoState * state)
+{
+  if (!state || !SoMultiTextureEnabledElement::get(state, 0)) return FALSE;
+
+  SbVec2s size;
+  int numComponents = 0;
+  SoMultiTextureImageElement::Wrap wrapS;
+  SoMultiTextureImageElement::Wrap wrapT;
+  SoMultiTextureImageElement::Model model;
+  SbColor blendColor;
+  const unsigned char * bytes = SoMultiTextureImageElement::get(
+    state, 0, size, numComponents, wrapS, wrapT, model, blendColor);
+  if (!bytes || size[0] <= 0 || size[1] <= 0 ||
+      (numComponents != 2 && numComponents != 4)) {
+    return FALSE;
+  }
+
+  const size_t pixelCount = static_cast<size_t>(size[0]) *
+                            static_cast<size_t>(size[1]);
+  const int alphaOffset = numComponents - 1;
+  for (size_t pixel = 0; pixel < pixelCount; ++pixel) {
+    if (bytes[pixel * static_cast<size_t>(numComponents) + alphaOffset] != 255) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
 
 class SoText2P {
 public:
@@ -365,6 +398,169 @@ void
 SoText2::initClass(void)
 {
   SO_NODE_INTERNAL_INIT_CLASS(SoText2, SO_FROM_INVENTOR_2_1);
+}
+
+void
+SoText2::IRRender(SoIRRenderAction * action)
+{
+  if (!action) return;
+
+  SoState * state = action->getState();
+  if (!state) return;
+
+  const SoShapeStyleElement * shapeStyle = SoShapeStyleElement::get(state);
+  if (shapeStyle && (shapeStyle->getFlags() & SoShapeStyleElement::INVISIBLE)) {
+    return;
+  }
+
+  state->push();
+  SoLazyElement::setLightModel(state, SoLazyElement::BASE_COLOR);
+
+  PRIVATE(this)->lock();
+  SoTextRasterResult raster;
+  if (!PRIVATE(this)->getRasterResult(state, raster)) {
+    PRIVATE(this)->unlock();
+    state->pop();
+    return;
+  }
+
+  SbVec3f v0, v1, v2, v3;
+  if (!PRIVATE(this)->getQuad(state, v0, v1, v2, v3)) {
+    PRIVATE(this)->unlock();
+    state->pop();
+    return;
+  }
+
+  const SbColor & diffuse = SoLazyElement::getDiffuse(state, 0);
+  const unsigned char red = static_cast<unsigned char>(diffuse[0] * 255.0f);
+  const unsigned char green = static_cast<unsigned char>(diffuse[1] * 255.0f);
+  const unsigned char blue = static_cast<unsigned char>(diffuse[2] * 255.0f);
+  const unsigned int alpha = static_cast<unsigned int>(
+    (1.0f - SoLazyElement::getTransparency(state, 0)) * 256.0f);
+
+  const float positionData[] = {
+    v0[0], v0[1], v0[2],
+    v1[0], v1[1], v1[2],
+    v2[0], v2[1], v2[2],
+    v0[0], v0[1], v0[2],
+    v2[0], v2[1], v2[2],
+    v3[0], v3[1], v3[2]
+  };
+  const float normalData[] = {
+    0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 1.0f
+  };
+  const float texcoordData[] = {
+    0.0f, 0.0f, 0.0f, 1.0f,
+    1.0f, 0.0f, 0.0f, 1.0f,
+    1.0f, 1.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 0.0f, 1.0f,
+    1.0f, 1.0f, 0.0f, 1.0f,
+    0.0f, 1.0f, 0.0f, 1.0f
+  };
+
+  float * positions = static_cast<float *>(
+    action->allocateGeometryStorage(sizeof(positionData), alignof(float)));
+  float * normals = static_cast<float *>(
+    action->allocateGeometryStorage(sizeof(normalData), alignof(float)));
+  float * texcoords = static_cast<float *>(
+    action->allocateGeometryStorage(sizeof(texcoordData), alignof(float)));
+  std::memcpy(positions, positionData, sizeof(positionData));
+  std::memcpy(normals, normalData, sizeof(normalData));
+  std::memcpy(texcoords, texcoordData, sizeof(texcoordData));
+
+  SoRenderCommand baseCommand = {};
+  baseCommand.geometry.topology = SO_TOPOLOGY_TRIANGLES;
+  baseCommand.geometry.vertexCount = 6;
+  baseCommand.geometry.normalCount = 6;
+  baseCommand.geometry.vertexStride = sizeof(float) * 3;
+  baseCommand.geometry.texcoordStride = sizeof(float) * 4;
+  baseCommand.geometry.positions = positions;
+  baseCommand.geometry.normals = normals;
+  baseCommand.geometry.texcoords = texcoords;
+  SoRenderIR::fillCommandTraversalStateFromAction(action, baseCommand);
+  SoRenderIR::fillMaterialFromState(state, baseCommand.material);
+
+  const unsigned int shapeFlags = shapeStyle ? shapeStyle->getFlags() : 0;
+  const bool transparent =
+    (shapeFlags & (SoShapeStyleElement::TRANSP_TEXTURE |
+                   SoShapeStyleElement::TRANSP_MATERIAL)) != 0 ||
+    so_text2_texture_has_transparency(state);
+  SoRenderIR::ensureMaterialBlendState(baseCommand.state,
+                                       baseCommand.material);
+  if (transparent && !baseCommand.state.blend.enabled) {
+    baseCommand.state.blend.enabled = TRUE;
+    baseCommand.state.blend.srcRGBFactor = SO_BLEND_FACTOR_SRC_ALPHA;
+    baseCommand.state.blend.dstRGBFactor = SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    baseCommand.state.blend.srcAlphaFactor = SO_BLEND_FACTOR_SRC_ALPHA;
+    baseCommand.state.blend.dstAlphaFactor = SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    baseCommand.state.blend.rgbEquation = SO_BLEND_EQUATION_ADD;
+    baseCommand.state.blend.alphaEquation = SO_BLEND_EQUATION_ADD;
+  }
+
+  const auto emitRasterCommand = [&](SbBool binary) {
+    SoRenderCommand command = baseCommand;
+    const size_t pixelBytes = static_cast<size_t>(raster.antialiasedSize[0]) *
+                              static_cast<size_t>(raster.antialiasedSize[1]) * 4;
+    unsigned char * pixels = static_cast<unsigned char *>(
+      action->allocateGeometryStorage(pixelBytes, alignof(unsigned char)));
+    if (binary) {
+      PRIVATE(this)->fillBinaryPixelBuffer(raster, red, green, blue, alpha,
+                                           pixels);
+    }
+    else {
+      PRIVATE(this)->fillAntialiasedPixelBuffer(
+        raster, red, green, blue, alpha, pixels);
+    }
+
+    // getQuad() already converts the text bounds into camera-facing geometry.
+    // Keep the exact generated quad instead of asking the backend to recenter
+    // it through the generic billboard path.
+    command.material.diffuse[3] = 1.0f;
+    command.material.opacity = 1.0f;
+    command.material.shadingModel = SO_SHADING_UNLIT;
+    command.material.texture.pixels = pixels;
+    command.material.texture.width = raster.antialiasedSize[0];
+    command.material.texture.height = raster.antialiasedSize[1];
+    command.material.texture.numComponents = 4;
+    command.material.texture.wrapS = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+    command.material.texture.wrapT = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+    command.material.textureAlphaIncludesOpacity = true;
+    command.pixelRaster.enabled = TRUE;
+    const SbVec2f & origin = binary
+      ? raster.binaryOrigin : raster.antialiasedOrigin;
+    command.pixelRaster.originX = origin[0];
+    command.pixelRaster.originY = origin[1];
+    command.pixelRaster.width = raster.antialiasedSize[0];
+    command.pixelRaster.height = raster.antialiasedSize[1];
+
+    // The alpha test removes zero-coverage texels from the binary command;
+    // the antialiased command keeps the historical SoText2 threshold.
+    command.state.alphaTest.policy = SO_ALPHA_TEST_POLICY_EXPLICIT;
+    command.state.alphaTest.function = SO_ALPHA_TEST_GREATER;
+    command.state.alphaTest.reference = binary ? 0.0f : 0.3f;
+    if (!binary) {
+      command.state.blend.enabled = TRUE;
+      command.state.blend.srcRGBFactor = SO_BLEND_FACTOR_SRC_ALPHA;
+      command.state.blend.dstRGBFactor = SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+      command.state.blend.srcAlphaFactor = SO_BLEND_FACTOR_SRC_ALPHA;
+      command.state.blend.dstAlphaFactor = SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    }
+
+    command.opacityClass = transparent
+      ? SO_OPACITY_TRANSPARENT : SO_OPACITY_OPAQUE;
+    action->addCommand(command);
+  };
+
+  if (!raster.binaryGlyphs.empty()) emitRasterCommand(TRUE);
+  if (raster.hasAntialiasedGlyphs) emitRasterCommand(FALSE);
+
+  PRIVATE(this)->unlock();
+  state->pop();
 }
 
 // **************************************************************************
