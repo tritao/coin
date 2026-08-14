@@ -8,6 +8,8 @@ set(COIN_RENDERING_FILES
 	SoRenderManager.cpp
 	SoRenderManagerP.cpp
 	SoRenderIR.cpp
+	SoRenderBackend.cpp
+	SoGLRenderBackend.cpp
 )
 
 if(COIN_BUILD_LEGACY_GL_RENDERER)
@@ -51,6 +53,8 @@ set(COIN_RENDERING_INTERNAL_FILES
 	CoinGLReadback.h
 	CoinGLReadback.cpp
 	SoRenderIRP.h
+	SoRenderBackend.h
+	SoGLRenderBackend.h
 )
 
 # build library
