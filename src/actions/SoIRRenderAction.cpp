@@ -29,6 +29,7 @@
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/elements/SoViewVolumeElement.h>
 #include <Inventor/elements/SoProjectionMatrixElement.h>
+#include <Inventor/elements/SoDevicePixelRatioElement.h>
 #include <Inventor/elements/SoMultiTextureImageElement.h>
 #include <Inventor/elements/SoMultiTextureMatrixElement.h>
 #include <Inventor/elements/SoCoordinateElement.h>
@@ -101,6 +102,7 @@ SoIRRenderAction::initClass(void)
   SO_ACTION_ADD_METHOD_INTERNAL(SoNode, SoNode::IRRenderS);
 
   SO_ENABLE(SoIRRenderAction, SoViewportRegionElement);
+  SO_ENABLE(SoIRRenderAction, SoDevicePixelRatioElement);
   SO_ENABLE(SoIRRenderAction, SoViewVolumeElement);
   SO_ENABLE(SoIRRenderAction, SoViewingMatrixElement);
   SO_ENABLE(SoIRRenderAction, SoProjectionMatrixElement);
@@ -274,6 +276,19 @@ void
 SoIRRenderAction::beginTraversal(SoNode * node)
 {
   SoViewportRegionElement::set(this->state, this->vpRegion);
+  SoDevicePixelRatioElement::set(this->state, this->devicePixelRatio);
+  if (this->camera) {
+    SbViewportRegion cameraViewport = this->vpRegion;
+    const SbViewVolume viewVolume =
+      this->camera->getViewVolume(this->vpRegion, cameraViewport);
+    SbMatrix viewingMatrix;
+    SbMatrix projectionMatrix;
+    viewVolume.getMatrices(viewingMatrix, projectionMatrix);
+    SoViewportRegionElement::set(this->state, cameraViewport);
+    SoViewVolumeElement::set(this->state, this->camera, viewVolume);
+    SoViewingMatrixElement::set(this->state, this->camera, viewingMatrix);
+    SoProjectionMatrixElement::set(this->state, this->camera, projectionMatrix);
+  }
   inherited::beginTraversal(node);
 }
 

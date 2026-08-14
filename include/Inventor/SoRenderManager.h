@@ -54,8 +54,25 @@ class SoRenderManagerP;
 
 typedef void SoRenderManagerRenderCB(void * userdata, class SoRenderManager * mgr);
 
+/*!
+  \class SoRenderManager SoRenderManager.h Inventor/SoRenderManager.h
+  \brief Owns frame orchestration and selects the active Coin render pipeline.
+
+  The manager owns camera, viewport, device-pixel-ratio, callback and scene
+  traversal policy. The retained pipeline records commands through
+  SoIRRenderAction and delegates execution to a SoRenderBackend; the backend
+  does not replace manager orchestration.
+
+  \ingroup coin_retained_rendering
+*/
 class COIN_DLL_API SoRenderManager {
 public:
+
+  /*! Selects the scene execution pipeline for ordinary manager rendering. */
+  enum class RenderPipeline {
+    LEGACY_GL,
+    DRAW_LIST
+  };
 
   class COIN_DLL_API Superimposition {
   public:
@@ -192,6 +209,8 @@ public:
   void setGLRenderAction(SoGLRenderAction * const action);
   SoGLRenderAction * getGLRenderAction(void) const;
 #endif
+  void setRenderPipeline(RenderPipeline pipeline);
+  RenderPipeline getRenderPipeline(void) const;
   void setAudioRenderAction(SoAudioRenderAction * const action);
   SoAudioRenderAction * getAudioRenderAction(void) const;
 
@@ -236,6 +255,8 @@ protected:
 #endif
 
 private:
+  void renderDrawListPipeline(SbBool clearwindow, SbBool clearzbuffer);
+
   void attachRootSensor(SoNode * const sceneroot);
   void attachClipSensor(SoNode * const sceneroot);
   void detachRootSensor(void);
