@@ -6,25 +6,91 @@ macro(strfy _input _postfix)
   string(TOUPPER "SO_${_basename}_${_suffix}_H" COIN_HEADER_DEF)
   string(TOUPPER ${_basename} COIN_TEXTVAR_NAME)
   set(COIN_TEXTVAR_NAME "${COIN_TEXTVAR_NAME}${_postfix}")
-  #message(STATUS "Parse: ${PROJECT_SOURCE_DIR}/${_input}")
-  FILE(READ ${PROJECT_SOURCE_DIR}/${_input} f0)
-  STRING(REGEX REPLACE "\\\\" "\\\\\\\\" f1 "${f0}")
-  STRING(REGEX REPLACE "\"" "\\\\\"" f2 "${f1}")
-  STRING(REGEX REPLACE "\r?\n" "\\\\n\"\n  \"" COIN_STR_SOURCE_CODE "${f2}")
+  file(READ ${PROJECT_SOURCE_DIR}/${_input} f0)
+  string(REGEX REPLACE "\\\\" "\\\\\\\\" f1 "${f0}")
+  string(REGEX REPLACE "\"" "\\\\\"" f2 "${f1}")
+  string(REGEX REPLACE "\r?\n" "\\\\n\"\n  \"" COIN_STR_SOURCE_CODE "${f2}")
   configure_file(strfytemplate.cmake.in "${_path}/${_basename}.h")
 endmacro()
 
-file(GLOB_RECURSE COIN_SHADER_GLSL RELATIVE ${PROJECT_SOURCE_DIR} *.glsl)
-foreach(_input_file ${COIN_SHADER_GLSL})
-  strfy(${_input_file} "_shadersource")
+macro(coin_embed_gl_shader _name _input)
+  set(_input_file "${PROJECT_SOURCE_DIR}/${_input}")
+  if(NOT EXISTS "${_input_file}")
+    message(FATAL_ERROR "GLSL root shader does not exist: ${_input}")
+  endif()
+
+  file(RELATIVE_PATH _source_relative "${PROJECT_SOURCE_DIR}" "${_input_file}")
+  string(REGEX REPLACE "[.]glsl$" ".h" _output_relative "${_source_relative}")
+  set(_output_file "${CMAKE_CURRENT_BINARY_DIR}/${_output_relative}")
+  set(_depfile "${_output_file}.d")
+
+  string(REGEX REPLACE "[^A-Za-z0-9_]" "_" _logical_name "${_name}")
+  string(TOUPPER "COIN_SHADER_${_logical_name}_H" COIN_HEADER_DEF)
+  set(COIN_TEXTVAR_NAME "coin_${_logical_name}_shadersource")
+
+  add_custom_command(
+    OUTPUT "${_output_file}"
+    BYPRODUCTS "${_depfile}"
+    COMMAND "${CMAKE_COMMAND}"
+      "-DINPUT_FILE=${_input_file}"
+      "-DOUTPUT_FILE=${_output_file}"
+      "-DDEPFILE=${_depfile}"
+      "-DSOURCE_ROOT=${PROJECT_SOURCE_DIR}"
+      "-DTEMPLATE_FILE=${CMAKE_CURRENT_SOURCE_DIR}/strfytemplate.cmake.in"
+      "-DCOIN_HEADER_DEF=${COIN_HEADER_DEF}"
+      "-DCOIN_TEXTVAR_NAME=${COIN_TEXTVAR_NAME}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/GenerateShaderHeader.cmake"
+    DEPENDS
+      "${_input_file}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/GenerateShaderHeader.cmake"
+      "${CMAKE_CURRENT_SOURCE_DIR}/strfytemplate.cmake.in"
+    DEPFILE "${_depfile}"
+    VERBATIM
+  )
+  list(APPEND COIN_GENERATED_GL_SHADER_HEADERS "${_output_file}")
+endmacro()
+
+# GLSL roots are executable shader programs. Register them explicitly so
+# included modules are only discovered by the shader generator and are never
+# embedded as independent C++ resources.
+coin_embed_gl_shader(gl_visual_vertex data/shaders/gl/visual/Vertex.glsl)
+coin_embed_gl_shader(gl_visual_fragment data/shaders/gl/visual/Fragment.glsl)
+
+# These are legacy shader snippets exposed through Coin's built-in shader
+# dictionary. They are ordinary embedded text, not core-profile root
+# programs, and therefore remain on the compatibility resource path.
+set(COIN_LEGACY_SHADER_RESOURCES
+  data/shaders/lights/DirSpotLight.glsl
+  data/shaders/lights/DirectionalLight.glsl
+  data/shaders/lights/PointLight.glsl
+  data/shaders/lights/SpotLight.glsl
+  data/shaders/vsm/VsmLookup.glsl
+)
+foreach(_input_file ${COIN_LEGACY_SHADER_RESOURCES})
+  strfy("${_input_file}" "_shadersource")
 endforeach()
-file(GLOB_RECURSE COIN_SHADER_INVENTOR RELATIVE ${PROJECT_SOURCE_DIR} *.iv)
+
+# Inventor resources remain ordinary embedded text. This path deliberately
+# has no shader parsing or include semantics.
+file(GLOB_RECURSE COIN_SHADER_INVENTOR RELATIVE "${PROJECT_SOURCE_DIR}"
+  "${PROJECT_SOURCE_DIR}/*.iv")
 foreach(_input_file ${COIN_SHADER_INVENTOR})
-  strfy(${_input_file} "_draggergeometry")
+  strfy("${_input_file}" "_draggergeometry")
 endforeach()
 
-file(GLOB_RECURSE COMMON_SCXML ${CMAKE_CURRENT_SOURCE_DIR}/[cep]*.xml)
-file(GLOB_RECURSE COMMON_DRAGGERDEFAULTS ${CMAKE_CURRENT_SOURCE_DIR}/*.iv)
-file(GLOB_RECURSE COMMON_SHADERS ${CMAKE_CURRENT_SOURCE_DIR}/*.glsl)
+# Only core-profile GLSL roots require build-time dependency tracking. Ordinary
+# embedded resources were already materialized by strfy() during configure.
+add_custom_target(coin_generated_gl_shaders
+  DEPENDS ${COIN_GENERATED_GL_SHADER_HEADERS}
+)
 
-set(COMMON_RESOURCES ${COMMON_SCXML} ${COMMON_DRAGGERDEFAULTS} ${COMMON_SHADERS} PARENT_SCOPE)
+file(GLOB_RECURSE COMMON_SCXML "${CMAKE_CURRENT_SOURCE_DIR}/[cep]*.xml")
+file(GLOB_RECURSE COMMON_DRAGGERDEFAULTS "${CMAKE_CURRENT_SOURCE_DIR}/*.iv")
+file(GLOB_RECURSE COMMON_SHADERS "${CMAKE_CURRENT_SOURCE_DIR}/*.glsl")
+
+set(COMMON_RESOURCES
+  ${COMMON_SCXML}
+  ${COMMON_DRAGGERDEFAULTS}
+  ${COMMON_SHADERS}
+  PARENT_SCOPE
+)

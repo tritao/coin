@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.0...3.31)
+# CMake 3.21 is required by the GLSL root-shader dependency/depfile
+# generation pipeline. DrawList rendering itself does not require this
+# minimum; the requirement is for the build-time shader integration.
+cmake_minimum_required(VERSION 3.21...3.31)
 
 set(COIN_MAJOR_VERSION 4)
 set(COIN_MINOR_VERSION 0)
