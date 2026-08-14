@@ -57,7 +57,10 @@ SbBool coin_render_ir_trace_enabled();
   \brief Helper functions for converting Coin state and caches into render IR.
 */
 namespace SoRenderIR {
-//! Capture the ordinary traversal state shared by retained shape producers.
+//! Capture matrices, render state, and lighting shared by retained producers.
+void fillCommandTraversalStateFromAction(SoIRRenderAction * action,
+                                         SoRenderCommand & command);
+//! Capture ordinary shape state, including material and inherited texture.
 void fillCommandStateFromAction(SoIRRenderAction * action,
                                 SoRenderCommand & command,
                                 int materialIndex = 0);
