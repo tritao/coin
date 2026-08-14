@@ -64,6 +64,13 @@ private:
     GLuint normalBuffer = 0;
     GLuint colorBuffer = 0;
     GLuint texcoordBuffer = 0;
+    GLuint lineDistanceBuffer = 0;
+    GLuint lineRasterVertexArray = 0;
+    GLuint lineRasterPositionBuffer = 0;
+    GLuint lineRasterNormalBuffer = 0;
+    GLuint lineRasterColorBuffer = 0;
+    GLuint lineRasterTexcoordBuffer = 0;
+    GLuint lineRasterDistanceBuffer = 0;
     GLuint texture = 0;
     GLuint indexBuffer = 0;
     GLuint vertexArray = 0;
@@ -72,11 +79,19 @@ private:
     const float * normalsKey = nullptr;
     const float * colorsKey = nullptr;
     const float * texcoordsKey = nullptr;
+    const float * lineDistanceKey = nullptr;
     const unsigned char * texturePixelsKey = nullptr;
     const uint32_t * indicesKey = nullptr;
+    const float * lineRasterPositionsKey = nullptr;
+    const float * lineRasterNormalsKey = nullptr;
+    const float * lineRasterColorsKey = nullptr;
+    const float * lineRasterTexcoordsKey = nullptr;
+    const uint32_t * lineRasterIndicesKey = nullptr;
     uint32_t vertexCount = 0;
     uint32_t normalCount = 0;
     uint32_t indexCount = 0;
+    uint32_t lineRasterVertexCount = 0;
+    uint32_t lineRasterIndexCount = 0;
     uint32_t vertexStride = 0;
     uint32_t texcoordStride = 0;
     int textureWidth = 0;
@@ -95,63 +110,173 @@ private:
     bool persistent = false;
   };
 
+  struct SurfaceUniforms {
+    struct Transforms {
+      GLint view = -1;
+      GLint projection = -1;
+      GLint model = -1;
+    } transforms;
+    struct Material {
+      GLint color = -1;
+      GLint useVertexColor = -1;
+      GLint shadingModel = -1;
+      GLint emissiveColor = -1;
+      GLint ambient = -1;
+      GLint specular = -1;
+      GLint shininess = -1;
+      GLint twoSidedLighting = -1;
+      GLint vertexColorAlphaIncludesOpacity = -1;
+    } material;
+    struct Lighting {
+      GLint ambient = -1;
+      GLint lightCount = -1;
+      GLint lightType = -1;
+      GLint lightColor = -1;
+      GLint lightDirection = -1;
+      GLint lightPosition = -1;
+      GLint lightAttenuation = -1;
+      GLint lightSpotParams = -1;
+    } lighting;
+    struct Texture {
+      GLint sampler = -1;
+      GLint enabled = -1;
+      GLint alphaIncludesOpacity = -1;
+      GLint hasAlpha = -1;
+      GLint model = -1;
+      GLint blendColor = -1;
+    } texture;
+    struct AlphaTest {
+      GLint function = -1;
+      GLint reference = -1;
+    } alphaTest;
+  };
+
   struct VisualProgram {
     GLuint handle = 0;
-
-    struct Uniforms {
-      struct Transforms {
-        GLint view = -1;
-        GLint projection = -1;
-        GLint model = -1;
-      } transforms;
-      struct Material {
-        GLint color = -1;
-        GLint useVertexColor = -1;
-        GLint shadingModel = -1;
-        GLint emissiveColor = -1;
-        GLint ambient = -1;
-        GLint specular = -1;
-        GLint shininess = -1;
-        GLint twoSidedLighting = -1;
-        GLint vertexColorAlphaIncludesOpacity = -1;
-      } material;
-      struct Lighting {
-        GLint ambient = -1;
-        GLint lightCount = -1;
-        GLint lightType = -1;
-        GLint lightColor = -1;
-        GLint lightDirection = -1;
-        GLint lightPosition = -1;
-        GLint lightAttenuation = -1;
-        GLint lightSpotParams = -1;
-      } lighting;
-      struct Texture {
-        GLint sampler = -1;
-        GLint enabled = -1;
-        GLint alphaIncludesOpacity = -1;
-        GLint hasAlpha = -1;
-        GLint model = -1;
-        GLint blendColor = -1;
-      } texture;
-      struct AlphaTest {
-        GLint function = -1;
-        GLint reference = -1;
-      } alphaTest;
-    } uniforms;
+    SurfaceUniforms surface;
   } visualProgram;
 
+  struct LineProgram {
+    GLuint handle = 0;
+    SurfaceUniforms surface;
+    struct RasterUniforms {
+      GLint lineWidth = -1;
+      GLint viewportSize = -1;
+      GLint stipplePattern = -1;
+      GLint stippleScale = -1;
+      GLint cullBackFaces = -1;
+      GLint frontFaceCCW = -1;
+    } raster;
+  };
+
+  struct PointProgram {
+    GLuint handle = 0;
+    SurfaceUniforms surface;
+    struct RasterUniforms {
+      GLint pointSize = -1;
+      GLint viewportSize = -1;
+      GLint cullBackFaces = -1;
+      GLint frontFaceCCW = -1;
+    } raster;
+  };
+
+  struct PixelProgram {
+    GLuint handle = 0;
+    struct Uniforms {
+      GLint view = -1;
+      GLint projection = -1;
+      GLint model = -1;
+      GLint quadCenter = -1;
+      GLint sourceSize = -1;
+      GLint rasterSize = -1;
+      GLint viewportOrigin = -1;
+      GLint viewportSize = -1;
+      GLint pixelOrigin = -1;
+      GLint texture = -1;
+      GLint alphaTestFunction = -1;
+      GLint alphaTestReference = -1;
+    } uniforms;
+  };
+
+  struct RasterPrograms {
+    LineProgram line;
+    LineProgram triangleLine;
+    PointProgram point;
+    PointProgram trianglePoint;
+    PixelProgram pixel;
+    float nativeLineWidthMax = 1.0f;
+    float nativePointSizeMax = 1.0f;
+  } rasterPrograms;
+
+  struct RasterPath {
+    GLenum primitive = GL_TRIANGLES;
+    bool textured = false;
+    bool pixelRaster = false;
+    bool usePointShader = false;
+    bool useLineShader = false;
+    bool lineTriangleInput = false;
+    bool pointTriangleInput = false;
+    bool expandedLineStream = false;
+    bool linePrimitive = false;
+    bool pointPrimitive = false;
+    bool filledPrimitive = true;
+    float pointSize = 1.0f;
+    float lineWidth = 1.0f;
+  };
+
   bool createShaders();
-  bool createVisualProgram();
   void beginFrame(const SoRenderParams & params);
   void invalidateCache();
   void updateGeometryCache(const SoDrawList & drawlist);
+  void updateLineDistances(CachedCommand & entry,
+                           const SoRenderCommand & command,
+                           const SbMat & viewMat,
+                           const SbMat & projMat,
+                           const SbVec2s & viewportSize);
+  void updateIndexedLineRasterStream(CachedCommand & entry,
+                                     const SoRenderCommand & command,
+                                     const SbMat & viewMat,
+                                     const SbMat & projMat,
+                                     const SbVec2s & viewportSize);
+  void setupLineRasterVAO(CachedCommand & entry);
+  void destroyLineRasterStream(CachedCommand & entry);
+  void renderPass(const SoDrawList & drawlist,
+                  const SbMat & viewMat,
+                  const SbMat & projMat,
+                  const SoRenderParams & params,
+                  SoRenderPassType pass);
   void drawCommand(const SoDrawList & drawlist,
                    const SoRenderCommand & command,
                    const SbMat & viewMat,
                    const SbMat & projMat,
                    const SoRenderParams & params);
+  RasterPath selectRasterPath(const CachedCommand & entry,
+                              const SoRenderCommand & command,
+                              const SoRenderParams & params) const;
+  void applyDepthState(const SoRenderCommand & command);
+  void applyRasterState(const SoRenderCommand & command,
+                        const RasterPath & path);
+  void applyBlendState(const SoRenderCommand & command,
+                       const SbVec4f & color);
+  bool applyPolygonOffset(const SoRenderCommand & command,
+                          const RasterPath & path,
+                          GLenum & target);
+  void bindCommandProgram(const SoDrawList & drawlist,
+                          const SoRenderCommand & command,
+                          const RasterPath & path,
+                          const SbMat & viewMat,
+                          const SbMat & projMat,
+                          const SoRenderParams & params,
+                          const CachedCommand & entry);
+  void drawGeometry(const SoRenderCommand & command,
+                    const RasterPath & path,
+                    const CachedCommand & entry);
+  void restoreRasterState(const RasterPath & path,
+                          GLenum polygonOffsetTarget,
+                          bool polygonOffsetEnabled);
   void uploadLighting(const SoDrawList & drawlist,
-                      const SoRenderCommand & command);
+                      const SoRenderCommand & command,
+                      const SurfaceUniforms & uniforms);
 
   CachedCommand & getOrCreateCache(const SoRenderCommand * command);
   void uploadGeometry(CachedCommand & entry,
@@ -159,36 +284,52 @@ private:
   void uploadVertexBuffers(CachedCommand & entry,
                            const SoGeometryDesc & geometry);
   void uploadTexture(CachedCommand & entry,
-                     const SoGeometryDesc & geometry,
-                     const SoTextureData & texture);
+                     const SoRenderCommand & command);
+  void uploadLineDistanceBuffer(CachedCommand & entry,
+                                const SoGeometryDesc & geometry,
+                                GLsizei vertexStride);
   void uploadIndices(CachedCommand & entry,
                      const SoGeometryDesc & geometry);
   void updateCacheDescription(CachedCommand & entry,
                               const SoRenderCommand & command,
-                              bool hasTexture,
-                              uint32_t vertexStride);
+                              GLsizei vertexStride);
   void setupVisualVAO(CachedCommand & entry);
   void destroyCacheEntry(CachedCommand & entry);
-  void bindVisualCommand(const SoDrawList & drawlist,
-                         const SoRenderCommand & command,
-                         const CachedCommand & entry,
-                         const SbMat & viewMat,
-                         const SbMat & projMat,
-                         const SoRenderParams & params);
-  void bindTransforms(const SoRenderCommand & command,
-                      const SbMat & viewMat,
-                      const SbMat & projMat);
-  void bindMaterial(const SoRenderCommand & command,
-                    const CachedCommand & entry);
-  void applyDepthState(const SoRenderCommand & command);
-  void applyBlendState(const SoRenderCommand & command);
-  void bindAlphaTest(const SoRenderCommand & command);
-  void bindTexture(const SoRenderCommand & command,
-                   const CachedCommand & entry);
-  void drawGeometry(const SoRenderCommand & command,
-                    const CachedCommand & entry);
   bool textureDescriptionMatches(const CachedCommand & entry,
                                  const SoRenderCommand & command) const;
+  void bindRasterCommon(const SoDrawList & drawlist,
+                        const SoRenderCommand & command,
+                        const SbMat & viewMat,
+                        const SbMat & projMat,
+                        const SbVec4f & color,
+                        bool useVertexColor,
+                        bool textured,
+                        const SurfaceUniforms & uniforms);
+  void bindLineShader(const SoRenderCommand & command,
+                      const SbMat & viewMat,
+                      const SbMat & projMat,
+                      const SbVec4f & color,
+                      bool useVertexColor,
+                      float lineWidth,
+                      const SbVec2s & viewportSize,
+                      bool triangleInput,
+                      const SoDrawList & drawlist,
+                      bool textured);
+  void bindPointShader(const SoRenderCommand & command,
+                       const SbMat & viewMat,
+                       const SbMat & projMat,
+                       const SbVec4f & color,
+                       bool useVertexColor,
+                       float pointSize,
+                       const SbVec2s & viewportSize,
+                       bool triangleInput,
+                       const SoDrawList & drawlist,
+                       bool textured);
+  void bindPixelShader(const SoRenderCommand & command,
+                       const SbMat & viewMat,
+                       const SbMat & projMat,
+                       const SbVec2s & viewportOrigin,
+                       const SbVec2s & viewportSize);
 
   const cc_glglue * glue = nullptr;
   std::vector<CachedCommand> gpuCache;
