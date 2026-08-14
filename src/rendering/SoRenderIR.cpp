@@ -12,6 +12,7 @@
 #include <Inventor/elements/SoLightAttenuationElement.h>
 #include <Inventor/elements/SoLightElement.h>
 #include <Inventor/elements/SoLightModelElement.h>
+#include <Inventor/elements/SoLinePatternElement.h>
 #include <Inventor/elements/SoLineWidthElement.h>
 #include <Inventor/elements/SoMultiTextureEnabledElement.h>
 #include <Inventor/elements/SoMultiTextureImageElement.h>
@@ -20,6 +21,7 @@
 #include <Inventor/elements/SoProjectionMatrixElement.h>
 #include <Inventor/elements/SoTextureQualityElement.h>
 #include <Inventor/elements/SoShapeHintsElement.h>
+#include <Inventor/elements/SoShapeStyleElement.h>
 #include <Inventor/elements/SoViewportRegionElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
@@ -553,19 +555,27 @@ textureHasTransparency(const SoTextureData & texture)
 }
 
 void
-fillCommandStateFromAction(SoIRRenderAction * action,
-                           SoRenderCommand & command,
-                           const int materialIndex)
+fillCommandTraversalStateFromAction(SoIRRenderAction * action,
+                                    SoRenderCommand & command)
 {
   SoState * state = action->getState();
   SoDrawList & drawlist = action->getMutableDrawList();
   command.modelMatrix = SoModelMatrixElement::get(state);
   command.viewMatrix = SoViewingMatrixElement::get(state);
   command.projMatrix = SoProjectionMatrixElement::get(state);
-  fillMaterialFromState(state, command.material, materialIndex);
-  fillTextureFromState(state, action, command.material);
   fillRenderStateFromState(state, command.state);
   command.lightingHandle = fillLightingFromState(state, drawlist);
+}
+
+void
+fillCommandStateFromAction(SoIRRenderAction * action,
+                           SoRenderCommand & command,
+                           const int materialIndex)
+{
+  SoState * state = action->getState();
+  fillCommandTraversalStateFromAction(action, command);
+  fillMaterialFromState(state, command.material, materialIndex);
+  fillTextureFromState(state, action, command.material);
 }
 
 void
@@ -700,6 +710,9 @@ fillRenderStateFromState(SoState * state, SoRenderState & rs)
     : SO_ALPHA_TEST_POLICY_EXPLICIT;
 
   SoDrawStyleElement::Style style = SoDrawStyleElement::get(mutableState);
+  const SoShapeStyleElement * shapeStyle = SoShapeStyleElement::get(mutableState);
+  rs.raster.visible = style != SoDrawStyleElement::INVISIBLE &&
+    (!shapeStyle || !(shapeStyle->getFlags() & SoShapeStyleElement::INVISIBLE));
   SoRasterFillMode fillmode = SO_RASTER_FILL;
   switch (style) {
   case SoDrawStyleElement::LINES:
@@ -716,19 +729,26 @@ fillRenderStateFromState(SoState * state, SoRenderState & rs)
   // Native GL_POINTS are square unless point smoothing is enabled. Keep the
   // primitive shape explicit in the IR so backends do not choose independently.
 
-  // Backface culling from SoShapeHintsElement:
-  // vertexOrdering == COUNTERCLOCKWISE + shapeType == SOLID → cull back faces
+  // Backface culling from SoShapeHintsElement.  Vertex ordering selects the
+  // front-face winding; a solid shape requests back-face culling regardless
+  // of whether its front faces are clockwise or counter-clockwise.
   {
     SoShapeHintsElement::VertexOrdering vo;
     SoShapeHintsElement::ShapeType st;
     SoShapeHintsElement::FaceType ft;
     SoShapeHintsElement::get(mutableState, vo, st, ft);
-    rs.raster.cullMode = (vo == SoShapeHintsElement::COUNTERCLOCKWISE
-                       && st == SoShapeHintsElement::SOLID) ? 1 : 0;
+    rs.raster.cullBackFaces = st == SoShapeHintsElement::SOLID &&
+      (vo == SoShapeHintsElement::CLOCKWISE ||
+       vo == SoShapeHintsElement::COUNTERCLOCKWISE);
+    rs.raster.frontFaceCCW = vo != SoShapeHintsElement::CLOCKWISE;
   }
   rs.raster.scissorEnabled = FALSE;
   rs.raster.lineWidth = SoLineWidthElement::get(mutableState);
   rs.raster.pointSize = SoPointSizeElement::get(mutableState);
+  rs.raster.linePattern = static_cast<uint16_t>(
+    SoLinePatternElement::get(mutableState));
+  rs.raster.linePatternScale = static_cast<int16_t>(std::max(
+    1, SoLinePatternElement::getScaleFactor(mutableState)));
 
   const SbViewportRegion & viewport = SoViewportRegionElement::get(mutableState);
   const SbVec2s & viewportOrigin = viewport.getViewportOriginPixels();
@@ -751,7 +771,12 @@ fillRenderStateFromState(SoState * state, SoRenderState & rs)
   }
   rs.raster.polygonOffsetFactor = offsetfactor;
   rs.raster.polygonOffsetUnits = offsetunits;
-
+  rs.raster.polygonOffsetFilled = offseton &&
+    (offsetstyle & SoPolygonOffsetElement::FILLED);
+  rs.raster.polygonOffsetLines = offseton &&
+    (offsetstyle & SoPolygonOffsetElement::LINES);
+  rs.raster.polygonOffsetPoints = offseton &&
+    (offsetstyle & SoPolygonOffsetElement::POINTS);
 }
 
 SoLightingHandle

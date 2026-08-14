@@ -224,6 +224,17 @@ struct SoTextureData {
   SbVec4f blendColor = SbVec4f(0.0f, 0.0f, 0.0f, 1.0f);
 };
 
+struct SoPixelRasterData {
+  // Pixel rasterization is a semantic command property, not a producer
+  // identity. The texture retains the source dimensions; these dimensions
+  // describe the desired on-screen footprint.
+  SbBool enabled = FALSE;
+  int originX = 0;
+  int originY = 0;
+  int width = 0;
+  int height = 0;
+};
+
 /*!
   \struct SoMaterialData
   \brief Snapshot of the logical Inventor material state for one draw call.
@@ -313,8 +324,10 @@ enum SoRasterFillMode : uint8_t {
   \brief Rasterizer properties (fill mode, culling, polygon offset).
 */
 struct SoRasterState {
+  SbBool  visible = TRUE;
   SoRasterFillMode fillMode = SO_RASTER_FILL;
-  uint8_t cullMode = 0;
+  SbBool  cullBackFaces = FALSE;
+  SbBool  frontFaceCCW = TRUE;
   SbBool  scissorEnabled = FALSE;
   SbBool  viewportEnabled = FALSE;
   int     viewportX = 0;
@@ -323,8 +336,13 @@ struct SoRasterState {
   int     viewportHeight = 0;
   float   lineWidth = 1.0f;
   float   pointSize = 1.0f;
+  uint16_t linePattern = 0xFFFF;
+  int16_t  linePatternScale = 1;
   float   polygonOffsetFactor = 0.0f;
   float   polygonOffsetUnits = 0.0f;
+  SbBool  polygonOffsetFilled = FALSE;
+  SbBool  polygonOffsetLines = FALSE;
+  SbBool  polygonOffsetPoints = FALSE;
 };
 
 /*!
@@ -415,6 +433,7 @@ struct SoRenderCommand {
 
   SoRenderPassType pass = SO_RENDERPASS_OPAQUE;
   SoLightingHandle lightingHandle = 0;
+  SoPixelRasterData pixelRaster;
   uint64_t         sortKey = 0; //!< IR/draw-list key used by sorting.
   void *           userData = nullptr; //!< Opaque, non-owned producer data.
 };
