@@ -1,0 +1,3 @@
+id: raster_points_basic
+scene: ../scenes/raster_points_basic.iv
+baseline: ../baselines/gl/raster_points_basic.png

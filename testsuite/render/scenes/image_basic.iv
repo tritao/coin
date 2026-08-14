@@ -1,0 +1,21 @@
+#Inventor V2.1 ascii
+
+Separator {
+  OrthographicCamera {
+    position 0 0 5
+    height 6
+    nearDistance 0.1
+    farDistance 20
+  }
+  Image {
+    image 4 4 3
+      0xe63946 0xe63946 0x457b9d 0x457b9d
+      0xe63946 0xe63946 0x457b9d 0x457b9d
+      0xf1fa8c 0xf1fa8c 0x2a9d8f 0x2a9d8f
+      0xf1fa8c 0xf1fa8c 0x2a9d8f 0x2a9d8f
+    width 192
+    height 192
+    horAlignment CENTER
+    vertAlignment HALF
+  }
+}

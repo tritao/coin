@@ -1,0 +1,3 @@
+id: image_basic
+scene: ../scenes/image_basic.iv
+baseline: ../baselines/gl/image_basic.png
