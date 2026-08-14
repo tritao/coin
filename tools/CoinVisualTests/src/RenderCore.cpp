@@ -7,7 +7,6 @@
 #include <Inventor/SoInput.h>
 #include <Inventor/SoPath.h>
 #include <Inventor/SbLinear.h>
-#include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoSearchAction.h>
 #include <Inventor/lists/SoPathList.h>
 #include <Inventor/nodes/SoCamera.h>
@@ -117,7 +116,19 @@ bool RenderCore::initialize(const Options& options) {
     return false;
   }
 
-  impl_->driver = createLegacyGLDriver();
+#if COIN_BUILD_LEGACY_GL_RENDERER
+  if (options.renderer == RendererKind::Legacy) {
+    impl_->driver = createLegacyGLDriver();
+  }
+  else
+#endif
+  {
+    if (options.renderer == RendererKind::Legacy) {
+      std::cerr << "LegacyGL rendering is unavailable in this build.\n";
+      return false;
+    }
+    impl_->driver = createDrawListDriver(options.gl_profile);
+  }
   if (!impl_->driver->initialize(options.width, options.height)) {
     return false;
   }

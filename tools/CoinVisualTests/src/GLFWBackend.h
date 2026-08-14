@@ -8,11 +8,14 @@
 #include <GLFW/glfw3.h>
 #include <Inventor/system/gl.h>
 
+#include "RenderDriver.h"
+
 namespace CoinVisualTests {
 
 struct GLFWBackendConfig {
   int width = 512;
   int height = 512;
+  OpenGLProfile profile = OpenGLProfile::Compatibility;
 };
 
 class GLFWBackend {
@@ -26,6 +29,8 @@ public:
   bool initialized() const { return initialized_; }
 
 private:
+  bool validateContext() const;
+
   GLFWBackendConfig config_;
   GLFWwindow* window_ = nullptr;
   GLuint framebuffer_ = 0;

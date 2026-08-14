@@ -1,0 +1,7 @@
+id: unlit_vertex_colors
+scene: ../scenes/unlit_vertex_colors.iv
+
+viewport:
+  background: [0.5, 0.5, 0.5, 1.0]
+
+baseline: ../baselines/gl/unlit_vertex_colors.png

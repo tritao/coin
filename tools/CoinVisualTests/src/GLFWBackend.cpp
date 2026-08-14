@@ -41,7 +41,12 @@ bool GLFWBackend::init(const GLFWBackendConfig& config) {
   glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
+  if (config_.profile == OpenGLProfile::Core) {
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
+  } else {
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE);
+  }
 
   window_ = glfwCreateWindow(config_.width, config_.height, "CoinVisualTests", nullptr, nullptr);
   if (!window_) {
@@ -51,6 +56,13 @@ bool GLFWBackend::init(const GLFWBackendConfig& config) {
   }
   glfwMakeContextCurrent(window_);
   glfwSwapInterval(0);
+
+  if (!this->validateContext()) {
+    glfwDestroyWindow(window_);
+    window_ = nullptr;
+    glfwTerminate();
+    return false;
+  }
 
   glGenFramebuffers(1, &framebuffer_);
   glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
@@ -76,6 +88,44 @@ bool GLFWBackend::init(const GLFWBackendConfig& config) {
   }
 
   initialized_ = true;
+  return true;
+}
+
+bool GLFWBackend::validateContext() const {
+  GLint major = 0;
+  GLint minor = 0;
+  GLint profile_mask = 0;
+  glGetIntegerv(GL_MAJOR_VERSION, &major);
+  glGetIntegerv(GL_MINOR_VERSION, &minor);
+  glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &profile_mask);
+
+  const char* version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+  const char* vendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+  const char* renderer = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+  const char* shading_language = reinterpret_cast<const char*>(
+    glGetString(GL_SHADING_LANGUAGE_VERSION));
+  const bool core = (profile_mask & GL_CONTEXT_CORE_PROFILE_BIT) != 0;
+  const bool compatibility =
+    (profile_mask & GL_CONTEXT_COMPATIBILITY_PROFILE_BIT) != 0;
+  const char* actual_profile = core ? "core" : compatibility ? "compatibility" : "unknown";
+
+  std::cerr << "[CoinVisualTests] OpenGL context: version="
+            << (version ? version : "<unknown>")
+            << " profile=" << actual_profile
+            << " vendor=" << (vendor ? vendor : "<unknown>")
+            << " renderer=" << (renderer ? renderer : "<unknown>")
+            << " glsl=" << (shading_language ? shading_language : "<unknown>")
+            << '\n';
+
+  const bool version_ok = major > 3 || (major == 3 && minor >= 3);
+  const bool profile_ok = config_.profile == OpenGLProfile::Core
+    ? core : compatibility;
+  if (!version_ok || !profile_ok) {
+    std::cerr << "Requested OpenGL 3.3 "
+              << (config_.profile == OpenGLProfile::Core ? "core" : "compatibility")
+              << " context was not provided.\n";
+    return false;
+  }
   return true;
 }
 

@@ -1,0 +1,7 @@
+id: unlit_transformed_cubes
+scene: ../scenes/unlit_transformed_cubes.iv
+
+viewport:
+  background: [0.5, 0.5, 0.5, 1.0]
+
+baseline: ../baselines/gl/unlit_transformed_cubes.png

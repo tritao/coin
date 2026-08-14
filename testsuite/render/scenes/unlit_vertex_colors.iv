@@ -1,0 +1,32 @@
+#Inventor V2.1 ascii
+
+Separator {
+  PerspectiveCamera {
+    position 0 0 6
+    heightAngle 0.785398
+    nearDistance 0.1
+    farDistance 20
+  }
+  LightModel { model BASE_COLOR }
+  Material {
+    diffuseColor [
+      0.95 0.05 0.05,
+      0.05 0.95 0.05,
+      0.05 0.15 0.95,
+      0.95 0.85 0.05
+    ]
+  }
+  MaterialBinding { value PER_VERTEX_INDEXED }
+  Coordinate3 {
+    point [
+      -1.6 -1.2 0,
+       1.6 -1.2 0,
+       1.6  1.2 0,
+      -1.6  1.2 0
+    ]
+  }
+  IndexedFaceSet {
+    coordIndex [ 0, 1, 2, 3, -1 ]
+    materialIndex [ 0, 1, 2, 3, -1 ]
+  }
+}

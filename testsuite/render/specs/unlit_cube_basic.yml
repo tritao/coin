@@ -1,0 +1,7 @@
+id: unlit_cube_basic
+scene: ../scenes/unlit_cube_basic.iv
+
+viewport:
+  background: [0.5, 0.5, 0.5, 1.0]
+
+baseline: ../baselines/gl/unlit_cube_basic.png

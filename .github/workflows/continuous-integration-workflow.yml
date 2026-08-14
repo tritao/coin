@@ -73,25 +73,24 @@ jobs:
           EGL_PLATFORM: surfaceless
           COIN_EGL_CORE_PROFILE: 1
       - name: Configure visual tests
-        if: matrix.renderer_state == 'enabled'
         run: |
           cmake -S . -B cmake_build_dir_rt -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCOIN_BUILD_TESTS=OFF \
             -DCOIN_BUILD_EXAMPLES=OFF \
-            -DCOIN_BUILD_LEGACY_GL_RENDERER=ON \
+            -DCOIN_BUILD_LEGACY_GL_RENDERER=${{ matrix.legacy_gl_renderer }} \
             -DCOIN_BUILD_VISUAL_TESTS=ON
       - name: Build visual tests
-        if: matrix.renderer_state == 'enabled'
         run: cmake --build cmake_build_dir_rt --config Release -- -j4
       - name: Run visual smoke test
-        if: matrix.renderer_state == 'enabled'
         run: ctest --test-dir cmake_build_dir_rt -L visual-smoke --output-on-failure -VV
-      - name: Run visual suite
+      - name: Run Legacy visual suite
         if: matrix.renderer_state == 'enabled'
-        run: |
-          ctest --test-dir cmake_build_dir_rt -L visual-contract --output-on-failure -VV
-          xvfb-run -a ctest --test-dir cmake_build_dir_rt -L visual-legacy --output-on-failure -VV
+        run: xvfb-run -a ctest --test-dir cmake_build_dir_rt -L visual-legacy --output-on-failure -VV
+      - name: Run visual contract suite
+        run: ctest --test-dir cmake_build_dir_rt -L visual-contract --output-on-failure -VV
+      - name: Run DrawList visual suite
+        run: xvfb-run -a ctest --test-dir cmake_build_dir_rt -L visual-drawlist --output-on-failure -VV
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -102,7 +101,7 @@ jobs:
         uses: actions/upload-artifact@v7
         if: always() && matrix.renderer_state == 'enabled'
         with:
-          name: Ubuntu-VisualTest-Artifacts
+          name: Ubuntu-VisualTest-Artifacts-${{ matrix.renderer_state }}
           path: |
             cmake_build_dir_rt/render_artifacts/
             cmake_build_dir_rt/Testing/
