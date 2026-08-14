@@ -220,6 +220,16 @@ target_include_directories(RetainedMaterialLightingTest PRIVATE
 add_test(NAME RetainedMixedTopologyTest COMMAND RetainedMixedTopologyTest)
 
 add_test(NAME RetainedMaterialLightingTest COMMAND RetainedMaterialLightingTest)
+
+add_executable(RetainedRasterTextTest RetainedRasterTextTest.cpp)
+target_link_libraries(RetainedRasterTextTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(RetainedRasterTextTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES}
+)
+add_test(NAME RetainedRasterTextTest COMMAND RetainedRasterTextTest)
+
 if(HAVE_EGL)
 	add_executable(RetainedMaterialLightingGLTest RetainedMaterialLightingGLTest.cpp)
 	target_link_libraries(RetainedMaterialLightingGLTest Coin ${COIN_TARGET_LINK_LIBRARIES})
@@ -232,6 +242,18 @@ if(HAVE_EGL)
 	)
 	add_test(NAME RetainedMaterialLightingGLTest COMMAND RetainedMaterialLightingGLTest)
 	set_tests_properties(RetainedMaterialLightingGLTest PROPERTIES SKIP_RETURN_CODE 77)
+
+	add_executable(RetainedRasterGLTest RetainedRasterGLTest.cpp)
+	target_link_libraries(RetainedRasterGLTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+	target_compile_definitions(RetainedRasterGLTest PRIVATE COIN_INTERNAL)
+	target_include_directories(RetainedRasterGLTest PRIVATE
+		${PROJECT_SOURCE_DIR}/src
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES}
+	)
+	add_test(NAME RetainedRasterGLTest COMMAND RetainedRasterGLTest)
+	set_tests_properties(RetainedRasterGLTest PROPERTIES SKIP_RETURN_CODE 77)
 
 	add_executable(DrawListGLTest DrawListGLTest.cpp)
 	target_link_libraries(DrawListGLTest Coin ${COIN_TARGET_LINK_LIBRARIES})

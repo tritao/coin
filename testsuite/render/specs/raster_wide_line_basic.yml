@@ -1,0 +1,3 @@
+id: raster_wide_line_basic
+scene: ../scenes/raster_wide_line_basic.iv
+baseline: ../baselines/gl/raster_wide_line_basic.png

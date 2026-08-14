@@ -1,0 +1,3 @@
+id: raster_line_pattern_basic
+scene: ../scenes/raster_line_pattern_basic.iv
+baseline: ../baselines/gl/raster_line_pattern_basic.png

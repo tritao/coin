@@ -1484,8 +1484,12 @@ SoGLRenderBackend::selectRasterPath(const CachedCommand & entry,
   path.pointPrimitive = pointTopology ||
     (fillMode == SO_RASTER_POINTS && triangleTopology);
   path.filledPrimitive = !path.linePrimitive && !path.pointPrimitive;
+  // Core-profile drivers may report a broad GL_LINE_WIDTH_RANGE while still
+  // rasterizing ordinary wide lines as one pixel. Use the retained line
+  // shader for every non-default width so compat and core profiles execute
+  // the same semantic raster state.
   const bool lineEmulationRequired =
-    path.lineWidth > this->rasterPrograms.nativeLineWidthMax ||
+    path.lineWidth > 1.0f ||
     command.state.raster.linePattern != 0xFFFF;
   path.usePointShader = !path.pixelRaster && path.pointPrimitive &&
     this->rasterPrograms.point.handle != 0 &&

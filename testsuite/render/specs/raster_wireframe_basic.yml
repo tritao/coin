@@ -1,0 +1,4 @@
+id: raster_wireframe_basic
+scene: ../scenes/raster_wireframe_basic.iv
+baseline: ../baselines/gl/raster_wireframe_basic.png
+compare: relaxed

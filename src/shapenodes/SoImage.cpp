@@ -575,8 +575,11 @@ SoImage::IRRender(SoIRRenderAction * action)
     0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f
   };
   const float texcoordData[] = {
-    0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f,
-    1.0f, 1.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 0.0f, 1.0f,
+    1.0f, 0.0f, 0.0f, 1.0f,
+    1.0f, 1.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 0.0f, 1.0f,
+    1.0f, 1.0f, 0.0f, 1.0f,
     0.0f, 1.0f, 0.0f, 1.0f
   };
   float * positions = static_cast<float *>(

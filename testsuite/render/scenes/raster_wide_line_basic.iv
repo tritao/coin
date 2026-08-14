@@ -1,0 +1,23 @@
+#Inventor V2.1 ascii
+
+Separator {
+  PerspectiveCamera {
+    position 0 0 6
+    heightAngle 0.785398
+    nearDistance 0.1
+    farDistance 20
+  }
+  LightModel { model BASE_COLOR }
+  DrawStyle { style LINES lineWidth 6 }
+  Coordinate3 {
+    point [ -2.2 -1.2 0, 2.2 -1.2 0,
+            -2.2 0 0, 2.2 0 0,
+            -2.2 1.2 0, 2.2 1.2 0 ]
+  }
+  Material { diffuseColor 0.95 0.15 0.1 }
+  LineSet { numVertices [ 2 ] }
+  Material { diffuseColor 0.1 0.8 0.25 }
+  LineSet { numVertices [ 2 ] }
+  Material { diffuseColor 0.15 0.35 0.95 }
+  LineSet { numVertices [ 2 ] }
+}
