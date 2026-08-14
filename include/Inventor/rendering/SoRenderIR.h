@@ -376,6 +376,20 @@ struct SoRenderState {
   SoBlendState blend;
   SoAlphaTestState alphaTest;
   SoRasterState raster;
+  //! Use view/projection matrices captured with this command.
+  SbBool useCommandMatrices = FALSE;
+};
+
+/*!
+  \enum SoOpacityClass
+  \brief Semantic surface opacity classification used by the planner.
+
+  This describes whether a command contributes translucent surface semantics.
+  It is not an execution pass and does not encode ordering.
+*/
+enum SoOpacityClass : uint8_t {
+  SO_OPACITY_OPAQUE = 0,
+  SO_OPACITY_TRANSPARENT
 };
 
 /*!
@@ -439,6 +453,7 @@ struct SoRenderCommand {
   SbMatrix         viewMatrix;
   SbMatrix         projMatrix;
 
+  SoOpacityClass   opacityClass = SO_OPACITY_OPAQUE;
   SoLightingHandle lightingHandle = 0;
   SoNodeId         nodeId = 0;     //!< Identity of the underlying scene node.
   SoInstanceId     instanceId = 0; //!< Identity of this rendered occurrence.
