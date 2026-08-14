@@ -2,13 +2,18 @@
 
 #include "rendering/SoGLRenderBackend.h"
 
+#include <Inventor/C/glue/gl.h>
+#include <Inventor/SbName.h>
 #include <Inventor/errors/SoDebugError.h>
+#include <Inventor/misc/SoGLDriverDatabase.h>
 
 #include "glue/glp.h"
 #include "glue/glslp.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <algorithm>
+#include <mutex>
 #include <utility>
 #include <string>
 #include <vector>
@@ -19,9 +24,113 @@
 namespace {
 
 static constexpr int MAX_VERTEX_COUNT = 10000000;
+static constexpr int MAX_SHADER_LIGHTS = 8;
 static constexpr GLuint POSITION_ATTRIBUTE = 0;
-static constexpr GLuint COLOR_ATTRIBUTE = 1;
-static constexpr GLuint TEXCOORD_ATTRIBUTE = 2;
+static constexpr GLuint NORMAL_ATTRIBUTE = 1;
+static constexpr GLuint COLOR_ATTRIBUTE = 2;
+static constexpr GLuint TEXCOORD_ATTRIBUTE = 3;
+
+GLenum
+textureWrapToGL(const SoTextureWrap wrap)
+{
+  switch (wrap) {
+  case SO_TEXTURE_WRAP_REPEAT: return GL_REPEAT;
+  case SO_TEXTURE_WRAP_CLAMP_TO_BORDER: return GL_CLAMP_TO_BORDER;
+  case SO_TEXTURE_WRAP_CLAMP_TO_EDGE:
+  default: return GL_CLAMP_TO_EDGE;
+  }
+}
+
+GLenum
+textureMinFilterToGL(const SoTextureFilter filter)
+{
+  switch (filter) {
+  case SO_TEXTURE_FILTER_LINEAR: return GL_LINEAR;
+  case SO_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST:
+    return GL_NEAREST_MIPMAP_NEAREST;
+  case SO_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST:
+    return GL_LINEAR_MIPMAP_NEAREST;
+  case SO_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR:
+    return GL_NEAREST_MIPMAP_LINEAR;
+  case SO_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR:
+    return GL_LINEAR_MIPMAP_LINEAR;
+  case SO_TEXTURE_FILTER_NEAREST:
+  default: return GL_NEAREST;
+  }
+}
+
+GLenum
+textureMagFilterToGL(const SoTextureFilter filter)
+{
+  return filter == SO_TEXTURE_FILTER_NEAREST ? GL_NEAREST : GL_LINEAR;
+}
+
+GLenum
+blendFactorToGL(const SoBlendFactor factor)
+{
+  switch (factor) {
+  case SO_BLEND_FACTOR_ZERO: return GL_ZERO;
+  case SO_BLEND_FACTOR_ONE: return GL_ONE;
+  case SO_BLEND_FACTOR_SRC_COLOR: return GL_SRC_COLOR;
+  case SO_BLEND_FACTOR_ONE_MINUS_SRC_COLOR: return GL_ONE_MINUS_SRC_COLOR;
+  case SO_BLEND_FACTOR_DST_COLOR: return GL_DST_COLOR;
+  case SO_BLEND_FACTOR_ONE_MINUS_DST_COLOR: return GL_ONE_MINUS_DST_COLOR;
+  case SO_BLEND_FACTOR_SRC_ALPHA: return GL_SRC_ALPHA;
+  case SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA: return GL_ONE_MINUS_SRC_ALPHA;
+  case SO_BLEND_FACTOR_DST_ALPHA: return GL_DST_ALPHA;
+  case SO_BLEND_FACTOR_ONE_MINUS_DST_ALPHA: return GL_ONE_MINUS_DST_ALPHA;
+  case SO_BLEND_FACTOR_CONSTANT_COLOR: return GL_CONSTANT_COLOR;
+  case SO_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
+    return GL_ONE_MINUS_CONSTANT_COLOR;
+  case SO_BLEND_FACTOR_CONSTANT_ALPHA: return GL_CONSTANT_ALPHA;
+  case SO_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
+    return GL_ONE_MINUS_CONSTANT_ALPHA;
+  case SO_BLEND_FACTOR_SRC_ALPHA_SATURATE: return GL_SRC_ALPHA_SATURATE;
+  case SO_BLEND_FACTOR_SRC1_COLOR: return GL_SRC_COLOR;
+  case SO_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR: return GL_ONE_MINUS_SRC_COLOR;
+  case SO_BLEND_FACTOR_SRC1_ALPHA: return GL_SRC_ALPHA;
+  case SO_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA: return GL_ONE_MINUS_SRC_ALPHA;
+  default: return GL_ONE;
+  }
+}
+
+bool
+isDualSourceBlendFactor(const SoBlendFactor factor)
+{
+  return factor == SO_BLEND_FACTOR_SRC1_COLOR ||
+         factor == SO_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR ||
+         factor == SO_BLEND_FACTOR_SRC1_ALPHA ||
+         factor == SO_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA;
+}
+
+GLenum
+blendEquationToGL(const SoBlendEquation equation)
+{
+  switch (equation) {
+  case SO_BLEND_EQUATION_SUBTRACT: return GL_FUNC_SUBTRACT;
+  case SO_BLEND_EQUATION_REVERSE_SUBTRACT: return GL_FUNC_REVERSE_SUBTRACT;
+  case SO_BLEND_EQUATION_MIN: return GL_MIN;
+  case SO_BLEND_EQUATION_MAX: return GL_MAX;
+  case SO_BLEND_EQUATION_ADD:
+  default: return GL_FUNC_ADD;
+  }
+}
+
+GLenum
+depthFunctionToGL(const SoDepthFunction function)
+{
+  switch (function) {
+  case SO_DEPTH_NEVER: return GL_NEVER;
+  case SO_DEPTH_ALWAYS: return GL_ALWAYS;
+  case SO_DEPTH_LESS: return GL_LESS;
+  case SO_DEPTH_LEQUAL: return GL_LEQUAL;
+  case SO_DEPTH_EQUAL: return GL_EQUAL;
+  case SO_DEPTH_GEQUAL: return GL_GEQUAL;
+  case SO_DEPTH_GREATER: return GL_GREATER;
+  case SO_DEPTH_NOTEQUAL: return GL_NOTEQUAL;
+  default: return GL_LEQUAL;
+  }
+}
 
 GLenum
 topologyToGL(const SoPrimitiveTopology topology)
@@ -222,9 +331,13 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
       !this->glue->glEnableVertexAttribArray ||
       !this->glue->glDisableVertexAttribArray ||
       !this->glue->glVertexAttrib4f ||
+      !this->glue->glVertexAttrib3f ||
       !this->glue->glVertexAttrib2f ||
       !this->glue->glUniform1f || !this->glue->glUniform1i ||
-      !this->glue->glUniform4f || !this->glue->glUniformMatrix4fv) {
+      !this->glue->glUniform3f || !this->glue->glUniform1iv ||
+      !this->glue->glUniform2fv || !this->glue->glUniform3fv ||
+      !this->glue->glUniform4f || !this->glue->glUniformMatrix4fv ||
+      !this->glue->glBlendFuncSeparate) {
     this->emitError("active context does not provide retained-renderer GL dispatch");
     this->glue = nullptr;
     return FALSE;
@@ -245,6 +358,9 @@ SoGLRenderBackend::destroyCacheEntry(CachedCommand & entry)
 {
   if (entry.positionBuffer) {
     cc_glglue_glDeleteBuffers(this->glue, 1, &entry.positionBuffer);
+  }
+  if (entry.normalBuffer) {
+    cc_glglue_glDeleteBuffers(this->glue, 1, &entry.normalBuffer);
   }
   if (entry.colorBuffer) {
     cc_glglue_glDeleteBuffers(this->glue, 1, &entry.colorBuffer);
@@ -376,6 +492,21 @@ SoGLRenderBackend::uploadVertexBuffers(CachedCommand & entry,
                          vertexStride,
                          geometry.positions, GL_STATIC_DRAW);
 
+  if (geometry.normals && geometry.normalCount >= geometry.vertexCount) {
+    if (!entry.normalBuffer) {
+      cc_glglue_glGenBuffers(this->glue, 1, &entry.normalBuffer);
+    }
+    cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, entry.normalBuffer);
+    cc_glglue_glBufferData(this->glue, GL_ARRAY_BUFFER,
+                           static_cast<GLsizeiptr>(geometry.vertexCount) *
+                           vertexStride,
+                           geometry.normals, GL_STATIC_DRAW);
+  }
+  else if (entry.normalBuffer) {
+    cc_glglue_glDeleteBuffers(this->glue, 1, &entry.normalBuffer);
+    entry.normalBuffer = 0;
+  }
+
   if (geometry.colors && geometry.vertexCount) {
     if (!entry.colorBuffer) {
       cc_glglue_glGenBuffers(this->glue, 1, &entry.colorBuffer);
@@ -428,10 +559,30 @@ SoGLRenderBackend::uploadTexture(CachedCommand & entry,
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_G, format.swizzle[1]);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, format.swizzle[2]);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, format.swizzle[3]);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,
+                  textureMinFilterToGL(texture.minFilter));
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER,
+                  textureMagFilterToGL(texture.magFilter));
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S,
+                  textureWrapToGL(texture.wrapS));
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T,
+                  textureWrapToGL(texture.wrapT));
+  const bool mipmapped =
+    texture.minFilter == SO_TEXTURE_FILTER_NEAREST_MIPMAP_NEAREST ||
+    texture.minFilter == SO_TEXTURE_FILTER_LINEAR_MIPMAP_NEAREST ||
+    texture.minFilter == SO_TEXTURE_FILTER_NEAREST_MIPMAP_LINEAR ||
+    texture.minFilter == SO_TEXTURE_FILTER_LINEAR_MIPMAP_LINEAR;
+  if (mipmapped && this->glue->glGenerateMipmap) {
+    this->glue->glGenerateMipmap(GL_TEXTURE_2D);
+  }
+  if (SoGLDriverDatabase::isSupported(
+        this->glue, SbName(SO_GL_ANISOTROPIC_FILTERING))) {
+    const float supported = cc_glglue_get_max_anisotropy(this->glue);
+    if (supported > 1.0f) {
+      glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+                      texture.anisotropic ? supported : 1.0f);
+    }
+  }
   cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, 0);
 }
 
@@ -465,21 +616,32 @@ SoGLRenderBackend::updateCacheDescription(CachedCommand & entry,
   const SoGeometryDesc & geometry = command.geometry;
   const SoTextureData & texture = command.material.texture;
   entry.positionsKey = geometry.positions;
+  entry.normalsKey = geometry.normals;
   entry.colorsKey = geometry.colors;
   entry.texcoordsKey = geometry.texcoords;
   entry.texturePixelsKey = hasTexture ? texture.pixels : nullptr;
   entry.indicesKey = geometry.indices;
   entry.vertexCount = geometry.vertexCount;
+  entry.normalCount = geometry.normalCount;
   entry.indexCount = geometry.indexCount;
   entry.vertexStride = vertexStride;
   entry.texcoordStride = geometry.texcoordStride;
   entry.textureWidth = hasTexture ? texture.width : 0;
   entry.textureHeight = hasTexture ? texture.height : 0;
   entry.textureComponents = hasTexture ? texture.numComponents : 0;
-  entry.geometryCacheKey = geometry.cacheKey;
+    entry.geometryCacheKey = geometry.cacheKey;
   entry.geometryRevision = geometry.revision;
   entry.textureCacheKey = hasTexture ? texture.cacheKey : 0;
   entry.textureRevision = hasTexture ? texture.revision : 0;
+    entry.textureMinFilter = hasTexture ? texture.minFilter
+                                      : SO_TEXTURE_FILTER_NEAREST;
+  entry.textureMagFilter = hasTexture ? texture.magFilter
+                                      : SO_TEXTURE_FILTER_NEAREST;
+  entry.textureWrapS = hasTexture ? texture.wrapS
+                                  : SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+  entry.textureWrapT = hasTexture ? texture.wrapT
+                                  : SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+    entry.textureAnisotropic = hasTexture ? texture.anisotropic : false;
 }
 
 void
@@ -497,6 +659,17 @@ SoGLRenderBackend::setupVisualVAO(CachedCommand & entry)
     cc_glglue_glVertexAttribPointer(this->glue, POSITION_ATTRIBUTE, 3,
                                     GL_FLOAT,
                                     GL_FALSE, entry.vertexStride, nullptr);
+  }
+  if (entry.normalBuffer) {
+    cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, entry.normalBuffer);
+    cc_glglue_glEnableVertexAttribArray(this->glue, NORMAL_ATTRIBUTE);
+    cc_glglue_glVertexAttribPointer(this->glue, NORMAL_ATTRIBUTE, 3,
+                                    GL_FLOAT, GL_FALSE, entry.vertexStride,
+                                    nullptr);
+  }
+  else {
+    cc_glglue_glDisableVertexAttribArray(this->glue, NORMAL_ATTRIBUTE);
+    this->glue->glVertexAttrib3f(NORMAL_ATTRIBUTE, 0.0f, 0.0f, 1.0f);
   }
   if (entry.colorBuffer) {
     cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, entry.colorBuffer);
@@ -542,7 +715,12 @@ SoGLRenderBackend::textureDescriptionMatches(
   return identityMatches &&
     entry.textureWidth == texture.width &&
     entry.textureHeight == texture.height &&
-    entry.textureComponents == texture.numComponents;
+    entry.textureComponents == texture.numComponents &&
+    entry.textureMinFilter == texture.minFilter &&
+    entry.textureMagFilter == texture.magFilter &&
+    entry.textureWrapS == texture.wrapS &&
+    entry.textureWrapT == texture.wrapT &&
+    entry.textureAnisotropic == texture.anisotropic;
 }
 
 void
@@ -581,13 +759,15 @@ SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
     const bool identityMatches = geometry.cacheKey != 0
       ? entry.geometryCacheKey == geometry.cacheKey &&
         entry.geometryRevision == geometry.revision
-      : entry.positionsKey == geometry.positions;
+      : entry.positionsKey == geometry.positions &&
+        entry.normalsKey == geometry.normals;
     const bool geometryMatches = entry.positionBuffer != 0 &&
       identityMatches &&
       entry.colorsKey == geometry.colors &&
       entry.texcoordsKey == geometry.texcoords &&
       entry.indicesKey == geometry.indices &&
       entry.vertexCount == geometry.vertexCount &&
+      entry.normalCount == geometry.normalCount &&
       entry.indexCount == geometry.indexCount &&
       entry.vertexStride == vertexStride &&
       entry.texcoordStride == geometry.texcoordStride &&
@@ -603,7 +783,79 @@ SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
 }
 
 void
-SoGLRenderBackend::drawCommand(const SoRenderCommand & command,
+SoGLRenderBackend::uploadLighting(const SoDrawList & drawlist,
+                                  const SoRenderCommand & command)
+{
+  const SoLightingData * lighting = drawlist.getLighting(command.lightingHandle);
+  static const SoLightingData emptyLighting;
+  if (!lighting) {
+    lighting = &emptyLighting;
+    if (command.lightingHandle != 0) {
+      static std::once_flag invalidHandleWarning;
+      std::call_once(invalidHandleWarning, []() {
+        SoDebugError::postWarning(
+          "SoGLRenderBackend::uploadLighting",
+          "Ignoring an invalid retained lighting handle; no headlight is synthesized.");
+      });
+    }
+  }
+
+  const SbVec3f & ambient = lighting->ambient;
+  const VisualProgram::Uniforms & uniforms = this->visualProgram.uniforms;
+  this->glue->glUniform3f(uniforms.lighting.ambient,
+                          ambient[0], ambient[1], ambient[2]);
+
+  GLint types[MAX_SHADER_LIGHTS] = {};
+  GLfloat colors[MAX_SHADER_LIGHTS * 3] = {};
+  GLfloat directions[MAX_SHADER_LIGHTS * 3] = {};
+  GLfloat positions[MAX_SHADER_LIGHTS * 3] = {};
+  GLfloat attenuations[MAX_SHADER_LIGHTS * 3] = {};
+  GLfloat spotParams[MAX_SHADER_LIGHTS * 2] = {};
+  const int count = std::min<int>(static_cast<int>(lighting->lights.size()),
+                                  MAX_SHADER_LIGHTS);
+  if (static_cast<int>(lighting->lights.size()) > MAX_SHADER_LIGHTS) {
+    static std::once_flag lightLimitWarning;
+    std::call_once(lightLimitWarning, []() {
+      SoDebugError::postWarning(
+        "SoGLRenderBackend::uploadLighting",
+        "The retained GL Visual program supports eight lights; additional "
+        "retained lights are not uploaded.");
+    });
+  }
+  for (int i = 0; i < count; ++i) {
+    const SoLightData & light = lighting->lights[static_cast<size_t>(i)];
+    types[i] = static_cast<GLint>(light.type);
+    colors[i * 3 + 0] = light.color[0];
+    colors[i * 3 + 1] = light.color[1];
+    colors[i * 3 + 2] = light.color[2];
+    directions[i * 3 + 0] = light.direction[0];
+    directions[i * 3 + 1] = light.direction[1];
+    directions[i * 3 + 2] = light.direction[2];
+    positions[i * 3 + 0] = light.position[0];
+    positions[i * 3 + 1] = light.position[1];
+    positions[i * 3 + 2] = light.position[2];
+    attenuations[i * 3 + 0] = light.attenuation[0];
+    attenuations[i * 3 + 1] = light.attenuation[1];
+    attenuations[i * 3 + 2] = light.attenuation[2];
+    spotParams[i * 2 + 0] = light.spotCutoffCos;
+    spotParams[i * 2 + 1] = light.spotExponent;
+  }
+  this->glue->glUniform1i(uniforms.lighting.lightCount, count);
+  this->glue->glUniform1iv(uniforms.lighting.lightType, MAX_SHADER_LIGHTS, types);
+  this->glue->glUniform3fv(uniforms.lighting.lightColor, MAX_SHADER_LIGHTS, colors);
+  this->glue->glUniform3fv(uniforms.lighting.lightDirection, MAX_SHADER_LIGHTS,
+                           directions);
+  this->glue->glUniform3fv(uniforms.lighting.lightPosition, MAX_SHADER_LIGHTS,
+                           positions);
+  this->glue->glUniform3fv(uniforms.lighting.lightAttenuation, MAX_SHADER_LIGHTS,
+                           attenuations);
+  this->glue->glUniform2fv(uniforms.lighting.lightSpotParams, MAX_SHADER_LIGHTS,
+                           spotParams);
+}
+
+void
+SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
+                               const SoRenderCommand & command,
                                 const SbMat & viewMat,
                                 const SbMat & projMat,
                                 const SoRenderParams & params)
@@ -615,44 +867,170 @@ SoGLRenderBackend::drawCommand(const SoRenderCommand & command,
   const CachedCommand & entry = this->gpuCache[found->second];
   if (!entry.vertexArray) return;
 
-  this->bindVisualCommand(command, entry, viewMat, projMat, params);
+  this->bindVisualCommand(drawlist, command, entry, viewMat, projMat, params);
   this->drawGeometry(command, entry);
 }
 
 void
-SoGLRenderBackend::bindVisualCommand(const SoRenderCommand & command,
+SoGLRenderBackend::bindTransforms(const SoRenderCommand & command,
+                                  const SbMat & viewMat,
+                                  const SbMat & projMat)
+{
+  const VisualProgram::Uniforms & uniforms = this->visualProgram.uniforms;
+  this->glue->glUniformMatrix4fv(uniforms.transforms.view, 1, GL_FALSE,
+                                 &viewMat[0][0]);
+  this->glue->glUniformMatrix4fv(uniforms.transforms.projection, 1, GL_FALSE,
+                                 &projMat[0][0]);
+  SbMat model;
+  command.modelMatrix.getValue(model);
+  this->glue->glUniformMatrix4fv(uniforms.transforms.model, 1, GL_FALSE,
+                                 &model[0][0]);
+
+}
+
+void
+SoGLRenderBackend::bindMaterial(const SoRenderCommand & command,
+                                const CachedCommand & entry)
+{
+  const VisualProgram::Uniforms & uniforms = this->visualProgram.uniforms;
+  const SbVec4f & color = command.material.diffuse;
+  this->glue->glUniform4f(uniforms.material.color,
+                          color[0], color[1], color[2], color[3]);
+  this->glue->glUniform1f(uniforms.material.useVertexColor,
+                          entry.colorBuffer ? 1.0f : 0.0f);
+  this->glue->glUniform1f(
+    uniforms.material.vertexColorAlphaIncludesOpacity,
+    command.material.vertexColorAlphaIncludesOpacity ? 1.0f : 0.0f);
+  this->glue->glUniform1f(
+    uniforms.texture.alphaIncludesOpacity,
+    command.material.textureAlphaIncludesOpacity ? 1.0f : 0.0f);
+  const bool textureHasAlpha = command.material.texture.numComponents == 2 ||
+    command.material.texture.numComponents == 4;
+  this->glue->glUniform1f(uniforms.texture.hasAlpha,
+                          textureHasAlpha ? 1.0f : 0.0f);
+
+  const SoShadingModel shadingModel = command.material.shadingModel;
+  this->glue->glUniform1i(uniforms.material.shadingModel,
+                          static_cast<GLint>(shadingModel));
+  const SbVec4f & emissive = command.material.emissive;
+  const SbVec4f & ambient = command.material.ambient;
+  const SbVec4f & specular = command.material.specular;
+  this->glue->glUniform3f(uniforms.material.emissiveColor,
+                          emissive[0], emissive[1], emissive[2]);
+  this->glue->glUniform3f(uniforms.material.ambient,
+                          ambient[0], ambient[1], ambient[2]);
+  this->glue->glUniform3f(uniforms.material.specular,
+                          specular[0], specular[1], specular[2]);
+  this->glue->glUniform1f(uniforms.material.shininess,
+                          command.material.shininess);
+  this->glue->glUniform1f(uniforms.material.twoSidedLighting,
+                          command.material.twoSidedLighting ? 1.0f : 0.0f);
+}
+
+void
+SoGLRenderBackend::applyDepthState(const SoRenderCommand & command)
+{
+
+  if (command.state.depth.enabled) {
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(depthFunctionToGL(command.state.depth.func));
+  }
+  else {
+    glDisable(GL_DEPTH_TEST);
+  }
+  glDepthMask(command.state.depth.writeEnabled &&
+              command.pass != SO_RENDERPASS_TRANSPARENT
+                ? GL_TRUE : GL_FALSE);
+  glDepthRange(command.state.depth.range[0], command.state.depth.range[1]);
+
+}
+
+void
+SoGLRenderBackend::applyBlendState(const SoRenderCommand & command)
+{
+  const bool blending = command.state.blend.enabled ||
+    command.pass == SO_RENDERPASS_TRANSPARENT ||
+    command.material.diffuse[3] < 0.999f;
+  if (blending) {
+    glEnable(GL_BLEND);
+    if (isDualSourceBlendFactor(command.state.blend.srcRGBFactor) ||
+        isDualSourceBlendFactor(command.state.blend.dstRGBFactor) ||
+        isDualSourceBlendFactor(command.state.blend.srcAlphaFactor) ||
+        isDualSourceBlendFactor(command.state.blend.dstAlphaFactor)) {
+      static std::once_flag dualSourceWarning;
+      std::call_once(dualSourceWarning, []() {
+        SoDebugError::postWarning(
+          "SoGLRenderBackend::bindVisualCommand",
+          "Dual-source blend factors are not supported by the Visual "
+          "program; using primary-source factors for execution.");
+      });
+    }
+    cc_glglue_glBlendFuncSeparate(
+      this->glue, blendFactorToGL(command.state.blend.srcRGBFactor),
+      blendFactorToGL(command.state.blend.dstRGBFactor),
+      blendFactorToGL(command.state.blend.srcAlphaFactor),
+      blendFactorToGL(command.state.blend.dstAlphaFactor));
+    if (cc_glglue_has_blendequation(this->glue) &&
+        command.state.blend.rgbEquation == command.state.blend.alphaEquation) {
+      cc_glglue_glBlendEquation(
+        this->glue, blendEquationToGL(command.state.blend.rgbEquation));
+    }
+  }
+  else {
+    glDisable(GL_BLEND);
+  }
+}
+
+void
+SoGLRenderBackend::bindAlphaTest(const SoRenderCommand & command)
+{
+  const VisualProgram::Uniforms & uniforms = this->visualProgram.uniforms;
+  this->glue->glUniform1i(
+    uniforms.alphaTest.function,
+    command.state.alphaTest.policy == SO_ALPHA_TEST_POLICY_NONE
+      ? 0 : static_cast<GLint>(command.state.alphaTest.function));
+  this->glue->glUniform1f(uniforms.alphaTest.reference,
+                          command.state.alphaTest.reference);
+
+}
+
+void
+SoGLRenderBackend::bindTexture(const SoRenderCommand & command,
+                               const CachedCommand & entry)
+{
+  const VisualProgram::Uniforms & uniforms = this->visualProgram.uniforms;
+  const bool textured = entry.texture != 0 && entry.texcoordBuffer != 0;
+  this->glue->glUniform1f(uniforms.texture.enabled,
+                          textured ? 1.0f : 0.0f);
+  if (textured) {
+    cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
+    cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, entry.texture);
+    this->glue->glUniform1i(uniforms.texture.sampler, 0);
+  }
+  this->glue->glUniform1i(uniforms.texture.model,
+                          static_cast<GLint>(command.material.texture.model));
+  const SbVec4f & textureBlend = command.material.texture.blendColor;
+  this->glue->glUniform4f(uniforms.texture.blendColor,
+                          textureBlend[0], textureBlend[1],
+                          textureBlend[2], textureBlend[3]);
+}
+
+void
+SoGLRenderBackend::bindVisualCommand(const SoDrawList & drawlist,
+                                     const SoRenderCommand & command,
                                      const CachedCommand & entry,
                                      const SbMat & viewMat,
                                      const SbMat & projMat,
                                      const SoRenderParams & params)
 {
   applyViewport(params);
-  const VisualProgram::Uniforms & uniforms = this->visualProgram.uniforms;
-  this->glue->glUniformMatrix4fv(uniforms.view, 1, GL_FALSE,
-                                 &viewMat[0][0]);
-  this->glue->glUniformMatrix4fv(uniforms.projection, 1, GL_FALSE,
-                                 &projMat[0][0]);
-  SbMat model;
-  command.modelMatrix.getValue(model);
-  this->glue->glUniformMatrix4fv(uniforms.model, 1, GL_FALSE,
-                                 &model[0][0]);
-
-  const SbVec4f & color = command.material.diffuse;
-  this->glue->glUniform4f(uniforms.color,
-                          color[0], color[1], color[2], color[3]);
-  this->glue->glUniform1f(uniforms.useVertexColor,
-                          entry.colorBuffer ? 1.0f : 0.0f);
-
-  const bool textured = entry.texture != 0 && entry.texcoordBuffer != 0;
-  this->glue->glUniform1f(uniforms.textureEnabled,
-                          textured ? 1.0f : 0.0f);
-  if (textured) {
-    cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
-    cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, entry.texture);
-    this->glue->glUniform1i(uniforms.texture, 0);
-    this->glue->glUniform4f(uniforms.textureModulation,
-                            color[0], color[1], color[2], color[3]);
-  }
+  this->bindTransforms(command, viewMat, projMat);
+  this->bindMaterial(command, entry);
+  this->uploadLighting(drawlist, command);
+  this->applyDepthState(command);
+  this->applyBlendState(command);
+  this->bindAlphaTest(command);
+  this->bindTexture(command, entry);
 }
 
 void
@@ -676,6 +1054,7 @@ SoGLRenderBackend::drawGeometry(const SoRenderCommand & command,
   }
 }
 
+void
 void
 SoGLRenderBackend::beginFrame(const SoRenderParams & params)
 {
@@ -725,19 +1104,59 @@ SoGLRenderBackend::createVisualProgram()
 
   this->visualProgram.handle = program;
   VisualProgram::Uniforms & uniforms = this->visualProgram.uniforms;
-  uniforms.view = cc_glglue_glGetUniformLocation(this->glue, program, "u_view");
-  uniforms.projection = cc_glglue_glGetUniformLocation(
+  uniforms.transforms.view = cc_glglue_glGetUniformLocation(this->glue, program, "u_view");
+  uniforms.transforms.projection = cc_glglue_glGetUniformLocation(
     this->glue, program, "u_proj");
-  uniforms.model = cc_glglue_glGetUniformLocation(this->glue, program, "u_model");
-  uniforms.color = cc_glglue_glGetUniformLocation(this->glue, program, "u_color");
-  uniforms.useVertexColor = cc_glglue_glGetUniformLocation(
+  uniforms.transforms.model = cc_glglue_glGetUniformLocation(this->glue, program, "u_model");
+  uniforms.material.color = cc_glglue_glGetUniformLocation(this->glue, program, "u_color");
+  uniforms.material.useVertexColor = cc_glglue_glGetUniformLocation(
     this->glue, program, "u_useVertexColor");
-  uniforms.texture = cc_glglue_glGetUniformLocation(
+  uniforms.material.shadingModel = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_shadingModel");
+  uniforms.material.emissiveColor = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_emissiveColor");
+  uniforms.material.ambient = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_materialAmbient");
+  uniforms.material.specular = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_materialSpecular");
+  uniforms.material.shininess = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_materialShininess");
+  uniforms.material.twoSidedLighting = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_twoSidedLighting");
+  uniforms.material.vertexColorAlphaIncludesOpacity = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_vertexColorAlphaIncludesOpacity");
+  uniforms.texture.alphaIncludesOpacity = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_textureAlphaIncludesOpacity");
+  uniforms.texture.hasAlpha = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_textureHasAlpha");
+  uniforms.lighting.ambient = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_ambientLight");
+  uniforms.lighting.lightCount = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_lightCount");
+  uniforms.lighting.lightType = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_lightType");
+  uniforms.lighting.lightColor = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_lightColor");
+  uniforms.lighting.lightDirection = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_lightDirection");
+  uniforms.lighting.lightPosition = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_lightPosition");
+  uniforms.lighting.lightAttenuation = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_lightAttenuation");
+  uniforms.lighting.lightSpotParams = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_lightSpotParams");
+  uniforms.texture.sampler = cc_glglue_glGetUniformLocation(
     this->glue, program, "u_texture");
-  uniforms.textureEnabled = cc_glglue_glGetUniformLocation(
+  uniforms.texture.enabled = cc_glglue_glGetUniformLocation(
     this->glue, program, "u_textureEnabled");
-  uniforms.textureModulation = cc_glglue_glGetUniformLocation(
-    this->glue, program, "u_texModColor");
+  uniforms.texture.model = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_textureModel");
+  uniforms.texture.blendColor = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_textureBlendColor");
+  uniforms.alphaTest.function = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_alphaTestFunction");
+  uniforms.alphaTest.reference = cc_glglue_glGetUniformLocation(
+    this->glue, program, "u_alphaTestReference");
   return true;
 }
 
@@ -766,8 +1185,8 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
       this->emitError("render plan references a missing DrawList command");
       return FALSE;
     }
-    this->drawCommand(drawlist.getCommand(static_cast<int>(commandIndex)),
-                      view, projection, params);
+    this->drawCommand(drawlist, drawlist.getCommand(
+      static_cast<int>(commandIndex)), view, projection, params);
   }
   cc_glglue_glUseProgram(this->glue, 0);
   return TRUE;

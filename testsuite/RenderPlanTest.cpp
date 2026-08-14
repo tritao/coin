@@ -69,5 +69,30 @@ main()
                  plan.getDraw(0).commandIndex == 0,
                  "reusing a cleared plan did not rebuild its operations") &&
     result;
+
+  SoDrawList transparencyDrawList;
+  SoRenderCommand opaque;
+  SoRenderCommand transparentNear;
+  SoRenderCommand transparentFar;
+  opaque.viewMatrix.makeIdentity();
+  opaque.modelMatrix.makeIdentity();
+  transparentNear.viewMatrix.makeIdentity();
+  transparentNear.modelMatrix.makeIdentity();
+  transparentFar.viewMatrix.makeIdentity();
+  transparentFar.modelMatrix.makeIdentity();
+  transparentNear.opacityClass = SO_OPACITY_TRANSPARENT;
+  transparentFar.opacityClass = SO_OPACITY_TRANSPARENT;
+  transparentFar.modelMatrix.setTranslate(SbVec3f(0.0f, 0.0f, -2.0f));
+  transparencyDrawList.addCommand(opaque);
+  transparencyDrawList.addCommand(transparentNear);
+  transparencyDrawList.addCommand(transparentFar);
+  planner.build(transparencyDrawList, plan);
+  result = check(plan.getNumDraws() == 3 &&
+                 plan.getDraw(0).commandIndex == 0 &&
+                 plan.getDraw(1).commandIndex == 2 &&
+                 plan.getDraw(2).commandIndex == 1,
+                 "planner did not schedule transparent commands back-to-front") &&
+    result;
+
   return result ? 0 : 1;
 }

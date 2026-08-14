@@ -21,6 +21,8 @@ struct SoPlannedDraw {
 
   The plan owns no command data. It contains only stable indices into the
   source SoDrawList and is therefore cheap to rebuild for each invocation.
+  Opaque commands retain insertion order; transparent commands are resolved
+  back-to-front after opaque commands.
 */
 class SoRenderPlan {
 public:
@@ -41,6 +43,7 @@ private:
 */
 class SoRenderPlanner {
 public:
+  //! Resolve semantic command state into backend execution order.
   void build(const SoDrawList & drawlist, SoRenderPlan & plan) const;
 };
 

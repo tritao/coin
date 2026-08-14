@@ -353,6 +353,18 @@ struct SoRenderState {
 };
 
 /*!
+  \enum SoOpacityClass
+  \brief Semantic surface opacity classification used by the planner.
+
+  This describes whether a command contributes translucent surface semantics.
+  It is not an execution pass and does not encode ordering.
+*/
+enum SoOpacityClass : uint8_t {
+  SO_OPACITY_OPAQUE = 0,
+  SO_OPACITY_TRANSPARENT
+};
+
+/*!
   \typedef SoLightingHandle
   \brief Stable 1-based handle into the draw list's deduplicated lighting table.
 */
@@ -413,6 +425,7 @@ struct SoRenderCommand {
   SbMatrix         viewMatrix;
   SbMatrix         projMatrix;
 
+  SoOpacityClass   opacityClass = SO_OPACITY_OPAQUE;
   SoLightingHandle lightingHandle = 0;
   // Stable scene identity. Zero means that the producer did not provide one.
   uint64_t         objectId = 0;

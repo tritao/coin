@@ -61,6 +61,7 @@ private:
 
   struct CachedCommand {
     GLuint positionBuffer = 0;
+    GLuint normalBuffer = 0;
     GLuint colorBuffer = 0;
     GLuint texcoordBuffer = 0;
     GLuint texture = 0;
@@ -68,17 +69,24 @@ private:
     GLuint vertexArray = 0;
 
     const float * positionsKey = nullptr;
+    const float * normalsKey = nullptr;
     const float * colorsKey = nullptr;
     const float * texcoordsKey = nullptr;
     const unsigned char * texturePixelsKey = nullptr;
     const uint32_t * indicesKey = nullptr;
     uint32_t vertexCount = 0;
+    uint32_t normalCount = 0;
     uint32_t indexCount = 0;
     uint32_t vertexStride = 0;
     uint32_t texcoordStride = 0;
     int textureWidth = 0;
     int textureHeight = 0;
     int textureComponents = 0;
+    SoTextureFilter textureMinFilter = SO_TEXTURE_FILTER_NEAREST;
+    SoTextureFilter textureMagFilter = SO_TEXTURE_FILTER_NEAREST;
+    SoTextureWrap textureWrapS = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+    SoTextureWrap textureWrapT = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+    bool textureAnisotropic = false;
     uint64_t geometryCacheKey = 0;
     uint64_t geometryRevision = 0;
     uint64_t textureCacheKey = 0;
@@ -91,14 +99,44 @@ private:
     GLuint handle = 0;
 
     struct Uniforms {
-      GLint view = -1;
-      GLint projection = -1;
-      GLint model = -1;
-      GLint color = -1;
-      GLint useVertexColor = -1;
-      GLint texture = -1;
-      GLint textureEnabled = -1;
-      GLint textureModulation = -1;
+      struct Transforms {
+        GLint view = -1;
+        GLint projection = -1;
+        GLint model = -1;
+      } transforms;
+      struct Material {
+        GLint color = -1;
+        GLint useVertexColor = -1;
+        GLint shadingModel = -1;
+        GLint emissiveColor = -1;
+        GLint ambient = -1;
+        GLint specular = -1;
+        GLint shininess = -1;
+        GLint twoSidedLighting = -1;
+        GLint vertexColorAlphaIncludesOpacity = -1;
+      } material;
+      struct Lighting {
+        GLint ambient = -1;
+        GLint lightCount = -1;
+        GLint lightType = -1;
+        GLint lightColor = -1;
+        GLint lightDirection = -1;
+        GLint lightPosition = -1;
+        GLint lightAttenuation = -1;
+        GLint lightSpotParams = -1;
+      } lighting;
+      struct Texture {
+        GLint sampler = -1;
+        GLint enabled = -1;
+        GLint alphaIncludesOpacity = -1;
+        GLint hasAlpha = -1;
+        GLint model = -1;
+        GLint blendColor = -1;
+      } texture;
+      struct AlphaTest {
+        GLint function = -1;
+        GLint reference = -1;
+      } alphaTest;
     } uniforms;
   } visualProgram;
 
@@ -107,10 +145,18 @@ private:
   void beginFrame(const SoRenderParams & params);
   void invalidateCache();
   void updateGeometryCache(const SoDrawList & drawlist);
-  void drawCommand(const SoRenderCommand & command,
+  void renderPass(const SoDrawList & drawlist,
+                  const SbMat & viewMat,
+                  const SbMat & projMat,
+                  const SoRenderParams & params,
+                  SoRenderPassType pass);
+  void drawCommand(const SoDrawList & drawlist,
+                   const SoRenderCommand & command,
                    const SbMat & viewMat,
                    const SbMat & projMat,
                    const SoRenderParams & params);
+  void uploadLighting(const SoDrawList & drawlist,
+                      const SoRenderCommand & command);
 
   CachedCommand & getOrCreateCache(const SoRenderCommand * command);
   void uploadGeometry(CachedCommand & entry,
@@ -128,11 +174,22 @@ private:
                               uint32_t vertexStride);
   void setupVisualVAO(CachedCommand & entry);
   void destroyCacheEntry(CachedCommand & entry);
-  void bindVisualCommand(const SoRenderCommand & command,
+  void bindVisualCommand(const SoDrawList & drawlist,
+                         const SoRenderCommand & command,
                          const CachedCommand & entry,
                          const SbMat & viewMat,
                          const SbMat & projMat,
                          const SoRenderParams & params);
+  void bindTransforms(const SoRenderCommand & command,
+                      const SbMat & viewMat,
+                      const SbMat & projMat);
+  void bindMaterial(const SoRenderCommand & command,
+                    const CachedCommand & entry);
+  void applyDepthState(const SoRenderCommand & command);
+  void applyBlendState(const SoRenderCommand & command);
+  void bindAlphaTest(const SoRenderCommand & command);
+  void bindTexture(const SoRenderCommand & command,
+                   const CachedCommand & entry);
   void drawGeometry(const SoRenderCommand & command,
                     const CachedCommand & entry);
   bool textureDescriptionMatches(const CachedCommand & entry,

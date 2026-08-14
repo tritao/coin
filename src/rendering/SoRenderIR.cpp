@@ -776,8 +776,8 @@ finalizeCommand(SoRenderCommand & command)
       }
     }
   }
-  command.pass = transparent ? SO_RENDERPASS_TRANSPARENT
-                             : SO_RENDERPASS_OPAQUE;
+  command.opacityClass = transparent
+    ? SO_OPACITY_TRANSPARENT : SO_OPACITY_OPAQUE;
   if (transparent && !command.state.blend.enabled) {
     command.state.blend.enabled = TRUE;
     command.state.blend.srcRGBFactor = SO_BLEND_FACTOR_SRC_ALPHA;
@@ -785,8 +785,6 @@ finalizeCommand(SoRenderCommand & command)
     command.state.blend.srcAlphaFactor = SO_BLEND_FACTOR_SRC_ALPHA;
     command.state.blend.dstAlphaFactor = SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
   }
-  command.sortKey = SoIRComputeSortKey(
-    command, static_cast<uint32_t>(command.pass), 0);
 }
 
 } // namespace SoRenderIR
