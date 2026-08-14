@@ -1,0 +1,7 @@
+id: unlit_depth_overlap
+scene: ../scenes/unlit_depth_overlap.iv
+
+viewport:
+  background: [0.5, 0.5, 0.5, 1.0]
+
+baseline: ../baselines/gl/unlit_depth_overlap.png

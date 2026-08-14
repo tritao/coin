@@ -38,7 +38,17 @@ std::string default_output_file(const SnapshotArgs& args) {
 void print_usage() {
   std::cout << "Usage: CoinVisualTests snapshot [<spec_id>|<scene.iv>]"
             << " [--spec <spec.yml>] [--spec-dir <dir>] [--out <image.png>]"
-            << " [--width N] [--height N] [--quiet]\n";
+            << " [--width N] [--height N] [--renderer legacy|drawlist]"
+            << " [--gl-profile compat|core] [--quiet]\n";
+}
+
+bool validate_renderer_profile(const CoinVisualTests::RenderCore::Options& options) {
+  if (options.renderer == CoinVisualTests::RendererKind::Legacy &&
+      options.gl_profile == CoinVisualTests::OpenGLProfile::Core) {
+    std::cerr << "LegacyGL rendering requires a compatibility OpenGL profile.\n";
+    return false;
+  }
+  return true;
 }
 
 bool parse_args(int argc,
@@ -71,6 +81,26 @@ bool parse_args(int argc,
       }
     } else if (arg == "--quiet") {
       options.quiet = true;
+    } else if (arg == "--renderer" && i + 1 < argc) {
+      const std::string renderer = argv[++i];
+      if (renderer == "legacy") {
+        options.renderer = CoinVisualTests::RendererKind::Legacy;
+      } else if (renderer == "drawlist") {
+        options.renderer = CoinVisualTests::RendererKind::DrawList;
+      } else {
+        std::cerr << "Unknown renderer: " << renderer << '\n';
+        return false;
+      }
+    } else if (arg == "--gl-profile" && i + 1 < argc) {
+      const std::string profile = argv[++i];
+      if (profile == "compat") {
+        options.gl_profile = CoinVisualTests::OpenGLProfile::Compatibility;
+      } else if (profile == "core") {
+        options.gl_profile = CoinVisualTests::OpenGLProfile::Core;
+      } else {
+        std::cerr << "Unknown OpenGL profile: " << profile << '\n';
+        return false;
+      }
     } else if (arg.rfind("--", 0) == 0) {
       std::cerr << "Unknown argument: " << arg << '\n';
       return false;
@@ -126,6 +156,15 @@ int run_with_args(int argc, const char* argv[]) {
     print_usage();
     return 1;
   }
+  if (!validate_renderer_profile(options)) {
+    return 1;
+  }
+#if !COIN_BUILD_LEGACY_GL_RENDERER
+  if (options.renderer == CoinVisualTests::RendererKind::Legacy) {
+    std::cerr << "LegacyGL rendering is unavailable in this build.\n";
+    return 1;
+  }
+#endif
 
   std::string resolved_spec;
   if (!args.spec_id.empty()) {

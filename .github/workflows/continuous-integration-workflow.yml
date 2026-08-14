@@ -81,7 +81,6 @@ jobs:
         run: ctest -C Release -L requires-egl --output-on-failure
         working-directory: cmake_build_dir
       - name: Configure visual tests
-        if: matrix.renderer_state == 'enabled'
         run: |
           cmake -S . -B cmake_build_dir_rt -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
@@ -91,14 +90,17 @@ jobs:
             -DCOIN_BUILD_VISUAL_TESTS=ON \
             -DCOIN_FETCH_TEST_DEPENDENCIES=OFF
       - name: Build visual tests
-        if: matrix.renderer_state == 'enabled'
         run: cmake --build cmake_build_dir_rt --config Release -- -j4
       - name: Run visual contract suite
-        if: matrix.renderer_state == 'enabled'
         run: ctest --test-dir cmake_build_dir_rt -L visual-contract --output-on-failure -VV
       - name: Run visual rendering suite
-        if: matrix.renderer_state == 'enabled'
-        run: xvfb-run -a ctest --test-dir cmake_build_dir_rt -L visual-render --output-on-failure -VV
+        run: |
+          if [ "${{ matrix.renderer_state }}" = "enabled" ]; then
+            xvfb-run -a ctest --test-dir cmake_build_dir_rt -L visual-render --output-on-failure -VV
+          else
+            xvfb-run -a ctest --test-dir cmake_build_dir_rt \
+              -L visual-render -LE requires-legacygl --output-on-failure -VV
+          fi
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -109,7 +111,7 @@ jobs:
         uses: actions/upload-artifact@v7
         if: always() && matrix.renderer_state == 'enabled'
         with:
-          name: Ubuntu-VisualTest-Artifacts
+          name: Ubuntu-VisualTest-Artifacts-${{ matrix.renderer_state }}
           path: |
             cmake_build_dir_rt/render_artifacts/
             cmake_build_dir_rt/Testing/

@@ -1,0 +1,7 @@
+id: unlit_orthographic_basic
+scene: ../scenes/unlit_orthographic_basic.iv
+
+viewport:
+  background: [0.5, 0.5, 0.5, 1.0]
+
+baseline: ../baselines/gl/unlit_orthographic_basic.png

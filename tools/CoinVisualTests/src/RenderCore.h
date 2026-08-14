@@ -5,6 +5,7 @@
 #include <memory>
 #include <string>
 
+#include "RenderDriver.h"
 #include "SpecLoader.h"
 
 namespace CoinVisualTests {
@@ -20,6 +21,8 @@ public:
     bool height_override = false;
     bool camera_override = false;
     bool quiet = false;
+    RendererKind renderer = RendererKind::Legacy;
+    OpenGLProfile gl_profile = OpenGLProfile::Compatibility;
     CameraSpec camera;
     std::array<float, 4> clear_color = {0.2f, 0.2f, 0.2f, 1.0f};
   };

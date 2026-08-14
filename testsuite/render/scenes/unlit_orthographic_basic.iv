@@ -1,0 +1,23 @@
+#Inventor V2.1 ascii
+
+Separator {
+  OrthographicCamera {
+    position 0 0 6
+    height 4.5
+    nearDistance 0.1
+    farDistance 20
+  }
+  LightModel { model BASE_COLOR }
+  Separator {
+    Translation { translation -1.1 0 0 }
+    Scale { scaleFactor 0.8 1.2 1.0 }
+    Material { diffuseColor 0.08 0.55 0.92 }
+    Cube { }
+  }
+  Separator {
+    Translation { translation 1.1 0 0 }
+    Scale { scaleFactor 1.0 0.7 1.0 }
+    Material { diffuseColor 0.92 0.28 0.08 }
+    Cube { }
+  }
+}

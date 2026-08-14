@@ -12,6 +12,16 @@ class SoNode;
 
 namespace CoinVisualTests {
 
+enum class RendererKind {
+  Legacy,
+  DrawList
+};
+
+enum class OpenGLProfile {
+  Compatibility,
+  Core
+};
+
 class RenderDriver {
 public:
   virtual ~RenderDriver() = default;
@@ -23,7 +33,10 @@ public:
                       std::vector<uint8_t>& pixels) = 0;
 };
 
+#if COIN_BUILD_LEGACY_GL_RENDERER
 std::unique_ptr<RenderDriver> createLegacyGLDriver();
+#endif
+std::unique_ptr<RenderDriver> createDrawListDriver(OpenGLProfile profile);
 
 } // namespace CoinVisualTests
 

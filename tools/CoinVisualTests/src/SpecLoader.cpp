@@ -145,7 +145,27 @@ VisualTestSpec SpecLoader::load(const std::string& path) const {
     }
   }
 
-  spec.baseline = resolveRelative(spec_dir, requiredString(root, "baseline"));
+  if (root["baseline"]) {
+    spec.baseline = resolveRelative(spec_dir, root["baseline"].as<std::string>());
+  }
+  if (root["baselines"]) {
+    const YAML::Node baselines = root["baselines"];
+    if (!baselines.IsMap()) {
+      throw std::runtime_error("'baselines' must be a renderer-to-path map in spec " + spec.id);
+    }
+    for (const auto& entry : baselines) {
+      const std::string renderer = entry.first.as<std::string>();
+      if (renderer != "legacy" && renderer != "drawlist") {
+        throw std::runtime_error("Unknown renderer baseline '" + renderer +
+                                 "' in spec " + spec.id);
+      }
+      spec.renderer_baselines[renderer] = resolveRelative(
+        spec_dir, entry.second.as<std::string>());
+    }
+  }
+  if (spec.baseline.empty() && spec.renderer_baselines.empty()) {
+    throw std::runtime_error("Missing required key: baseline or baselines");
+  }
   const std::string comparison = root["compare"].as<std::string>("default");
   if (!parse_comparison_policy(comparison, spec.comparison)) {
     throw std::runtime_error("Unknown comparison policy in spec " + spec.id + ": " + comparison);

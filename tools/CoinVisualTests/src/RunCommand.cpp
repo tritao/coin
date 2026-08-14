@@ -25,6 +25,8 @@ struct Options {
   bool verbose = false;
   std::set<std::string> only_ids;
   bool update_baselines = false;
+  CoinVisualTests::RendererKind renderer = CoinVisualTests::RendererKind::Legacy;
+  CoinVisualTests::OpenGLProfile gl_profile = CoinVisualTests::OpenGLProfile::Compatibility;
 };
 
 using SpecEntry = std::pair<std::string, CoinVisualTests::VisualTestSpec>;
@@ -44,11 +46,28 @@ constexpr const char* kColorInfo = "\033[34m";
 struct OutputResult {
   bool success = false;
   bool baseline_updated = false;
+  std::string baseline;
   std::string actual;
   std::string diff;
   std::string metrics;
   MetricsSummary metrics_summary;
 };
+
+const char* renderer_name(CoinVisualTests::RendererKind renderer) {
+  return renderer == CoinVisualTests::RendererKind::Legacy ? "legacy" : "drawlist";
+}
+
+std::string baseline_for(const CoinVisualTests::VisualTestSpec& spec,
+                         CoinVisualTests::RendererKind renderer) {
+  const auto found = spec.renderer_baselines.find(renderer_name(renderer));
+  return found == spec.renderer_baselines.end() ? spec.baseline : found->second;
+}
+
+bool has_renderer_baseline(const CoinVisualTests::VisualTestSpec& spec,
+                           CoinVisualTests::RendererKind renderer) {
+  return spec.renderer_baselines.find(renderer_name(renderer)) !=
+    spec.renderer_baselines.end();
+}
 
 bool ensure_directory(const std::string& path) {
   if (path.empty()) {
@@ -112,6 +131,16 @@ MetricsSummary parse_metrics(const std::string& path) {
   return summary;
 }
 
+std::string artifact_variant(CoinVisualTests::RendererKind renderer,
+                             CoinVisualTests::OpenGLProfile profile) {
+  if (renderer == CoinVisualTests::RendererKind::Legacy) {
+    return "legacy";
+  }
+  return profile == CoinVisualTests::OpenGLProfile::Core
+    ? "drawlist-core"
+    : "drawlist-compat";
+}
+
 bool parse_options(int argc, const char** argv, Options& opts) {
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -131,6 +160,26 @@ bool parse_options(int argc, const char** argv, Options& opts) {
       }
     } else if (arg == "--update-baselines") {
       opts.update_baselines = true;
+    } else if (arg == "--renderer" && i + 1 < argc) {
+      const std::string renderer = argv[++i];
+      if (renderer == "legacy") {
+        opts.renderer = CoinVisualTests::RendererKind::Legacy;
+      } else if (renderer == "drawlist") {
+        opts.renderer = CoinVisualTests::RendererKind::DrawList;
+      } else {
+        std::cerr << "Unknown renderer: " << renderer << '\n';
+        return false;
+      }
+    } else if (arg == "--gl-profile" && i + 1 < argc) {
+      const std::string profile = argv[++i];
+      if (profile == "compat") {
+        opts.gl_profile = CoinVisualTests::OpenGLProfile::Compatibility;
+      } else if (profile == "core") {
+        opts.gl_profile = CoinVisualTests::OpenGLProfile::Core;
+      } else {
+        std::cerr << "Unknown OpenGL profile: " << profile << '\n';
+        return false;
+      }
     } else {
       std::cerr << "Unknown argument: " << arg << '\n';
       return false;
@@ -142,6 +191,7 @@ bool parse_options(int argc, const char** argv, Options& opts) {
 void print_usage() {
   std::cerr << "Usage: CoinVisualTests run [--spec-dir <dir>]"
             << " [--artifacts-dir <dir>] [--only id1,id2]"
+            << " [--renderer legacy|drawlist] [--gl-profile compat|core]"
             << " [--verbose] [--update-baselines]\n";
   std::cerr << "Defaults: spec-dir=" << CoinVisualTests::SpecDir::computeDefaultSpecDir()
             << " artifacts-dir=" << CoinVisualTests::SpecDir::computeArtifactsBase() << '\n';
@@ -149,8 +199,14 @@ void print_usage() {
 
 int invoke_snapshot(const std::string& spec_path,
                     const std::string& actual_path,
-                    bool quiet) {
+                    bool quiet,
+                    CoinVisualTests::RendererKind renderer,
+                    CoinVisualTests::OpenGLProfile gl_profile) {
   std::vector<std::string> args = {"snapshot", "--spec", spec_path, "--out", actual_path};
+  args.emplace_back("--renderer");
+  args.emplace_back(renderer == CoinVisualTests::RendererKind::Legacy ? "legacy" : "drawlist");
+  args.emplace_back("--gl-profile");
+  args.emplace_back(gl_profile == CoinVisualTests::OpenGLProfile::Core ? "core" : "compat");
   if (quiet) {
     args.emplace_back("--quiet");
   }
@@ -182,7 +238,14 @@ OutputResult run_single_output(const std::string& spec_path,
                                const CoinVisualTests::VisualTestSpec& spec,
                                const Options& opts) {
   OutputResult result;
-  const std::string output_dir = opts.artifacts_dir + "/gl";
+  result.baseline = baseline_for(spec, opts.renderer);
+  if (result.baseline.empty()) {
+    std::cerr << "No baseline configured for renderer '" << renderer_name(opts.renderer)
+              << "' in spec " << spec.id << '\n';
+    return result;
+  }
+  const std::string output_dir = opts.artifacts_dir + "/gl/" +
+                                 artifact_variant(opts.renderer, opts.gl_profile);
   const std::string actual = output_dir + "/" + spec.id + ".actual.png";
   const std::string diff = output_dir + "/" + spec.id + ".diff.png";
   const std::string metrics = output_dir + "/" + spec.id + ".metrics.json";
@@ -194,14 +257,21 @@ OutputResult run_single_output(const std::string& spec_path,
   result.diff = diff;
   result.metrics = metrics;
 
-  if (invoke_snapshot(spec_path, actual, !opts.verbose) != 0) {
+  if (invoke_snapshot(spec_path, actual, !opts.verbose,
+                      opts.renderer, opts.gl_profile) != 0) {
     std::cerr << "Snapshot failed for spec " << spec.id << '\n';
     return result;
   }
 
   if (opts.update_baselines) {
-    if (!copy_file(actual, spec.baseline)) {
-      std::cerr << "Failed to update baseline " << spec.baseline << '\n';
+    if (opts.renderer != CoinVisualTests::RendererKind::Legacy &&
+        !has_renderer_baseline(spec, opts.renderer)) {
+      std::cerr << "No renderer-qualified baseline configured for '"
+                << renderer_name(opts.renderer) << "' in spec " << spec.id << '\n';
+      return result;
+    }
+    if (!copy_file(actual, result.baseline)) {
+      std::cerr << "Failed to update baseline " << result.baseline << '\n';
       return result;
     }
     result.baseline_updated = true;
@@ -210,7 +280,7 @@ OutputResult run_single_output(const std::string& spec_path,
   }
 
   const auto tolerance = CoinVisualTests::tolerance_for_policy(spec.comparison);
-  const int compare_rc = invoke_compare(spec.baseline, actual, diff, metrics, tolerance);
+  const int compare_rc = invoke_compare(result.baseline, actual, diff, metrics, tolerance);
   result.metrics_summary = parse_metrics(metrics);
   result.success = compare_rc == 0;
   return result;
@@ -236,7 +306,7 @@ int run_spec(const SpecEntry& entry,
     ++updated;
     ++passed;
     std::cout << kColorInfo << "[CoinVisualTests] Updated baseline for spec '" << spec.id
-              << "' -> " << spec.baseline << kColorReset << '\n';
+              << "' -> " << result.baseline << kColorReset << '\n';
     return 0;
   }
 
@@ -278,6 +348,17 @@ int run_with_options(int argc, const char* argv[]) {
     print_usage();
     return 1;
   }
+  if (opts.renderer == CoinVisualTests::RendererKind::Legacy &&
+      opts.gl_profile == CoinVisualTests::OpenGLProfile::Core) {
+    std::cerr << "LegacyGL rendering requires a compatibility OpenGL profile.\n";
+    return 1;
+  }
+#if !COIN_BUILD_LEGACY_GL_RENDERER
+  if (opts.renderer == CoinVisualTests::RendererKind::Legacy) {
+    std::cerr << "LegacyGL baseline authoring and rendering are unavailable in this build.\n";
+    return 1;
+  }
+#endif
   if (!ensure_directory(opts.artifacts_dir)) {
     std::cerr << "Failed to create artifacts dir: " << opts.artifacts_dir << '\n';
     return 1;
@@ -306,6 +387,19 @@ int run_with_options(int argc, const char* argv[]) {
     if (available_ids.count(requested) == 0) {
       std::cerr << "Unknown visual spec id: " << requested << '\n';
       return 1;
+    }
+  }
+
+  if (opts.update_baselines && opts.renderer != CoinVisualTests::RendererKind::Legacy) {
+    for (const auto& entry : specs) {
+      if (!opts.only_ids.empty() && opts.only_ids.count(entry.second.id) == 0) {
+        continue;
+      }
+      if (!has_renderer_baseline(entry.second, opts.renderer)) {
+        std::cerr << "DrawList baseline update requires a renderer-qualified baseline for spec "
+                  << entry.second.id << '\n';
+        return 1;
+      }
     }
   }
 

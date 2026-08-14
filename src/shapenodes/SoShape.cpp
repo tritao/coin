@@ -154,16 +154,29 @@ class SoVBO;
 
 namespace {
 
+static SbVec4f
+so_ir_effective_vertex_color(SoState * state, int materialIndex)
+{
+  if (materialIndex < 0) materialIndex = 0;
+  const SbColor & diffuse = SoLazyElement::getDiffuse(state, materialIndex);
+  const float transparency = SoLazyElement::getTransparency(
+    state, materialIndex);
+  return SbVec4f(diffuse[0], diffuse[1], diffuse[2], 1.0f - transparency);
+}
+
 struct SoIRVertex {
   SbVec3f position;
   SbVec3f normal;
   SbVec4f texcoord;
+  SbVec4f color;
 };
 
 class SoIRPrimitiveAssembler : public SoIRRenderAction::PrimitiveCollector {
 public:
   SoIRPrimitiveAssembler(SoIRRenderAction * action, SoShape * shape)
-    : action(action), shape(shape), topology(SO_TOPOLOGY_COUNT) {}
+    : action(action), shape(shape), topology(SO_TOPOLOGY_COUNT),
+      hasVertexColors(SoMaterialBindingElement::get(action->getState()) !=
+                      SoMaterialBindingElement::OVERALL) {}
 
   void onTriangle(const SoPrimitiveVertex * v1,
                   const SoPrimitiveVertex * v2,
@@ -203,6 +216,8 @@ private:
     this->fillGeometry(command.geometry);
     SoRenderIR::fillCommandStateFromState(
       this->action->getState(), this->action->getMutableDrawList(), command);
+    command.material.vertexColorAlphaIncludesOpacity =
+      command.geometry.colors != nullptr;
     this->action->addCommand(command);
 
     this->vertices.clear();
@@ -223,6 +238,11 @@ private:
       this->action->allocateGeometryStorage(sizeof(float) * 3 * count));
     float * texcoords = static_cast<float *>(
       this->action->allocateGeometryStorage(sizeof(float) * 4 * count));
+    float * colors = nullptr;
+    if (this->hasVertexColors) {
+      colors = static_cast<float *>(
+        this->action->allocateGeometryStorage(sizeof(float) * 4 * count));
+    }
 
     for (size_t i = 0; i < count; ++i) {
       const SoIRVertex & vertex = this->vertices[i];
@@ -236,11 +256,18 @@ private:
       texcoords[i * 4 + 1] = vertex.texcoord[1];
       texcoords[i * 4 + 2] = vertex.texcoord[2];
       texcoords[i * 4 + 3] = vertex.texcoord[3];
+      if (colors) {
+        colors[i * 4 + 0] = vertex.color[0];
+        colors[i * 4 + 1] = vertex.color[1];
+        colors[i * 4 + 2] = vertex.color[2];
+        colors[i * 4 + 3] = vertex.color[3];
+      }
     }
 
     geometry.positions = positions;
     geometry.normals = normals;
     geometry.texcoords = texcoords;
+    geometry.colors = colors;
   }
 
   void setTopology(SoPrimitiveTopology candidate)
@@ -257,12 +284,17 @@ private:
     copy.position = vertex->getPoint();
     copy.normal = vertex->getNormal();
     copy.texcoord = vertex->getTextureCoords();
+    if (this->hasVertexColors) {
+      copy.color = so_ir_effective_vertex_color(
+        this->action->getState(), vertex->getMaterialIndex());
+    }
     this->vertices.push_back(copy);
   }
 
   SoIRRenderAction * action;
   SoShape * shape;
   SoPrimitiveTopology topology;
+  bool hasVertexColors;
   std::vector<SoIRVertex> vertices;
 };
 
