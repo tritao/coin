@@ -72,6 +72,11 @@ runTest()
   action.apply(static_cast<SoNode *>(root));
   check(action.getDrawList().getNumCommands() == 2,
         "apply(SoNode*) did not traverse both cubes", result);
+  check(action.getCommandPath(0) != NULL &&
+        action.getCommandPath(0)->getTail() == firstCube &&
+        action.getCommandPath(1) != NULL &&
+        action.getCommandPath(1)->getTail() == secondCube,
+        "retained commands did not preserve their producing scene paths", result);
 
   SoPath * firstPath = new SoPath(root);
   firstPath->append(firstCube);
@@ -80,6 +85,9 @@ runTest()
   check(action.getDrawList().getNumCommands() == 1 &&
         action.getDrawList().getCommand(0).nodeId == firstCube->getNodeId(),
         "apply(SoPath*) did not traverse the selected cube", result);
+  check(action.getCommandPath(0) != NULL &&
+        action.getCommandPath(0)->getTail() == firstCube,
+        "path traversal did not retain the selected scene path", result);
   firstPath->unref();
 
   SoPath * oneNodePath = new SoPath(probe);
