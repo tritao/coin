@@ -197,6 +197,8 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		SOURCES RetainedRasterGLTest.cpp)
 	coin_add_gl_test(NAME RetainedSoText2RasterLayoutTest PROFILE core
 		SOURCES RetainedSoText2RasterLayoutTest.cpp)
+	coin_add_gl_test(NAME DrawListPickingTest PROFILE core
+		SOURCES DrawListPickingTest.cpp)
 	if(COIN_BUILD_LEGACY_GL_RENDERER)
 		coin_add_gl_test(NAME LegacySoText2RasterLayoutTest PROFILE compat
 			SOURCES LegacySoText2RasterLayoutTest.cpp LABELS requires-legacygl)
