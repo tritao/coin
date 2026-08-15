@@ -81,6 +81,11 @@ public:
   //! The result is valid only for that retained frame/LUT snapshot.
   virtual SbBool pick(int x, int y, int radius, SoPickResult & result) const;
 
+  //! Render frame-level selection/highlight targets over the current frame.
+  virtual SbBool renderSelection(const SoDrawList & drawlist,
+                                 const SoSelectionState & selection,
+                                 const SoRenderParams & params);
+
   SbBool isInitialized() const;
 
 protected:

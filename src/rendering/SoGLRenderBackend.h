@@ -48,6 +48,10 @@ public:
                           const SoRenderParams & params) override;
   //! Resolve the closest nonzero ID in a viewport-local pixel-radius query.
   SbBool pick(int x, int y, int radius, SoPickResult & result) const override;
+  //! Render explicit selected/highlighted targets over the current framebuffer.
+  SbBool renderSelection(const SoDrawList & drawlist,
+                         const SoSelectionState & selection,
+                         const SoRenderParams & params) override;
 
 private:
   struct ResourceCacheKey {
@@ -247,6 +251,7 @@ private:
       GLint textureModel = -1;
       GLint textureBlendColor = -1;
       GLint texture = -1;
+      GLint selectionColor = -1;
       GLint alphaTestFunction = -1;
       GLint alphaTestReference = -1;
       GLint pickId = -1;
@@ -275,6 +280,8 @@ private:
     PickProgram pixel;
   } pickPrograms;
 
+  PickPrograms selectionPrograms;
+
   struct PickTarget {
     GLuint framebuffer = 0;
     GLuint colorTexture = 0;
@@ -296,6 +303,20 @@ private:
                      const SbMat & viewMat,
                      const SbMat & projMat,
                      const SoRenderParams & params);
+  void drawSelectionEntry(const SoDrawList & drawlist,
+                          const SoPickLUTEntry & entry,
+                          const SbColor4f & color,
+                          const SbMat & viewMat,
+                          const SbMat & projMat,
+                          const SoRenderParams & params);
+  void drawCoverageEntry(const SoDrawList & drawlist,
+                         const SoPickLUTEntry & entry,
+                         GLuint id,
+                         const SbColor4f & selectionColor,
+                         const SbMat & viewMat,
+                         const SbMat & projMat,
+                         const SoRenderParams & params,
+                         bool selection);
   void beginFrame(const SoRenderParams & params);
   void invalidateCache();
   void updateGeometryCache(const SoDrawList & drawlist);

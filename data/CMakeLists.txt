@@ -68,6 +68,9 @@ coin_embed_gl_shader(gl_pixel_fragment data/shaders/gl/pixel/Fragment.glsl)
 coin_embed_gl_shader(gl_picking_fragment data/shaders/gl/picking/Fragment.glsl)
 coin_embed_gl_shader(gl_picking_wide_line_fragment data/shaders/gl/picking/WideLineFragment.glsl)
 coin_embed_gl_shader(gl_picking_pixel_fragment data/shaders/gl/picking/PixelFragment.glsl)
+coin_embed_gl_shader(gl_selection_fragment data/shaders/gl/selection/Fragment.glsl)
+coin_embed_gl_shader(gl_selection_wide_line_fragment data/shaders/gl/selection/WideLineFragment.glsl)
+coin_embed_gl_shader(gl_selection_pixel_fragment data/shaders/gl/selection/PixelFragment.glsl)
 
 # These are legacy shader snippets exposed through Coin's built-in shader
 # dictionary. They are ordinary embedded text, not core-profile root
