@@ -32,7 +32,11 @@
 #include <data/shaders/gl/pixel/Fragment.h>
 #include <data/shaders/gl/pixel/Vertex.h>
 #include <data/shaders/gl/picking/Fragment.h>
-#include <data/shaders/gl/picking/Vertex.h>
+#include <data/shaders/gl/picking/WideLineFragment.h>
+#include <data/shaders/gl/picking/PixelFragment.h>
+#include <data/shaders/gl/selection/Fragment.h>
+#include <data/shaders/gl/selection/WideLineFragment.h>
+#include <data/shaders/gl/selection/PixelFragment.h>
 
 namespace {
 
@@ -313,6 +317,220 @@ private:
   GLint pixelUnpackBuffer = 0;
 };
 
+class ScopedPixelPackState {
+public:
+  ScopedPixelPackState()
+  {
+    glGetIntegerv(GL_PACK_ALIGNMENT, &alignment);
+    glGetIntegerv(GL_PACK_ROW_LENGTH, &rowLength);
+    glGetIntegerv(GL_PACK_SKIP_ROWS, &skipRows);
+    glGetIntegerv(GL_PACK_SKIP_PIXELS, &skipPixels);
+    glGetIntegerv(GL_PACK_SWAP_BYTES, &swapBytes);
+    glGetIntegerv(GL_PACK_LSB_FIRST, &lsbFirst);
+    glGetIntegerv(GL_PACK_IMAGE_HEIGHT, &imageHeight);
+    glGetIntegerv(GL_PACK_SKIP_IMAGES, &skipImages);
+
+    glPixelStorei(GL_PACK_ALIGNMENT, 1);
+    glPixelStorei(GL_PACK_ROW_LENGTH, 0);
+    glPixelStorei(GL_PACK_SKIP_ROWS, 0);
+    glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
+    glPixelStorei(GL_PACK_SWAP_BYTES, GL_FALSE);
+    glPixelStorei(GL_PACK_LSB_FIRST, GL_FALSE);
+    glPixelStorei(GL_PACK_IMAGE_HEIGHT, 0);
+    glPixelStorei(GL_PACK_SKIP_IMAGES, 0);
+  }
+
+  ~ScopedPixelPackState()
+  {
+    glPixelStorei(GL_PACK_ALIGNMENT, alignment);
+    glPixelStorei(GL_PACK_ROW_LENGTH, rowLength);
+    glPixelStorei(GL_PACK_SKIP_ROWS, skipRows);
+    glPixelStorei(GL_PACK_SKIP_PIXELS, skipPixels);
+    glPixelStorei(GL_PACK_SWAP_BYTES, swapBytes);
+    glPixelStorei(GL_PACK_LSB_FIRST, lsbFirst);
+    glPixelStorei(GL_PACK_IMAGE_HEIGHT, imageHeight);
+    glPixelStorei(GL_PACK_SKIP_IMAGES, skipImages);
+  }
+
+private:
+  GLint alignment = 4;
+  GLint rowLength = 0;
+  GLint skipRows = 0;
+  GLint skipPixels = 0;
+  GLint swapBytes = GL_FALSE;
+  GLint lsbFirst = GL_FALSE;
+  GLint imageHeight = 0;
+  GLint skipImages = 0;
+};
+
+// Picking and selection are explicit operations on a caller-owned GL
+// context. They must not leak the temporary state used to implement them.
+class ScopedGLState {
+public:
+  explicit ScopedGLState(const cc_glglue * glue)
+    : glue(glue)
+  {
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFramebuffer);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFramebuffer);
+    glGetIntegerv(GL_RENDERBUFFER_BINDING, &renderbuffer);
+    glGetIntegerv(GL_DRAW_BUFFER, &drawBuffer);
+    glGetIntegerv(GL_READ_BUFFER, &readBuffer);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+    glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vertexArray);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &arrayBuffer);
+    glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &elementArrayBuffer);
+    glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pixelPackBuffer);
+    glGetIntegerv(GL_VIEWPORT, viewport);
+    glGetIntegerv(GL_SCISSOR_BOX, scissorBox);
+    glGetIntegerv(GL_DEPTH_FUNC, &depthFunction);
+    glGetIntegerv(GL_CULL_FACE_MODE, &cullFace);
+    glGetIntegerv(GL_FRONT_FACE, &frontFace);
+    glGetIntegerv(GL_POLYGON_MODE, polygonMode);
+    glGetIntegerv(GL_BLEND_SRC_RGB, &blendSourceRGB);
+    glGetIntegerv(GL_BLEND_DST_RGB, &blendDestinationRGB);
+    glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSourceAlpha);
+    glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDestinationAlpha);
+    glGetIntegerv(GL_BLEND_EQUATION_RGB, &blendEquationRGB);
+    glGetIntegerv(GL_BLEND_EQUATION_ALPHA, &blendEquationAlpha);
+    glGetBooleanv(GL_COLOR_WRITEMASK, colorMask);
+    glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWrite);
+    glGetDoublev(GL_DEPTH_RANGE, depthRange);
+    glGetFloatv(GL_LINE_WIDTH, &lineWidth);
+    glGetFloatv(GL_POINT_SIZE, &pointSize);
+    glGetFloatv(GL_POLYGON_OFFSET_FACTOR, &polygonOffsetFactor);
+    glGetFloatv(GL_POLYGON_OFFSET_UNITS, &polygonOffsetUnits);
+
+    activeTexture = GL_TEXTURE0;
+    glGetIntegerv(GL_ACTIVE_TEXTURE, &activeTexture);
+    cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture0);
+    cc_glglue_glActiveTexture(this->glue,
+                              static_cast<GLenum>(activeTexture));
+
+    blend = glIsEnabled(GL_BLEND);
+    scissor = glIsEnabled(GL_SCISSOR_TEST);
+    depth = glIsEnabled(GL_DEPTH_TEST);
+    cull = glIsEnabled(GL_CULL_FACE);
+    offsetFill = glIsEnabled(GL_POLYGON_OFFSET_FILL);
+    offsetLine = glIsEnabled(GL_POLYGON_OFFSET_LINE);
+    offsetPoint = glIsEnabled(GL_POLYGON_OFFSET_POINT);
+  }
+
+  ~ScopedGLState()
+  {
+    cc_glglue_glBindFramebuffer(this->glue, GL_DRAW_FRAMEBUFFER,
+                                static_cast<GLuint>(drawFramebuffer));
+    cc_glglue_glBindFramebuffer(this->glue, GL_READ_FRAMEBUFFER,
+                                static_cast<GLuint>(readFramebuffer));
+    cc_glglue_glBindRenderbuffer(this->glue, GL_RENDERBUFFER,
+                                 static_cast<GLuint>(renderbuffer));
+    glDrawBuffer(static_cast<GLenum>(drawBuffer));
+    glReadBuffer(static_cast<GLenum>(readBuffer));
+
+    cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
+    cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D,
+                            static_cast<GLuint>(texture0));
+    cc_glglue_glActiveTexture(this->glue,
+                              static_cast<GLenum>(activeTexture));
+
+    if (this->glue->glBindVertexArray) {
+      this->glue->glBindVertexArray(static_cast<GLuint>(vertexArray));
+    }
+    cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER,
+                           static_cast<GLuint>(arrayBuffer));
+    cc_glglue_glBindBuffer(this->glue, GL_ELEMENT_ARRAY_BUFFER,
+                           static_cast<GLuint>(elementArrayBuffer));
+    cc_glglue_glBindBuffer(this->glue, GL_PIXEL_PACK_BUFFER,
+                           static_cast<GLuint>(pixelPackBuffer));
+    cc_glglue_glUseProgram(this->glue, static_cast<GLuint>(program));
+
+    glViewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+    glScissor(scissorBox[0], scissorBox[1], scissorBox[2], scissorBox[3]);
+    glDepthFunc(static_cast<GLenum>(depthFunction));
+    glCullFace(static_cast<GLenum>(cullFace));
+    glFrontFace(static_cast<GLenum>(frontFace));
+    if (polygonMode[0] == polygonMode[1]) {
+      glPolygonMode(GL_FRONT_AND_BACK, static_cast<GLenum>(polygonMode[0]));
+    }
+    else {
+      glPolygonMode(GL_FRONT, static_cast<GLenum>(polygonMode[0]));
+      glPolygonMode(GL_BACK, static_cast<GLenum>(polygonMode[1]));
+    }
+    cc_glglue_glBlendFuncSeparate(
+      this->glue, static_cast<GLenum>(blendSourceRGB),
+      static_cast<GLenum>(blendDestinationRGB),
+      static_cast<GLenum>(blendSourceAlpha),
+      static_cast<GLenum>(blendDestinationAlpha));
+    if (this->glue->glBlendEquationSeparate) {
+      this->glue->glBlendEquationSeparate(
+        static_cast<GLenum>(blendEquationRGB),
+        static_cast<GLenum>(blendEquationAlpha));
+    }
+    else if (cc_glglue_has_blendequation(this->glue) &&
+             blendEquationRGB == blendEquationAlpha) {
+      cc_glglue_glBlendEquation(this->glue,
+                                static_cast<GLenum>(blendEquationRGB));
+    }
+    glColorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+    glDepthMask(depthWrite);
+    glDepthRange(depthRange[0], depthRange[1]);
+    glLineWidth(lineWidth);
+    glPointSize(pointSize);
+    glPolygonOffset(polygonOffsetFactor, polygonOffsetUnits);
+
+    if (blend) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+    if (scissor) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+    if (depth) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+    if (cull) glEnable(GL_CULL_FACE); else glDisable(GL_CULL_FACE);
+    if (offsetFill) glEnable(GL_POLYGON_OFFSET_FILL);
+    else glDisable(GL_POLYGON_OFFSET_FILL);
+    if (offsetLine) glEnable(GL_POLYGON_OFFSET_LINE);
+    else glDisable(GL_POLYGON_OFFSET_LINE);
+    if (offsetPoint) glEnable(GL_POLYGON_OFFSET_POINT);
+    else glDisable(GL_POLYGON_OFFSET_POINT);
+  }
+
+private:
+  const cc_glglue * glue;
+  GLint drawFramebuffer = 0;
+  GLint readFramebuffer = 0;
+  GLint renderbuffer = 0;
+  GLint drawBuffer = GL_BACK;
+  GLint readBuffer = GL_BACK;
+  GLint program = 0;
+  GLint vertexArray = 0;
+  GLint arrayBuffer = 0;
+  GLint elementArrayBuffer = 0;
+  GLint pixelPackBuffer = 0;
+  GLint viewport[4] = { 0, 0, 0, 0 };
+  GLint scissorBox[4] = { 0, 0, 0, 0 };
+  GLint depthFunction = GL_LESS;
+  GLint cullFace = GL_BACK;
+  GLint frontFace = GL_CCW;
+  GLint polygonMode[2] = { GL_FILL, GL_FILL };
+  GLint blendSourceRGB = GL_ONE;
+  GLint blendDestinationRGB = GL_ZERO;
+  GLint blendSourceAlpha = GL_ONE;
+  GLint blendDestinationAlpha = GL_ZERO;
+  GLint blendEquationRGB = GL_FUNC_ADD;
+  GLint blendEquationAlpha = GL_FUNC_ADD;
+  GLboolean colorMask[4] = { GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE };
+  GLboolean depthWrite = GL_TRUE;
+  GLdouble depthRange[2] = { 0.0, 1.0 };
+  GLfloat lineWidth = 1.0f;
+  GLfloat pointSize = 1.0f;
+  GLfloat polygonOffsetFactor = 0.0f;
+  GLfloat polygonOffsetUnits = 0.0f;
+  GLint activeTexture = GL_TEXTURE0;
+  GLint texture0 = 0;
+  GLboolean blend = GL_FALSE;
+  GLboolean scissor = GL_FALSE;
+  GLboolean depth = GL_FALSE;
+  GLboolean cull = GL_FALSE;
+  GLboolean offsetFill = GL_FALSE;
+  GLboolean offsetLine = GL_FALSE;
+  GLboolean offsetPoint = GL_FALSE;
+};
 } // namespace
 
 SoGLRenderBackend::SoGLRenderBackend()
@@ -360,16 +578,7 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
       !this->glue->glUniform3f || !this->glue->glUniform1iv ||
       !this->glue->glUniform2fv || !this->glue->glUniform3fv ||
       !this->glue->glUniform4f || !this->glue->glUniformMatrix4fv ||
-      !this->glue->glBlendFuncSeparate || !this->glue->has_fbo ||
-      !this->glue->glGenFramebuffers || !this->glue->glBindFramebuffer ||
-      !this->glue->glDeleteFramebuffers ||
-      !this->glue->glCheckFramebufferStatus ||
-      !this->glue->glFramebufferTexture2D ||
-      !this->glue->glFramebufferRenderbuffer ||
-      !this->glue->glGenRenderbuffers ||
-      !this->glue->glBindRenderbuffer ||
-      !this->glue->glDeleteRenderbuffers ||
-      !this->glue->glRenderbufferStorage) {
+      !this->glue->glBlendFuncSeparate) {
     this->emitError("active context does not provide retained-renderer GL dispatch");
     this->glue = nullptr;
     return FALSE;
@@ -498,10 +707,43 @@ SoGLRenderBackend::shutdown()
     cc_glglue_glDeleteProgram(this->glue, this->rasterPrograms.pixel.handle);
     this->rasterPrograms.pixel.handle = 0;
   }
-  if (this->pickProgram.handle) {
-    cc_glglue_glDeleteProgram(this->glue, this->pickProgram.handle);
-    this->pickProgram.handle = 0;
+  if (this->pickPrograms.visual.handle) {
+    cc_glglue_glDeleteProgram(this->glue, this->pickPrograms.visual.handle);
+    this->pickPrograms.visual.handle = 0;
   }
+  if (this->pickPrograms.line.handle) {
+    cc_glglue_glDeleteProgram(this->glue, this->pickPrograms.line.handle);
+    this->pickPrograms.line.handle = 0;
+  }
+  if (this->pickPrograms.triangleLine.handle) {
+    cc_glglue_glDeleteProgram(this->glue,
+                              this->pickPrograms.triangleLine.handle);
+    this->pickPrograms.triangleLine.handle = 0;
+  }
+  if (this->pickPrograms.point.handle) {
+    cc_glglue_glDeleteProgram(this->glue, this->pickPrograms.point.handle);
+    this->pickPrograms.point.handle = 0;
+  }
+  if (this->pickPrograms.trianglePoint.handle) {
+    cc_glglue_glDeleteProgram(this->glue,
+                              this->pickPrograms.trianglePoint.handle);
+    this->pickPrograms.trianglePoint.handle = 0;
+  }
+  if (this->pickPrograms.pixel.handle) {
+    cc_glglue_glDeleteProgram(this->glue, this->pickPrograms.pixel.handle);
+    this->pickPrograms.pixel.handle = 0;
+  }
+  auto deleteProgram = [this](GLuint & handle) {
+    if (!handle) return;
+    cc_glglue_glDeleteProgram(this->glue, handle);
+    handle = 0;
+  };
+  deleteProgram(this->selectionPrograms.visual.handle);
+  deleteProgram(this->selectionPrograms.line.handle);
+  deleteProgram(this->selectionPrograms.triangleLine.handle);
+  deleteProgram(this->selectionPrograms.point.handle);
+  deleteProgram(this->selectionPrograms.trianglePoint.handle);
+  deleteProgram(this->selectionPrograms.pixel.handle);
   this->destroyPickFramebuffer();
   this->pickTarget.lookup.clear();
   this->pickTarget.generation = 0;
@@ -1835,9 +2077,50 @@ SoGLRenderBackend::createShaders()
   this->rasterPrograms.pixel.handle = linkProgram(
     this->glue, coin_gl_pixel_vertex_shadersource,
     coin_gl_pixel_fragment_shadersource);
-  this->pickProgram.handle = linkProgram(
-    this->glue, coin_gl_picking_vertex_shadersource,
+  this->pickPrograms.visual.handle = linkProgram(
+    this->glue, coin_gl_visual_vertex_shadersource,
     coin_gl_picking_fragment_shadersource);
+  this->pickPrograms.line.handle = linkProgram(
+    this->glue, coin_gl_wide_line_vertex_shadersource,
+    coin_gl_picking_wide_line_fragment_shadersource,
+    coin_gl_wide_line_geometry_shadersource);
+  this->pickPrograms.triangleLine.handle = linkProgram(
+    this->glue, coin_gl_wide_line_vertex_shadersource,
+    coin_gl_picking_wide_line_fragment_shadersource,
+    coin_gl_wide_line_triangle_geometry_shadersource);
+  this->pickPrograms.point.handle = linkProgram(
+    this->glue, coin_gl_point_vertex_shadersource,
+    coin_gl_picking_fragment_shadersource,
+    coin_gl_point_geometry_shadersource);
+  this->pickPrograms.trianglePoint.handle = linkProgram(
+    this->glue, coin_gl_point_vertex_shadersource,
+    coin_gl_picking_fragment_shadersource,
+    coin_gl_point_triangle_geometry_shadersource);
+  this->pickPrograms.pixel.handle = linkProgram(
+    this->glue, coin_gl_pixel_vertex_shadersource,
+    coin_gl_picking_pixel_fragment_shadersource);
+  this->selectionPrograms.visual.handle = linkProgram(
+    this->glue, coin_gl_visual_vertex_shadersource,
+    coin_gl_selection_fragment_shadersource);
+  this->selectionPrograms.line.handle = linkProgram(
+    this->glue, coin_gl_wide_line_vertex_shadersource,
+    coin_gl_selection_wide_line_fragment_shadersource,
+    coin_gl_wide_line_geometry_shadersource);
+  this->selectionPrograms.triangleLine.handle = linkProgram(
+    this->glue, coin_gl_wide_line_vertex_shadersource,
+    coin_gl_selection_wide_line_fragment_shadersource,
+    coin_gl_wide_line_triangle_geometry_shadersource);
+  this->selectionPrograms.point.handle = linkProgram(
+    this->glue, coin_gl_point_vertex_shadersource,
+    coin_gl_selection_fragment_shadersource,
+    coin_gl_point_geometry_shadersource);
+  this->selectionPrograms.trianglePoint.handle = linkProgram(
+    this->glue, coin_gl_point_vertex_shadersource,
+    coin_gl_selection_fragment_shadersource,
+    coin_gl_point_triangle_geometry_shadersource);
+  this->selectionPrograms.pixel.handle = linkProgram(
+    this->glue, coin_gl_pixel_vertex_shadersource,
+    coin_gl_selection_pixel_fragment_shadersource);
 
   const GLuint programs[] = {
     this->visualProgram.handle,
@@ -1846,7 +2129,18 @@ SoGLRenderBackend::createShaders()
     this->rasterPrograms.point.handle,
     this->rasterPrograms.trianglePoint.handle,
     this->rasterPrograms.pixel.handle,
-    this->pickProgram.handle
+    this->pickPrograms.visual.handle,
+    this->pickPrograms.line.handle,
+    this->pickPrograms.triangleLine.handle,
+    this->pickPrograms.point.handle,
+    this->pickPrograms.trianglePoint.handle,
+    this->pickPrograms.pixel.handle,
+    this->selectionPrograms.visual.handle,
+    this->selectionPrograms.line.handle,
+    this->selectionPrograms.triangleLine.handle,
+    this->selectionPrograms.point.handle,
+    this->selectionPrograms.trianglePoint.handle,
+    this->selectionPrograms.pixel.handle
   };
   for (const GLuint program : programs) {
     if (!program) {
@@ -1859,7 +2153,18 @@ SoGLRenderBackend::createShaders()
       this->rasterPrograms.point.handle = 0;
       this->rasterPrograms.trianglePoint.handle = 0;
       this->rasterPrograms.pixel.handle = 0;
-      this->pickProgram.handle = 0;
+      this->pickPrograms.visual.handle = 0;
+      this->pickPrograms.line.handle = 0;
+      this->pickPrograms.triangleLine.handle = 0;
+      this->pickPrograms.point.handle = 0;
+      this->pickPrograms.trianglePoint.handle = 0;
+      this->pickPrograms.pixel.handle = 0;
+      this->selectionPrograms.visual.handle = 0;
+      this->selectionPrograms.line.handle = 0;
+      this->selectionPrograms.triangleLine.handle = 0;
+      this->selectionPrograms.point.handle = 0;
+      this->selectionPrograms.trianglePoint.handle = 0;
+      this->selectionPrograms.pixel.handle = 0;
       return false;
     }
   }
@@ -1970,14 +2275,52 @@ SoGLRenderBackend::createShaders()
                                     "u_alphaTestFunction");
   pixel.alphaTestReference = uniform(this->rasterPrograms.pixel.handle,
                                      "u_alphaTestReference");
-  this->pickProgram.uniforms.view =
-    uniform(this->pickProgram.handle, "u_view");
-  this->pickProgram.uniforms.projection =
-    uniform(this->pickProgram.handle, "u_proj");
-  this->pickProgram.uniforms.model =
-    uniform(this->pickProgram.handle, "u_model");
-  this->pickProgram.uniforms.pickId =
-    uniform(this->pickProgram.handle, "u_pickId");
+  auto cachePickUniforms = [this, &uniform](PickProgram & program) {
+    PickProgram::Uniforms & u = program.uniforms;
+    u.view = uniform(program.handle, "u_view");
+    u.proj = uniform(program.handle, "u_proj");
+    u.model = uniform(program.handle, "u_model");
+    u.color = uniform(program.handle, "u_color");
+    u.useVertexColor = uniform(program.handle, "u_useVertexColor");
+    u.vertexColorAlphaIncludesOpacity = uniform(
+      program.handle, "u_vertexColorAlphaIncludesOpacity");
+    u.textureAlphaIncludesOpacity = uniform(
+      program.handle, "u_textureAlphaIncludesOpacity");
+    u.textureHasAlpha = uniform(program.handle, "u_textureHasAlpha");
+    u.textureEnabled = uniform(program.handle, "u_textureEnabled");
+    u.textureModel = uniform(program.handle, "u_textureModel");
+    u.textureBlendColor = uniform(program.handle, "u_textureBlendColor");
+    u.texture = uniform(program.handle, "u_texture");
+    u.selectionColor = uniform(program.handle, "u_selectionColor");
+    u.alphaTestFunction = uniform(program.handle, "u_alphaTestFunction");
+    u.alphaTestReference = uniform(program.handle, "u_alphaTestReference");
+    u.pickId = uniform(program.handle, "u_pickId");
+    u.vpSize = uniform(program.handle, "u_vpSize");
+    u.lineWidth = uniform(program.handle, "u_lineWidth");
+    u.pointSize = uniform(program.handle, "u_pointSize");
+    u.stipplePattern = uniform(program.handle, "u_stipplePattern");
+    u.stippleScale = uniform(program.handle, "u_stippleScale");
+    u.cullBackFaces = uniform(program.handle, "u_cullBackFaces");
+    u.frontFaceCCW = uniform(program.handle, "u_frontFaceCCW");
+    u.quadCenter = uniform(program.handle, "u_quadCenter");
+    u.sourceSize = uniform(program.handle, "u_sourceSize");
+    u.rasterSize = uniform(program.handle, "u_rasterSize");
+    u.viewportOrigin = uniform(program.handle, "u_viewportOrigin");
+    u.pixelOrigin = uniform(program.handle, "u_pixelOrigin");
+    u.texModColor = uniform(program.handle, "u_texModColor");
+  };
+  cachePickUniforms(this->pickPrograms.visual);
+  cachePickUniforms(this->pickPrograms.line);
+  cachePickUniforms(this->pickPrograms.triangleLine);
+  cachePickUniforms(this->pickPrograms.point);
+  cachePickUniforms(this->pickPrograms.trianglePoint);
+  cachePickUniforms(this->pickPrograms.pixel);
+  cachePickUniforms(this->selectionPrograms.visual);
+  cachePickUniforms(this->selectionPrograms.line);
+  cachePickUniforms(this->selectionPrograms.triangleLine);
+  cachePickUniforms(this->selectionPrograms.point);
+  cachePickUniforms(this->selectionPrograms.trianglePoint);
+  cachePickUniforms(this->selectionPrograms.pixel);
   return true;
 }
 
@@ -2009,24 +2352,29 @@ SoGLRenderBackend::destroyPickFramebuffer()
 bool
 SoGLRenderBackend::ensurePickFramebuffer(const SbVec2s & size)
 {
-  if (!this->glue || !this->glue->glClearBufferuiv ||
-      !this->glue->glClearBufferfv) {
+  if (!this->glue || !this->glue->has_fbo ||
+      !this->glue->glGenFramebuffers ||
+      !this->glue->glBindFramebuffer ||
+      !this->glue->glDeleteFramebuffers ||
+      !this->glue->glCheckFramebufferStatus ||
+      !this->glue->glFramebufferTexture2D ||
+      !this->glue->glFramebufferRenderbuffer ||
+      !this->glue->glGenRenderbuffers ||
+      !this->glue->glBindRenderbuffer ||
+      !this->glue->glDeleteRenderbuffers ||
+      !this->glue->glRenderbufferStorage ||
+      !this->glue->glClearBufferuiv ||
+      !this->glue->glClearBufferfv ||
+      !this->glue->glUniform1ui) {
     SoDebugError::postWarning(
       "SoGLRenderBackend::ensurePickFramebuffer",
-      "integer picking requires glClearBufferuiv() and glClearBufferfv()");
+      "integer picking is not supported by the active GL context");
     return false;
   }
   if (size[0] <= 0 || size[1] <= 0) return false;
   if (this->pickTarget.framebuffer && this->pickTarget.size == size) return true;
 
-  GLint previousFramebuffer = 0;
-  GLint previousActiveTexture = GL_TEXTURE0;
-  GLint previousTexture = 0;
-  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
-  glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
-  cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
-  glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
-
+  ScopedGLState state(this->glue);
   this->destroyPickFramebuffer();
 
   cc_glglue_glGenFramebuffers(this->glue, 1, &this->pickTarget.framebuffer);
@@ -2070,12 +2418,6 @@ SoGLRenderBackend::ensurePickFramebuffer(const SbVec2s & size)
     this->destroyPickFramebuffer();
   }
 
-  cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
-                              static_cast<GLuint>(previousFramebuffer));
-  cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D,
-                          static_cast<GLuint>(previousTexture));
-  cc_glglue_glActiveTexture(this->glue,
-                            static_cast<GLenum>(previousActiveTexture));
   return complete;
 }
 
@@ -2084,11 +2426,39 @@ SoGLRenderBackend::drawPickEntry(const SoDrawList & drawlist,
                                  const SoPickLUTEntry & entry,
                                  const GLuint id,
                                  const SbMat & viewMat,
-                                 const SbMat & projMat)
+                                 const SbMat & projMat,
+                                 const SoRenderParams & params)
+{
+  this->drawCoverageEntry(drawlist, entry, id, SbColor4f(), viewMat,
+                          projMat, params, false);
+}
+
+void
+SoGLRenderBackend::drawSelectionEntry(const SoDrawList & drawlist,
+                                      const SoPickLUTEntry & entry,
+                                      const SbColor4f & color,
+                                      const SbMat & viewMat,
+                                      const SbMat & projMat,
+                                      const SoRenderParams & params)
+{
+  this->drawCoverageEntry(drawlist, entry, 0, color, viewMat, projMat,
+                          params, true);
+}
+
+void
+SoGLRenderBackend::drawCoverageEntry(const SoDrawList & drawlist,
+                                     const SoPickLUTEntry & entry,
+                                     const GLuint id,
+                                     const SbColor4f & selectionColor,
+                                     const SbMat & viewMat,
+                                     const SbMat & projMat,
+                                     const SoRenderParams & params,
+                                     const bool selection)
 {
   if (entry.commandIndex < 0 ||
       entry.commandIndex >= drawlist.getNumCommands()) return;
   const SoRenderCommand & command = drawlist.getCommand(entry.commandIndex);
+  if (!command.state.raster.visible) return;
   if (!command.geometry.positions || command.geometry.vertexCount == 0) return;
 
   const auto cacheIt = this->commandToCache.find(&command);
@@ -2096,31 +2466,216 @@ SoGLRenderBackend::drawPickEntry(const SoDrawList & drawlist,
   const CachedCommand & cache = this->gpuCache[cacheIt->second];
   if (!cache.vertexArray) return;
 
-  cc_glglue_glUseProgram(this->glue, this->pickProgram.handle);
-  this->glue->glUniformMatrix4fv(this->pickProgram.uniforms.view, 1, GL_FALSE,
-                                 &viewMat[0][0]);
-  this->glue->glUniformMatrix4fv(this->pickProgram.uniforms.projection, 1, GL_FALSE,
-                                 &projMat[0][0]);
+  const GLenum primitive = topologyToGL(command.geometry.topology);
+  const bool textured = cache.texture != 0 && cache.texcoordBuffer != 0;
+  const bool pixelRaster = textured && command.pixelRaster.enabled &&
+    command.pixelRaster.width > 0 && command.pixelRaster.height > 0;
+  const float dpr = params.devicePixelRatio > 0.0f
+    ? params.devicePixelRatio : 1.0f;
+  const float pointSize = std::max(1.0f, command.state.raster.pointSize) * dpr;
+  const float lineWidth = std::max(1.0f, command.state.raster.lineWidth) * dpr;
+  const SoRasterFillMode fillMode = command.state.raster.fillMode;
+  const bool triangleTopology = primitive == GL_TRIANGLES ||
+    primitive == GL_TRIANGLE_STRIP;
+  const bool lineTopology = primitive == GL_LINES ||
+    primitive == GL_LINE_STRIP;
+  const bool pointTopology = primitive == GL_POINTS;
+  const bool lineRaster = lineTopology ||
+    (fillMode == SO_RASTER_LINES && triangleTopology);
+  const bool pointRaster = pointTopology ||
+    (fillMode == SO_RASTER_POINTS && triangleTopology);
+  const bool lineEmulationRequired = lineWidth > this->rasterPrograms.nativeLineWidthMax ||
+    command.state.raster.linePattern != 0xFFFF;
+  const PickPrograms * programSet = selection
+    ? &this->selectionPrograms : &this->pickPrograms;
+  const bool usePointShader = !pixelRaster && pointRaster &&
+    programSet->point.handle != 0 &&
+    pointSize > this->rasterPrograms.nativePointSizeMax;
+  const bool useLineShader = !pixelRaster && lineRaster &&
+    programSet->line.handle != 0 &&
+    lineEmulationRequired;
+  const bool lineTriangleInput = useLineShader &&
+    fillMode == SO_RASTER_LINES &&
+    triangleTopology;
+  const bool pointTriangleInput = usePointShader && fillMode == SO_RASTER_POINTS &&
+    triangleTopology;
+
+  if (useLineShader && lineTopology) {
+    CachedCommand & mutableCache = this->gpuCache[cacheIt->second];
+    this->updateLineDistances(mutableCache, command, viewMat, projMat,
+                              params.viewport.getViewportSizePixels());
+  }
+  const bool expandedLineStream = useLineShader && lineTopology &&
+    command.geometry.indices && command.geometry.indexCount &&
+    cache.lineRasterVertexArray != 0;
+
+  GLuint program = programSet->visual.handle;
+  const PickProgram::Uniforms * locations = &programSet->visual.uniforms;
+  if (pixelRaster) {
+    program = programSet->pixel.handle;
+    locations = &programSet->pixel.uniforms;
+  }
+  else if (useLineShader) {
+    program = lineTriangleInput ? programSet->triangleLine.handle
+                                : programSet->line.handle;
+    locations = lineTriangleInput
+      ? &programSet->triangleLine.uniforms
+      : &programSet->line.uniforms;
+  }
+  else if (usePointShader) {
+    program = pointTriangleInput ? programSet->trianglePoint.handle
+                                 : programSet->point.handle;
+    locations = pointTriangleInput
+      ? &programSet->trianglePoint.uniforms
+      : &programSet->point.uniforms;
+  }
+  cc_glglue_glUseProgram(this->glue, program);
+
+  auto uniformMatrix = [this](GLint location, const SbMat & matrix) {
+    if (location >= 0) {
+      this->glue->glUniformMatrix4fv(location, 1, GL_FALSE, &matrix[0][0]);
+    }
+  };
+  auto uniform1f = [this](GLint location, float value) {
+    if (location >= 0) this->glue->glUniform1f(location, value);
+  };
+  auto uniform1i = [this](GLint location, GLint value) {
+    if (location >= 0) this->glue->glUniform1i(location, value);
+  };
+  auto uniform2f = [this](GLint location, float x, float y) {
+    if (location >= 0) this->glue->glUniform2f(location, x, y);
+  };
+  auto uniform4f = [this](GLint location, const SbVec4f & value) {
+    if (location >= 0) this->glue->glUniform4f(location, value[0], value[1],
+                                                value[2], value[3]);
+  };
+
   SbMat model;
   command.modelMatrix.getValue(model);
-  this->glue->glUniformMatrix4fv(this->pickProgram.uniforms.model, 1, GL_FALSE,
-                                 &model[0][0]);
-  this->glue->glUniform1i(this->pickProgram.uniforms.pickId,
-                          static_cast<GLint>(id));
-
-  if (command.state.depth.enabled) {
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(depthFunctionToGL(command.state.depth.func));
+  uniformMatrix(locations->view, viewMat);
+  uniformMatrix(locations->proj, projMat);
+  uniformMatrix(locations->model, model);
+  uniform4f(locations->color, command.material.diffuse);
+  uniform1f(locations->useVertexColor, cache.colorBuffer ? 1.0f : 0.0f);
+  uniform1f(locations->vertexColorAlphaIncludesOpacity,
+            command.material.vertexColorAlphaIncludesOpacity ? 1.0f : 0.0f);
+  uniform1f(locations->textureAlphaIncludesOpacity,
+            command.material.textureAlphaIncludesOpacity ? 1.0f : 0.0f);
+  const bool textureHasAlpha = command.material.texture.numComponents == 2 ||
+    command.material.texture.numComponents == 4;
+  uniform1f(locations->textureHasAlpha, textureHasAlpha ? 1.0f : 0.0f);
+  uniform1f(locations->textureEnabled, textured ? 1.0f : 0.0f);
+  uniform1i(locations->texture, 0);
+  uniform1i(locations->textureModel,
+            static_cast<GLint>(command.material.texture.model));
+  uniform4f(locations->textureBlendColor,
+            command.material.texture.blendColor);
+  uniform1i(locations->alphaTestFunction,
+            command.state.alphaTest.policy == SO_ALPHA_TEST_POLICY_NONE
+              ? 0 : static_cast<GLint>(command.state.alphaTest.function));
+  uniform1f(locations->alphaTestReference,
+            command.state.alphaTest.reference);
+  if (selection) {
+    uniform4f(locations->selectionColor, selectionColor);
   }
   else {
-    glDisable(GL_DEPTH_TEST);
+    if (locations->pickId >= 0 && this->glue->glUniform1ui) {
+      this->glue->glUniform1ui(locations->pickId, id);
+    }
   }
-  glDepthMask(command.state.depth.writeEnabled &&
-              command.pass != SO_RENDERPASS_TRANSPARENT
-                ? GL_TRUE : GL_FALSE);
-  glDepthRange(command.state.depth.range[0], command.state.depth.range[1]);
 
-  if (command.state.raster.cullMode) {
+  if (useLineShader) {
+    uniform1f(locations->lineWidth, lineWidth);
+    const SbVec2s size = params.viewport.getViewportSizePixels();
+    uniform2f(locations->vpSize, static_cast<float>(size[0]),
+              static_cast<float>(size[1]));
+    uniform1i(locations->stipplePattern,
+              static_cast<GLint>(command.state.raster.linePattern));
+    uniform1f(locations->stippleScale,
+              static_cast<float>(std::max(1, static_cast<int>(
+                command.state.raster.linePatternScale))));
+  }
+  if (usePointShader) {
+    uniform1f(locations->pointSize, pointSize);
+    const SbVec2s size = params.viewport.getViewportSizePixels();
+    uniform2f(locations->vpSize, static_cast<float>(size[0]),
+              static_cast<float>(size[1]));
+  }
+  if (lineTriangleInput || pointTriangleInput) {
+    uniform1f(locations->cullBackFaces,
+              command.state.raster.cullBackFaces ? 1.0f : 0.0f);
+    uniform1f(locations->frontFaceCCW,
+              command.state.raster.frontFaceCCW ? 1.0f : 0.0f);
+  }
+  if (pixelRaster) {
+    const GLsizei stride = static_cast<GLsizei>(
+      command.geometry.vertexStride ? command.geometry.vertexStride
+                                    : sizeof(float) * 3);
+    const char * raw = reinterpret_cast<const char *>(
+      command.geometry.positions);
+    SbVec3f center(0.0f, 0.0f, 0.0f);
+    for (uint32_t i = 0; i < command.geometry.vertexCount; ++i) {
+      const float * position = reinterpret_cast<const float *>(raw + i * stride);
+      center += SbVec3f(position[0], position[1], position[2]);
+    }
+    if (command.geometry.vertexCount) {
+      center /= static_cast<float>(command.geometry.vertexCount);
+    }
+    if (locations->quadCenter >= 0) {
+      this->glue->glUniform3f(locations->quadCenter,
+                              center[0], center[1], center[2]);
+    }
+    uniform2f(locations->sourceSize,
+              static_cast<float>(command.material.texture.width),
+              static_cast<float>(command.material.texture.height));
+    uniform2f(locations->rasterSize,
+              static_cast<float>(command.pixelRaster.width),
+              static_cast<float>(command.pixelRaster.height));
+    const SbVec2s viewportOrigin = selection
+      ? params.viewport.getViewportOriginPixels() : SbVec2s(0, 0);
+    // Picking is rendered into a viewport-local FBO. Selection is rendered
+    // into the caller's framebuffer, so its fragment coordinates retain the
+    // active viewport origin.
+    uniform2f(locations->viewportOrigin,
+              static_cast<float>(viewportOrigin[0]),
+              static_cast<float>(viewportOrigin[1]));
+    const SbVec2s size = params.viewport.getViewportSizePixels();
+    uniform2f(locations->vpSize, static_cast<float>(size[0]),
+              static_cast<float>(size[1]));
+    uniform2f(locations->pixelOrigin,
+              static_cast<float>(command.pixelRaster.originX),
+              static_cast<float>(command.pixelRaster.originY));
+    uniform4f(locations->texModColor, SbVec4f(1.0f, 1.0f, 1.0f, 1.0f));
+    cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
+    cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, cache.texture);
+  }
+  else if (textured) {
+    cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
+    cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, cache.texture);
+  }
+
+  if (selection) {
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_FALSE);
+    glDepthRange(command.state.depth.range[0], command.state.depth.range[1]);
+  }
+  else {
+    if (command.state.depth.enabled) {
+      glEnable(GL_DEPTH_TEST);
+      glDepthFunc(depthFunctionToGL(command.state.depth.func));
+    }
+    else {
+      glDisable(GL_DEPTH_TEST);
+    }
+    // Visual transparent passes suppress depth writes, but the ID pass is a
+    // visibility query and must resolve the nearest pickable fragment.
+    glDepthMask(GL_TRUE);
+    glDepthRange(command.state.depth.range[0], command.state.depth.range[1]);
+  }
+
+  const bool triangleFallback = lineTriangleInput || pointTriangleInput;
+  if (command.state.raster.cullBackFaces && !triangleFallback) {
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
   }
@@ -2129,13 +2684,12 @@ SoGLRenderBackend::drawPickEntry(const SoDrawList & drawlist,
   }
   glFrontFace(command.state.raster.frontFaceCCW ? GL_CCW : GL_CW);
 
-  const GLenum primitive = topologyToGL(command.geometry.topology);
-  const bool triangleTopology = command.geometry.topology == SO_TOPOLOGY_TRIANGLES ||
-    command.geometry.topology == SO_TOPOLOGY_TRIANGLE_STRIP;
-  if (triangleTopology && command.state.raster.fillMode == 1) {
+  if (!useLineShader && triangleTopology &&
+      command.state.raster.fillMode == SO_RASTER_LINES) {
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
   }
-  else if (triangleTopology && command.state.raster.fillMode == 2) {
+  else if (!usePointShader && triangleTopology &&
+           command.state.raster.fillMode == SO_RASTER_POINTS) {
     glPolygonMode(GL_FRONT_AND_BACK, GL_POINT);
   }
   else {
@@ -2143,11 +2697,12 @@ SoGLRenderBackend::drawPickEntry(const SoDrawList & drawlist,
   }
 
   const bool linePrimitive = primitive == GL_LINES ||
-    primitive == GL_LINE_STRIP || command.state.raster.fillMode == 1;
+    primitive == GL_LINE_STRIP ||
+    command.state.raster.fillMode == SO_RASTER_LINES;
   const bool pointPrimitive = primitive == GL_POINTS ||
-    command.state.raster.fillMode == 2;
-  if (linePrimitive) glLineWidth(command.state.raster.lineWidth);
-  if (pointPrimitive) glPointSize(command.state.raster.pointSize);
+    command.state.raster.fillMode == SO_RASTER_POINTS;
+  if (linePrimitive && !useLineShader) glLineWidth(lineWidth);
+  if (pointPrimitive && !usePointShader) glPointSize(pointSize);
 
   const bool polygonOffsetApplies =
     ((!linePrimitive && !pointPrimitive) &&
@@ -2158,7 +2713,10 @@ SoGLRenderBackend::drawPickEntry(const SoDrawList & drawlist,
     (command.state.raster.polygonOffsetFactor != 0.0f ||
      command.state.raster.polygonOffsetUnits != 0.0f);
   GLenum polygonOffsetTarget = GL_POLYGON_OFFSET_FILL;
-  if (linePrimitive) polygonOffsetTarget = GL_POLYGON_OFFSET_LINE;
+  if (useLineShader || usePointShader) {
+    polygonOffsetTarget = GL_POLYGON_OFFSET_FILL;
+  }
+  else if (linePrimitive) polygonOffsetTarget = GL_POLYGON_OFFSET_LINE;
   else if (pointPrimitive) polygonOffsetTarget = GL_POLYGON_OFFSET_POINT;
   if (polygonOffset) {
     glEnable(polygonOffsetTarget);
@@ -2166,12 +2724,23 @@ SoGLRenderBackend::drawPickEntry(const SoDrawList & drawlist,
                     command.state.raster.polygonOffsetUnits);
   }
 
-  this->glue->glBindVertexArray(cache.vertexArray);
+  this->glue->glBindVertexArray(expandedLineStream
+                                ? cache.lineRasterVertexArray
+                                : cache.vertexArray);
   const bool indexed = command.geometry.indexCount && command.geometry.indices;
-  if (indexed) {
-    const uint32_t count = entry.drawCount ? entry.drawCount
-                                           : command.geometry.indexCount;
-    const uint32_t start = entry.drawCount ? entry.drawStart : 0;
+  if (expandedLineStream) {
+    const uint32_t count = entry.drawCount;
+    const uint32_t start = entry.drawStart;
+    if (count && start < cache.lineRasterVertexCount &&
+        count <= cache.lineRasterVertexCount - start) {
+      cc_glglue_glDrawArrays(this->glue, primitive,
+                             static_cast<GLint>(start),
+                             static_cast<GLsizei>(count));
+    }
+  }
+  else if (indexed) {
+    const uint32_t count = entry.drawCount;
+    const uint32_t start = entry.drawStart;
     if (count && start < command.geometry.indexCount &&
         count <= command.geometry.indexCount - start) {
       const void * offset = reinterpret_cast<const void *>(
@@ -2182,9 +2751,8 @@ SoGLRenderBackend::drawPickEntry(const SoDrawList & drawlist,
     }
   }
   else {
-    const uint32_t count = entry.drawCount ? entry.drawCount
-                                           : command.geometry.vertexCount;
-    const uint32_t start = entry.drawCount ? entry.drawStart : 0;
+    const uint32_t count = entry.drawCount;
+    const uint32_t start = entry.drawStart;
     if (count && start < command.geometry.vertexCount &&
         count <= command.geometry.vertexCount - start) {
       cc_glglue_glDrawArrays(this->glue, primitive,
@@ -2195,11 +2763,13 @@ SoGLRenderBackend::drawPickEntry(const SoDrawList & drawlist,
   this->glue->glBindVertexArray(0);
 
   if (polygonOffset) glDisable(polygonOffsetTarget);
+  if (textured) cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, 0);
+  cc_glglue_glUseProgram(this->glue, programSet->visual.handle);
   glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
   glDepthRange(0.0, 1.0);
   glFrontFace(GL_CCW);
-  if (linePrimitive) glLineWidth(1.0f);
-  if (pointPrimitive) glPointSize(1.0f);
+  if (linePrimitive && !useLineShader) glLineWidth(1.0f);
+  if (pointPrimitive && !usePointShader) glPointSize(1.0f);
 }
 
 SbBool
@@ -2213,18 +2783,13 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
   }
   this->pickTarget.ready = false;
   this->pickTarget.lookup.clear();
+  ScopedGLState state(this->glue);
   drawlist.buildPickLUT();
+  this->pickTarget.lookup = drawlist.getPickLUT();
   const SbVec2s size = params.viewport.getViewportSizePixels();
   if (!this->ensurePickFramebuffer(size)) return FALSE;
 
   this->updateGeometryCache(drawlist);
-
-  GLint previousFramebuffer = 0;
-  GLint previousProgram = 0;
-  GLint previousViewport[4] = { 0, 0, 0, 0 };
-  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
-  glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
-  glGetIntegerv(GL_VIEWPORT, previousViewport);
 
   cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
                               this->pickTarget.framebuffer);
@@ -2234,6 +2799,7 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
   glDisable(GL_BLEND);
   glDisable(GL_SCISSOR_TEST);
   glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+  glDepthMask(GL_TRUE);
   const GLuint zero = 0;
   const GLfloat clearDepth = params.clearDepth;
   this->glue->glClearBufferuiv(GL_COLOR, 0, &zero);
@@ -2243,30 +2809,21 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
   SbMat projection;
   params.viewMatrix.getValue(view);
   params.projMatrix.getValue(projection);
-  const std::vector<SoPickLUTEntry> & lut = drawlist.getPickLUT();
   for (int planIndex = 0; planIndex < plan.getNumDraws(); ++planIndex) {
     const uint32_t commandIndex = plan.getDraw(planIndex).commandIndex;
     if (commandIndex >= static_cast<uint32_t>(drawlist.getNumCommands())) {
       this->emitError("pick plan references a missing DrawList command");
       return FALSE;
     }
-    for (size_t entryIndex = 0; entryIndex < lut.size();
+    for (size_t entryIndex = 0; entryIndex < this->pickTarget.lookup.size();
          ++entryIndex) {
-      const SoPickLUTEntry & entry = lut[entryIndex];
+      const SoPickLUTEntry & entry = this->pickTarget.lookup[entryIndex];
       if (entry.commandIndex != static_cast<int>(commandIndex)) continue;
       this->drawPickEntry(drawlist, entry,
                           static_cast<GLuint>(entryIndex + 1),
-                          view, projection);
+                          view, projection, params);
     }
   }
-
-  cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
-                              static_cast<GLuint>(previousFramebuffer));
-  cc_glglue_glUseProgram(this->glue, static_cast<GLuint>(previousProgram));
-  glViewport(previousViewport[0], previousViewport[1],
-             previousViewport[2], previousViewport[3]);
-
-  this->pickTarget.lookup = drawlist.getPickLUT();
   this->pickTarget.generation = drawlist.getPickLUTGeneration();
   this->pickTarget.ready = true;
   return TRUE;
@@ -2289,18 +2846,17 @@ SoGLRenderBackend::pick(const int x, const int y, const int radius,
   const int top = std::min(height - 1, y + radius);
   if (left > right || bottom > top) return FALSE;
 
-  GLint previousFramebuffer = 0;
-  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
+  ScopedGLState state(this->glue);
   cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
                               this->pickTarget.framebuffer);
   glReadBuffer(GL_COLOR_ATTACHMENT0);
   const int readWidth = right - left + 1;
   const int readHeight = top - bottom + 1;
   std::vector<GLuint> ids(static_cast<size_t>(readWidth) * readHeight, 0);
+  ScopedPixelPackState packState;
+  cc_glglue_glBindBuffer(this->glue, GL_PIXEL_PACK_BUFFER, 0);
   glReadPixels(left, bottom, readWidth, readHeight,
                GL_RED_INTEGER, GL_UNSIGNED_INT, ids.data());
-  cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
-                              static_cast<GLuint>(previousFramebuffer));
 
   GLuint bestId = 0;
   int bestDistance = 0;
@@ -2308,6 +2864,7 @@ SoGLRenderBackend::pick(const int x, const int y, const int radius,
     for (int column = 0; column < readWidth; ++column) {
       const GLuint id = ids[static_cast<size_t>(row) * readWidth + column];
       if (!id) continue;
+
       const int px = left + column;
       const int py = bottom + row;
       const int dx = px - x;
@@ -2327,6 +2884,81 @@ SoGLRenderBackend::pick(const int x, const int y, const int radius,
   result.commandIndex = entry.commandIndex;
   result.type = entry.type;
   result.elementIndex = entry.elementIndex;
+  return TRUE;
+}
+
+SbBool
+SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
+                                   const SoSelectionState & selection,
+                                   const SoRenderParams & params)
+{
+  if (!this->isInitialized()) {
+    this->emitError("renderSelection called before backend initialization");
+    return FALSE;
+  }
+
+  ScopedGLState state(this->glue);
+  this->updateGeometryCache(drawlist);
+  applyViewport(params);
+  glEnable(GL_BLEND);
+  cc_glglue_glBlendFuncSeparate(this->glue, GL_SRC_ALPHA,
+                                GL_ONE_MINUS_SRC_ALPHA, GL_ONE,
+                                GL_ONE_MINUS_SRC_ALPHA);
+  if (cc_glglue_has_blendequation(this->glue)) {
+    cc_glglue_glBlendEquation(this->glue, GL_FUNC_ADD);
+  }
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LEQUAL);
+  glDepthMask(GL_FALSE);
+
+  SbMat view;
+  SbMat projection;
+  params.viewMatrix.getValue(view);
+  params.projMatrix.getValue(projection);
+
+  auto drawTarget = [&](const SoSelectionTarget & target) {
+    if (target.commandIndex < 0 ||
+        target.commandIndex >= drawlist.getNumCommands()) return;
+    const SoRenderCommand & command = drawlist.getCommand(target.commandIndex);
+    if (target.type == SO_PICK_OBJECT && target.elementIndex < 0) {
+      SoPickLUTEntry entry;
+      entry.commandIndex = target.commandIndex;
+      entry.type = SO_PICK_OBJECT;
+      const bool indexed = command.geometry.indices != nullptr &&
+        command.geometry.indexCount != 0;
+      entry.drawCount = indexed ? command.geometry.indexCount
+                                : command.geometry.vertexCount;
+      this->drawSelectionEntry(drawlist, entry, target.color, view, projection,
+                               params);
+      return;
+    }
+
+    for (const SoRenderElementRange & range : command.pick.elementRanges) {
+      if (range.type != target.type ||
+          range.elementIndex != target.elementIndex) continue;
+      SoPickLUTEntry entry;
+      entry.commandIndex = target.commandIndex;
+      entry.type = range.type;
+      entry.elementIndex = range.elementIndex;
+      const bool indexed = command.geometry.indices != nullptr &&
+        command.geometry.indexCount != 0;
+      const uint32_t drawLimit = indexed ? command.geometry.indexCount
+                                         : command.geometry.vertexCount;
+      if (range.drawCount == 0 || range.drawStart >= drawLimit ||
+          range.drawCount > drawLimit - range.drawStart) continue;
+      entry.drawStart = range.drawStart;
+      entry.drawCount = range.drawCount;
+      this->drawSelectionEntry(drawlist, entry, target.color, view, projection,
+                               params);
+    }
+  };
+
+  for (const SoSelectionTarget & target : selection.selected) {
+    drawTarget(target);
+  }
+  for (const SoSelectionTarget & target : selection.highlighted) {
+    drawTarget(target);
+  }
   return TRUE;
 }
 
