@@ -4,6 +4,7 @@
 #define COIN_SORENDERIR_H
 
 #include <Inventor/SbBasic.h>
+#include <Inventor/SbColor4f.h>
 #include <Inventor/SbMatrix.h>
 #include <Inventor/SbVec2f.h>
 #include <Inventor/SbVec3f.h>
@@ -512,6 +513,50 @@ struct SoPickLUTEntry {
 };
 
 /*!
+  \struct SoPickResult
+  \brief Result of resolving one frame-local integer pick ID.
+
+  The command index is resolved by the backend-neutral DrawList.  A caller
+  can use the corresponding SoIRRenderAction to obtain the retained scene
+  path for that command; Coin does not encode application identity strings in
+  the renderer.
+
+  \ingroup coin_retained_rendering
+*/
+struct SoPickResult {
+  uint32_t id = 0;
+  int commandIndex = -1;
+  SoPickElementType type = SO_PICK_OBJECT;
+  int elementIndex = -1;
+};
+
+/*!
+  \struct SoSelectionTarget
+  \brief One retained command or subelement to highlight in a frame.
+
+  Selection is interaction state applied to retained identity.  It is not
+  part of a command's scene identity and carries no application-specific
+  names or interaction policy.
+
+  \ingroup coin_retained_rendering
+*/
+struct SoSelectionTarget {
+  int commandIndex = -1;
+  SoPickElementType type = SO_PICK_OBJECT;
+  int elementIndex = -1;
+  SbColor4f color = SbColor4f(1.0f, 1.0f, 0.0f, 0.75f);
+};
+
+/*!
+  \struct SoSelectionState
+  \brief Frame-level selected and highlighted retained targets.
+*/
+struct SoSelectionState {
+  std::vector<SoSelectionTarget> selected;
+  std::vector<SoSelectionTarget> highlighted;
+};
+
+/*!
   \struct SoRenderCommand
   \brief Backend-neutral retained rendering command.
 
@@ -596,6 +641,7 @@ public:
   const SoPickLUTEntry * resolvePickId(uint32_t id) const;
   //! Return the generation for which the current pick table was built.
   uint32_t getPickLUTGeneration() const { return pickLUTGeneration; }
+  //! Return the immutable snapshot of the current frame's pick table.
   const std::vector<SoPickLUTEntry> & getPickLUT() const { return pickLUT; }
 
 private:
