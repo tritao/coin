@@ -235,11 +235,44 @@ private:
     GLuint handle = 0;
     struct Uniforms {
       GLint view = -1;
-      GLint projection = -1;
+      GLint proj = -1;
       GLint model = -1;
+      GLint color = -1;
+      GLint useVertexColor = -1;
+      GLint vertexColorAlphaIncludesOpacity = -1;
+      GLint textureAlphaIncludesOpacity = -1;
+      GLint textureHasAlpha = -1;
+      GLint textureEnabled = -1;
+      GLint textureModel = -1;
+      GLint textureBlendColor = -1;
+      GLint texture = -1;
+      GLint alphaTestFunction = -1;
+      GLint alphaTestReference = -1;
       GLint pickId = -1;
+      GLint vpSize = -1;
+      GLint lineWidth = -1;
+      GLint pointSize = -1;
+      GLint stipplePattern = -1;
+      GLint stippleScale = -1;
+      GLint cullBackFaces = -1;
+      GLint frontFaceCCW = -1;
+      GLint quadCenter = -1;
+      GLint sourceSize = -1;
+      GLint rasterSize = -1;
+      GLint viewportOrigin = -1;
+      GLint pixelOrigin = -1;
+      GLint texModColor = -1;
     } uniforms;
-  } pickProgram;
+  };
+
+  struct PickPrograms {
+    PickProgram visual;
+    PickProgram line;
+    PickProgram triangleLine;
+    PickProgram point;
+    PickProgram trianglePoint;
+    PickProgram pixel;
+  } pickPrograms;
 
   struct PickTarget {
     GLuint framebuffer = 0;
@@ -258,7 +291,8 @@ private:
                      const SoPickLUTEntry & entry,
                      GLuint id,
                      const SbMat & viewMat,
-                     const SbMat & projMat);
+                     const SbMat & projMat,
+                     const SoRenderParams & params);
   void beginFrame(const SoRenderParams & params);
   void invalidateCache();
   void updateGeometryCache(const SoDrawList & drawlist);
