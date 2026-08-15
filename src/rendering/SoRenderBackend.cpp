@@ -36,6 +36,14 @@ SoRenderBackend::pick(int, int, int, SoPickResult &) const
 }
 
 SbBool
+SoRenderBackend::renderSelection(const SoDrawList &,
+                                  const SoSelectionState &,
+                                  const SoRenderParams &)
+{
+  return FALSE;
+}
+
+SbBool
 SoRenderBackend::isInitialized() const
 {
   return this->initialized;
