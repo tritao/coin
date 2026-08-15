@@ -424,7 +424,48 @@ struct SoLightingData {
   std::vector<SoLightData> lights;
 };
 
-/*!
+/*! \enum SoPickElementType
+  \brief Backend-neutral identity kinds retained for picking.
+*/
+enum SoPickElementType : uint8_t {
+  SO_PICK_OBJECT = 0,
+  SO_PICK_FACE,
+  SO_PICK_EDGE,
+  SO_PICK_VERTEX
+};
+
+/*! \struct SoRenderElementRange
+  \brief Maps one logical subelement to a geometry draw range.
+
+  For indexed geometry, drawStart/drawCount refer to indices. For
+  non-indexed geometry, they refer to vertices.
+*/
+struct SoRenderElementRange {
+  SoPickElementType type = SO_PICK_OBJECT;
+  int elementIndex = -1;
+  uint32_t drawStart = 0;
+  uint32_t drawCount = 0;
+};
+
+/*! \struct SoPickData
+  \brief Backend-neutral pickability and optional subelement ranges.
+*/
+struct SoPickData {
+  bool pickable = true;
+  std::vector<SoRenderElementRange> elementRanges;
+};
+
+/*! \struct SoPickResult
+  \brief Result of resolving a frame-local retained pick identifier.
+*/
+struct SoPickResult {
+  uint32_t id = 0;
+  int commandIndex = -1;
+  SoPickElementType type = SO_PICK_OBJECT;
+  int elementIndex = -1;
+};
+
+/*! 
   \struct SoRenderCommand
   \brief Backend-neutral retained rendering command.
 
@@ -451,6 +492,7 @@ struct SoRenderCommand {
   // Stable scene identity. Zero means that the producer did not provide one.
   uint64_t         objectId = 0;
   SoPixelRasterData pixelRaster;
+  SoPickData       pick;
   void *           userData = nullptr; //!< Opaque, non-owned producer data.
 };
 

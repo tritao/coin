@@ -7,6 +7,7 @@
 #include <Inventor/SbColor4f.h>
 #include <Inventor/SbMatrix.h>
 #include <Inventor/SbViewportRegion.h>
+#include <Inventor/rendering/SoRenderIR.h>
 
 #include "rendering/SoRenderPlan.h"
 
@@ -70,6 +71,12 @@ public:
   virtual SbBool render(const SoDrawList & drawlist,
                         const SoRenderPlan & plan,
                         const SoRenderParams & params) = 0;
+
+  //! Update the backend's explicit picking target for a retained frame.
+  virtual SbBool updatePickBuffer(const SoDrawList & drawlist,
+                                  const SoRenderParams & params);
+  //! Resolve a viewport-local pick query against the last explicit update.
+  virtual SbBool pick(int x, int y, int radius, SoPickResult & result) const;
 
   SbBool isInitialized() const;
 

@@ -22,6 +22,19 @@ SoRenderBackend::~SoRenderBackend()
 }
 
 SbBool
+SoRenderBackend::updatePickBuffer(const SoDrawList &,
+                                   const SoRenderParams &)
+{
+  return FALSE;
+}
+
+SbBool
+SoRenderBackend::pick(int, int, int, SoPickResult &) const
+{
+  return FALSE;
+}
+
+SbBool
 SoRenderBackend::isInitialized() const
 {
   return this->initialized;

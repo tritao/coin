@@ -178,6 +178,14 @@ struct SoIRMaterialBatchPlan {
   bool needsVertexColors = false;
 };
 
+struct SoIRPrimitiveRange {
+  size_t first = 0;
+  size_t count = 0;
+  SoPickElementType type = SO_PICK_OBJECT;
+  int elementIndex = -1;
+  bool valid = false;
+};
+
 class SoIRPrimitiveAssembler : public SoIRRenderAction::PrimitiveCollector {
 public:
   SoIRPrimitiveAssembler(SoIRRenderAction * action, SoShape * shape)
@@ -188,23 +196,29 @@ public:
                   const SoPrimitiveVertex * v3) override
   {
     this->setTopology(SO_TOPOLOGY_TRIANGLES);
+    const size_t first = this->vertices.size();
     this->append(v1, v1->getMaterialIndex());
     this->append(v2, v2->getMaterialIndex());
     this->append(v3, v3->getMaterialIndex());
+    this->appendRange(first, 3, SO_PICK_FACE, this->faceIndex(v1, v2, v3));
   }
 
   void onLine(const SoPrimitiveVertex * v1,
               const SoPrimitiveVertex * v2) override
   {
     this->setTopology(SO_TOPOLOGY_LINES);
+    const size_t first = this->vertices.size();
     this->append(v1, v1->getMaterialIndex());
     this->append(v2, v2->getMaterialIndex());
+    this->appendRange(first, 2, SO_PICK_EDGE, this->lineIndex(v1, v2));
   }
 
   void onPoint(const SoPrimitiveVertex * v) override
   {
     this->setTopology(SO_TOPOLOGY_POINTS);
+    const size_t first = this->vertices.size();
     this->append(v, v->getMaterialIndex());
+    this->appendRange(first, 1, SO_PICK_VERTEX, this->pointIndex(v));
   }
 
   void finalize()
@@ -359,9 +373,33 @@ private:
       command.material.vertexColorAlphaIncludesOpacity =
         command.geometry.colors != nullptr && !packedVertexColors;
       SoRenderIR::finalizeCommand(command);
+      const size_t batchEnd = batch.first + batch.count;
+      const size_t primitiveWidth = this->topology == SO_TOPOLOGY_TRIANGLES
+        ? 3 : (this->topology == SO_TOPOLOGY_LINES ? 2 : 1);
+      std::vector<SoRenderElementRange> pickRanges;
+      bool completePickRanges = true;
+      for (const SoIRPrimitiveRange & range : this->primitiveRanges) {
+        if (range.first < batch.first || range.first >= batchEnd) continue;
+        if (!range.valid || range.first + range.count > batchEnd) {
+          completePickRanges = false;
+          break;
+        }
+        SoRenderElementRange pickRange;
+        pickRange.type = range.type;
+        pickRange.elementIndex = range.elementIndex;
+        pickRange.drawStart = static_cast<uint32_t>(range.first - batch.first);
+        pickRange.drawCount = static_cast<uint32_t>(range.count);
+        pickRanges.push_back(pickRange);
+      }
+      const size_t expectedRanges = primitiveWidth == 0 ? 0
+        : batch.count / primitiveWidth;
+      if (completePickRanges && pickRanges.size() == expectedRanges) {
+        command.pick.elementRanges = pickRanges;
+      }
       command.userData = this->shape;
       this->action->addCommand(command);
     }
+    this->primitiveRanges.clear();
   }
 
   void setTopology(SoPrimitiveTopology candidate)
@@ -382,10 +420,63 @@ private:
     this->vertices.push_back(copy);
   }
 
+  void appendRange(size_t first, size_t count, SoPickElementType type,
+                   int elementIndex)
+  {
+    SoIRPrimitiveRange range;
+    range.first = first;
+    range.count = count;
+    range.type = type;
+    range.elementIndex = elementIndex;
+    range.valid = elementIndex >= 0;
+    this->primitiveRanges.push_back(range);
+  }
+
+  static int faceIndex(const SoPrimitiveVertex * v1,
+                       const SoPrimitiveVertex * v2,
+                       const SoPrimitiveVertex * v3)
+  {
+    const SoDetail * d1 = v1->getDetail();
+    const SoDetail * d2 = v2->getDetail();
+    const SoDetail * d3 = v3->getDetail();
+    if (!d1 || !d2 || !d3 ||
+        !d1->isOfType(SoFaceDetail::getClassTypeId()) ||
+        !d2->isOfType(SoFaceDetail::getClassTypeId()) ||
+        !d3->isOfType(SoFaceDetail::getClassTypeId())) return -1;
+    const int index = static_cast<const SoFaceDetail *>(d1)->getFaceIndex();
+    return index >= 0 &&
+           static_cast<const SoFaceDetail *>(d2)->getFaceIndex() == index &&
+           static_cast<const SoFaceDetail *>(d3)->getFaceIndex() == index
+      ? index : -1;
+  }
+
+  static int lineIndex(const SoPrimitiveVertex * v1,
+                       const SoPrimitiveVertex * v2)
+  {
+    const SoDetail * d1 = v1->getDetail();
+    const SoDetail * d2 = v2->getDetail();
+    if (!d1 || !d2 ||
+        !d1->isOfType(SoLineDetail::getClassTypeId()) ||
+        !d2->isOfType(SoLineDetail::getClassTypeId())) return -1;
+    const int index = static_cast<const SoLineDetail *>(d1)->getLineIndex();
+    return index >= 0 &&
+           static_cast<const SoLineDetail *>(d2)->getLineIndex() == index
+      ? index : -1;
+  }
+
+  static int pointIndex(const SoPrimitiveVertex * vertex)
+  {
+    const SoDetail * detail = vertex->getDetail();
+    if (!detail ||
+        !detail->isOfType(SoPointDetail::getClassTypeId())) return -1;
+    return static_cast<const SoPointDetail *>(detail)->getCoordinateIndex();
+  }
+
   SoIRRenderAction * action;
   SoShape * shape;
   SoPrimitiveTopology topology;
   std::vector<SoIRVertex> vertices;
+  std::vector<SoIRPrimitiveRange> primitiveRanges;
 };
 
 }

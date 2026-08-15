@@ -11,6 +11,7 @@
 #include <Inventor/rendering/SoRenderIR.h>
 
 #include <cstddef>
+#include <vector>
 class SoPrimitiveVertex;
 class SoPath;
 class SoPathList;
@@ -80,6 +81,10 @@ public:
 
   //! Append a retained command produced during the current traversal.
   void addCommand(const SoRenderCommand & command);
+  //! Return the non-owned path retained for a command in this frame.
+  //! The pointer is borrowed and remains valid until the next apply/beginFrame
+  //! on this action or until the action is destroyed.
+  const SoPath * getCommandPath(int commandIndex) const;
 
   //! Mark the current frame as unsupported by the retained renderer.
   void markUnsupported(const SoNode * node, const char * reason);
@@ -123,9 +128,11 @@ protected:
 
 private:
   void resetFrameResources();
+  void clearCommandPaths();
 
   SbViewportRegion vpRegion;
   SoDrawList       drawlist;
+  std::vector<SoPath *> commandPaths;
   SoIRRenderActionP * pimpl;
   bool unsupportedRendering = false;
   const SoNode * unsupportedNode = nullptr;

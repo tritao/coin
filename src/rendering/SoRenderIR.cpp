@@ -17,6 +17,7 @@
 #include <Inventor/elements/SoMultiTextureEnabledElement.h>
 #include <Inventor/elements/SoMultiTextureImageElement.h>
 #include <Inventor/elements/SoPointSizeElement.h>
+#include <Inventor/elements/SoPickStyleElement.h>
 #include <Inventor/elements/SoModelMatrixElement.h>
 #include <Inventor/elements/SoProjectionMatrixElement.h>
 #include <Inventor/elements/SoTextureQualityElement.h>
@@ -489,6 +490,8 @@ fillCommandTraversalStateFromAction(SoIRRenderAction * action,
   command.projMatrix = SoProjectionMatrixElement::get(state);
   fillRenderStateFromState(state, command.state);
   command.lightingHandle = fillLightingFromState(state, drawlist);
+  command.pick.pickable = SoPickStyleElement::get(state) !=
+    SoPickStyleElement::UNPICKABLE;
 }
 
 void

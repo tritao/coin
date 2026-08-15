@@ -3,6 +3,7 @@
 #include <Inventor/actions/SoIRRenderAction.h>
 
 #include <Inventor/SoPath.h>
+#include <Inventor/SoDB.h>
 #include <Inventor/C/tidbits.h>
 #include <Inventor/SbBasic.h>
 #include <Inventor/errors/SoDebugError.h>
@@ -50,6 +51,7 @@
 #include <Inventor/elements/SoDecimationTypeElement.h>
 #include <Inventor/elements/SoTextureOverrideElement.h>
 #include <Inventor/elements/SoPointSizeElement.h>
+#include <Inventor/elements/SoPickStyleElement.h>
 #include <Inventor/nodes/SoShaderProgram.h>
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoNode.h>
@@ -143,6 +145,7 @@ SoIRRenderAction::initClass(void)
   SO_ENABLE(SoIRRenderAction, SoFontNameElement);
   SO_ENABLE(SoIRRenderAction, SoFontSizeElement);
   SO_ENABLE(SoIRRenderAction, SoPointSizeElement);
+  SO_ENABLE(SoIRRenderAction, SoPickStyleElement);
   SO_ENABLE(SoIRRenderAction, SoDecimationPercentageElement);
   SO_ENABLE(SoIRRenderAction, SoDecimationTypeElement);
   SO_ENABLE(SoIRRenderAction, SoTextureOverrideElement);
@@ -156,6 +159,7 @@ SoIRRenderAction::SoIRRenderAction(const SbViewportRegion & vp)
 
 SoIRRenderAction::~SoIRRenderAction()
 {
+  this->clearCommandPaths();
   delete PRIVATE(this);
   PRIVATE(this) = NULL;
 }
@@ -170,31 +174,11 @@ void
 SoIRRenderAction::beginFrame()
 {
   this->drawlist.clear();
+  this->clearCommandPaths();
   this->resetFrameResources();
   this->unsupportedRendering = false;
   this->unsupportedNode = nullptr;
   this->unsupportedReason = nullptr;
-}
-
-void
-SoIRRenderAction::apply(SoNode * root)
-{
-  this->beginFrame();
-  inherited::apply(root);
-}
-
-void
-SoIRRenderAction::apply(SoPath * path)
-{
-  this->beginFrame();
-  inherited::apply(path);
-}
-
-void
-SoIRRenderAction::apply(const SoPathList & pathlist, SbBool obeysrules)
-{
-  this->beginFrame();
-  inherited::apply(pathlist, obeysrules);
 }
 
 void
@@ -233,7 +217,47 @@ SoIRRenderAction::addCommand(const SoRenderCommand & command)
       (minimum[2] + maximum[2]) * 0.5f);
     retained.geometry.hasBounds = TRUE;
   }
+  const int commandIndex = this->drawlist.getNumCommands();
   this->drawlist.addCommand(retained);
+
+  const SoPath * currentPath = this->getCurPath();
+  SoPath * retainedPath = currentPath ? currentPath->copy() : NULL;
+  if (retainedPath) retainedPath->ref();
+  if (static_cast<size_t>(commandIndex) >= this->commandPaths.size()) {
+    this->commandPaths.resize(static_cast<size_t>(commandIndex) + 1, NULL);
+  }
+  this->commandPaths[static_cast<size_t>(commandIndex)] = retainedPath;
+}
+
+const SoPath *
+SoIRRenderAction::getCommandPath(int commandIndex) const
+{
+  if (commandIndex < 0 ||
+      static_cast<size_t>(commandIndex) >= this->commandPaths.size()) {
+    return NULL;
+  }
+  return this->commandPaths[static_cast<size_t>(commandIndex)];
+}
+
+void
+SoIRRenderAction::apply(SoNode * root)
+{
+  this->beginFrame();
+  inherited::apply(root);
+}
+
+void
+SoIRRenderAction::apply(SoPath * path)
+{
+  this->beginFrame();
+  inherited::apply(path);
+}
+
+void
+SoIRRenderAction::apply(const SoPathList & pathlist, SbBool obeysrules)
+{
+  this->beginFrame();
+  inherited::apply(pathlist, obeysrules);
 }
 
 void
@@ -338,4 +362,13 @@ SoIRRenderAction::resetFrameResources()
   PRIVATE(this)->geometryPool.clear();
   PRIVATE(this)->textureStorage.clear();
   PRIVATE(this)->collectorStack.truncate(0);
+}
+
+void
+SoIRRenderAction::clearCommandPaths()
+{
+  for (SoPath * path : this->commandPaths) {
+    if (path && SoDB::isInitialized()) path->unref();
+  }
+  this->commandPaths.clear();
 }
