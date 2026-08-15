@@ -65,6 +65,8 @@ coin_embed_gl_shader(gl_point_triangle_geometry data/shaders/gl/point/TriangleGe
 coin_embed_gl_shader(gl_point_fragment data/shaders/gl/point/Fragment.glsl)
 coin_embed_gl_shader(gl_pixel_vertex data/shaders/gl/pixel/Vertex.glsl)
 coin_embed_gl_shader(gl_pixel_fragment data/shaders/gl/pixel/Fragment.glsl)
+coin_embed_gl_shader(gl_picking_vertex data/shaders/gl/picking/Vertex.glsl)
+coin_embed_gl_shader(gl_picking_fragment data/shaders/gl/picking/Fragment.glsl)
 
 # These are legacy shader snippets exposed through Coin's built-in shader
 # dictionary. They are ordinary embedded text, not core-profile root

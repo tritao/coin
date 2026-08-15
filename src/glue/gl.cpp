@@ -1136,6 +1136,13 @@ glglue_resolve_symbols(cc_glglue * w)
 #endif /* GL_VERSION_1_2 && GL_ARB_imaging */
   }
 
+#if defined(GL_VERSION_2_0)
+  if (cc_glglue_glversion_matches_at_least(w, 2, 0, 0)) {
+    w->glBlendEquationSeparate =
+      (COIN_PFNGLBLENDEQUATIONSEPARATEPROC)PROC(w, glBlendEquationSeparate);
+  }
+#endif /* GL_VERSION_2_0 */
+
 #ifdef GL_EXT_blend_minmax
   if (cc_glglue_glext_supported(w, "GL_EXT_blend_minmax")) {
     w->glBlendEquationEXT = (COIN_PFNGLBLENDEQUATIONPROC)PROC(w, glBlendEquationEXT);
@@ -1220,6 +1227,14 @@ glglue_resolve_symbols(cc_glglue * w)
         cc_glglue_getprocaddress(w, "glGenVertexArraysAPPLE");
     }
   }
+
+  /* These core framebuffer entry points are not exported by the Windows
+     OpenGL 1.1 import library.  Resolve them through the active context just
+     like the vertex-array entry points above. */
+  w->glClearBufferuiv = (COIN_PFNGLCLEARBUFFERUIVPROC)
+    cc_glglue_getprocaddress(w, "glClearBufferuiv");
+  w->glClearBufferfv = (COIN_PFNGLCLEARBUFFERFVPROC)
+    cc_glglue_getprocaddress(w, "glClearBufferfv");
 
 
 #if defined(GL_VERSION_1_2)
@@ -1740,6 +1755,7 @@ glglue_resolve_symbols(cc_glglue * w)
   w->glUniform3i = NULL;
   w->glUniform4i = NULL;
   w->glUniform1iv = NULL;
+  w->glUniform1ui = NULL;
   w->glUniform2iv = NULL;
   w->glUniform3iv = NULL;
   w->glUniform4iv = NULL;
@@ -1804,6 +1820,7 @@ glglue_resolve_symbols(cc_glglue * w)
   w->glUniform3i = (COIN_PFNGLUNIFORM3IPROC) PROC(w, glUniform3i);
   w->glUniform4i = (COIN_PFNGLUNIFORM4IPROC) PROC(w, glUniform4i);
   w->glUniform1iv = (COIN_PFNGLUNIFORM1IVPROC) PROC(w, glUniform1iv);
+  w->glUniform1ui = (COIN_PFNGLUNIFORM1UIPROC) PROC(w, glUniform1ui);
   w->glUniform2iv = (COIN_PFNGLUNIFORM2IVPROC) PROC(w, glUniform2iv);
   w->glUniform3iv = (COIN_PFNGLUNIFORM3IVPROC) PROC(w, glUniform3iv);
   w->glUniform4iv = (COIN_PFNGLUNIFORM4IVPROC) PROC(w, glUniform4iv);

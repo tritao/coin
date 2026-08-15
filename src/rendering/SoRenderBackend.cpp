@@ -23,6 +23,7 @@ SoRenderBackend::~SoRenderBackend()
 
 SbBool
 SoRenderBackend::updatePickBuffer(const SoDrawList &,
+                                   const SoRenderPlan &,
                                    const SoRenderParams &)
 {
   return FALSE;

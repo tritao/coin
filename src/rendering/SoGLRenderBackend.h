@@ -42,6 +42,13 @@ public:
                 const SoRenderPlan & plan,
                 const SoRenderParams & params) override;
 
+  //! Render the current DrawList into the explicit integer picking buffer.
+  SbBool updatePickBuffer(const SoDrawList & drawlist,
+                          const SoRenderPlan & plan,
+                          const SoRenderParams & params) override;
+  //! Resolve the closest nonzero ID in a viewport-local pixel-radius query.
+  SbBool pick(int x, int y, int radius, SoPickResult & result) const override;
+
 private:
   struct ResourceCacheKey {
     uint64_t geometry = 0;
@@ -225,9 +232,36 @@ private:
     float lineWidth = 1.0f;
   };
 
+  struct PickProgram {
+    GLuint handle = 0;
+    struct Uniforms {
+      GLint view = -1;
+      GLint projection = -1;
+      GLint model = -1;
+      GLint pickId = -1;
+    } uniforms;
+  } pickProgram;
+
+  struct PickTarget {
+    GLuint framebuffer = 0;
+    GLuint colorTexture = 0;
+    GLuint depthBuffer = 0;
+    SbVec2s size;
+    std::vector<SoPickLUTEntry> lookup;
+    uint32_t generation = 0;
+    bool ready = false;
+  } pickTarget;
+
   bool createShaders();
   const VisualProgram & selectSurfaceProgram(
     const SoRenderCommand & command) const;
+  bool ensurePickFramebuffer(const SbVec2s & size);
+  void destroyPickFramebuffer();
+  void drawPickEntry(const SoDrawList & drawlist,
+                     const SoPickLUTEntry & entry,
+                     GLuint id,
+                     const SbMat & viewMat,
+                     const SbMat & projMat);
   void beginFrame(const SoRenderParams & params);
   void invalidateCache();
   void updateGeometryCache(const SoDrawList & drawlist);

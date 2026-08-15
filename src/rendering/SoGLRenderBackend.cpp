@@ -31,6 +31,8 @@
 #include <data/shaders/gl/point/Vertex.h>
 #include <data/shaders/gl/pixel/Fragment.h>
 #include <data/shaders/gl/pixel/Vertex.h>
+#include <data/shaders/gl/picking/Fragment.h>
+#include <data/shaders/gl/picking/Vertex.h>
 
 namespace {
 
@@ -358,7 +360,16 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
       !this->glue->glUniform3f || !this->glue->glUniform1iv ||
       !this->glue->glUniform2fv || !this->glue->glUniform3fv ||
       !this->glue->glUniform4f || !this->glue->glUniformMatrix4fv ||
-      !this->glue->glBlendFuncSeparate) {
+      !this->glue->glBlendFuncSeparate || !this->glue->has_fbo ||
+      !this->glue->glGenFramebuffers || !this->glue->glBindFramebuffer ||
+      !this->glue->glDeleteFramebuffers ||
+      !this->glue->glCheckFramebufferStatus ||
+      !this->glue->glFramebufferTexture2D ||
+      !this->glue->glFramebufferRenderbuffer ||
+      !this->glue->glGenRenderbuffers ||
+      !this->glue->glBindRenderbuffer ||
+      !this->glue->glDeleteRenderbuffers ||
+      !this->glue->glRenderbufferStorage) {
     this->emitError("active context does not provide retained-renderer GL dispatch");
     this->glue = nullptr;
     return FALSE;
@@ -487,6 +498,14 @@ SoGLRenderBackend::shutdown()
     cc_glglue_glDeleteProgram(this->glue, this->rasterPrograms.pixel.handle);
     this->rasterPrograms.pixel.handle = 0;
   }
+  if (this->pickProgram.handle) {
+    cc_glglue_glDeleteProgram(this->glue, this->pickProgram.handle);
+    this->pickProgram.handle = 0;
+  }
+  this->destroyPickFramebuffer();
+  this->pickTarget.lookup.clear();
+  this->pickTarget.generation = 0;
+  this->pickTarget.ready = false;
   this->glue = nullptr;
   this->setInitialized(FALSE);
   this->emitLog("shutdown");
@@ -1816,6 +1835,9 @@ SoGLRenderBackend::createShaders()
   this->rasterPrograms.pixel.handle = linkProgram(
     this->glue, coin_gl_pixel_vertex_shadersource,
     coin_gl_pixel_fragment_shadersource);
+  this->pickProgram.handle = linkProgram(
+    this->glue, coin_gl_picking_vertex_shadersource,
+    coin_gl_picking_fragment_shadersource);
 
   const GLuint programs[] = {
     this->visualProgram.handle,
@@ -1823,7 +1845,8 @@ SoGLRenderBackend::createShaders()
     this->rasterPrograms.triangleLine.handle,
     this->rasterPrograms.point.handle,
     this->rasterPrograms.trianglePoint.handle,
-    this->rasterPrograms.pixel.handle
+    this->rasterPrograms.pixel.handle,
+    this->pickProgram.handle
   };
   for (const GLuint program : programs) {
     if (!program) {
@@ -1836,6 +1859,7 @@ SoGLRenderBackend::createShaders()
       this->rasterPrograms.point.handle = 0;
       this->rasterPrograms.trianglePoint.handle = 0;
       this->rasterPrograms.pixel.handle = 0;
+      this->pickProgram.handle = 0;
       return false;
     }
   }
@@ -1946,7 +1970,364 @@ SoGLRenderBackend::createShaders()
                                     "u_alphaTestFunction");
   pixel.alphaTestReference = uniform(this->rasterPrograms.pixel.handle,
                                      "u_alphaTestReference");
+  this->pickProgram.uniforms.view =
+    uniform(this->pickProgram.handle, "u_view");
+  this->pickProgram.uniforms.projection =
+    uniform(this->pickProgram.handle, "u_proj");
+  this->pickProgram.uniforms.model =
+    uniform(this->pickProgram.handle, "u_model");
+  this->pickProgram.uniforms.pickId =
+    uniform(this->pickProgram.handle, "u_pickId");
   return true;
+}
+
+void
+SoGLRenderBackend::destroyPickFramebuffer()
+{
+  if (!this->glue || !this->glue->has_fbo) {
+    this->pickTarget.framebuffer = 0;
+    this->pickTarget.colorTexture = 0;
+    this->pickTarget.depthBuffer = 0;
+    this->pickTarget.size = SbVec2s(0, 0);
+    return;
+  }
+  if (this->pickTarget.colorTexture) {
+    cc_glglue_glDeleteTextures(this->glue, 1, &this->pickTarget.colorTexture);
+  }
+  if (this->pickTarget.depthBuffer) {
+    cc_glglue_glDeleteRenderbuffers(this->glue, 1, &this->pickTarget.depthBuffer);
+  }
+  if (this->pickTarget.framebuffer) {
+    cc_glglue_glDeleteFramebuffers(this->glue, 1, &this->pickTarget.framebuffer);
+  }
+  this->pickTarget.framebuffer = 0;
+  this->pickTarget.colorTexture = 0;
+  this->pickTarget.depthBuffer = 0;
+  this->pickTarget.size = SbVec2s(0, 0);
+}
+
+bool
+SoGLRenderBackend::ensurePickFramebuffer(const SbVec2s & size)
+{
+  if (!this->glue || !this->glue->glClearBufferuiv ||
+      !this->glue->glClearBufferfv) {
+    SoDebugError::postWarning(
+      "SoGLRenderBackend::ensurePickFramebuffer",
+      "integer picking requires glClearBufferuiv() and glClearBufferfv()");
+    return false;
+  }
+  if (size[0] <= 0 || size[1] <= 0) return false;
+  if (this->pickTarget.framebuffer && this->pickTarget.size == size) return true;
+
+  GLint previousFramebuffer = 0;
+  GLint previousActiveTexture = GL_TEXTURE0;
+  GLint previousTexture = 0;
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
+  glGetIntegerv(GL_ACTIVE_TEXTURE, &previousActiveTexture);
+  cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
+  glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
+
+  this->destroyPickFramebuffer();
+
+  cc_glglue_glGenFramebuffers(this->glue, 1, &this->pickTarget.framebuffer);
+  cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
+                              this->pickTarget.framebuffer);
+
+  cc_glglue_glGenTextures(this->glue, 1, &this->pickTarget.colorTexture);
+  cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, this->pickTarget.colorTexture);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_R32UI, size[0], size[1], 0,
+               GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+  cc_glglue_glFramebufferTexture2D(this->glue, GL_FRAMEBUFFER,
+                                   GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                                   this->pickTarget.colorTexture, 0);
+
+  cc_glglue_glGenRenderbuffers(this->glue, 1, &this->pickTarget.depthBuffer);
+  cc_glglue_glBindRenderbuffer(this->glue, GL_RENDERBUFFER,
+                               this->pickTarget.depthBuffer);
+  cc_glglue_glRenderbufferStorage(this->glue, GL_RENDERBUFFER,
+                                  GL_DEPTH_COMPONENT24, size[0], size[1]);
+  cc_glglue_glFramebufferRenderbuffer(this->glue, GL_FRAMEBUFFER,
+                                      GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER,
+                                      this->pickTarget.depthBuffer);
+  glDrawBuffer(GL_COLOR_ATTACHMENT0);
+  glReadBuffer(GL_COLOR_ATTACHMENT0);
+
+  const GLenum status = cc_glglue_glCheckFramebufferStatus(
+    this->glue, GL_FRAMEBUFFER);
+  const bool complete = status == GL_FRAMEBUFFER_COMPLETE;
+  if (complete) {
+    this->pickTarget.size = size;
+  }
+  else {
+    SoDebugError::postWarning(
+      "SoGLRenderBackend::ensurePickFramebuffer",
+      "integer picking framebuffer is incomplete (status 0x%x)",
+      static_cast<unsigned int>(status));
+    this->destroyPickFramebuffer();
+  }
+
+  cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
+                              static_cast<GLuint>(previousFramebuffer));
+  cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D,
+                          static_cast<GLuint>(previousTexture));
+  cc_glglue_glActiveTexture(this->glue,
+                            static_cast<GLenum>(previousActiveTexture));
+  return complete;
+}
+
+void
+SoGLRenderBackend::drawPickEntry(const SoDrawList & drawlist,
+                                 const SoPickLUTEntry & entry,
+                                 const GLuint id,
+                                 const SbMat & viewMat,
+                                 const SbMat & projMat)
+{
+  if (entry.commandIndex < 0 ||
+      entry.commandIndex >= drawlist.getNumCommands()) return;
+  const SoRenderCommand & command = drawlist.getCommand(entry.commandIndex);
+  if (!command.geometry.positions || command.geometry.vertexCount == 0) return;
+
+  const auto cacheIt = this->commandToCache.find(&command);
+  if (cacheIt == this->commandToCache.end()) return;
+  const CachedCommand & cache = this->gpuCache[cacheIt->second];
+  if (!cache.vertexArray) return;
+
+  cc_glglue_glUseProgram(this->glue, this->pickProgram.handle);
+  this->glue->glUniformMatrix4fv(this->pickProgram.uniforms.view, 1, GL_FALSE,
+                                 &viewMat[0][0]);
+  this->glue->glUniformMatrix4fv(this->pickProgram.uniforms.projection, 1, GL_FALSE,
+                                 &projMat[0][0]);
+  SbMat model;
+  command.modelMatrix.getValue(model);
+  this->glue->glUniformMatrix4fv(this->pickProgram.uniforms.model, 1, GL_FALSE,
+                                 &model[0][0]);
+  this->glue->glUniform1i(this->pickProgram.uniforms.pickId,
+                          static_cast<GLint>(id));
+
+  if (command.state.depth.enabled) {
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(depthFunctionToGL(command.state.depth.func));
+  }
+  else {
+    glDisable(GL_DEPTH_TEST);
+  }
+  glDepthMask(command.state.depth.writeEnabled &&
+              command.pass != SO_RENDERPASS_TRANSPARENT
+                ? GL_TRUE : GL_FALSE);
+  glDepthRange(command.state.depth.range[0], command.state.depth.range[1]);
+
+  if (command.state.raster.cullMode) {
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+  }
+  else {
+    glDisable(GL_CULL_FACE);
+  }
+  glFrontFace(command.state.raster.frontFaceCCW ? GL_CCW : GL_CW);
+
+  const GLenum primitive = topologyToGL(command.geometry.topology);
+  const bool triangleTopology = command.geometry.topology == SO_TOPOLOGY_TRIANGLES ||
+    command.geometry.topology == SO_TOPOLOGY_TRIANGLE_STRIP;
+  if (triangleTopology && command.state.raster.fillMode == 1) {
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+  }
+  else if (triangleTopology && command.state.raster.fillMode == 2) {
+    glPolygonMode(GL_FRONT_AND_BACK, GL_POINT);
+  }
+  else {
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+  }
+
+  const bool linePrimitive = primitive == GL_LINES ||
+    primitive == GL_LINE_STRIP || command.state.raster.fillMode == 1;
+  const bool pointPrimitive = primitive == GL_POINTS ||
+    command.state.raster.fillMode == 2;
+  if (linePrimitive) glLineWidth(command.state.raster.lineWidth);
+  if (pointPrimitive) glPointSize(command.state.raster.pointSize);
+
+  const bool polygonOffsetApplies =
+    ((!linePrimitive && !pointPrimitive) &&
+     command.state.raster.polygonOffsetFilled) ||
+    (linePrimitive && command.state.raster.polygonOffsetLines) ||
+    (pointPrimitive && command.state.raster.polygonOffsetPoints);
+  const bool polygonOffset = polygonOffsetApplies &&
+    (command.state.raster.polygonOffsetFactor != 0.0f ||
+     command.state.raster.polygonOffsetUnits != 0.0f);
+  GLenum polygonOffsetTarget = GL_POLYGON_OFFSET_FILL;
+  if (linePrimitive) polygonOffsetTarget = GL_POLYGON_OFFSET_LINE;
+  else if (pointPrimitive) polygonOffsetTarget = GL_POLYGON_OFFSET_POINT;
+  if (polygonOffset) {
+    glEnable(polygonOffsetTarget);
+    glPolygonOffset(command.state.raster.polygonOffsetFactor,
+                    command.state.raster.polygonOffsetUnits);
+  }
+
+  this->glue->glBindVertexArray(cache.vertexArray);
+  const bool indexed = command.geometry.indexCount && command.geometry.indices;
+  if (indexed) {
+    const uint32_t count = entry.drawCount ? entry.drawCount
+                                           : command.geometry.indexCount;
+    const uint32_t start = entry.drawCount ? entry.drawStart : 0;
+    if (count && start < command.geometry.indexCount &&
+        count <= command.geometry.indexCount - start) {
+      const void * offset = reinterpret_cast<const void *>(
+        static_cast<size_t>(start) * sizeof(uint32_t));
+      cc_glglue_glDrawElements(this->glue, primitive,
+                               static_cast<GLsizei>(count),
+                               GL_UNSIGNED_INT, offset);
+    }
+  }
+  else {
+    const uint32_t count = entry.drawCount ? entry.drawCount
+                                           : command.geometry.vertexCount;
+    const uint32_t start = entry.drawCount ? entry.drawStart : 0;
+    if (count && start < command.geometry.vertexCount &&
+        count <= command.geometry.vertexCount - start) {
+      cc_glglue_glDrawArrays(this->glue, primitive,
+                             static_cast<GLint>(start),
+                             static_cast<GLsizei>(count));
+    }
+  }
+  this->glue->glBindVertexArray(0);
+
+  if (polygonOffset) glDisable(polygonOffsetTarget);
+  glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+  glDepthRange(0.0, 1.0);
+  glFrontFace(GL_CCW);
+  if (linePrimitive) glLineWidth(1.0f);
+  if (pointPrimitive) glPointSize(1.0f);
+}
+
+SbBool
+SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
+                                    const SoRenderPlan & plan,
+                                    const SoRenderParams & params)
+{
+  if (!this->isInitialized()) {
+    this->emitError("updatePickBuffer called before backend initialization");
+    return FALSE;
+  }
+  this->pickTarget.ready = false;
+  this->pickTarget.lookup.clear();
+  drawlist.buildPickLUT();
+  const SbVec2s size = params.viewport.getViewportSizePixels();
+  if (!this->ensurePickFramebuffer(size)) return FALSE;
+
+  this->updateGeometryCache(drawlist);
+
+  GLint previousFramebuffer = 0;
+  GLint previousProgram = 0;
+  GLint previousViewport[4] = { 0, 0, 0, 0 };
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
+  glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
+  glGetIntegerv(GL_VIEWPORT, previousViewport);
+
+  cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
+                              this->pickTarget.framebuffer);
+  glDrawBuffer(GL_COLOR_ATTACHMENT0);
+  glReadBuffer(GL_COLOR_ATTACHMENT0);
+  glViewport(0, 0, size[0], size[1]);
+  glDisable(GL_BLEND);
+  glDisable(GL_SCISSOR_TEST);
+  glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+  const GLuint zero = 0;
+  const GLfloat clearDepth = params.clearDepth;
+  this->glue->glClearBufferuiv(GL_COLOR, 0, &zero);
+  this->glue->glClearBufferfv(GL_DEPTH, 0, &clearDepth);
+
+  SbMat view;
+  SbMat projection;
+  params.viewMatrix.getValue(view);
+  params.projMatrix.getValue(projection);
+  const std::vector<SoPickLUTEntry> & lut = drawlist.getPickLUT();
+  for (int planIndex = 0; planIndex < plan.getNumDraws(); ++planIndex) {
+    const uint32_t commandIndex = plan.getDraw(planIndex).commandIndex;
+    if (commandIndex >= static_cast<uint32_t>(drawlist.getNumCommands())) {
+      this->emitError("pick plan references a missing DrawList command");
+      return FALSE;
+    }
+    for (size_t entryIndex = 0; entryIndex < lut.size();
+         ++entryIndex) {
+      const SoPickLUTEntry & entry = lut[entryIndex];
+      if (entry.commandIndex != static_cast<int>(commandIndex)) continue;
+      this->drawPickEntry(drawlist, entry,
+                          static_cast<GLuint>(entryIndex + 1),
+                          view, projection);
+    }
+  }
+
+  cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
+                              static_cast<GLuint>(previousFramebuffer));
+  cc_glglue_glUseProgram(this->glue, static_cast<GLuint>(previousProgram));
+  glViewport(previousViewport[0], previousViewport[1],
+             previousViewport[2], previousViewport[3]);
+
+  this->pickTarget.lookup = drawlist.getPickLUT();
+  this->pickTarget.generation = drawlist.getPickLUTGeneration();
+  this->pickTarget.ready = true;
+  return TRUE;
+}
+
+SbBool
+SoGLRenderBackend::pick(const int x, const int y, const int radius,
+                        SoPickResult & result) const
+{
+  result = SoPickResult();
+  if (!this->isInitialized() || !this->pickTarget.ready ||
+      radius < 0) return FALSE;
+
+  const int width = this->pickTarget.size[0];
+  const int height = this->pickTarget.size[1];
+  if (width <= 0 || height <= 0) return FALSE;
+  const int left = std::max(0, x - radius);
+  const int bottom = std::max(0, y - radius);
+  const int right = std::min(width - 1, x + radius);
+  const int top = std::min(height - 1, y + radius);
+  if (left > right || bottom > top) return FALSE;
+
+  GLint previousFramebuffer = 0;
+  glGetIntegerv(GL_FRAMEBUFFER_BINDING, &previousFramebuffer);
+  cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
+                              this->pickTarget.framebuffer);
+  glReadBuffer(GL_COLOR_ATTACHMENT0);
+  const int readWidth = right - left + 1;
+  const int readHeight = top - bottom + 1;
+  std::vector<GLuint> ids(static_cast<size_t>(readWidth) * readHeight, 0);
+  glReadPixels(left, bottom, readWidth, readHeight,
+               GL_RED_INTEGER, GL_UNSIGNED_INT, ids.data());
+  cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
+                              static_cast<GLuint>(previousFramebuffer));
+
+  GLuint bestId = 0;
+  int bestDistance = 0;
+  for (int row = 0; row < readHeight; ++row) {
+    for (int column = 0; column < readWidth; ++column) {
+      const GLuint id = ids[static_cast<size_t>(row) * readWidth + column];
+      if (!id) continue;
+      const int px = left + column;
+      const int py = bottom + row;
+      const int dx = px - x;
+      const int dy = py - y;
+      const int distance = dx * dx + dy * dy;
+      if (!bestId || distance < bestDistance) {
+        bestId = id;
+        bestDistance = distance;
+      }
+    }
+  }
+  if (!bestId) return FALSE;
+
+  if (bestId == 0 || bestId > this->pickTarget.lookup.size()) return FALSE;
+  const SoPickLUTEntry & entry = this->pickTarget.lookup[bestId - 1];
+  result.id = bestId;
+  result.commandIndex = entry.commandIndex;
+  result.type = entry.type;
+  result.elementIndex = entry.elementIndex;
+  return TRUE;
 }
 
 SbBool
