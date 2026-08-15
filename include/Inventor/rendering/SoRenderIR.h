@@ -489,8 +489,26 @@ struct SoPickData {
 struct SoPickResult {
   uint32_t id = 0;
   int commandIndex = -1;
+  SoNodeId nodeId = 0;
+  SoInstanceId instanceId = 0;
+  SoObjectId objectId = 0;
   SoPickElementType type = SO_PICK_OBJECT;
   int elementIndex = -1;
+};
+
+/*!
+  \struct SoPickLUTEntry
+  \brief Frame-local mapping from an integer pick ID to a command range.
+*/
+struct SoPickLUTEntry {
+  int commandIndex = -1;
+  SoNodeId nodeId = 0;
+  SoInstanceId instanceId = 0;
+  SoObjectId objectId = 0;
+  SoPickElementType type = SO_PICK_OBJECT;
+  int elementIndex = -1;
+  uint32_t drawStart = 0;
+  uint32_t drawCount = 0;
 };
 
 /*!
@@ -555,6 +573,7 @@ public:
   int getNumCommands() const;
   //! Remove commands beyond index count without reordering remaining commands.
   void truncate(int count);
+  //! Mutable access invalidates the frame-local pick lookup table.
   SoRenderCommand & getCommand(int i);
   const SoRenderCommand & getCommand(int i) const;
 
@@ -565,15 +584,26 @@ public:
   //! Returns NULL for handle 0 or an invalid handle.
   const SoLightingData * getLighting(SoLightingHandle handle) const;
 
+  //! Mutable iteration invalidates the frame-local pick lookup table.
   SoRenderCommand * begin();
   SoRenderCommand * end();
   const SoRenderCommand * begin() const;
   const SoRenderCommand * end() const;
 
+  //! Build the frame-local 1-based pick-ID lookup table.
+  void buildPickLUT() const;
+  //! Resolve a nonzero pick ID, or return NULL for an invalid/stale ID.
+  const SoPickLUTEntry * resolvePickId(uint32_t id) const;
+  //! Return the generation for which the current pick table was built.
+  uint32_t getPickLUTGeneration() const { return pickLUTGeneration; }
+  const std::vector<SoPickLUTEntry> & getPickLUT() const { return pickLUT; }
+
 private:
   std::vector<SoRenderCommand> commands;
   std::vector<SoLightingData> lightingSetups;
+  mutable std::vector<SoPickLUTEntry> pickLUT;
   uint32_t generation = 0;
+  mutable uint32_t pickLUTGeneration = 0;
 };
 
 #endif // COIN_SORENDERIR_H

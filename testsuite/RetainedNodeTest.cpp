@@ -77,6 +77,12 @@ runTest()
         action.getCommandPath(1) != NULL &&
         action.getCommandPath(1)->getTail() == secondCube,
         "retained commands did not preserve their producing scene paths", result);
+  action.getMutableDrawList().buildPickLUT();
+  check(action.getDrawList().getPickLUT().size() >= 2,
+        "pick lookup table did not assign object IDs to retained commands", result);
+  const SoPickLUTEntry * firstPick = action.getDrawList().resolvePickId(1);
+  check(firstPick != NULL && firstPick->commandIndex == 0,
+        "pick lookup table did not resolve the first command", result);
 
   SoPath * firstPath = new SoPath(root);
   firstPath->append(firstCube);

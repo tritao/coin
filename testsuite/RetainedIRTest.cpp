@@ -116,9 +116,52 @@ runTest()
 
   coloredRoot->unref();
 
+  action.getMutableDrawList().buildPickLUT();
+  if (action.getDrawList().getPickLUT().size() != 1 ||
+      action.getDrawList().resolvePickId(1) == NULL) {
+    std::cerr << "FAIL: retained pick lookup table did not resolve its command"
+              << std::endl;
+    result = 1;
+  }
+  const SoPickLUTEntry * pickEntry = action.getDrawList().resolvePickId(1);
+  if (!pickEntry || pickEntry->nodeId == 0 || pickEntry->instanceId == 0 ||
+      pickEntry->objectId != 0) {
+    std::cerr << "FAIL: retained pick entry conflated scene identities"
+              << std::endl;
+    result = 1;
+  }
+
+  SoSelectionState selection;
+  SoSelectionTarget selected;
+  selected.commandIndex = 0;
+  selected.nodeId = pickEntry ? pickEntry->nodeId : 0;
+  selected.instanceId = pickEntry ? pickEntry->instanceId : 0;
+  selected.objectId = 0x1234;
+  selected.type = SO_PICK_OBJECT;
+  selected.elementIndex = -1;
+  selected.color = SbColor4f(1.0f, 0.0f, 0.0f, 0.5f);
+  selection.selected.push_back(selected);
+  if (selection.selected.size() != 1 ||
+      selection.selected[0].commandIndex != 0 ||
+      selection.selected[0].nodeId != selected.nodeId ||
+      selection.selected[0].instanceId != selected.instanceId ||
+      selection.selected[0].objectId != selected.objectId ||
+      selection.selected[0].color[0] != 1.0f) {
+    std::cerr << "FAIL: selection target did not retain frame identity"
+              << std::endl;
+    result = 1;
+  }
+
+  action.getMutableDrawList().getCommand(0).pick.pickable = false;
+  action.getMutableDrawList().buildPickLUT();
+  if (!action.getDrawList().getPickLUT().empty()) {
+    std::cerr << "FAIL: non-pickable command entered the pick lookup table"
+              << std::endl;
+    result = 1;
+  }
   action.getMutableDrawList().clear();
-  if (action.getDrawList().getNumCommands() != 0) {
-    std::cerr << "FAIL: clearing a draw list retained stale commands" << std::endl;
+  if (action.getDrawList().resolvePickId(1) != NULL) {
+    std::cerr << "FAIL: clearing a draw list left a stale pick lookup" << std::endl;
     result = 1;
   }
 
