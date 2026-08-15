@@ -6,6 +6,7 @@
 #include <Inventor/lists/SoPathList.h>
 #include <Inventor/nodes/SoCube.h>
 #include <Inventor/nodes/SoNode.h>
+#include <Inventor/nodes/SoPickStyle.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoSubNode.h>
 
@@ -126,6 +127,24 @@ runTest()
   action.apply(static_cast<SoNode *>(probe));
   check(action.getDrawList().getNumCommands() == 0,
         "repeated apply() did not clear the previous frame", result);
+
+  SoSeparator * unpickableRoot = new SoSeparator;
+  unpickableRoot->ref();
+  SoPickStyle * unpickableStyle = new SoPickStyle;
+  unpickableStyle->style = SoPickStyle::UNPICKABLE;
+  unpickableRoot->addChild(unpickableStyle);
+  unpickableRoot->addChild(new SoCube);
+  action.apply(static_cast<SoNode *>(unpickableRoot));
+  bool allUnpickable = action.getDrawList().getNumCommands() > 0;
+  for (int i = 0; i < action.getDrawList().getNumCommands(); ++i) {
+    allUnpickable = allUnpickable &&
+      !action.getDrawList().getCommand(i).pick.pickable;
+  }
+  action.getMutableDrawList().buildPickLUT();
+  check(allUnpickable && action.getDrawList().getPickLUT().empty(),
+        "SoPickStyle::UNPICKABLE was not retained by DrawList commands",
+        result);
+  unpickableRoot->unref();
 
   probe->unref();
   root->unref();

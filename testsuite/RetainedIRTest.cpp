@@ -127,7 +127,7 @@ runTest()
               << std::endl;
     result = 1;
   }
-    action.getMutableDrawList().clear();
+  action.getMutableDrawList().clear();
   if (action.getDrawList().resolvePickId(1) != NULL) {
     std::cerr << "FAIL: clearing a draw list left a stale pick lookup" << std::endl;
     result = 1;
