@@ -73,9 +73,12 @@ public:
                         const SoRenderParams & params) = 0;
 
   //! Update the backend's explicit picking target for a retained frame.
+  //! Ordinary render() does not implicitly regenerate this target.
   virtual SbBool updatePickBuffer(const SoDrawList & drawlist,
+                                  const SoRenderPlan & plan,
                                   const SoRenderParams & params);
   //! Resolve a viewport-local pick query against the last explicit update.
+  //! The result is valid only for that retained frame/LUT snapshot.
   virtual SbBool pick(int x, int y, int radius, SoPickResult & result) const;
 
   SbBool isInitialized() const;

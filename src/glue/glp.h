@@ -223,6 +223,10 @@ typedef void (APIENTRY * COIN_PFNGLGETCOLORTABLEPARAMETERFVPROC)(GLenum target,
 
 /* Typedefs for glBlendEquation[EXT]. */
 typedef void *(APIENTRY * COIN_PFNGLBLENDEQUATIONPROC)(GLenum);
+typedef void (APIENTRY * COIN_PFNGLBLENDEQUATIONSEPARATEPROC)(GLenum, GLenum);
+
+/* Typedef for the unsigned integer uniform used by integer ID buffers. */
+typedef void (APIENTRY * COIN_PFNGLUNIFORM1UIPROC)(GLint, GLuint);
 
 /* Typedef for glBlendFuncSeparate */
 typedef void *(APIENTRY * COIN_PFNGLBLENDFUNCSEPARATEPROC)(GLenum, GLenum, GLenum, GLenum);
@@ -246,6 +250,15 @@ typedef void (APIENTRY * COIN_PFNGLARRAYELEMENTPROC)(GLint i);
 typedef void (APIENTRY * COIN_PFNGLBINDVERTEXARRAYPROC)(GLuint array);
 typedef void (APIENTRY * COIN_PFNGLDELETEVERTEXARRAYSPROC)(GLsizei n, const GLuint * arrays);
 typedef void (APIENTRY * COIN_PFNGLGENVERTEXARRAYSPROC)(GLsizei n, GLuint * arrays);
+
+/* Core framebuffer entry points which are not exported by the Windows
+   OpenGL 1.1 import library and may be absent from older platform headers. */
+typedef void (APIENTRY * COIN_PFNGLCLEARBUFFERUIVPROC)(GLenum buffer,
+                                                       GLint drawbuffer,
+                                                       const GLuint * value);
+typedef void (APIENTRY * COIN_PFNGLCLEARBUFFERFVPROC)(GLenum buffer,
+                                                      GLint drawbuffer,
+                                                      const GLfloat * value);
 
 typedef void (APIENTRY * COIN_PFNGLMULTIDRAWARRAYSPROC)(GLenum mode, const GLint * first,
                                                         const GLsizei * count, GLsizei primcount);
@@ -699,6 +712,7 @@ struct cc_glglue {
 
   COIN_PFNGLBLENDEQUATIONPROC glBlendEquation;
   COIN_PFNGLBLENDEQUATIONPROC glBlendEquationEXT;
+  COIN_PFNGLBLENDEQUATIONSEPARATEPROC glBlendEquationSeparate;
 
   COIN_PFNGLBLENDFUNCSEPARATEPROC glBlendFuncSeparate;
 
@@ -718,6 +732,9 @@ struct cc_glglue {
   COIN_PFNGLBINDVERTEXARRAYPROC glBindVertexArray;
   COIN_PFNGLDELETEVERTEXARRAYSPROC glDeleteVertexArrays;
   COIN_PFNGLGENVERTEXARRAYSPROC glGenVertexArrays;
+  COIN_PFNGLCLEARBUFFERUIVPROC glClearBufferuiv;
+  COIN_PFNGLCLEARBUFFERFVPROC glClearBufferfv;
+  COIN_PFNGLUNIFORM1UIPROC glUniform1ui;
 
   COIN_PFNGLMULTIDRAWARRAYSPROC glMultiDrawArrays;
   COIN_PFNGLMULTIDRAWELEMENTSPROC glMultiDrawElements;
