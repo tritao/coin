@@ -69,6 +69,18 @@ endforeach()
 # However, those folders are not in the repository.
 if(COIN_BUILD_LEGACY_GL_RENDERER)
 	create_file_test("models" "testCorrectFile" false "incorrect")
+	add_executable(SoText2RasterLayoutTest
+		SoText2RasterLayoutTest.cpp)
+	target_link_libraries(SoText2RasterLayoutTest Coin
+		${COIN_TARGET_LINK_LIBRARIES})
+	target_include_directories(SoText2RasterLayoutTest PRIVATE
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES})
+	add_test(NAME SoText2RasterLayoutTest
+		COMMAND SoText2RasterLayoutTest)
+	set_tests_properties(SoText2RasterLayoutTest
+		PROPERTIES SKIP_RETURN_CODE 77)
 else()
 	# ExtSelection is part of the legacy renderer and is not registered in
 	# core-only builds, so do not include scenes that require that node.

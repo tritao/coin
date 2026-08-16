@@ -101,7 +101,9 @@
 #include "coindefs.h"
 
 #include <climits>
+#include <cmath>
 #include <cstring>
+#include <vector>
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -214,6 +216,36 @@
   Default value is SoText2::LEFT.
 */
 
+struct SoTextRasterGlyph {
+  // Coverage for one glyph in the layer's raster coordinate system. The
+  // bitmap contains binary or antialiased coverage, never material color.
+  SbVec2s offset;
+  SbVec2s size;
+  const unsigned char * bitmap = NULL;
+};
+
+struct SoTextRasterResult {
+  // Shared text preparation keeps the historical binary glBitmap layer and
+  // antialiased pixel-buffer layer separate. LegacyGL and retained rendering
+  // consume this same result; execution policy stays in their adapters.
+  SbVec2f binaryOrigin;
+  SbVec2f antialiasedOrigin;
+  SbVec2s antialiasedSize;
+  SbBool hasAntialiasedGlyphs = FALSE;
+  std::vector<SoTextRasterGlyph> binaryGlyphs;
+  std::vector<SoTextRasterGlyph> antialiasedGlyphs;
+
+  void clear()
+  {
+    this->binaryOrigin.setValue(0.0f, 0.0f);
+    this->antialiasedOrigin.setValue(0.0f, 0.0f);
+    this->antialiasedSize.setValue(0, 0);
+    this->hasAntialiasedGlyphs = FALSE;
+    this->binaryGlyphs.clear();
+    this->antialiasedGlyphs.clear();
+  }
+};
+
 class SoText2P {
 public:
   SoText2P(SoText2 * textnode) : maxwidth(0), master(textnode)
@@ -225,6 +257,15 @@ public:
                  SbVec3f & v2, SbVec3f & v3);
   void flushGlyphCache();
   void buildGlyphCache(SoState * state);
+  SbBool getRasterResult(SoState * state, SoTextRasterResult & result);
+  void fillBinaryPixelBuffer(const SoTextRasterResult & result,
+                             unsigned char red, unsigned char green,
+                             unsigned char blue, unsigned int alpha,
+                             unsigned char * pixels) const;
+  void fillAntialiasedPixelBuffer(const SoTextRasterResult & result,
+                                  unsigned char red, unsigned char green,
+                                  unsigned char blue, unsigned int alpha,
+                                  unsigned char * pixels) const;
   SbBool shouldBuildGlyphCache(SoState * state);
   void dumpBuffer(unsigned char * buffer, SbVec2s size, SbVec2s pos, SbBool mono);
   void computeBBox(SoAction * action, SbBox3f & box, SbVec3f & center);
@@ -239,8 +280,7 @@ public:
   SoGlyphCache * cache;
   SoFieldSensor * spacingsensor;
   SoFieldSensor * stringsensor;
-  unsigned char * pixel_buffer;
-  int pixel_buffer_size;
+  std::vector<unsigned char> pixel_buffer;
 
   static void sensor_cb(void * userdata, SoSensor * COIN_UNUSED_ARG(s)) {
     SoText2P * thisp = (SoText2P*) userdata;
@@ -302,8 +342,6 @@ SoText2::SoText2(void)
   PRIVATE(this)->spacingsensor->attach(&this->spacing);
   PRIVATE(this)->spacingsensor->setPriority(0);
   PRIVATE(this)->cache = NULL;
-  PRIVATE(this)->pixel_buffer = NULL;
-  PRIVATE(this)->pixel_buffer_size = 0;
 }
 
 /*!
@@ -312,7 +350,6 @@ SoText2::SoText2(void)
 SoText2::~SoText2()
 {
   if (PRIVATE(this)->cache) PRIVATE(this)->cache->unref();
-  delete[] PRIVATE(this)->pixel_buffer;
   delete PRIVATE(this)->stringsensor;
   delete PRIVATE(this)->spacingsensor;
 
@@ -347,13 +384,17 @@ SoText2::GLRender(SoGLRenderAction * action)
   PRIVATE(this)->buildGlyphCache(state);
   SoCacheElement::addCacheDependency(state, PRIVATE(this)->cache);
 
-  const cc_font_specification * fontspec = PRIVATE(this)->cache->getCachedFontspec();
-
   // Render only if bbox not outside cull planes.
   SbBox3f box;
   SbVec3f center;
   PRIVATE(this)->computeBBox(action, box, center);
   if (!SoCullElement::cullTest(state, box, TRUE)) {
+    SoTextRasterResult raster;
+    if (!PRIVATE(this)->getRasterResult(state, raster)) {
+      PRIVATE(this)->unlock();
+      state->pop();
+      return;
+    }
     SoMaterialBundle mb(action);
     mb.sendFirst();
     SbVec3f nilpoint(0.0f, 0.0f, 0.0f);
@@ -367,22 +408,6 @@ SoText2::GLRender(SoGLRenderAction * action)
     nilpoint[0] = (nilpoint[0] + 1.0f) * 0.5f * vpsize[0];
     nilpoint[1] = (nilpoint[1] + 1.0f) * 0.5f * vpsize[1];
 
-    SbVec2s bbsize = PRIVATE(this)->bbox.getSize();
-    const SbVec2s& bbmin = PRIVATE(this)->bbox.getMin();
-    const SbVec2s& bbmax = PRIVATE(this)->bbox.getMax();
-
-    float textscreenoffsetx = nilpoint[0]+bbmin[0];
-    switch (this->justification.getValue()) {
-    case SoText2::LEFT:
-      break;
-    case SoText2::RIGHT:
-      textscreenoffsetx = nilpoint[0] + bbmin[0] - PRIVATE(this)->maxwidth;
-      break;
-    case SoText2::CENTER:
-      textscreenoffsetx = (nilpoint[0] + bbmin[0] - PRIVATE(this)->maxwidth / 2.0f);
-      break;
-    }
-
     // Set new state.
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
@@ -392,18 +417,6 @@ SoText2::GLRender(SoGLRenderAction * action)
     glLoadIdentity();
     glOrtho(0, vpsize[0], 0, vpsize[1], -1.0f, 1.0f);
     glPixelStorei(GL_UNPACK_ALIGNMENT,1);
-
-    float fontsize = SoFontSizeElement::get(state);
-    int xpos = 0;
-    int ypos = 0;
-    int rasterx, rastery;
-    int ix=0, iy=0;
-    int bitmappos[2];
-    int bitmapsize[2];
-    const unsigned char * buffer = NULL;
-    cc_glyph2d * prevglyph = NULL;
-
-    const int nrlines = this->string.getNum();
 
     // get the current diffuse color
     const SbColor & diffuse = SoLazyElement::getDiffuse(state, 0);
@@ -420,132 +433,35 @@ SoText2::GLRender(SoGLRenderAction * action)
     glPushAttrib(GL_ENABLE_BIT | GL_PIXEL_MODE_BIT | GL_COLOR_BUFFER_BIT);
     glPushClientAttrib(GL_CLIENT_PIXEL_STORE_BIT);
 
-    SbBool drawPixelBuffer = FALSE;
-
-    for (int i = 0; i < nrlines; i++) {
-      SbString str = this->string[i];
-      switch (this->justification.getValue()) {
-      case SoText2::LEFT:
-        xpos = 0;
-        break;
-      case SoText2::RIGHT:
-        xpos = PRIVATE(this)->maxwidth - PRIVATE(this)->stringwidth[i];
-        break;
-      case SoText2::CENTER:
-        xpos = (PRIVATE(this)->maxwidth - PRIVATE(this)->stringwidth[i]) / 2;
-        break;
-      }
-
-      int kerningx = 0;
-      int kerningy = 0;
-      int advancex = 0;
-      int advancey = 0;
-
-      const char * p = str.getString();
-      size_t length = cc_string_utf8_validate_length(p);
-
-      for (unsigned int strcharidx = 0; strcharidx < length; strcharidx++) {
-        uint32_t glyphidx = 0;
-
-        glyphidx = cc_string_utf8_get_char(p);
-        p = cc_string_utf8_next_char(p);
-
-        cc_glyph2d * glyph = cc_glyph2d_ref(glyphidx, fontspec, 0.0f);
-
-        buffer = cc_glyph2d_getbitmap(glyph, bitmapsize, bitmappos);
-
-        ix = bitmapsize[0];
-        iy = bitmapsize[1];
-
-        // Advance & Kerning
-        if (strcharidx > 0)
-          cc_glyph2d_getkerning(prevglyph, glyph, &kerningx, &kerningy);
-        cc_glyph2d_getadvance(glyph, &advancex, &advancey);
-
-        rasterx = xpos + kerningx + bitmappos[0];
-        rastery = ypos + (bitmappos[1] - bitmapsize[1]);
-
-        if (buffer) {
-          if (cc_glyph2d_getmono(glyph)) {
-            SoText2P::setRasterPos3f((float)rasterx + textscreenoffsetx, (float)rastery + (int)nilpoint[1], -nilpoint[2]);
-            glBitmap(ix,iy,0,0,0,0,(const GLubyte *)buffer);
-          }
-          else {
-            if (!drawPixelBuffer) {
-              int numpixels = bbsize[0] * bbsize[1];
-              if (numpixels > PRIVATE(this)->pixel_buffer_size) {
-                delete[] PRIVATE(this)->pixel_buffer;
-                PRIVATE(this)->pixel_buffer = new unsigned char[numpixels*4];
-                PRIVATE(this)->pixel_buffer_size = numpixels;
-              }
-              memset(PRIVATE(this)->pixel_buffer, 0, numpixels * 4);
-              drawPixelBuffer = TRUE;
-            }
-
-            int memx = rasterx - bbmin[0];
-            int memy = bbsize[1] - (bbmax[1] - rastery - 1) - 1;
-
-            if (memx >= 0 && memx + bitmapsize[0] <= bbsize[0] &&
-                memy >= 0 && memy + bitmapsize[1] <= bbsize[1]) {
-
-              unsigned char * dst = PRIVATE(this)->pixel_buffer + (memy * bbsize[0] + memx) * 4;
-              const unsigned char * src = buffer;
-              int nextlineoffset = (bbsize[0] - bitmapsize[0]) * 4;
-
-              // Ouch. This must lead to pretty slow rendering
-              for (int y = 0; y < iy; y++) {
-                for (int x = 0; x < ix; x++) {
-                  *dst++ = red; *dst++ = green; *dst++ = blue;
-                  // alpha from the gray level pixel value, blended with current value (because glyph bitmaps can overlap)
-                  int srcval = *src;
-                  int oldval = *dst;
-                  *dst = ((oldval * (256 - srcval) + alpha * srcval) >> 8);
-                  src++; dst++;
-                }
-                dst += nextlineoffset;
-              }
-            } else {
-              static SbBool once = TRUE;
-              if (once) {
-                SoDebugError::post("SoText2::GLRender",
-                                   "Unable to copy glyph to memory buffer. Position [%d,%d], size [%d,%d], buffer size [%d,%d]",
-                                   memx, memy, bitmapsize[0], bitmapsize[1], bbsize[0], bbsize[1]);
-                once = FALSE;
-              }
-            }
-          }
-        }
-
-        xpos += (advancex + kerningx);
-
-        if (prevglyph) {
-          // should be safe to unref here. SoGlyphCache will have a
-          // ref'ed instance
-          cc_glyph2d_unref(prevglyph);
-        }
-        prevglyph = glyph;
-      }
-
-      ypos -= (int)(((int) fontsize) * this->spacing.getValue());
+    for (const SoTextRasterGlyph & glyph : raster.binaryGlyphs) {
+      SoText2P::setRasterPos3f(
+        raster.binaryOrigin[0] + glyph.offset[0],
+        raster.binaryOrigin[1] + glyph.offset[1],
+        -nilpoint[2]);
+      glBitmap(glyph.size[0], glyph.size[1], 0, 0, 0, 0,
+               static_cast<const GLubyte *>(glyph.bitmap));
     }
 
-    if (prevglyph) {
-      // should be safe to unref here. SoGlyphCache will have a ref'ed
-      // instance
-      cc_glyph2d_unref(prevglyph);
-    }
-
-    if (drawPixelBuffer) {
+    if (raster.hasAntialiasedGlyphs) {
+      const size_t pixelBytes =
+        static_cast<size_t>(raster.antialiasedSize[0]) *
+        static_cast<size_t>(raster.antialiasedSize[1]) * 4;
+      PRIVATE(this)->pixel_buffer.resize(pixelBytes);
+      PRIVATE(this)->fillAntialiasedPixelBuffer(
+        raster, red, green, blue, alpha,
+        PRIVATE(this)->pixel_buffer.data());
       glEnable(GL_ALPHA_TEST);
       glAlphaFunc(GL_GREATER, 0.3f);
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
       glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-
-      rastery = (int)floor(nilpoint[1]+0.5) - bbsize[1] + bbmax[1];
-
-      SoText2P::setRasterPos3f((GLfloat)floor(textscreenoffsetx+0.5), (GLfloat)rastery, -nilpoint[2]);
-      glDrawPixels(bbsize[0], bbsize[1], GL_RGBA, GL_UNSIGNED_BYTE, (const GLubyte *)PRIVATE(this)->pixel_buffer);
+      SoText2P::setRasterPos3f(raster.antialiasedOrigin[0],
+                               raster.antialiasedOrigin[1],
+                               -nilpoint[2]);
+      glDrawPixels(raster.antialiasedSize[0], raster.antialiasedSize[1], GL_RGBA,
+                   GL_UNSIGNED_BYTE,
+                   static_cast<const GLubyte *>(
+                     PRIVATE(this)->pixel_buffer.data()));
     }
 
     // pop old state
@@ -795,6 +711,199 @@ SoText2P::getQuad(SoState * state, SbVec3f & v0, SbVec3f & v1,
   inv.multVecMatrix(v3, v3);
 
   return TRUE;
+}
+
+SbBool
+SoText2P::getRasterResult(SoState * state, SoTextRasterResult & result)
+{
+  result.clear();
+  if (!state) return FALSE;
+
+  this->buildGlyphCache(state);
+
+  const SbVec2s size = this->bbox.getSize();
+  if (size[0] <= 0 || size[1] <= 0) return FALSE;
+
+  SbVec3f nilpoint(0.0f, 0.0f, 0.0f);
+  const SbMatrix & model = SoModelMatrixElement::get(state);
+  const SbMatrix projection = model * SoViewingMatrixElement::get(state) *
+    SoProjectionMatrixElement::get(state);
+  projection.multVecMatrix(nilpoint, nilpoint);
+
+  const SbVec2s viewportSize =
+    SoViewportRegionElement::get(state).getViewportSizePixels();
+  const float screenx = (nilpoint[0] + 1.0f) * 0.5f * viewportSize[0];
+  const float screeny = (nilpoint[1] + 1.0f) * 0.5f * viewportSize[1];
+  const SbVec2s & bbmin = this->bbox.getMin();
+  const SbVec2s & bbmax = this->bbox.getMax();
+
+  float textscreenoffsetx = screenx + bbmin[0];
+  switch (PUBLIC(this)->justification.getValue()) {
+  case SoText2::RIGHT:
+    textscreenoffsetx = screenx + bbmin[0] - this->maxwidth;
+    break;
+  case SoText2::CENTER:
+    textscreenoffsetx = screenx + bbmin[0] - this->maxwidth / 2.0f;
+    break;
+  case SoText2::LEFT:
+  default:
+    break;
+  }
+
+  result.binaryOrigin.setValue(
+    textscreenoffsetx + static_cast<float>(bbmin[0]),
+    static_cast<float>(static_cast<int>(screeny)) - size[1] + bbmax[1]);
+  result.antialiasedOrigin.setValue(
+    std::floor(textscreenoffsetx + 0.5f),
+    std::floor(screeny + 0.5f) - size[1] + bbmax[1]);
+  result.antialiasedSize = size;
+  const cc_font_specification * fontspec = this->cache->getCachedFontspec();
+  const int lineCount = PUBLIC(this)->string.getNum();
+  for (int line = 0; line < lineCount; ++line) {
+    int lineOffset = 0;
+    switch (PUBLIC(this)->justification.getValue()) {
+    case SoText2::RIGHT:
+      lineOffset = this->maxwidth - this->stringwidth[line];
+      break;
+    case SoText2::CENTER:
+      lineOffset = (this->maxwidth - this->stringwidth[line]) / 2;
+      break;
+    case SoText2::LEFT:
+    default:
+      break;
+    }
+
+    const char * p = PUBLIC(this)->string[line].getString();
+    const size_t length = cc_string_utf8_validate_length(p);
+    const int positionCount = this->positions[line].getLength();
+    for (size_t character = 0;
+         character < length && character < static_cast<size_t>(positionCount);
+         ++character) {
+      const uint32_t glyphIndex = cc_string_utf8_get_char(p);
+      p = cc_string_utf8_next_char(p);
+      cc_glyph2d * glyph = cc_glyph2d_ref(glyphIndex, fontspec, 0.0f);
+      if (!glyph) continue;
+
+      int bitmapSize[2];
+      int bitmapOffset[2];
+      const unsigned char * bitmap = cc_glyph2d_getbitmap(
+        glyph, bitmapSize, bitmapOffset);
+      if (bitmap) {
+        const SbVec2s & position =
+          this->positions[line][static_cast<int>(character)];
+        const int rasterX = lineOffset + position[0];
+        const int offsetX = rasterX - bbmin[0];
+        const int offsetY = size[1] - bbmax[1] + position[1];
+        const bool mono = cc_glyph2d_getmono(glyph) != 0;
+        if (mono) {
+          SoTextRasterGlyph rasterGlyph;
+          rasterGlyph.offset.setValue(static_cast<short>(offsetX),
+                                      static_cast<short>(offsetY));
+          rasterGlyph.size.setValue(static_cast<short>(bitmapSize[0]),
+                                    static_cast<short>(bitmapSize[1]));
+          rasterGlyph.bitmap = bitmap;
+          result.binaryGlyphs.push_back(rasterGlyph);
+        }
+        else {
+          result.hasAntialiasedGlyphs = TRUE;
+          if (offsetX >= 0 && offsetY >= 0 &&
+              offsetX + bitmapSize[0] <= size[0] &&
+              offsetY + bitmapSize[1] <= size[1]) {
+            SoTextRasterGlyph rasterGlyph;
+            rasterGlyph.offset.setValue(static_cast<short>(offsetX),
+                                        static_cast<short>(offsetY));
+            rasterGlyph.size.setValue(static_cast<short>(bitmapSize[0]),
+                                      static_cast<short>(bitmapSize[1]));
+            rasterGlyph.bitmap = bitmap;
+            result.antialiasedGlyphs.push_back(rasterGlyph);
+          }
+          else {
+            static SbBool once = TRUE;
+            if (once) {
+              SoDebugError::post(
+                "SoText2::GLRender",
+                "Unable to copy glyph to memory buffer. Position [%d,%d], size [%d,%d], buffer size [%d,%d]",
+                offsetX, offsetY, bitmapSize[0], bitmapSize[1],
+                size[0], size[1]);
+              once = FALSE;
+            }
+          }
+        }
+      }
+      cc_glyph2d_unref(glyph);
+    }
+  }
+  return TRUE;
+}
+
+void
+SoText2P::fillBinaryPixelBuffer(const SoTextRasterResult & result,
+                                 const unsigned char red,
+                                 const unsigned char green,
+                                 const unsigned char blue,
+                                 const unsigned int alpha,
+                                 unsigned char * pixels) const
+{
+  if (!pixels || result.antialiasedSize[0] <= 0 || result.antialiasedSize[1] <= 0) return;
+  const size_t pixelCount = static_cast<size_t>(result.antialiasedSize[0]) *
+    static_cast<size_t>(result.antialiasedSize[1]);
+  std::memset(pixels, 0, pixelCount * 4);
+
+  for (const SoTextRasterGlyph & glyph : result.binaryGlyphs) {
+    const size_t rowBytes = static_cast<size_t>(glyph.size[0] + 7) / 8;
+    for (int y = 0; y < glyph.size[1]; ++y) {
+      for (int x = 0; x < glyph.size[0]; ++x) {
+        if (!glyph.bitmap ||
+            !(glyph.bitmap[static_cast<size_t>(y) * rowBytes + x / 8] &
+              (0x80u >> (x & 7)))) continue;
+        const int dstx = glyph.offset[0] + x;
+        const int dsty = glyph.offset[1] + y;
+        if (dstx < 0 || dstx >= result.antialiasedSize[0] ||
+            dsty < 0 || dsty >= result.antialiasedSize[1]) continue;
+        unsigned char * pixel = pixels +
+          (static_cast<size_t>(dsty) * result.antialiasedSize[0] + dstx) * 4;
+        pixel[0] = red;
+        pixel[1] = green;
+        pixel[2] = blue;
+        pixel[3] = static_cast<unsigned char>((alpha * 255u) >> 8);
+      }
+    }
+  }
+}
+
+void
+SoText2P::fillAntialiasedPixelBuffer(const SoTextRasterResult & result,
+                                     const unsigned char red,
+                                     const unsigned char green,
+                                     const unsigned char blue,
+                                     const unsigned int alpha,
+                                     unsigned char * pixels) const
+{
+  if (!pixels || result.antialiasedSize[0] <= 0 || result.antialiasedSize[1] <= 0) return;
+  const size_t pixelCount = static_cast<size_t>(result.antialiasedSize[0]) *
+    static_cast<size_t>(result.antialiasedSize[1]);
+  std::memset(pixels, 0, pixelCount * 4);
+  for (const SoTextRasterGlyph & glyph : result.antialiasedGlyphs) {
+    for (int y = 0; y < glyph.size[1]; ++y) {
+      for (int x = 0; x < glyph.size[0]; ++x) {
+        const int dstx = glyph.offset[0] + x;
+        const int dsty = glyph.offset[1] + y;
+        if (dstx < 0 || dstx >= result.antialiasedSize[0] ||
+            dsty < 0 || dsty >= result.antialiasedSize[1]) continue;
+        unsigned char * pixel = pixels +
+          (static_cast<size_t>(dsty) * result.antialiasedSize[0] + dstx) * 4;
+        pixel[0] = red;
+        pixel[1] = green;
+        pixel[2] = blue;
+        if (!glyph.bitmap) continue;
+        const unsigned int sourceAlpha = glyph.bitmap[
+          static_cast<size_t>(y) * glyph.size[0] + x];
+        const unsigned int oldAlpha = pixel[3];
+        pixel[3] = static_cast<unsigned char>(
+          (oldAlpha * (256u - sourceAlpha) + alpha * sourceAlpha) >> 8);
+      }
+    }
+  }
 }
 
 // Debug convenience method.

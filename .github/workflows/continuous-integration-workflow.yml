@@ -95,6 +95,9 @@ jobs:
         if: matrix.renderer_state == 'enabled'
         run: xvfb-run -a ctest --test-dir cmake_build_dir_rt \
           -L visual-material --output-on-failure -VV
+      - name: Run text visual suite
+        run: xvfb-run -a ctest --test-dir cmake_build_dir_rt \
+          -L visual-text --output-on-failure -VV
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
