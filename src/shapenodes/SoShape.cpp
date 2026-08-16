@@ -51,6 +51,7 @@ class SoVBO;
 #include <Inventor/elements/SoVertexAttributeElement.h>
 
 #include "elements/SoLazyElementP.h"
+#include "shapenodes/SoShapeGLRenderP.h"
 
 #include <cstring>
 #include <cstdlib>
@@ -883,75 +884,111 @@ SoShape::getComplexityValue(SoAction * action)
 SbBool
 SoShape::shouldGLRender(SoGLRenderAction * action)
 {
+  SoShapeGLRenderContext context;
+  const SoShapeGLRenderDecision decision =
+    SoShapeGLRender::begin(this, action, context);
+  if (decision == SoShapeGLRenderDecision::RenderShape) return TRUE;
+  if (decision == SoShapeGLRenderDecision::Stop) return FALSE;
+  if (!SoShapeGLRender::sortTriangles(this, action, context)) return FALSE;
+  return SoShapeGLRender::finish(this, action, context);
+}
+
+SoShapeGLRenderDecision
+SoShapeGLRender::begin(SoShape * shape, SoGLRenderAction * action,
+                       SoShapeGLRenderContext & context)
+{
   SoState * state = action->getState();
 
   const SoShapeStyleElement * shapestyle = SoShapeStyleElement::get(state);
-  unsigned int shapestyleflags = shapestyle->getFlags();
+  const unsigned int shapestyleflags = shapestyle->getFlags();
+  context.shapeStyleFlags = shapestyleflags;
+  context.transparent = (shapestyleflags &
+                         (SoShapeStyleElement::TRANSP_TEXTURE |
+                          SoShapeStyleElement::TRANSP_MATERIAL)) != 0;
 
   if (shapestyleflags & SoShapeStyleElement::INVISIBLE)
-    return FALSE;
+    return SoShapeGLRenderDecision::Stop;
 
-  if (PRIVATE(this)->bboxcache && !state->isCacheOpen() && !SoCullElement::completelyInside(state)) {
-    if (PRIVATE(this)->bboxcache->isValid(state)) {
-      if (SoCullElement::cullTest(state, PRIVATE(this)->bboxcache->getProjectedBox())) {
-        return FALSE;
+  if (PRIVATE(shape)->bboxcache && !state->isCacheOpen() &&
+      !SoCullElement::completelyInside(state)) {
+    if (PRIVATE(shape)->bboxcache->isValid(state)) {
+      if (SoCullElement::cullTest(state,
+                                  PRIVATE(shape)->bboxcache->getProjectedBox())) {
+        return SoShapeGLRenderDecision::Stop;
       }
     }
   }
-
-  SbBool transparent = (shapestyleflags & (SoShapeStyleElement::TRANSP_TEXTURE|
-                                           SoShapeStyleElement::TRANSP_MATERIAL)) != 0;
 
   if (shapestyleflags & SoShapeStyleElement::SHADOWMAP) {
-    if (transparent) return FALSE;
+    if (context.transparent) return SoShapeGLRenderDecision::Stop;
     int style = SoShadowStyleElement::get(state);
-    if (style & SoShadowStyleElement::CASTS_SHADOW) return TRUE;
-    return FALSE;
+    if (style & SoShadowStyleElement::CASTS_SHADOW) {
+      return SoShapeGLRenderDecision::RenderShape;
+    }
+    return SoShapeGLRenderDecision::Stop;
   }
 
-  if (action->handleTransparency(transparent))
-    return FALSE;
+  if (action->handleTransparency(context.transparent))
+    return SoShapeGLRenderDecision::Stop;
 
   if (shapestyleflags & SoShapeStyleElement::BBOXCMPLX) {
-    this->GLRenderBoundingBox(action);
-    return FALSE;
+    shape->GLRenderBoundingBox(action);
+    return SoShapeGLRenderDecision::Stop;
   }
 
-  // test if we should sort triangles before rendering
-  if (transparent && (shapestyleflags & SoShapeStyleElement::TRANSP_SORTED_TRIANGLES)) {
-    // lock since pvcache is shared among all threads
-    PRIVATE(this)->lock();
-    this->validatePVCache(action);
+  return SoShapeGLRenderDecision::Continue;
+}
 
-    int arrays = SoPrimitiveVertexCache::NORMAL|SoPrimitiveVertexCache::COLOR;
-    SoGLMultiTextureImageElement::Model model;
-    SbColor blendcolor;
-    SoGLImage * glimage = SoGLMultiTextureImageElement::get(state, 0, model, blendcolor);
-    if (glimage) arrays |= SoPrimitiveVertexCache::TEXCOORD;
+SbBool
+SoShapeGLRender::sortTriangles(SoShape * shape, SoGLRenderAction * action,
+                               const SoShapeGLRenderContext & context)
+{
+  if (!context.transparent ||
+      !(context.shapeStyleFlags & SoShapeStyleElement::TRANSP_SORTED_TRIANGLES)) {
+    return TRUE;
+  }
 
-    SoMaterialBundle mb(action);
-    mb.sendFirst();
-    PRIVATE(this)->setupShapeHints(this, state);
-    PRIVATE(this)->pvcache->depthSortTriangles(state);
-    PRIVATE(this)->pvcache->renderTriangles(state, arrays);
-    if (PRIVATE(this)->pvcache->getNumLineIndices() ||
-        PRIVATE(this)->pvcache->getNumPointIndices()) {
-      const SoNormalElement * nelem = SoNormalElement::getInstance(state);
-      if (nelem->getNum() == 0) {
-        glPushAttrib(GL_LIGHTING_BIT);
-        glDisable(GL_LIGHTING);
-        arrays &= SoPrimitiveVertexCache::NORMAL;
-      }
-      PRIVATE(this)->pvcache->renderLines(state, arrays);
-      PRIVATE(this)->pvcache->renderPoints(state, arrays);
+  SoState * state = action->getState();
+  // lock since pvcache is shared among all threads
+  PRIVATE(shape)->lock();
+  shape->validatePVCache(action);
 
-      if (nelem->getNum() == 0) {
-        glPopAttrib();
-      }
+  int arrays = SoPrimitiveVertexCache::NORMAL|SoPrimitiveVertexCache::COLOR;
+  SoGLMultiTextureImageElement::Model model;
+  SbColor blendcolor;
+  SoGLImage * glimage = SoGLMultiTextureImageElement::get(state, 0, model, blendcolor);
+  if (glimage) arrays |= SoPrimitiveVertexCache::TEXCOORD;
+
+  SoMaterialBundle mb(action);
+  mb.sendFirst();
+  PRIVATE(shape)->setupShapeHints(shape, state);
+  PRIVATE(shape)->pvcache->depthSortTriangles(state);
+  PRIVATE(shape)->pvcache->renderTriangles(state, arrays);
+  if (PRIVATE(shape)->pvcache->getNumLineIndices() ||
+      PRIVATE(shape)->pvcache->getNumPointIndices()) {
+    const SoNormalElement * nelem = SoNormalElement::getInstance(state);
+    if (nelem->getNum() == 0) {
+      glPushAttrib(GL_LIGHTING_BIT);
+      glDisable(GL_LIGHTING);
+      arrays &= SoPrimitiveVertexCache::NORMAL;
     }
-    PRIVATE(this)->unlock();
-    return FALSE; // tell shape _not_ to render
+    PRIVATE(shape)->pvcache->renderLines(state, arrays);
+    PRIVATE(shape)->pvcache->renderPoints(state, arrays);
+
+    if (nelem->getNum() == 0) {
+      glPopAttrib();
+    }
   }
+  PRIVATE(shape)->unlock();
+  return FALSE;
+}
+
+SbBool
+SoShapeGLRender::finish(SoShape * shape, SoGLRenderAction * action,
+                        const SoShapeGLRenderContext & context)
+{
+  SoState * state = action->getState();
+  const unsigned int shapestyleflags = context.shapeStyleFlags;
 
   if (shapestyleflags & SoShapeStyleElement::BIGIMAGE) {
     SoGLMultiTextureImageElement::Model model;
@@ -983,10 +1020,10 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
       soshape_bigtexture * bigtex = soshape_get_bigtexture(shapedata, action->getCacheContext());
       shapedata->currentbigtexture = bigtex;
       bigtex->beginShape(big, SoTextureQualityElement::get(state));
-      this->generatePrimitives(action);
+      shape->generatePrimitives(action);
       // endShape() returns whether more/less detailed textures need to be
       // fetched. We force a redraw if this is needed.
-      if (bigtex->endShape(state, this, mb) == FALSE) {
+      if (bigtex->endShape(state, shape, mb) == FALSE) {
         action->getCurPath()->getHead()->touch();
       }
       shapedata->rendermode = NORMAL;
@@ -1001,13 +1038,13 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
     const SoNodeList & lights = SoLightElement::getLights(state);
     if (lights.getLength()) {
       // lock since bumprender and pvcache is shared among all threads
-      PRIVATE(this)->lock();
-      if (PRIVATE(this)->bumprender == NULL) {
-        PRIVATE(this)->bumprender = new soshape_bumprender;
+      PRIVATE(shape)->lock();
+      if (PRIVATE(shape)->bumprender == NULL) {
+        PRIVATE(shape)->bumprender = new soshape_bumprender;
       }
-      this->validatePVCache(action);
-      if (PRIVATE(this)->pvcache->getNumTriangleIndices() == 0) {
-        PRIVATE(this)->unlock();
+      shape->validatePVCache(action);
+      if (PRIVATE(shape)->pvcache->getNumTriangleIndices() == 0) {
+        PRIVATE(shape)->unlock();
         return TRUE;
       }
       SoGLLazyElement::getInstance(state)->send(state, SoLazyElement::ALL_MASK);
@@ -1017,7 +1054,7 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
       glDisable(GL_LIGHTING);
 
       glColor3f(1.0f, 1.0f, 1.0f);
-      PRIVATE(this)->setupShapeHints(this, state);
+      PRIVATE(shape)->setupShapeHints(shape, state);
       const int numlights = lights.getLength();
       for (int i = 0; i < numlights; i++) {
         // fetch matrix that convert the light from its object space
@@ -1037,7 +1074,7 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
         //
         // FIXME: about the above comment; i don't see any locking...?
         // -mortene.
-        PRIVATE(this)->bumprender->renderBump(state, PRIVATE(this)->pvcache,
+        PRIVATE(shape)->bumprender->renderBump(state, PRIVATE(shape)->pvcache,
                                               (SoLight*) lights[i], m);
 
         if (i == 0) glEnable(GL_BLEND);
@@ -1054,8 +1091,8 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
                                                  SoLazyElement::DIFFUSE_MASK);
       SoMaterialBundle mb(action);
       mb.sendFirst();
-      PRIVATE(this)->setupShapeHints(this, state);
-      PRIVATE(this)->bumprender->renderNormal(state, PRIVATE(this)->pvcache);
+      PRIVATE(shape)->setupShapeHints(shape, state);
+      PRIVATE(shape)->bumprender->renderNormal(state, PRIVATE(shape)->pvcache);
 
       const SbColor spec = SoLazyElement::getSpecular(state);
       if (spec[0] != 0 || spec[1] != 0 || spec[2] != 0) { // Is the spec. color black?
@@ -1075,7 +1112,7 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
               SoViewingMatrixElement::get(state);
             m = m.inverse();
             m.multLeft(lm);
-            PRIVATE(this)->bumprender->renderBumpSpecular(state, PRIVATE(this)->pvcache,
+            PRIVATE(shape)->bumprender->renderBumpSpecular(state, PRIVATE(shape)->pvcache,
                                                           (SoLight*) lights[i], m);
           }
         }
@@ -1083,7 +1120,7 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
       }
 
 
-      PRIVATE(this)->unlock();
+      PRIVATE(shape)->unlock();
 
       glPopAttrib();
       // we used two units in the bumpmap code
@@ -1100,9 +1137,9 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
 
   if (shapestyleflags & SoShapeStyleElement::VERTEXARRAY) {
     // lock since pvcache is shared among all threads
-    PRIVATE(this)->lock();
-    this->validatePVCache(action);
-    PRIVATE(this)->unlock();
+    PRIVATE(shape)->lock();
+    shape->validatePVCache(action);
+    PRIVATE(shape)->unlock();
 
     SoGLCacheContextElement::shouldAutoCache(state,
                                              SoGLCacheContextElement::DONT_AUTO_CACHE);
@@ -1113,18 +1150,18 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
     if (glimage) arrays |= SoPrimitiveVertexCache::TEXCOORD;
     SoMaterialBundle mb(action);
     mb.sendFirst();
-    PRIVATE(this)->setupShapeHints(this, state);
-    PRIVATE(this)->pvcache->renderTriangles(state, arrays);
-    if (PRIVATE(this)->pvcache->getNumLineIndices() ||
-        PRIVATE(this)->pvcache->getNumPointIndices()) {
+    PRIVATE(shape)->setupShapeHints(shape, state);
+    PRIVATE(shape)->pvcache->renderTriangles(state, arrays);
+    if (PRIVATE(shape)->pvcache->getNumLineIndices() ||
+        PRIVATE(shape)->pvcache->getNumPointIndices()) {
       const SoNormalElement * nelem = SoNormalElement::getInstance(state);
       if (nelem->getNum() == 0) {
         glPushAttrib(GL_LIGHTING_BIT);
         glDisable(GL_LIGHTING);
         arrays &= SoPrimitiveVertexCache::NORMAL;
       }
-      PRIVATE(this)->pvcache->renderLines(state, arrays);
-      PRIVATE(this)->pvcache->renderPoints(state, arrays);
+      PRIVATE(shape)->pvcache->renderLines(state, arrays);
+      PRIVATE(shape)->pvcache->renderPoints(state, arrays);
 
       if (nelem->getNum() == 0) {
         glPopAttrib();
@@ -1138,11 +1175,11 @@ SoShape::shouldGLRender(SoGLRenderAction * action)
   SoMaterialBundle mb(action);
   mb.sendFirst();
   soshape_get_staticdata()->currentbundle = &mb;  // needed in the primitive callbacks
-  this->generatePrimitives(action);
+  shape->generatePrimitives(action);
   return FALSE;
 #else // generatePrimitives() rendering
-  if (PRIVATE(this)->rendercnt < ((1<<SoShapeP::RENDERCNT_BITS)-1)) {
-    PRIVATE(this)->rendercnt++;
+  if (PRIVATE(shape)->rendercnt < ((1<<SoShapeP::RENDERCNT_BITS)-1)) {
+    PRIVATE(shape)->rendercnt++;
   }
   return TRUE; // let the shape node render the geometry using OpenGL
 #endif // ! generatePrimitives() rendering

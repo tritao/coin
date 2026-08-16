@@ -148,6 +148,31 @@ target_include_directories(LegacyBlendingTest PRIVATE
 )
 add_test(NAME LegacyBlendingTest COMMAND LegacyBlendingTest)
 
+if(COIN_BUILD_LEGACY_GL_RENDERER AND HAVE_EGL)
+	add_executable(LegacyDirectRasterTransparencyTest
+		LegacyDirectRasterTransparencyTest.cpp)
+	target_link_libraries(LegacyDirectRasterTransparencyTest Coin
+		${COIN_TARGET_LINK_LIBRARIES})
+	target_include_directories(LegacyDirectRasterTransparencyTest PRIVATE
+		${PROJECT_SOURCE_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES})
+	add_test(NAME LegacyDirectRasterTransparencyTest
+		COMMAND LegacyDirectRasterTransparencyTest)
+	set_tests_properties(LegacyDirectRasterTransparencyTest
+		PROPERTIES SKIP_RETURN_CODE 77)
+	add_executable(LegacyShapeGatingOrderTest
+		LegacyShapeGatingOrderTest.cpp)
+	target_link_libraries(LegacyShapeGatingOrderTest Coin
+		${COIN_TARGET_LINK_LIBRARIES})
+	target_include_directories(LegacyShapeGatingOrderTest PRIVATE
+		${PROJECT_SOURCE_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES})
+	add_test(NAME LegacyShapeGatingOrderTest
+		COMMAND LegacyShapeGatingOrderTest)
+	set_tests_properties(LegacyShapeGatingOrderTest
+		PROPERTIES SKIP_RETURN_CODE 77)
+endif()
+
 add_executable(RetainedIRTest RetainedIRTest.cpp)
 target_link_libraries(RetainedIRTest Coin ${COIN_TARGET_LINK_LIBRARIES})
 target_include_directories(RetainedIRTest PRIVATE
