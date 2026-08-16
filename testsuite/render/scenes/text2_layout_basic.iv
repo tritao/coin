@@ -1,0 +1,38 @@
+#Inventor V2.1 ascii
+
+Separator {
+  OrthographicCamera {
+    position 0 0 5
+    height 4.5
+    nearDistance 0.1
+    farDistance 20
+  }
+  LightModel { model BASE_COLOR }
+
+  Separator {
+    Translation { translation -1.6 1.2 0 }
+    Material { diffuseColor 0.95 0.25 0.15 }
+    Text2 {
+      string [ "LEFT ALIGNED", "short" ]
+      justification LEFT
+    }
+  }
+
+  Separator {
+    Translation { translation 0.0 0.0 0 }
+    Material { diffuseColor 0.15 0.85 0.35 }
+    Text2 {
+      string [ "CENTER ALIGNED", "short" ]
+      justification CENTER
+    }
+  }
+
+  Separator {
+    Translation { translation 1.6 -1.2 0 }
+    Material { diffuseColor 0.2 0.45 0.95 }
+    Text2 {
+      string [ "RIGHT ALIGNED", "short" ]
+      justification RIGHT
+    }
+  }
+}
