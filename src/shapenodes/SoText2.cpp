@@ -145,6 +145,7 @@
 
 #include "nodes/SoSubNodeP.h"
 #include "caches/SoGlyphCache.h"
+#include "shapenodes/SoShapeGLRenderP.h"
 
 // The "lean and mean" define is a workaround for a Cygwin bug: when
 // windows.h is included _after_ one of the X11 or GLX headers above
@@ -373,7 +374,15 @@ SoText2::initClass(void)
 void
 SoText2::GLRender(SoGLRenderAction * action)
 {
-  if (!this->shouldGLRender(action)) return;
+  // SoText2 is a direct pixel renderer, not a primitive-cache triangle
+  // producer. Keep the common shape gating and late GL setup, but skip only
+  // the triangle-sorting operation which has no meaning for this node.
+  SoShapeGLRenderContext renderContext;
+  const SoShapeGLRenderDecision decision =
+    SoShapeGLRender::begin(this, action, renderContext);
+  if (decision == SoShapeGLRenderDecision::Stop) return;
+  if (decision == SoShapeGLRenderDecision::Continue &&
+      !SoShapeGLRender::finish(this, action, renderContext)) return;
 
   SoState * state = action->getState();
 
