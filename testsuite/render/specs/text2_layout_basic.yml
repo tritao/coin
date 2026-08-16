@@ -1,0 +1,8 @@
+id: text2_layout_basic
+scene: ../scenes/text2_layout_basic.iv
+
+viewport:
+  background: [0.08, 0.08, 0.08, 1.0]
+
+baseline: ../baselines/gl/text2_layout_basic.png
+compare: relaxed
