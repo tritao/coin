@@ -1202,6 +1202,33 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
     state->pop();
   }
 
+  if (action->hasUnsupportedRendering()) {
+    const char * reason = action->getUnsupportedReason();
+#if COIN_BUILD_LEGACY_GL_RENDERER
+    if (currentContextSupportsLegacyRendering()) {
+      SoDebugError::postWarning(
+        "SoRenderManager::renderDrawListPipeline",
+        "retained traversal is unsupported (%s); falling back to LegacyGL",
+        reason ? reason : "unknown reason");
+      const SoRenderManager::RenderPipeline savedPipeline =
+        PRIVATE(this)->renderPipeline;
+      PRIVATE(this)->renderPipeline = SoRenderManager::RenderPipeline::LEGACY_GL;
+      this->render(clearwindow, clearzbuffer);
+      PRIVATE(this)->renderPipeline = savedPipeline;
+      PRIVATE(this)->drawListCallbackScope = FALSE;
+      PRIVATE(this)->invokePostRenderCallbacks();
+      return;
+    }
+#endif
+    SoDebugError::post(
+      "SoRenderManager::renderDrawListPipeline",
+      "retained traversal cannot render this frame: %s",
+      reason ? reason : "unsupported retained rendering semantics");
+    PRIVATE(this)->drawListCallbackScope = FALSE;
+    PRIVATE(this)->invokePostRenderCallbacks();
+    return;
+  }
+
   SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
 
   SoRenderParams params = {};
@@ -2342,6 +2369,16 @@ SoRenderManager::pickVisibleRegion(const SbBox2s & region,
 }
 
 void
+SoRenderManager::invalidateSharedGLState(void)
+{
+#if COIN_BUILD_LEGACY_GL_RENDERER
+  if (PRIVATE(this)->glaction) {
+    PRIVATE(this)->glaction->invalidateState();
+  }
+#endif
+}
+
+void
 SoRenderManager::releaseRenderBackendResources(void)
 {
   if (PRIVATE(this)->renderBackend &&
@@ -2414,6 +2451,24 @@ SoRenderManager::getRenderLayerRoot(RenderLayer layer) const
     assert(0 && "unknown render layer");
     return NULL;
   }
+}
+
+void
+SoRenderManager::invalidateDrawList(void)
+{
+  this->invalidateScene();
+}
+
+void
+SoRenderManager::invalidateScene(void)
+{
+  this->scheduleRedraw();
+}
+
+void
+SoRenderManager::invalidateForeground(void)
+{
+  this->scheduleRedraw();
 }
 
 /*!
