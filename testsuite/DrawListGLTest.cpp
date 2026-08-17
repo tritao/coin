@@ -1,5 +1,6 @@
 #include "rendering/CoinOffscreenGLCanvas.h"
 #include "rendering/SoGLRenderBackend.h"
+#include "rendering/SoRenderPlan.h"
 
 #include <Inventor/SoDB.h>
 #include <Inventor/system/gl.h>
@@ -38,6 +39,16 @@ SoRenderParams renderParams()
   params.clearDepth = 1.0f;
   params.flags = SO_PARAM_CLEAR_WINDOW | SO_PARAM_CLEAR_DEPTH;
   return params;
+}
+
+SbBool renderWithPlan(SoGLRenderBackend & backend,
+                      const SoDrawList & drawlist,
+                      const SoRenderParams & params)
+{
+  SoRenderPlanner planner;
+  SoRenderPlan plan;
+  planner.build(drawlist, plan);
+  return backend.render(drawlist, plan, params);
 }
 
 std::vector<uint8_t> readPixels(const CoinOffscreenGLCanvas & canvas)
@@ -180,12 +191,12 @@ runTest()
   const SoRenderParams params = renderParams();
   int result = 0;
   SoDrawList empty;
-  if (!backend.render(empty, params)) {
+  if (!renderWithPlan(backend, empty, params)) {
     std::cerr << "FAIL: empty draw list was not accepted" << std::endl;
     result = 1;
   }
 
-  if (!backend.render(drawlist, params)) {
+  if (!renderWithPlan(backend, drawlist, params)) {
     std::cerr << "FAIL: indexed draw-list execution failed" << std::endl;
     result = 1;
   }
@@ -212,7 +223,7 @@ runTest()
 
   // An unchanged DrawList must be safe to execute repeatedly without another
   // upload or a change in output.
-  if (!backend.render(drawlist, params)) {
+  if (!renderWithPlan(backend, drawlist, params)) {
     std::cerr << "FAIL: repeated DrawList execution failed" << std::endl;
     result = 1;
   }
@@ -238,7 +249,7 @@ runTest()
   unindexed.geometry.colors = vertexColors;
   unindexed.material.diffuse = SbVec4f(1.0f, 0.0f, 0.0f, 1.0f);
   drawlist.addCommand(unindexed);
-  if (!backend.render(drawlist, params)) {
+  if (!renderWithPlan(backend, drawlist, params)) {
     std::cerr << "FAIL: unindexed vertex-color execution failed" << std::endl;
     result = 1;
   }
@@ -269,7 +280,7 @@ runTest()
   replaced.geometry.vertexStride = sizeof(float) * 3;
   replaced.material.diffuse = SbVec4f(0.0f, 0.0f, 1.0f, 1.0f);
   drawlist.addCommand(replaced);
-  if (!backend.render(drawlist, params)) {
+  if (!renderWithPlan(backend, drawlist, params)) {
     std::cerr << "FAIL: generation-invalidated DrawList execution failed" << std::endl;
     result = 1;
   }
