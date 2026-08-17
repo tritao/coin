@@ -1,0 +1,32 @@
+#Inventor V2.1 ascii
+
+Separator {
+  PerspectiveCamera {
+    position 0 0 6
+    heightAngle 0.785398
+    nearDistance 0.1
+    farDistance 20
+  }
+  LightModel { model BASE_COLOR }
+  DepthBuffer { test TRUE write TRUE function LEQUAL }
+  Separator {
+    Material {
+      diffuseColor 0.9 0.1 0.05
+      transparency 0.35
+    }
+    Coordinate3 {
+      point [ -0.9 -0.9 0.25, 0.9 -0.9 0.25, 0.9 0.9 0.25, -0.9 0.9 0.25 ]
+    }
+    FaceSet { numVertices 4 }
+  }
+  Separator {
+    Material {
+      diffuseColor 0.05 0.2 0.95
+      transparency 0.35
+    }
+    Coordinate3 {
+      point [ -1.1 -1.1 -0.35, 1.1 -1.1 -0.35, 1.1 1.1 -0.35, -1.1 1.1 -0.35 ]
+    }
+    FaceSet { numVertices 4 }
+  }
+}

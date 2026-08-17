@@ -414,7 +414,7 @@ bool testExecutorLightLimit(RenderFixture & fixture)
                "GL executor uploaded more lights than its declared shader cap");
 }
 
-bool testTransparentDepthWriteContract(RenderFixture & fixture)
+bool testTransparentDepthWriteFaithful(RenderFixture & fixture)
 {
   SoRenderCommand command = baseCommand(quadPositions);
   command.pass = SO_RENDERPASS_TRANSPARENT;
@@ -427,8 +427,8 @@ bool testTransparentDepthWriteContract(RenderFixture & fixture)
   fixture.render(drawlist, SbVec4f(0, 0, 0, 1));
   GLboolean depthWrite = GL_FALSE;
   glGetBooleanv(GL_DEPTH_WRITEMASK, &depthWrite);
-  return check(depthWrite == GL_FALSE,
-               "transparent retained commands unexpectedly wrote depth");
+  return check(depthWrite == GL_TRUE,
+               "transparent retained command changed the requested depth-write state");
 }
 
 bool testMaterialTransparency(RenderFixture & fixture)
@@ -557,7 +557,7 @@ static int runTest()
   if (!testEmissiveIsIndependent(fixture)) result = 1;
   if (!testTwoSidedLightingUsesFacing(fixture)) result = 1;
   if (!testExecutorLightLimit(fixture)) result = 1;
-  if (!testTransparentDepthWriteContract(fixture)) result = 1;
+  if (!testTransparentDepthWriteFaithful(fixture)) result = 1;
   if (!testMaterialTransparency(fixture)) result = 1;
   if (!testNonUniformScaleLighting(fixture)) result = 1;
   if (!testDepth(fixture)) result = 1;

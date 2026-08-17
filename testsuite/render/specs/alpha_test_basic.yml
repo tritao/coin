@@ -1,0 +1,8 @@
+id: alpha_test_basic
+scene: ../scenes/alpha_test_basic.iv
+
+viewport:
+  background: [0.08, 0.08, 0.08, 1.0]
+
+baseline: ../baselines/gl/alpha_test_basic.png
+compare: relaxed

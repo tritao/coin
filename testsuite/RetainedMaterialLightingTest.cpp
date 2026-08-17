@@ -25,6 +25,36 @@ bool nearlyEqual(float lhs, float rhs)
   return std::fabs(lhs - rhs) < 0.0001f;
 }
 
+bool checkTextureClassification(int components, unsigned char alpha,
+                                SoTexture2::Model model,
+                                bool expectedTransparent)
+{
+  const unsigned char pixels[] = { 255, 128, 64, alpha };
+  SoSeparator * root = new SoSeparator;
+  root->ref();
+  SoTexture2 * texture = new SoTexture2;
+  texture->model = model;
+  texture->image.setValue(SbVec2s(1, 1), components, pixels);
+  root->addChild(texture);
+  root->addChild(new SoCube);
+
+  SoIRRenderAction action(SbViewportRegion(32, 32));
+  action.apply(root);
+  bool result = action.getDrawList().getNumCommands() == 1;
+  if (result) {
+    const SoRenderCommand & command = action.getDrawList().getCommand(0);
+    const bool payloadHasTransparency = (components == 2 || components == 4) &&
+                                        alpha != 255;
+    result = (command.pass == (expectedTransparent
+                                ? SO_RENDERPASS_TRANSPARENT
+                                : SO_RENDERPASS_OPAQUE)) &&
+             (command.state.blend.enabled == (expectedTransparent ? TRUE : FALSE)) &&
+             (command.material.texture.hasTransparency == payloadHasTransparency);
+  }
+  root->unref();
+  return result;
+}
+
 }
 
 int
@@ -233,6 +263,38 @@ runTest()
     }
   }
   indexedAlphaRoot->unref();
+
+  if (!checkTextureClassification(3, 255, SoTexture2::MODULATE, false) ||
+      !checkTextureClassification(4, 255, SoTexture2::MODULATE, false) ||
+      !checkTextureClassification(4, 127, SoTexture2::MODULATE, true) ||
+      !checkTextureClassification(4, 127, SoTexture2::DECAL, false)) {
+    std::cerr << "FAIL: texture alpha was not classified consistently with retained blend state"
+              << std::endl;
+    result = 1;
+  }
+
+  // Two commands using one scene texture must borrow one frame-local payload
+  // rather than copying the image once per command.
+  {
+    const unsigned char pixels[] = { 255, 128, 64, 127 };
+    SoSeparator * textureRoot = new SoSeparator;
+    textureRoot->ref();
+    SoTexture2 * sharedTexture = new SoTexture2;
+    sharedTexture->image.setValue(SbVec2s(1, 1), 4, pixels);
+    textureRoot->addChild(sharedTexture);
+    textureRoot->addChild(new SoCube);
+    textureRoot->addChild(new SoCube);
+    SoIRRenderAction textureAction(SbViewportRegion(32, 32));
+    textureAction.apply(textureRoot);
+    if (textureAction.getDrawList().getNumCommands() != 2 ||
+        textureAction.getDrawList().getCommand(0).material.texture.pixels !=
+          textureAction.getDrawList().getCommand(1).material.texture.pixels) {
+      std::cerr << "FAIL: frame texture payload was copied once per command"
+                << std::endl;
+      result = 1;
+    }
+    textureRoot->unref();
+  }
 
   // A later ordinary material update must invalidate the packed-color
   // provenance. Otherwise a retained command could reuse opacity from the

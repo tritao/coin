@@ -1,0 +1,7 @@
+id: depth_buffer_basic
+scene: ../scenes/depth_buffer_basic.iv
+
+viewport:
+  background: [0.08, 0.08, 0.08, 1.0]
+
+baseline: ../baselines/gl/depth_buffer_basic.png

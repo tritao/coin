@@ -59,14 +59,27 @@
 #include "rendering/SoRenderIRP.h"
 
 #include <cassert>
+#include <cstring>
+#include <vector>
 
 SO_ACTION_SOURCE(SoIRRenderAction);
 
 class SoIRRenderActionP {
 public:
+  struct TextureStorage {
+    const unsigned char * source = nullptr;
+    size_t bytes = 0;
+    int width = 0;
+    int height = 0;
+    int numComponents = 0;
+    const unsigned char * copy = nullptr;
+    bool hasTransparency = false;
+  };
+
   SoIRRenderActionP() = default;
 
   SoIRBuffer geometryPool;
+  std::vector<TextureStorage> textureStorage;
   SbList<SoIRRenderAction::PrimitiveCollector *> collectorStack;
 };
 
@@ -220,9 +233,59 @@ SoIRRenderAction::allocateGeometryStorage(size_t bytes, size_t alignment)
   return PRIVATE(this)->geometryPool.allocate(bytes, alignment);
 }
 
+const unsigned char *
+SoIRRenderAction::allocateTextureStorage(const unsigned char * source,
+                                         size_t bytes,
+                                         int width,
+                                         int height,
+                                         int numComponents,
+                                         bool & hasTransparency)
+{
+  assert(source != NULL);
+  for (std::vector<SoIRRenderActionP::TextureStorage>::const_iterator it =
+         PRIVATE(this)->textureStorage.begin();
+       it != PRIVATE(this)->textureStorage.end(); ++it) {
+    if (it->source == source && it->bytes == bytes &&
+        it->width == width && it->height == height &&
+        it->numComponents == numComponents) {
+      hasTransparency = it->hasTransparency;
+      return it->copy;
+    }
+  }
+
+  const bool carriesAlpha = numComponents == 2 || numComponents == 4;
+  bool transparent = false;
+  if (carriesAlpha) {
+    const size_t pixelCount = bytes / static_cast<size_t>(numComponents);
+    for (size_t pixel = 0; pixel < pixelCount; ++pixel) {
+      if (source[pixel * static_cast<size_t>(numComponents) +
+                  static_cast<size_t>(numComponents - 1)] != 0xffu) {
+        transparent = true;
+        break;
+      }
+    }
+  }
+
+  unsigned char * copy = static_cast<unsigned char *>(
+    PRIVATE(this)->geometryPool.allocate(bytes, alignof(unsigned char)));
+  std::memcpy(copy, source, bytes);
+  SoIRRenderActionP::TextureStorage storage;
+  storage.source = source;
+  storage.bytes = bytes;
+  storage.width = width;
+  storage.height = height;
+  storage.numComponents = numComponents;
+  storage.copy = copy;
+  storage.hasTransparency = transparent;
+  PRIVATE(this)->textureStorage.push_back(storage);
+  hasTransparency = transparent;
+  return copy;
+}
+
 void
 SoIRRenderAction::resetFrameResources()
 {
   PRIVATE(this)->geometryPool.clear();
+  PRIVATE(this)->textureStorage.clear();
   PRIVATE(this)->collectorStack.truncate(0);
 }

@@ -93,6 +93,14 @@ public:
   */
   void * allocateGeometryStorage(size_t bytes, size_t alignment = alignof(float));
 
+  //! Copy one texture payload into the current frame, reusing an existing copy.
+  const unsigned char * allocateTextureStorage(const unsigned char * source,
+                                               size_t bytes,
+                                               int width,
+                                               int height,
+                                               int numComponents,
+                                               bool & hasTransparency);
+
   //! Push a primitive collector for subsequent fallback primitive generation.
   void pushPrimitiveCollector(PrimitiveCollector * collector);
   //! Pop the current primitive collector. The caller must pop in stack order.

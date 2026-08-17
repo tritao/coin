@@ -174,23 +174,6 @@ SoAlphaTest::~SoAlphaTest()
 {
 }
 
-static int
-coin_alpha_test_function_to_gl(const int function)
-{
-  switch (function) {
-  case SoAlphaTest::NEVER: return GL_NEVER;
-  case SoAlphaTest::ALWAYS: return GL_ALWAYS;
-  case SoAlphaTest::LESS: return GL_LESS;
-  case SoAlphaTest::LEQUAL: return GL_LEQUAL;
-  case SoAlphaTest::EQUAL: return GL_EQUAL;
-  case SoAlphaTest::GEQUAL: return GL_GEQUAL;
-  case SoAlphaTest::GREATER: return GL_GREATER;
-  case SoAlphaTest::NOTEQUAL: return GL_NOTEQUAL;
-  case SoAlphaTest::NONE:
-  default: return 0;
-  }
-}
-
 void
 SoAlphaTest::doAction(SoAction * action)
 {

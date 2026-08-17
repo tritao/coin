@@ -1,0 +1,7 @@
+id: transparency_depth_basic
+scene: ../scenes/transparency_depth_basic.iv
+
+viewport:
+  background: [0.08, 0.08, 0.08, 1.0]
+
+baseline: ../baselines/gl/transparency_depth_basic.png
