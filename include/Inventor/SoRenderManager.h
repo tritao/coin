@@ -255,6 +255,9 @@ public:
   SbBool pickVisibleRegion(const SbBox2s & region,
                            SoPickedPointList & results);
 
+  //! Notify the active renderer that external GL state may have changed.
+  void invalidateSharedGLState(void);
+
   /*! Release backend API resources while its owning GL context is current.
 
       Calling this with another or no context is invalid; use
@@ -268,6 +271,11 @@ public:
 
   void setRenderLayerRoot(RenderLayer layer, SoNode * root);
   SoNode * getRenderLayerRoot(RenderLayer layer) const;
+
+  //! Invalidate the retained main-scene frame and schedule a redraw.
+  void invalidateDrawList(void);
+  void invalidateScene(void);
+  void invalidateForeground(void);
 
   void setAudioRenderAction(SoAudioRenderAction * const action);
   SoAudioRenderAction * getAudioRenderAction(void) const;
