@@ -70,6 +70,8 @@
 #include <Inventor/system/gl.h>
 #include <Inventor/nodes/SoInfo.h>
 #include <Inventor/nodes/SoCamera.h>
+#include <Inventor/SoPath.h>
+#include <Inventor/details/SoDetail.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
 #include <Inventor/elements/SoComplexityTypeElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
@@ -409,6 +411,7 @@ SoRenderManager::setSceneGraph(SoNode * const sceneroot)
   SoNode * oldroot = PRIVATE(this)->scene;
 
   PRIVATE(this)->scene = sceneroot;
+  PRIVATE(this)->clearPersistentSelection();
 
   if (PRIVATE(this)->scene) {
     PRIVATE(this)->scene->ref();
@@ -417,6 +420,86 @@ SoRenderManager::setSceneGraph(SoNode * const sceneroot)
   }
   
   if (oldroot) oldroot->unref();
+}
+
+SbBool
+SoRenderManager::setSelection(const SoPath * path, const SoDetail * detail,
+                              const SbColor4f & color, const SbBool append)
+{
+  // Generic subelement-to-SoDetail rebinding is intentionally deferred until
+  // the retained range metadata is proven to match Coin's detail semantics.
+  if (!path || detail) return FALSE;
+
+  if (!append) PRIVATE(this)->clearSelections();
+  SoRenderManagerP::PersistentSelection selection;
+  selection.path = path->copy();
+  selection.path->ref();
+  selection.color = color;
+  PRIVATE(this)->selections.push_back(selection);
+  this->scheduleRedraw();
+  return TRUE;
+}
+
+void
+SoRenderManager::clearSelection(void)
+{
+  PRIVATE(this)->clearSelections();
+  this->scheduleRedraw();
+}
+
+SbBool
+SoRenderManager::setHighlight(const SoPath * path, const SoDetail * detail,
+                              const SbColor4f & color)
+{
+  if (!path || detail) return FALSE;
+
+  PRIVATE(this)->clearHighlightSelection();
+  PRIVATE(this)->highlight.path = path->copy();
+  PRIVATE(this)->highlight.path->ref();
+  PRIVATE(this)->highlight.color = color;
+  PRIVATE(this)->hasHighlight = TRUE;
+  this->scheduleRedraw();
+  return TRUE;
+}
+
+void
+SoRenderManager::clearHighlight(void)
+{
+  PRIVATE(this)->clearHighlightSelection();
+  this->scheduleRedraw();
+}
+
+SbBool
+SoRenderManager::setSelectionFromPickId(const uint32_t pickId,
+                                         const SbColor4f & color,
+                                         const SbBool append)
+{
+  if (!PRIVATE(this)->irAction || pickId == 0) return FALSE;
+  SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
+  drawlist.buildPickLUT();
+  const SoPickLUTEntry * entry = drawlist.resolvePickId(pickId);
+  if (!entry || entry->type != SO_PICK_OBJECT || entry->elementIndex >= 0) {
+    return FALSE;
+  }
+  const SoPath * path = PRIVATE(this)->irAction->getCommandPath(
+    entry->commandIndex);
+  return this->setSelection(path, NULL, color, append);
+}
+
+SbBool
+SoRenderManager::setHighlightFromPickId(const uint32_t pickId,
+                                         const SbColor4f & color)
+{
+  if (!PRIVATE(this)->irAction || pickId == 0) return FALSE;
+  SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
+  drawlist.buildPickLUT();
+  const SoPickLUTEntry * entry = drawlist.resolvePickId(pickId);
+  if (!entry || entry->type != SO_PICK_OBJECT || entry->elementIndex >= 0) {
+    return FALSE;
+  }
+  const SoPath * path = PRIVATE(this)->irAction->getCommandPath(
+    entry->commandIndex);
+  return this->setHighlight(path, NULL, color);
 }
 
 /*!
@@ -984,7 +1067,38 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   SoRenderPlanner planner;
   SoRenderPlan plan;
   planner.build(drawlist, plan);
-  PRIVATE(this)->renderBackend->render(drawlist, plan, params);
+
+  // Convert persistent scene identity into current-frame command targets only
+  // after traversal.  A path may produce several commands (for example after
+  // material batching), so whole-object selection binds every matching one.
+  SoSelectionState selection;
+  const auto bindSelections = [&](
+    const std::vector<SoRenderManagerP::PersistentSelection> & identities,
+    std::vector<SoSelectionTarget> & targets) {
+    for (const SoRenderManagerP::PersistentSelection & identity : identities) {
+      if (!identity.path || identity.detail) continue;
+      for (int commandIndex = 0; commandIndex < drawlist.getNumCommands();
+           ++commandIndex) {
+        const SoPath * commandPath = PRIVATE(this)->irAction->getCommandPath(
+          commandIndex);
+        if (!commandPath || *commandPath != *identity.path) continue;
+        SoSelectionTarget target;
+        target.commandIndex = commandIndex;
+        target.color = identity.color;
+        targets.push_back(target);
+      }
+    }
+  };
+  bindSelections(PRIVATE(this)->selections, selection.selected);
+  if (PRIVATE(this)->hasHighlight) {
+    const std::vector<SoRenderManagerP::PersistentSelection> highlight(
+      1, PRIVATE(this)->highlight);
+    bindSelections(highlight, selection.highlighted);
+  }
+  const SoSelectionState * selectionPtr =
+    (selection.selected.empty() && selection.highlighted.empty())
+      ? nullptr : &selection;
+  PRIVATE(this)->renderBackend->render(drawlist, plan, params, selectionPtr);
 
   if (SoRenderManager::isRealTimeUpdateEnabled()) {
     SoField * realtime = SoDB::getGlobalField("realTime");
