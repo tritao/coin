@@ -15,9 +15,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <functional>
 #include <mutex>
 #include <utility>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <data/shaders/gl/visual/Fragment.h>
@@ -777,6 +779,7 @@ SoGLRenderBackend::discard()
 {
   this->gpuCache.clear();
   this->commandToCache.clear();
+  this->resourceToCache.clear();
   this->cachedCommandCount = 0;
   this->haveCacheGeneration = false;
   this->cacheGeneration = 0;
@@ -799,9 +802,11 @@ SoGLRenderBackend::getOrCreateCache(const SoRenderCommand * command)
 
   const SoGeometryDesc & geometry = command->geometry;
   const SoTextureData & texture = command->material.texture;
-  const bool hasTexture = (texture.cacheKey != 0 || texture.pixels != nullptr) &&
-    texture.width > 0 && texture.height > 0 && texture.numComponents >= 1 &&
-    texture.numComponents <= 4 && geometry.texcoords && geometry.vertexCount;
+  const bool hasTexture =
+    (texture.cacheKey != 0 || texture.pixels != nullptr) &&
+    texture.width > 0 && texture.height > 0 &&
+    texture.numComponents >= 1 && texture.numComponents <= 4 &&
+    geometry.texcoords != nullptr && geometry.vertexCount != 0;
   const bool persistent = geometry.cacheKey != 0 &&
     (!hasTexture || texture.cacheKey != 0);
   ResourceCacheKey resourceKey;
@@ -1065,7 +1070,11 @@ SoGLRenderBackend::updateCacheDescription(CachedCommand & entry,
                                   : SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
   entry.textureWrapT = hasTexture ? texture.wrapT
                                   : SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
-    entry.textureAnisotropic = hasTexture ? texture.anisotropic : false;
+  entry.textureAnisotropic = hasTexture ? texture.anisotropic : false;
+  entry.geometryCacheKey = geometry.cacheKey;
+  entry.geometryRevision = geometry.revision;
+  entry.textureCacheKey = hasTexture ? texture.cacheKey : 0;
+  entry.textureRevision = hasTexture ? texture.revision : 0;
 }
 
 void
@@ -1423,11 +1432,17 @@ SoGLRenderBackend::textureDescriptionMatches(
   const SoRenderCommand & command) const
 {
   const SoTextureData & texture = command.material.texture;
+  const bool hasTexture =
+    (texture.cacheKey != 0 || texture.pixels != nullptr) &&
+    texture.width > 0 && texture.height > 0 &&
+    texture.numComponents >= 1 && texture.numComponents <= 4 &&
+    command.geometry.texcoords != nullptr && command.geometry.vertexCount != 0;
   const bool identityMatches = texture.cacheKey != 0
     ? entry.textureCacheKey == texture.cacheKey &&
       entry.textureRevision == texture.revision
     : entry.texturePixelsKey == texture.pixels;
   return identityMatches &&
+    ((entry.texturePixelsKey != nullptr) == hasTexture) &&
     entry.textureWidth == texture.width &&
     entry.textureHeight == texture.height &&
     entry.textureComponents == texture.numComponents &&
@@ -1466,36 +1481,34 @@ SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
   for (int i = 0; i < drawlist.getNumCommands(); ++i) {
     const SoRenderCommand & command = drawlist.getCommand(i);
     const SoGeometryDesc & geometry = command.geometry;
-    if ((!geometry.positions && geometry.cacheKey == 0) || geometry.vertexCount == 0 ||
+    if ((!geometry.positions && geometry.cacheKey == 0) ||
+        geometry.vertexCount == 0 ||
         geometry.vertexCount > MAX_VERTEX_COUNT) continue;
 
     CachedCommand & entry = this->getOrCreateCache(&command);
     const uint32_t vertexStride = geometry.vertexStride
       ? geometry.vertexStride : sizeof(float) * 3;
+    const bool lineGeometry = geometry.topology == SO_TOPOLOGY_LINES ||
+      geometry.topology == SO_TOPOLOGY_LINE_STRIP;
     const bool identityMatches = geometry.cacheKey != 0
       ? entry.geometryCacheKey == geometry.cacheKey &&
         entry.geometryRevision == geometry.revision
       : entry.positionsKey == geometry.positions &&
-        entry.normalsKey == geometry.normals;
-    const bool lineGeometry = geometry.topology == SO_TOPOLOGY_LINES ||
-      geometry.topology == SO_TOPOLOGY_LINE_STRIP;
+        entry.normalsKey == geometry.normals &&
+        entry.colorsKey == geometry.colors &&
+        entry.texcoordsKey == geometry.texcoords &&
+        entry.indicesKey == geometry.indices;
     const bool lineDistanceMatches = geometry.cacheKey != 0
       ? entry.lineDistanceBuffer != 0 || !lineGeometry
       : entry.lineDistanceKey == (lineGeometry ? geometry.positions : nullptr);
     const bool geometryMatches = entry.positionBuffer != 0 &&
       identityMatches &&
-      entry.colorsKey == geometry.colors &&
-      entry.texcoordsKey == geometry.texcoords &&
-      entry.indicesKey == geometry.indices &&
       entry.vertexCount == geometry.vertexCount &&
       entry.normalCount == geometry.normalCount &&
       entry.indexCount == geometry.indexCount &&
       entry.vertexStride == vertexStride &&
       entry.texcoordStride == geometry.texcoordStride &&
-      lineDistanceMatches &&
-      this->textureDescriptionMatches(entry, command) &&
-      ((entry.texturePixelsKey != nullptr) ==
-       (command.material.texture.pixels != nullptr));
+      lineDistanceMatches && this->textureDescriptionMatches(entry, command);
     if (!geometryMatches) {
       if (!geometry.positions) continue;
       this->uploadGeometry(entry, command);
@@ -2599,7 +2612,8 @@ SoGLRenderBackend::drawCoverageEntry(const SoDrawList & drawlist,
       entry.commandIndex >= drawlist.getNumCommands()) return;
   const SoRenderCommand & command = drawlist.getCommand(entry.commandIndex);
   if (!command.state.raster.visible) return;
-  if (!command.geometry.positions || command.geometry.vertexCount == 0) return;
+  if ((!command.geometry.positions && command.geometry.cacheKey == 0) ||
+      command.geometry.vertexCount == 0) return;
   if (command.state.raster.viewportOverride &&
       !command.state.raster.viewportEnabled) return;
 
@@ -3353,6 +3367,8 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
     if (target.type == SO_PICK_OBJECT && target.elementIndex < 0) {
       SoPickLUTEntry entry;
       entry.commandIndex = target.commandIndex;
+      entry.objectId = target.objectId != 0
+        ? target.objectId : command.objectId;
       entry.type = SO_PICK_OBJECT;
       const bool indexed = command.geometry.indices != nullptr &&
         command.geometry.indexCount != 0;
@@ -3368,6 +3384,8 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
           range.elementIndex != target.elementIndex) continue;
       SoPickLUTEntry entry;
       entry.commandIndex = target.commandIndex;
+      entry.objectId = target.objectId != 0
+        ? target.objectId : command.objectId;
       entry.type = range.type;
       entry.elementIndex = range.elementIndex;
       const bool indexed = command.geometry.indices != nullptr &&

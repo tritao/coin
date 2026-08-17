@@ -74,7 +74,7 @@ private:
       const size_t geometryHash = std::hash<uint64_t>()(key.geometry);
       const size_t textureHash = std::hash<uint64_t>()(key.texture);
       return geometryHash ^ (textureHash + static_cast<size_t>(0x9e3779b9) +
-                             (geometryHash << 6) + (geometryHash >> 2));
+                            (geometryHash << 6) + (geometryHash >> 2));
     }
   };
 

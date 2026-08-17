@@ -20,6 +20,14 @@ using SoInstanceId = uint64_t;
 using SoObjectId = uint64_t;
 class SoState;
 
+namespace SoRenderIR {
+
+//! Select command-local view/projection matrices during retained traversal.
+COIN_DLL_API void setCommandMatricesOverride(SoState * state,
+                                             SbBool enabled);
+
+} // namespace SoRenderIR
+
 /*!
   \file SoRenderIR.h
   \brief Backend-neutral intermediate representation for retained rendering.
