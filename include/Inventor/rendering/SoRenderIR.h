@@ -713,10 +713,19 @@ public:
   //! Return the immutable snapshot of the current frame's pick table.
   const std::vector<SoPickLUTEntry> & getPickLUT() const { return pickLUT; }
 
+  //! Return frame-local producer selection targets for this draw list.
+  //!
+  //! These targets are transient traversal output, not persistent manager
+  //! identity. The manager combines them with its resolved selection state
+  //! immediately before backend execution.
+  SoSelectionState & getMutableSelectionState() { return selection; }
+  const SoSelectionState & getSelectionState() const { return selection; }
+
 private:
   std::vector<SoRenderCommand> commands;
   std::vector<SoLightingData> lightingSetups;
   std::vector<SoDepthClearEvent> depthClearEvents;
+  SoSelectionState selection;
   mutable std::vector<SoPickLUTEntry> pickLUT;
   uint32_t generation = 0;
   mutable uint32_t pickLUTGeneration = 0;
