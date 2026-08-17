@@ -8,6 +8,7 @@ set(COIN_RENDERING_FILES
 	SoRenderManager.cpp
 	SoRenderManagerP.cpp
 	SoRenderIR.cpp
+	SoRenderPlan.cpp
 	SoRenderBackend.cpp
 	SoGLRenderBackend.cpp
 )
@@ -53,6 +54,7 @@ set(COIN_RENDERING_INTERNAL_FILES
 	CoinGLReadback.h
 	CoinGLReadback.cpp
 	SoRenderIRP.h
+	SoRenderPlan.h
 	SoRenderBackend.h
 	SoGLRenderBackend.h
 )
