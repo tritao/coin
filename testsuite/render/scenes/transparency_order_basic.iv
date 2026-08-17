@@ -24,7 +24,6 @@ Separator {
     Translation { translation 0 0 -0.35 }
     Material {
       diffuseColor 0.05 0.2 0.95
-      transparency 0.35
     }
     Coordinate3 {
       point [ -1.1 -1.1 0, 1.1 -1.1 0, 1.1 1.1 0, -1.1 1.1 0 ]
