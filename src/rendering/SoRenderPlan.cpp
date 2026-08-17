@@ -21,18 +21,13 @@ SoRenderPlanner::build(const SoDrawList & drawlist,
   const auto depthOf = [&drawlist](const uint32_t commandIndex) {
     const SoRenderCommand & command = drawlist.getCommand(
       static_cast<int>(commandIndex));
-    SbMat view;
-    SbMat model;
-    command.viewMatrix.getValue(view);
-    command.modelMatrix.getValue(model);
-    const float worldX = model[3][0];
-    const float worldY = model[3][1];
-    const float worldZ = model[3][2];
-    const float eyeZ = view[0][2] * worldX +
-      view[1][2] * worldY +
-      view[2][2] * worldZ +
-      view[3][2];
-    return -eyeZ;
+    const SbVec3f localCenter = command.geometry.hasBounds
+      ? command.geometry.boundsCenter : SbVec3f(0.0f, 0.0f, 0.0f);
+    SbVec3f worldCenter;
+    SbVec3f eyeCenter;
+    command.modelMatrix.multVecMatrix(localCenter, worldCenter);
+    command.viewMatrix.multVecMatrix(worldCenter, eyeCenter);
+    return -eyeCenter[2];
   };
 
   const auto emitSegment = [&drawlist, &plan, &depthOf](

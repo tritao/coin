@@ -2939,25 +2939,6 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
   SbMat frameProjection;
   params.viewMatrix.getValue(frameView);
   params.projMatrix.getValue(frameProjection);
-  auto drawPickRange = [&](const SoRenderStage stage,
-                           const uint32_t begin,
-                           const uint32_t end) {
-    std::vector<size_t> entries;
-    for (size_t i = 0; i < this->pickTarget.lookup.size(); ++i) {
-      const int commandIndex = this->pickTarget.lookup[i].commandIndex;
-      if (commandIndex < 0 ||
-          static_cast<uint32_t>(commandIndex) < begin ||
-          static_cast<uint32_t>(commandIndex) >= end) continue;
-      if (drawlist.getCommand(commandIndex).stage != stage) continue;
-      entries.push_back(i);
-    }
-    for (const size_t index : entries) {
-      this->drawPickEntry(drawlist, this->pickTarget.lookup[index],
-                          static_cast<GLuint>(index + 1),
-                          frameView, frameProjection, params);
-    }
-  };
-
   auto drawPickCommand = [&](const uint32_t commandIndex) {
     for (size_t i = 0; i < this->pickTarget.lookup.size(); ++i) {
       const int lookupCommandIndex = this->pickTarget.lookup[i].commandIndex;
