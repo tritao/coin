@@ -244,6 +244,8 @@ struct SoTextureData {
   int width = 0;
   int height = 0;
   int numComponents = 0; // 1=L, 2=LA, 3=RGB, 4=RGBA
+  // True when at least one texel can contribute alpha below one.
+  bool hasTransparency = false;
 
   SoTextureFilter minFilter = SO_TEXTURE_FILTER_NEAREST;
   SoTextureFilter magFilter = SO_TEXTURE_FILTER_NEAREST;
@@ -406,8 +408,6 @@ struct SoRenderState {
   \enum SoRenderStage
   \brief Ordered scene stage containing draw commands.
 
-  Stage controls manager orchestration order only. It is orthogonal to
-  SoRenderPassType: a foreground command may still be opaque or transparent.
 */
 enum class SoRenderStage : uint8_t {
   Background,
@@ -426,18 +426,6 @@ enum class SoRenderStage : uint8_t {
 enum SoOpacityClass : uint8_t {
   SO_OPACITY_OPAQUE = 0,
   SO_OPACITY_TRANSPARENT
-};
-
-  \enum SoRenderPassType
-  \brief Logical pass identifier used for coarse sorting within a stage.
-
-  Pass describes draw semantics such as opaque versus transparent execution;
-  it does not select Background, Main, AfterMain, or Foreground placement.
-*/
-enum SoRenderPassType : uint8_t {
-  SO_RENDERPASS_OPAQUE = 0,
-  SO_RENDERPASS_TRANSPARENT,
-  SO_RENDERPASS_COUNT
 };
 
 /*!
@@ -656,13 +644,9 @@ struct SoSelectionState {
   \brief Backend-neutral retained rendering command.
 
   A command contains the geometry, material, raster state, transforms,
-  rendering pass and stage needed to execute one retained draw operation.
+  stage needed to execute one retained draw operation.
   Pointer-valued data is borrowed from storage owned by the producing
   SoDrawList/SoIRRenderAction frame and must not outlive that frame.
-
-  Rendering stage and rendering pass are independent concepts. The stage
-  controls orchestration order; the pass describes visual semantics such as
-  opaque versus transparent execution.
 
   \ingroup coin_retained_rendering
 */
@@ -679,7 +663,6 @@ struct SoRenderCommand {
 
   SoOpacityClass   opacityClass = SO_OPACITY_OPAQUE;
   SoRenderStage    stage = SoRenderStage::Main;
-  SoRenderPassType pass = SO_RENDERPASS_OPAQUE;
   SoLightingHandle lightingHandle = 0;
   SoNodeId         nodeId = 0;     //!< Identity of the underlying scene node.
   SoInstanceId     instanceId = 0; //!< Identity of this rendered occurrence.
@@ -695,15 +678,14 @@ struct SoRenderCommand {
 
   Commands retain their insertion order. The draw list never imposes
   execution ordering on a backend. clear() starts a new frame and invalidates pointers
-
-  Commands retain their insertion order. buildSortedOrder() produces a
-  separate index array for rendering; it never reorders the command vector.
+  The internal SoRenderPlanner resolves execution order into a separate
+  SoRenderPlan; it never reorders the command vector.
   clear() starts a new frame and invalidates pointers
   into producer-owned frame storage.
 
   Command indices are therefore stable until the list is truncated or
-  cleared. Derived lookup tables and sort orders are frame-local and must be
-  rebuilt after their source commands or frame generation changes.
+  cleared. Derived lookup tables are frame-local and must be rebuilt after
+  their source commands or frame generation changes.
 
   \ingroup coin_retained_rendering
 */
@@ -741,18 +723,11 @@ public:
   const SoRenderCommand * begin() const;
   const SoRenderCommand * end() const;
 
-  //! Build a sorted index array for correct render ordering.
-  //! The draw list itself is NOT reordered — command indices stay stable.
-  void buildSortedOrder(const SbMatrix & viewMatrix);
-
   //! Record an explicit depth-clear barrier at the current insertion point.
   void addDepthClearEvent(const SoDepthClearEvent & event);
   //! Return depth-clear barriers in traversal order.
   const std::vector<SoDepthClearEvent> & getDepthClearEvents() const
   { return this->depthClearEvents; }
-
-  //! Get the sorted rendering order (indices into the command list).
-  const std::vector<int> & getSortedOrder() const { return sortedOrder; }
 
   //! Build the frame-local 1-based pick-ID lookup table.
   void buildPickLUT() const;
@@ -768,7 +743,6 @@ private:
   std::vector<SoLightingData> lightingSetups;
   std::vector<SoDepthClearEvent> depthClearEvents;
   mutable std::vector<SoPickLUTEntry> pickLUT;
-  std::vector<int> sortedOrder;
   uint32_t generation = 0;
   mutable uint32_t pickLUTGeneration = 0;
 };

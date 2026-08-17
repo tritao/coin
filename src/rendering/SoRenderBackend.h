@@ -73,7 +73,8 @@ public:
   virtual void discard();
   virtual SbBool render(const SoDrawList & drawlist,
                         const SoRenderPlan & plan,
-                        const SoRenderParams & params) = 0;
+                        const SoRenderParams & params,
+                        const SoSelectionState * selection = nullptr) = 0;
 
   //! Update the backend's explicit picking target for a retained frame.
   //! Ordinary render() does not implicitly regenerate this target.
