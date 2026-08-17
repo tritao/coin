@@ -115,6 +115,43 @@ main()
                  "planner did not schedule transparent commands back-to-front") &&
     result;
 
+  // The model origin is not a geometry depth. These objects deliberately
+  // place their origins on opposite sides of their actual local geometry.
+  SoDrawList boundsDrawList;
+  SoRenderCommand boundsNear;
+  SoRenderCommand boundsFar;
+  const float nearPosition[] = { 0.0f, 0.0f, -10.0f };
+  const float farPosition[] = { 0.0f, 0.0f, 0.0f };
+  boundsNear.geometry.topology = SO_TOPOLOGY_POINTS;
+  boundsNear.geometry.vertexCount = 1;
+  boundsNear.geometry.positions = nearPosition;
+  boundsNear.geometry.hasBounds = TRUE;
+  boundsNear.geometry.boundsCenter = SbVec3f(0.0f, 0.0f, -10.0f);
+  boundsNear.opacityClass = SO_OPACITY_TRANSPARENT;
+  boundsNear.viewMatrix.makeIdentity();
+  boundsNear.modelMatrix.setTranslate(SbVec3f(0.0f, 0.0f, 9.0f));
+  boundsFar.geometry.topology = SO_TOPOLOGY_POINTS;
+  boundsFar.geometry.vertexCount = 1;
+  boundsFar.geometry.positions = farPosition;
+  boundsFar.geometry.hasBounds = TRUE;
+  boundsFar.geometry.boundsCenter = SbVec3f(0.0f, 0.0f, 0.0f);
+  boundsFar.opacityClass = SO_OPACITY_TRANSPARENT;
+  boundsFar.viewMatrix.makeIdentity();
+  boundsFar.modelMatrix.setTranslate(SbVec3f(0.0f, 0.0f, -3.0f));
+  boundsDrawList.addCommand(boundsNear);
+  boundsDrawList.addCommand(boundsFar);
+  planner.build(boundsDrawList, plan);
+  std::vector<uint32_t> boundsDraws;
+  for (int i = 0; i < plan.getNumOperations(); ++i) {
+    if (plan.getOperation(i).type == SoRenderOperationType::DRAW) {
+      boundsDraws.push_back(plan.getOperation(i).commandIndex);
+    }
+  }
+  result = check(boundsDraws.size() == 2 && boundsDraws[0] == 1 &&
+                 boundsDraws[1] == 0,
+                 "planner sorted transparency from model origins instead of bounds") &&
+    result;
+
   drawlist.addCommand(second);
   SoDepthClearEvent event;
   event.sequence = 1;

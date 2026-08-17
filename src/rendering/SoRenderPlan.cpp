@@ -19,7 +19,7 @@ SoRenderPlanner::build(const SoDrawList & drawlist,
     float depth = 0.0f;
   };
 
-  const auto depthOf = [&drawlist](const uint32_t commandIndex) {
+  const auto depthOf = [&drawlist, &frameViewMatrix](const uint32_t commandIndex) {
     const SoRenderCommand & command = drawlist.getCommand(
       static_cast<int>(commandIndex));
     SbMat view;
