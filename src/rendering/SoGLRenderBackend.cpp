@@ -1504,10 +1504,9 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   }
 
   applyViewport(params);
-  const SbVec4f & color = command.material.diffuse;
   this->applyDepthState(command);
   this->applyRasterState(command, path);
-  this->applyBlendState(command, color);
+  this->applyBlendState(command);
   GLenum polygonOffsetTarget = GL_POLYGON_OFFSET_FILL;
   const bool polygonOffset = this->applyPolygonOffset(
     command, path, polygonOffsetTarget);
@@ -1574,9 +1573,7 @@ SoGLRenderBackend::applyDepthState(const SoRenderCommand & command)
   else {
     glDisable(GL_DEPTH_TEST);
   }
-  glDepthMask(command.state.depth.writeEnabled &&
-              command.pass != SO_RENDERPASS_TRANSPARENT
-                ? GL_TRUE : GL_FALSE);
+  glDepthMask(command.state.depth.writeEnabled ? GL_TRUE : GL_FALSE);
   glDepthRange(command.state.depth.range[0], command.state.depth.range[1]);
 }
 
@@ -1610,11 +1607,9 @@ SoGLRenderBackend::applyRasterState(const SoRenderCommand & command,
 }
 
 void
-SoGLRenderBackend::applyBlendState(const SoRenderCommand & command,
-                                   const SbVec4f & color)
+SoGLRenderBackend::applyBlendState(const SoRenderCommand & command)
 {
-  const bool blending = command.state.blend.enabled ||
-    command.pass == SO_RENDERPASS_TRANSPARENT || color[3] < 0.999f;
+  const bool blending = command.state.blend.enabled;
   if (!blending) {
     glDisable(GL_BLEND);
     return;
@@ -1745,23 +1740,6 @@ SoGLRenderBackend::restoreRasterState(const RasterPath & path,
   glFrontFace(GL_CCW);
   if (!path.usePointShader) glPointSize(1.0f);
   if (!path.useLineShader) glLineWidth(1.0f);
-}
-
-void
-SoGLRenderBackend::renderPass(const SoDrawList & drawlist,
-                              const SbMat & viewMat,
-                              const SbMat & projMat,
-                              const SoRenderParams & params,
-                              const SoRenderPassType pass)
-{
-  const std::vector<int> & order = drawlist.getSortedOrder();
-  for (int i = 0; i < drawlist.getNumCommands(); ++i) {
-    const int index = i < static_cast<int>(order.size()) ? order[i] : i;
-    const SoRenderCommand & command = drawlist.getCommand(index);
-    if (command.pass == pass) {
-      this->drawCommand(drawlist, command, viewMat, projMat, params);
-    }
-  }
 }
 
 void

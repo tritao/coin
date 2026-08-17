@@ -243,11 +243,6 @@ private:
                                      const SbVec2s & viewportSize);
   void setupLineRasterVAO(CachedCommand & entry);
   void destroyLineRasterStream(CachedCommand & entry);
-  void renderPass(const SoDrawList & drawlist,
-                  const SbMat & viewMat,
-                  const SbMat & projMat,
-                  const SoRenderParams & params,
-                  SoRenderPassType pass);
   void drawCommand(const SoDrawList & drawlist,
                    const SoRenderCommand & command,
                    const SbMat & viewMat,
@@ -259,8 +254,7 @@ private:
   void applyDepthState(const SoRenderCommand & command);
   void applyRasterState(const SoRenderCommand & command,
                         const RasterPath & path);
-  void applyBlendState(const SoRenderCommand & command,
-                       const SbVec4f & color);
+  void applyBlendState(const SoRenderCommand & command);
   bool applyPolygonOffset(const SoRenderCommand & command,
                           const RasterPath & path,
                           GLenum & target);
