@@ -35,12 +35,16 @@
 
 #include <Inventor/SbColor4f.h>
 #include <Inventor/SbVec2s.h>
+
+#include <cstdint>
 #if COIN_HAVE_LEGACY_GL_RENDERER
 #include <Inventor/actions/SoGLRenderAction.h>
 #endif
 
 class SbViewportRegion;
 class SoEvent;
+class SoPath;
+class SoDetail;
 #if COIN_HAVE_LEGACY_GL_RENDERER
 class SoGLRenderAction;
 #endif
@@ -155,6 +159,19 @@ public:
 
   virtual void setSceneGraph(SoNode * const sceneroot);
   virtual SoNode * getSceneGraph(void) const;
+
+  //! Retain a whole-object scene identity for selection.
+  SbBool setSelection(const SoPath * path, const SoDetail * detail,
+                      const SbColor4f & color, SbBool append = FALSE);
+  void clearSelection(void);
+  //! Retain a whole-object scene identity for highlighting.
+  SbBool setHighlight(const SoPath * path, const SoDetail * detail,
+                      const SbColor4f & color);
+  void clearHighlight(void);
+  //! Resolve a current-frame pick ID immediately into persistent scene identity.
+  SbBool setSelectionFromPickId(uint32_t pickId, const SbColor4f & color,
+                                SbBool append = FALSE);
+  SbBool setHighlightFromPickId(uint32_t pickId, const SbColor4f & color);
 
   void setCamera(SoCamera * camera);
   SoCamera * getCamera(void) const;

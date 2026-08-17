@@ -55,6 +55,8 @@ class SbMatrix;
 class SoNodeSensor;
 class SoInfo;
 class SoNode;
+class SoPath;
+class SoDetail;
 class SoGetBoundingBoxAction;
 class SoGetMatrixAction;
 class SoSearchAction;
@@ -64,8 +66,18 @@ class SoRenderBackend;
 
 class SoRenderManagerP {
 public:
+  struct PersistentSelection {
+    SoPath * path = NULL;
+    SoDetail * detail = NULL;
+    SbColor4f color = SbColor4f(1.0f, 1.0f, 0.0f, 0.75f);
+  };
+
   SoRenderManagerP(SoRenderManager * publ);
   ~SoRenderManagerP();
+
+  void clearSelections(void);
+  void clearHighlightSelection(void);
+  void clearPersistentSelection(void);
 
   void setClippingPlanes(void);
   static void updateClippingPlanesCB(void * closure, SoSensor * sensor);
@@ -140,6 +152,10 @@ public:
   typedef std::pair<SoRenderManagerRenderCB *, void *> RenderCBTouple;
   std::vector<RenderCBTouple> preRenderCallbacks;
   std::vector<RenderCBTouple> postRenderCallbacks;
+
+  std::vector<PersistentSelection> selections;
+  PersistentSelection highlight;
+  SbBool hasHighlight = FALSE;
 
   // "private" data
   static SbBool touchtimer;
