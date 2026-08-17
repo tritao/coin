@@ -8,6 +8,8 @@
 #include <Inventor/SbMatrix.h>
 #include <Inventor/SbViewportRegion.h>
 
+#include "rendering/SoRenderPlan.h"
+
 #include <cstdint>
 
 class SoDrawList;
@@ -65,6 +67,7 @@ public:
   virtual SbBool initialize(const SoRenderBackendInitParams & params) = 0;
   virtual void shutdown() = 0;
   virtual SbBool render(const SoDrawList & drawlist,
+                        const SoRenderPlan & plan,
                         const SoRenderParams & params) = 0;
 
   SbBool isInitialized() const;

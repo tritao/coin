@@ -4,6 +4,7 @@
 #include "GLFWBackend.h"
 
 #include "rendering/SoGLRenderBackend.h"
+#include "rendering/SoRenderPlan.h"
 
 #include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/rendering/SoRenderIR.h>
@@ -62,8 +63,6 @@ public:
       std::cerr << matrix_error << '\n';
       return false;
     }
-    drawlist.buildSortedOrder(view);
-
     SoRenderParams params;
     params.viewport = viewport;
     params.viewMatrix = view;
@@ -73,7 +72,10 @@ public:
     params.clearDepth = 1.0f;
     params.flags = SO_PARAM_CLEAR_WINDOW | SO_PARAM_CLEAR_DEPTH;
 
-    if (!renderer_.render(drawlist, params)) {
+    SoRenderPlanner planner;
+    SoRenderPlan plan;
+    planner.build(drawlist, plan);
+    if (!renderer_.render(drawlist, plan, params)) {
       return false;
     }
     if (!backend_.readPixels(pixels)) {
