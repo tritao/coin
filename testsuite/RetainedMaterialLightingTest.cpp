@@ -298,6 +298,38 @@ runTest()
   }
   indexedAlphaRoot->unref();
 
+  if (!checkTextureClassification(3, 255, SoTexture2::MODULATE, false) ||
+      !checkTextureClassification(4, 255, SoTexture2::MODULATE, false) ||
+      !checkTextureClassification(4, 127, SoTexture2::MODULATE, true) ||
+      !checkTextureClassification(4, 127, SoTexture2::DECAL, false)) {
+    std::cerr << "FAIL: texture alpha was not classified consistently with retained blend state"
+              << std::endl;
+    result = 1;
+  }
+
+  // Two commands using one scene texture must borrow one frame-local payload
+  // rather than copying the image once per command.
+  {
+    const unsigned char pixels[] = { 255, 128, 64, 127 };
+    SoSeparator * textureRoot = new SoSeparator;
+    textureRoot->ref();
+    SoTexture2 * sharedTexture = new SoTexture2;
+    sharedTexture->image.setValue(SbVec2s(1, 1), 4, pixels);
+    textureRoot->addChild(sharedTexture);
+    textureRoot->addChild(new SoCube);
+    textureRoot->addChild(new SoCube);
+    SoIRRenderAction textureAction(SbViewportRegion(32, 32));
+    textureAction.apply(textureRoot);
+    if (textureAction.getDrawList().getNumCommands() != 2 ||
+        textureAction.getDrawList().getCommand(0).material.texture.pixels !=
+          textureAction.getDrawList().getCommand(1).material.texture.pixels) {
+      std::cerr << "FAIL: frame texture payload was copied once per command"
+                << std::endl;
+      result = 1;
+    }
+    textureRoot->unref();
+  }
+
   // A later ordinary material update must invalidate the packed-color
   // provenance. Otherwise a retained command could reuse opacity from the
   // material that preceded SoVertexProperty.

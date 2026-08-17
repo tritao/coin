@@ -938,9 +938,7 @@ SoGLRenderBackend::applyDepthState(const SoRenderCommand & command)
   else {
     glDisable(GL_DEPTH_TEST);
   }
-  glDepthMask(command.state.depth.writeEnabled &&
-              command.pass != SO_RENDERPASS_TRANSPARENT
-                ? GL_TRUE : GL_FALSE);
+  glDepthMask(command.state.depth.writeEnabled ? GL_TRUE : GL_FALSE);
   glDepthRange(command.state.depth.range[0], command.state.depth.range[1]);
 
 }
@@ -948,9 +946,7 @@ SoGLRenderBackend::applyDepthState(const SoRenderCommand & command)
 void
 SoGLRenderBackend::applyBlendState(const SoRenderCommand & command)
 {
-  const bool blending = command.state.blend.enabled ||
-    command.pass == SO_RENDERPASS_TRANSPARENT ||
-    command.material.diffuse[3] < 0.999f;
+  const bool blending = command.state.blend.enabled;
   if (blending) {
     glEnable(GL_BLEND);
     if (isDualSourceBlendFactor(command.state.blend.srcRGBFactor) ||
@@ -1054,7 +1050,6 @@ SoGLRenderBackend::drawGeometry(const SoRenderCommand & command,
   }
 }
 
-void
 void
 SoGLRenderBackend::beginFrame(const SoRenderParams & params)
 {

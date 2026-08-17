@@ -1,0 +1,7 @@
+id: specular_shininess_basic
+scene: ../scenes/specular_shininess_basic.iv
+
+viewport:
+  background: [0.04, 0.04, 0.04, 1.0]
+
+baseline: ../baselines/gl/specular_shininess_basic.png

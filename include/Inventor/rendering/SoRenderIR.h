@@ -221,6 +221,9 @@ struct SoTextureData {
   int width = 0;
   int height = 0;
   int numComponents = 0; // 1=L, 2=LA, 3=RGB, 4=RGBA
+  // True when at least one texel can contribute alpha below one. This is a
+  // semantic classification captured once with the frame payload.
+  bool hasTransparency = false;
 
   SoTextureFilter minFilter = SO_TEXTURE_FILTER_NEAREST;
   SoTextureFilter magFilter = SO_TEXTURE_FILTER_NEAREST;

@@ -455,11 +455,25 @@ textureWrapFromLegacy(SoMultiTextureImageElement::Wrap wrap)
 }
 
 static bool
-hasTexture(const SoMaterialData & material)
+textureHasTransparency(const SoTextureData & texture)
 {
-  return material.texture.pixels != nullptr &&
-    material.texture.width > 0 && material.texture.height > 0 &&
-    material.texture.numComponents > 0;
+  // DECAL uses texture alpha as a color interpolation factor; it does not
+  // change the fragment alpha that controls coverage or blending.
+  if (texture.model == SO_TEXTURE_MODEL_DECAL) return false;
+  if (texture.hasTransparency) return true;
+  if (!texture.pixels || texture.width <= 0 || texture.height <= 0 ||
+      (texture.numComponents != 2 && texture.numComponents != 4)) {
+    return false;
+  }
+  const size_t pixelCount = static_cast<size_t>(texture.width) *
+                            static_cast<size_t>(texture.height);
+  for (size_t pixel = 0; pixel < pixelCount; ++pixel) {
+    if (texture.pixels[pixel * static_cast<size_t>(texture.numComponents) +
+                       static_cast<size_t>(texture.numComponents - 1)] != 0xffu) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void
@@ -540,14 +554,15 @@ fillTextureFromState(SoState * state, SoIRRenderAction * action,
   const size_t pixelCount = static_cast<size_t>(size[0]) *
                             static_cast<size_t>(size[1]);
   const size_t byteCount = pixelCount * static_cast<size_t>(numComponents);
-  unsigned char * copy = static_cast<unsigned char *>(
-    action->allocateGeometryStorage(byteCount, alignof(unsigned char)));
-  std::memcpy(copy, bytes, byteCount);
+  bool hasTransparency = false;
+  const unsigned char * copy = action->allocateTextureStorage(
+    bytes, byteCount, size[0], size[1], numComponents, hasTransparency);
 
   material.texture.pixels = copy;
   material.texture.width = size[0];
   material.texture.height = size[1];
   material.texture.numComponents = numComponents;
+  material.texture.hasTransparency = hasTransparency;
   material.texture.wrapS = textureWrapFromLegacy(wrapS);
   material.texture.wrapT = textureWrapFromLegacy(wrapT);
   material.texture.model = textureModelFromLegacy(model);
@@ -738,7 +753,7 @@ fillLightingFromState(SoState * state, SoDrawList & drawlist)
 bool
 isMaterialTransparent(const SoMaterialData & material)
 {
-  return material.opacity < 0.999f;
+  return material.opacity < 0.999f || textureHasTransparency(material.texture);
 }
 
 void
@@ -749,8 +764,7 @@ ensureMaterialBlendState(SoRenderState & renderState,
   // legacy GL action enables the conventional blend function as part of its
   // transparency setup. Make that implicit IR contract explicit without
   // replacing an actual non-standard blend state.
-  if (renderState.blend.enabled ||
-      (!isMaterialTransparent(material) && !hasTexture(material))) {
+  if (renderState.blend.enabled || !isMaterialTransparent(material)) {
     return;
   }
 
