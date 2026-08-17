@@ -694,6 +694,7 @@ SoGLRenderBackend::createVisualProgram()
 
 SbBool
 SoGLRenderBackend::render(const SoDrawList & drawlist,
+                          const SoRenderPlan & plan,
                           const SoRenderParams & params)
 {
   if (!this->isInitialized()) {
@@ -710,8 +711,14 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
   params.viewMatrix.getValue(view);
   params.projMatrix.getValue(projection);
 
-  for (int i = 0; i < drawlist.getNumCommands(); ++i) {
-    this->drawCommand(drawlist.getCommand(i), view, projection, params);
+  for (int i = 0; i < plan.getNumDraws(); ++i) {
+    const uint32_t commandIndex = plan.getDraw(i).commandIndex;
+    if (commandIndex >= static_cast<uint32_t>(drawlist.getNumCommands())) {
+      this->emitError("render plan references a missing DrawList command");
+      return FALSE;
+    }
+    this->drawCommand(drawlist.getCommand(static_cast<int>(commandIndex)),
+                      view, projection, params);
   }
   cc_glglue_glUseProgram(this->glue, 0);
   return TRUE;

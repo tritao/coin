@@ -38,6 +38,7 @@ public:
   SbBool initialize(const SoRenderBackendInitParams & params) override;
   void shutdown() override;
   SbBool render(const SoDrawList & drawlist,
+                const SoRenderPlan & plan,
                 const SoRenderParams & params) override;
 
 private:
