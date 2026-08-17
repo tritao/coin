@@ -146,11 +146,6 @@ private:
   void beginFrame(const SoRenderParams & params);
   void invalidateCache();
   void updateGeometryCache(const SoDrawList & drawlist);
-  void renderPass(const SoDrawList & drawlist,
-                  const SbMat & viewMat,
-                  const SbMat & projMat,
-                  const SoRenderParams & params,
-                  SoRenderPassType pass);
   void drawCommand(const SoDrawList & drawlist,
                    const SoRenderCommand & command,
                    const SbMat & viewMat,

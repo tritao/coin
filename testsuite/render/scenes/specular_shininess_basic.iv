@@ -1,0 +1,36 @@
+#Inventor V2.1 ascii
+
+Separator {
+  PerspectiveCamera {
+    position 0 0 7
+    heightAngle 0.785398
+    nearDistance 0.1
+    farDistance 20
+  }
+  LightModel { model PHONG }
+  DirectionalLight {
+    direction 0 0 -1
+    color 1 0.95 0.8
+    intensity 1
+  }
+  Separator {
+    Translation { translation -1.25 0 0 }
+    Material {
+      ambientColor 0.03 0.03 0.03
+      diffuseColor 0.3 0.35 0.45
+      specularColor 1 0.95 0.8
+      shininess 0.12
+    }
+    Sphere { radius 1.05 }
+  }
+  Separator {
+    Translation { translation 1.25 0 0 }
+    Material {
+      ambientColor 0.03 0.03 0.03
+      diffuseColor 0.3 0.35 0.45
+      specularColor 1 0.95 0.8
+      shininess 0.35
+    }
+    Sphere { radius 1.05 }
+  }
+}

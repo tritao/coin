@@ -308,7 +308,7 @@ target_include_directories(RetainedMixedTopologyTest PRIVATE
 	${PROJECT_BINARY_DIR}/include
 	${COIN_TARGET_INCLUDE_DIRECTORIES}
 )
-add_executable(RetainedMaterialLightingTest retained-material-lighting-test.cpp)
+add_executable(RetainedMaterialLightingTest RetainedMaterialLightingTest.cpp)
 target_link_libraries(RetainedMaterialLightingTest Coin ${COIN_TARGET_LINK_LIBRARIES})
 target_include_directories(RetainedMaterialLightingTest PRIVATE
 	${PROJECT_SOURCE_DIR}/include

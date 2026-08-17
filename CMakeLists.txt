@@ -1066,7 +1066,7 @@ if(COIN_BUILD_VISUAL_TESTS)
   set(COIN_DRAWLIST_BASE_VISUAL_SPECS
     "unlit_cube_basic,unlit_transformed_cubes,unlit_vertex_colors,unlit_orthographic_basic,unlit_depth_overlap")
   set(COIN_MATERIAL_VISUAL_SPECS
-    "cube_basic,camera_persp_basic,camera_ortho_basic,material_emissive,two_lights,point_spot_lights_basic,texture_rgb,texture_luminance_alpha,transparent_overlap")
+    "cube_basic,camera_persp_basic,camera_ortho_basic,material_emissive,two_lights,point_spot_lights_basic,texture_rgb,texture_luminance_alpha,transparent_overlap,depth_buffer_basic,alpha_test_basic,transparency_depth_basic,specular_shininess_basic")
   add_test(NAME visual_smoke COMMAND CoinVisualTests snapshot --help)
   set_tests_properties(visual_smoke PROPERTIES LABELS "visual-contract")
   if(COIN_BUILD_LEGACY_GL_RENDERER)

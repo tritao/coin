@@ -16,6 +16,10 @@ vec3 coin_material_compute_gouraud_color(vec3 eyePos, vec3 eyeNormal,
 {
   vec3 N = normalize(eyeNormal);
   vec3 V = normalize(-eyePos);
+  // Coin's LegacyGL path leaves GL_LIGHT_MODEL_LOCAL_VIEWER at its default
+  // false value, so the fixed-function half-vector uses a viewer direction
+  // of (0, 0, 1) in eye space rather than a per-vertex eye position.
+  vec3 specularViewer = vec3(0.0, 0.0, 1.0);
   if (u_twoSidedLighting > 0.5 && dot(N, V) < 0.0) {
     N = -N;
   }
@@ -48,7 +52,7 @@ vec3 coin_material_compute_gouraud_color(vec3 eyePos, vec3 eyeNormal,
     vec3 Ln = normalize(L);
     float NdotL = max(dot(N, Ln), 0.0);
     if (NdotL <= 0.0) continue;
-    vec3 H = normalize(Ln + V);
+    vec3 H = normalize(Ln + specularViewer);
     float NdotH = max(dot(N, H), 0.0);
     float shininess = max(u_materialShininess * 128.0, 0.0);
     float specularFactor = shininess > 0.0
