@@ -1880,10 +1880,9 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
       command.geometry.indexCount && entry.lineRasterVertexArray != 0;
   }
 
-  const SbVec4f & color = command.material.diffuse;
   this->applyDepthState(command);
   this->applyRasterState(command, path);
-  this->applyBlendState(command, color);
+  this->applyBlendState(command);
   GLenum polygonOffsetTarget = GL_POLYGON_OFFSET_FILL;
   const bool polygonOffset = this->applyPolygonOffset(
     command, path, polygonOffsetTarget);
@@ -1950,9 +1949,7 @@ SoGLRenderBackend::applyDepthState(const SoRenderCommand & command)
   else {
     glDisable(GL_DEPTH_TEST);
   }
-  glDepthMask(command.state.depth.writeEnabled &&
-              command.pass != SO_RENDERPASS_TRANSPARENT
-                ? GL_TRUE : GL_FALSE);
+  glDepthMask(command.state.depth.writeEnabled ? GL_TRUE : GL_FALSE);
   glDepthRange(command.state.depth.range[0], command.state.depth.range[1]);
 }
 
@@ -1986,11 +1983,9 @@ SoGLRenderBackend::applyRasterState(const SoRenderCommand & command,
 }
 
 void
-SoGLRenderBackend::applyBlendState(const SoRenderCommand & command,
-                                   const SbVec4f & color)
+SoGLRenderBackend::applyBlendState(const SoRenderCommand & command)
 {
-  const bool blending = command.state.blend.enabled ||
-    command.pass == SO_RENDERPASS_TRANSPARENT || color[3] < 0.999f;
+  const bool blending = command.state.blend.enabled;
   if (!blending) {
     glDisable(GL_BLEND);
     return;
@@ -2121,56 +2116,6 @@ SoGLRenderBackend::restoreRasterState(const RasterPath & path,
   glFrontFace(GL_CCW);
   if (!path.usePointShader) glPointSize(1.0f);
   if (!path.useLineShader) glLineWidth(1.0f);
-}
-
-void
-SoGLRenderBackend::renderStageRange(const SoDrawList & drawlist,
-                                    const SoRenderStage stage,
-                                    const uint32_t begin,
-                                    const uint32_t end,
-                                    const SoRenderParams & params)
-{
-  std::vector<int> order;
-  const uint32_t limit = std::min(end,
-                                 static_cast<uint32_t>(drawlist.getNumCommands()));
-  const uint32_t start = std::min(begin, limit);
-  order.reserve(limit - start);
-  for (uint32_t i = start; i < limit; ++i) {
-    order.push_back(static_cast<int>(i));
-  }
-  std::stable_sort(order.begin(), order.end(), [&drawlist](const int lhs,
-                                                            const int rhs) {
-    return drawlist.getCommand(lhs).sortKey <
-           drawlist.getCommand(rhs).sortKey;
-  });
-  SbMat viewMat;
-  SbMat projMat;
-  params.viewMatrix.getValue(viewMat);
-  params.projMatrix.getValue(projMat);
-  for (const int index : order) {
-    const SoRenderCommand & command = drawlist.getCommand(index);
-    if (command.stage == stage) {
-      this->drawCommand(drawlist, command, viewMat, projMat, params);
-    }
-  }
-}
-
-void
-SoGLRenderBackend::renderStage(const SoDrawList & drawlist,
-                               const SoRenderStage stage,
-                               const SoRenderParams & params,
-                               const bool framebufferLocal)
-{
-  uint32_t begin = 0;
-  const uint32_t commandCount = static_cast<uint32_t>(drawlist.getNumCommands());
-  for (const SoDepthClearEvent & event : drawlist.getDepthClearEvents()) {
-    if (event.stage != stage) continue;
-    const uint32_t barrier = std::min(event.sequence, commandCount);
-    this->renderStageRange(drawlist, stage, begin, barrier, params);
-    this->clearDepthEvent(event, params, framebufferLocal);
-    begin = barrier;
-  }
-  this->renderStageRange(drawlist, stage, begin, commandCount, params);
 }
 
 void
@@ -3006,13 +2951,6 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
       if (drawlist.getCommand(commandIndex).stage != stage) continue;
       entries.push_back(i);
     }
-    std::stable_sort(entries.begin(), entries.end(),
-      [&drawlist, this](const size_t lhs, const size_t rhs) {
-        const SoPickLUTEntry & left = this->pickTarget.lookup[lhs];
-        const SoPickLUTEntry & right = this->pickTarget.lookup[rhs];
-        return drawlist.getCommand(left.commandIndex).sortKey <
-               drawlist.getCommand(right.commandIndex).sortKey;
-    });
     for (const size_t index : entries) {
       this->drawPickEntry(drawlist, this->pickTarget.lookup[index],
                           static_cast<GLuint>(index + 1),
@@ -3020,20 +2958,38 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
     }
   };
 
-  const uint32_t commandCount = static_cast<uint32_t>(drawlist.getNumCommands());
-  for (const SoRenderStage stage : { SoRenderStage::Background,
-                                     SoRenderStage::Main,
-                                     SoRenderStage::AfterMain,
-                                     SoRenderStage::Foreground }) {
-    uint32_t begin = 0;
-    for (const SoDepthClearEvent & event : drawlist.getDepthClearEvents()) {
-      if (event.stage != stage) continue;
-      const uint32_t barrier = std::min(event.sequence, commandCount);
-      drawPickRange(stage, begin, barrier);
-      this->clearDepthEvent(event, params, true);
-      begin = barrier;
+  auto drawPickCommand = [&](const uint32_t commandIndex) {
+    for (size_t i = 0; i < this->pickTarget.lookup.size(); ++i) {
+      const int lookupCommandIndex = this->pickTarget.lookup[i].commandIndex;
+      if (lookupCommandIndex < 0 ||
+          static_cast<uint32_t>(lookupCommandIndex) != commandIndex) continue;
+      this->drawPickEntry(drawlist, this->pickTarget.lookup[i],
+                          static_cast<GLuint>(i + 1),
+                          frameView, frameProjection, params);
     }
-    drawPickRange(stage, begin, commandCount);
+  };
+
+  const uint32_t commandCount = static_cast<uint32_t>(drawlist.getNumCommands());
+  const uint32_t eventCount = static_cast<uint32_t>(
+    drawlist.getDepthClearEvents().size());
+  for (int i = 0; i < plan.getNumOperations(); ++i) {
+    const SoRenderOperation & operation = plan.getOperation(i);
+    if (operation.type == SoRenderOperationType::DRAW) {
+      if (operation.commandIndex >= commandCount) {
+        this->emitError("pick plan references a missing DrawList command");
+        return FALSE;
+      }
+      drawPickCommand(operation.commandIndex);
+    }
+    else if (operation.type == SoRenderOperationType::CLEAR_DEPTH) {
+      if (operation.depthClearEventIndex >= eventCount) {
+        this->emitError("pick plan references a missing depth-clear event");
+        return FALSE;
+      }
+      this->clearDepthEvent(
+        drawlist.getDepthClearEvents()[operation.depthClearEventIndex],
+        params, true);
+    }
   }
   this->pickTarget.generation = drawlist.getPickLUTGeneration();
   this->pickTarget.drawlist = &drawlist;
@@ -3430,7 +3386,9 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
 
 SbBool
 SoGLRenderBackend::render(const SoDrawList & drawlist,
-                          const SoRenderParams & params)
+                          const SoRenderPlan & plan,
+                          const SoRenderParams & params,
+                          const SoSelectionState * selection)
 {
   if (!this->isInitialized()) {
     this->emitError("render called before backend initialization");
@@ -3441,10 +3399,59 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
   this->beginFrame(params);
   this->updateGeometryCache(drawlist);
 
-  this->renderStage(drawlist, SoRenderStage::Background, params);
-  this->renderStage(drawlist, SoRenderStage::Main, params);
-  this->renderStage(drawlist, SoRenderStage::AfterMain, params);
-  this->renderStage(drawlist, SoRenderStage::Foreground, params);
+  SbMat view;
+  SbMat projection;
+  params.viewMatrix.getValue(view);
+  params.projMatrix.getValue(projection);
+  const uint32_t commandCount = static_cast<uint32_t>(drawlist.getNumCommands());
+  const uint32_t eventCount = static_cast<uint32_t>(
+    drawlist.getDepthClearEvents().size());
+  SoSelectionState queuedSelection;
+  const auto queueTargets = [&](const uint32_t commandIndex) {
+    if (!selection) return;
+    for (const SoSelectionTarget & target : selection->selected) {
+      if (target.commandIndex == static_cast<int>(commandIndex)) {
+        queuedSelection.selected.push_back(target);
+      }
+    }
+    for (const SoSelectionTarget & target : selection->highlighted) {
+      if (target.commandIndex == static_cast<int>(commandIndex)) {
+        queuedSelection.highlighted.push_back(target);
+      }
+    }
+  };
+  const auto flushSelection = [&]() {
+    if (!queuedSelection.selected.empty() ||
+        !queuedSelection.highlighted.empty()) {
+      this->renderSelection(drawlist, queuedSelection, params);
+      queuedSelection = SoSelectionState();
+    }
+  };
+  for (int i = 0; i < plan.getNumOperations(); ++i) {
+    const SoRenderOperation & operation = plan.getOperation(i);
+    if (operation.type == SoRenderOperationType::DRAW) {
+      if (operation.commandIndex >= commandCount) {
+        this->emitError("render plan references a missing DrawList command");
+        return FALSE;
+      }
+      this->drawCommand(drawlist,
+                        drawlist.getCommand(static_cast<int>(operation.commandIndex)),
+                        view, projection, params);
+      queueTargets(operation.commandIndex);
+    }
+    else if (operation.type == SoRenderOperationType::END_DEPTH_SEGMENT) {
+      flushSelection();
+    }
+    else if (operation.type == SoRenderOperationType::CLEAR_DEPTH) {
+      if (operation.depthClearEventIndex >= eventCount) {
+        this->emitError("render plan references a missing depth-clear event");
+        return FALSE;
+      }
+      this->clearDepthEvent(
+        drawlist.getDepthClearEvents()[operation.depthClearEventIndex],
+        params, false);
+    }
+  }
   cc_glglue_glUseProgram(this->glue, 0);
   return TRUE;
 }

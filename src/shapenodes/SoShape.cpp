@@ -397,9 +397,6 @@ private:
         command.pick.elementRanges = pickRanges;
       }
       this->action->applyRenderStage(command);
-      command.sortKey = SoIRComputeSortKey(command,
-                                            static_cast<uint32_t>(command.pass),
-                                            0);
       command.userData = this->shape;
       this->action->addCommand(command);
     }

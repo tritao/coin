@@ -1,6 +1,7 @@
 #include "rendering/SoRenderPlan.h"
 
 #include <iostream>
+#include <vector>
 
 namespace {
 
@@ -8,6 +9,15 @@ bool check(bool condition, const char * message)
 {
   if (!condition) std::cerr << "FAIL: " << message << std::endl;
   return condition;
+}
+
+int drawOperationCount(const SoRenderPlan & plan)
+{
+  int count = 0;
+  for (int i = 0; i < plan.getNumOperations(); ++i) {
+    if (plan.getOperation(i).type == SoRenderOperationType::DRAW) ++count;
+  }
+  return count;
 }
 
 }
@@ -35,16 +45,19 @@ main()
   SoRenderPlan plan;
   SoDrawList empty;
   planner.build(empty, plan);
-  bool result = check(plan.getNumDraws() == 0,
-                      "empty DrawList did not produce an empty plan");
+  bool result = check(drawOperationCount(plan) == 0 &&
+                      plan.getNumOperations() > 0,
+                      "empty DrawList did not produce a barrier-only plan");
 
   planner.build(drawlist, plan);
-
-  result = check(plan.getNumDraws() == 3,
+  result = check(drawOperationCount(plan) == 3,
                  "planner did not retain every command") &&
-    check(plan.getDraw(0).commandIndex == 0 &&
-          plan.getDraw(1).commandIndex == 1 &&
-          plan.getDraw(2).commandIndex == 2,
+    check(plan.getOperation(1).type == SoRenderOperationType::DRAW &&
+          plan.getOperation(1).commandIndex == 0 &&
+          plan.getOperation(2).type == SoRenderOperationType::DRAW &&
+          plan.getOperation(2).commandIndex == 1 &&
+          plan.getOperation(3).type == SoRenderOperationType::DRAW &&
+          plan.getOperation(3).commandIndex == 2,
           "planner changed insertion order") &&
     check(drawlist.getGeneration() == generation &&
           drawlist.getCommand(0).userData == firstData &&
@@ -54,19 +67,20 @@ main()
 
   drawlist.truncate(2);
   planner.build(drawlist, plan);
-  result = check(plan.getNumDraws() == 2 &&
-                 plan.getDraw(0).commandIndex == 0 &&
-                 plan.getDraw(1).commandIndex == 1,
+  result = check(drawOperationCount(plan) == 2,
                  "planner did not rebuild from the current DrawList") && result;
+
   drawlist.clear();
   planner.build(drawlist, plan);
-  result = check(plan.getNumDraws() == 0,
-                 "rebuilding an empty DrawList left stale plan operations") &&
+  result = check(drawOperationCount(plan) == 0,
+                 "rebuilding an empty DrawList left stale draw operations") &&
     result;
+
   drawlist.addCommand(first);
   planner.build(drawlist, plan);
-  result = check(plan.getNumDraws() == 1 &&
-                 plan.getDraw(0).commandIndex == 0,
+  result = check(drawOperationCount(plan) == 1 &&
+                 plan.getOperation(1).type == SoRenderOperationType::DRAW &&
+                 plan.getOperation(1).commandIndex == 0,
                  "reusing a cleared plan did not rebuild its operations") &&
     result;
 
@@ -87,12 +101,42 @@ main()
   transparencyDrawList.addCommand(transparentNear);
   transparencyDrawList.addCommand(transparentFar);
   planner.build(transparencyDrawList, plan);
-  result = check(plan.getNumDraws() == 3 &&
-                 plan.getDraw(0).commandIndex == 0 &&
-                 plan.getDraw(1).commandIndex == 2 &&
-                 plan.getDraw(2).commandIndex == 1,
+  std::vector<uint32_t> transparentDraws;
+  for (int i = 0; i < plan.getNumOperations(); ++i) {
+    if (plan.getOperation(i).type == SoRenderOperationType::DRAW) {
+      transparentDraws.push_back(plan.getOperation(i).commandIndex);
+    }
+  }
+  result = check(transparentDraws.size() == 3 &&
+                 transparentDraws[0] == 0 &&
+                 transparentDraws[1] == 2 &&
+                 transparentDraws[2] == 1,
                  "planner did not schedule transparent commands back-to-front") &&
     result;
 
+  drawlist.addCommand(second);
+  SoDepthClearEvent event;
+  event.sequence = 1;
+  drawlist.addDepthClearEvent(event);
+  planner.build(drawlist, plan);
+  bool sawClear = false;
+  bool sawEndBeforeClear = false;
+  bool sawDrawAfterClear = false;
+  for (int i = 0; i < plan.getNumOperations(); ++i) {
+    const SoRenderOperation & operation = plan.getOperation(i);
+    if (operation.type == SoRenderOperationType::END_DEPTH_SEGMENT && !sawClear) {
+      sawEndBeforeClear = true;
+    }
+    if (operation.type == SoRenderOperationType::CLEAR_DEPTH &&
+        operation.depthClearEventIndex == 0) {
+      sawClear = true;
+    }
+    if (sawClear && operation.type == SoRenderOperationType::DRAW &&
+        operation.commandIndex == 1) {
+      sawDrawAfterClear = true;
+    }
+  }
+  result = check(sawEndBeforeClear && sawClear && sawDrawAfterClear,
+                 "planner did not preserve a depth-clear barrier") && result;
   return result ? 0 : 1;
 }

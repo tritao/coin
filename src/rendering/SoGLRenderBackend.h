@@ -40,7 +40,9 @@ public:
   void shutdown() override;
   void discard() override;
   SbBool render(const SoDrawList & drawlist,
-                const SoRenderParams & params) override;
+                const SoRenderPlan & plan,
+                const SoRenderParams & params,
+                const SoSelectionState * selection = nullptr) override;
 
   //! Render the current DrawList into the explicit integer picking buffer.
   SbBool updatePickBuffer(const SoDrawList & drawlist,
@@ -355,15 +357,6 @@ private:
   void clearDepthEvent(const SoDepthClearEvent & event,
                        const SoRenderParams & params,
                        bool framebufferLocal);
-  void renderStage(const SoDrawList & drawlist,
-                   SoRenderStage stage,
-                   const SoRenderParams & params,
-                   bool framebufferLocal = false);
-  void renderStageRange(const SoDrawList & drawlist,
-                        SoRenderStage stage,
-                        uint32_t begin,
-                        uint32_t end,
-                        const SoRenderParams & params);
   void drawCommand(const SoDrawList & drawlist,
                    const SoRenderCommand & command,
                    const SbMat & viewMat,
@@ -375,8 +368,7 @@ private:
   void applyDepthState(const SoRenderCommand & command);
   void applyRasterState(const SoRenderCommand & command,
                         const RasterPath & path);
-  void applyBlendState(const SoRenderCommand & command,
-                       const SbVec4f & color);
+  void applyBlendState(const SoRenderCommand & command);
   bool applyPolygonOffset(const SoRenderCommand & command,
                           const RasterPath & path,
                           GLenum & target);

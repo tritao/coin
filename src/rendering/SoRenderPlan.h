@@ -11,8 +11,16 @@
   \struct SoPlannedDraw
   \brief One draw operation in a resolved retained-render plan.
 */
-struct SoPlannedDraw {
+enum class SoRenderOperationType : uint8_t {
+  DRAW,
+  END_DEPTH_SEGMENT,
+  CLEAR_DEPTH
+};
+
+struct SoRenderOperation {
+  SoRenderOperationType type = SoRenderOperationType::DRAW;
   uint32_t commandIndex = 0;
+  uint32_t depthClearEventIndex = 0;
 };
 
 /*!
@@ -22,18 +30,19 @@ struct SoPlannedDraw {
   The plan owns no command data. It contains only stable indices into the
   source SoDrawList and is therefore cheap to rebuild for each invocation.
   Opaque commands retain insertion order; transparent commands are resolved
-  back-to-front after opaque commands.
+  back-to-front after opaque commands within each depth segment.  The plan
+  also owns the stage and depth-barrier execution sequence.
 */
 class SoRenderPlan {
 public:
-  int getNumDraws() const
-  { return static_cast<int>(this->draws.size()); }
+  int getNumOperations() const
+  { return static_cast<int>(this->operations.size()); }
 
-  const SoPlannedDraw & getDraw(int index) const
-  { return this->draws[static_cast<size_t>(index)]; }
+  const SoRenderOperation & getOperation(int index) const
+  { return this->operations[static_cast<size_t>(index)]; }
 
 private:
-  std::vector<SoPlannedDraw> draws;
+  std::vector<SoRenderOperation> operations;
   friend class SoRenderPlanner;
 };
 

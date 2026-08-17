@@ -596,9 +596,10 @@ SoImage::IRRender(SoIRRenderAction * action)
   const size_t byteCount = static_cast<size_t>(sourceSize[0]) *
                            static_cast<size_t>(sourceSize[1]) *
                            static_cast<size_t>(numComponents);
-  unsigned char * pixels = static_cast<unsigned char *>(
-    action->allocateGeometryStorage(byteCount, alignof(unsigned char)));
-  std::memcpy(pixels, dataptr, byteCount);
+  bool hasTransparency = false;
+  const unsigned char * pixels = action->allocateTextureStorage(
+    dataptr, byteCount, sourceSize[0], sourceSize[1], numComponents,
+    hasTransparency);
 
   SoRenderCommand command = {};
   command.geometry.topology = SO_TOPOLOGY_TRIANGLES;
@@ -619,6 +620,7 @@ SoImage::IRRender(SoIRRenderAction * action)
   command.material.texture.width = sourceSize[0];
   command.material.texture.height = sourceSize[1];
   command.material.texture.numComponents = numComponents;
+  command.material.texture.hasTransparency = hasTransparency;
   command.material.texture.wrapS = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
   command.material.texture.wrapT = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
   command.pixelRaster.enabled = TRUE;

@@ -66,7 +66,7 @@ runTest()
         main.state.raster.viewportWidth != 20 ||
         main.state.raster.viewportHeight != 21 ||
         firstForeground.stage != SoRenderStage::Foreground ||
-        firstForeground.pass != SO_RENDERPASS_TRANSPARENT ||
+        !firstForeground.state.blend.enabled ||
         !firstForeground.state.raster.viewportOverride ||
         !firstForeground.state.useCommandMatrices ||
         firstForeground.state.raster.viewportX != 5 ||
