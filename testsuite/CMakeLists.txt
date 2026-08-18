@@ -179,6 +179,8 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		SOURCES RetainedMaterialLightingGLTest.cpp)
 	coin_add_gl_test(NAME RetainedRasterGLTest PROFILE core
 		SOURCES RetainedRasterGLTest.cpp)
+	coin_add_gl_test(NAME SoText2RasterLayoutTest PROFILE core
+		SOURCES SoText2RasterLayoutTest.cpp)
 	if(COIN_BUILD_LEGACY_GL_RENDERER)
 		coin_add_gl_test(NAME LegacySoText2RasterLayoutTest PROFILE compat
 			SOURCES LegacySoText2RasterLayoutTest.cpp LABELS requires-legacygl)
@@ -306,6 +308,13 @@ target_include_directories(RetainedMaterialLightingTest PRIVATE
 add_test(NAME RetainedMixedTopologyTest COMMAND RetainedMixedTopologyTest)
 
 add_test(NAME RetainedMaterialLightingTest COMMAND RetainedMaterialLightingTest)
+add_executable(SoText2RasterTest RetainedRasterTextTest.cpp)
+target_link_libraries(SoText2RasterTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(SoText2RasterTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES})
+add_test(NAME SoText2RasterTest COMMAND SoText2RasterTest)
 if(HAVE_EGL)
 	coin_add_egl_test(NAME EGLBindingTest SOURCES EGLBindingTest.cpp
 		LABELS requires-egl)
