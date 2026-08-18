@@ -1,4 +1,4 @@
-#include "rendering/CoinOffscreenGLCanvas.h"
+#include "support/GLTestContext.h"
 
 #include <Inventor/SoDB.h>
 #include <Inventor/SoRenderManager.h>
@@ -13,7 +13,6 @@
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoTransform.h>
 
-#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <vector>
@@ -24,15 +23,6 @@ int skip(const char * reason)
 {
   std::cout << "SKIP: " << reason << std::endl;
   return 77;
-}
-
-void set_environment(const char * name, const char * value)
-{
-#ifdef _WIN32
-  _putenv_s(name, value);
-#else
-  setenv(name, value, 1);
-#endif
 }
 
 SoSeparator * afterRoot = NULL;
@@ -111,17 +101,16 @@ bool isColor(const uint8_t * pixel, int r, int g, int b)
 static int
 runTest()
 {
-  set_environment("COIN_EGL", "1");
-  set_environment("EGL_PLATFORM", "surfaceless");
-  set_environment("COIN_EGL_CORE_PROFILE", "1");
-#if defined(__linux__)
-#endif
-
   SoDB::init();
-  std::unique_ptr<CoinOffscreenGLCanvas> canvas(new CoinOffscreenGLCanvas);
-  canvas->setWantedSize(SbVec2s(32, 32));
-  if (canvas->activateGLContext() == 0) {
-    return skip("core EGL offscreen context is unavailable");
+  GLTestContextConfig config;
+  config.profile = GLTestProfile::Core;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 32;
+  config.height = 32;
+  std::unique_ptr<GLTestContext> context(new GLTestContext);
+  if (!context->initialize(config)) {
+    return skip("core GLFW OpenGL context is unavailable");
   }
 
   SoRenderLayerGroup * scene = new SoRenderLayerGroup;
@@ -160,7 +149,7 @@ runTest()
     manager.render(TRUE, TRUE);
 
     std::vector<uint8_t> pixels(32 * 32 * 4, 0);
-    canvas->readPixels(pixels.data(), SbVec2s(32, 32), 32, 4);
+    pixels = context->readPixels();
     const uint8_t * pixel = &pixels[(16 * 32 + 16) * 4];
     if (!isColor(pixel, 255, 0, 0)) {
       std::cerr << "FAIL: after-main retained stage did not render after the scene" << std::endl;
@@ -196,7 +185,7 @@ runTest()
       occludedManager.addAfterMainSceneCallback(clearAfterMain, NULL);
       occludedManager.render(TRUE, TRUE);
       pixels.assign(32 * 32 * 4, 0);
-      canvas->readPixels(pixels.data(), SbVec2s(32, 32), 32, 4);
+      pixels = context->readPixels();
       if (!isColor(&pixels[(16 * 32 + 16) * 4], 0, 255, 0)) {
         std::cerr << "FAIL: selected rear object escaped main-stage depth occlusion"
                   << std::endl;
@@ -211,7 +200,7 @@ runTest()
     manager.render(TRUE, TRUE);
     selectAfterRoot = false;
     pixels.assign(32 * 32 * 4, 0);
-    canvas->readPixels(pixels.data(), SbVec2s(32, 32), 32, 4);
+    pixels = context->readPixels();
     if (!isColor(&pixels[(16 * 32 + 16) * 4], 255, 0, 255)) {
       std::cerr << "FAIL: selected after-main object was not visible" << std::endl;
       result = 1;
@@ -237,7 +226,7 @@ runTest()
         SoRenderManager::RENDER_LAYER_FOREGROUND, depthForeground);
       depthManager.render(TRUE, TRUE);
       pixels.assign(32 * 32 * 4, 0);
-      canvas->readPixels(pixels.data(), SbVec2s(32, 32), 32, 4);
+      pixels = context->readPixels();
       if (!isColor(&pixels[(16 * 32 + 16) * 4], 255, 0, 0) ||
           !isColor(&pixels[(2 * 32 + 2) * 4], 0, 0, 255)) {
         std::cerr << "FAIL: scoped depth clear did not affect only its viewport"
@@ -253,7 +242,7 @@ runTest()
     manager.setRenderLayerRoot(SoRenderManager::RENDER_LAYER_FOREGROUND, NULL);
     manager.render(TRUE, TRUE);
     pixels.assign(32 * 32 * 4, 0);
-    canvas->readPixels(pixels.data(), SbVec2s(32, 32), 32, 4);
+    pixels = context->readPixels();
     if (isColor(&pixels[(5 * 32 + 5) * 4], 255, 255, 0)) {
       std::cerr << "FAIL: removing the foreground root did not invalidate retained rendering" << std::endl;
       result = 1;
@@ -266,7 +255,7 @@ runTest()
     manager.releaseRenderBackendResources();
     manager.render(TRUE, TRUE);
     pixels.assign(32 * 32 * 4, 0);
-    canvas->readPixels(pixels.data(), SbVec2s(32, 32), 32, 4);
+    pixels = context->readPixels();
     if (!isColor(&pixels[(5 * 32 + 5) * 4], 255, 255, 0)) {
       std::cerr << "FAIL: release/reinitialize did not restore retained rendering" << std::endl;
       result = 1;
@@ -274,26 +263,24 @@ runTest()
 
     // Destroy the actual context before asking the backend to discard its
     // resources. This exercises the no-GL discard contract.
-    canvas->deactivateGLContext();
-    canvas.reset();
+    context->shutdown();
+    context.reset();
     manager.discardRenderBackendResources();
-    canvas.reset(new CoinOffscreenGLCanvas);
-    canvas->setWantedSize(SbVec2s(32, 32));
-    if (canvas->activateGLContext() == 0) {
+    context.reset(new GLTestContext);
+    if (!context->initialize(config)) {
       result = 1;
     }
     else {
       manager.render(TRUE, TRUE);
       pixels.assign(32 * 32 * 4, 0);
-      canvas->readPixels(pixels.data(), SbVec2s(32, 32), 32, 4);
+      pixels = context->readPixels();
       if (!isColor(&pixels[(5 * 32 + 5) * 4], 255, 255, 0)) {
         std::cerr << "FAIL: discarded backend was not reinitialized" << std::endl;
         result = 1;
       }
     }
     // Destruction after context loss must discard rather than issue GL calls.
-    canvas->deactivateGLContext();
-    canvas.reset();
+    context.reset();
   }
 
   afterRoot->unref();
@@ -301,10 +288,7 @@ runTest()
   scene->unref();
   foreground->unref();
   afterRoot = NULL;
-  if (canvas) {
-    canvas->deactivateGLContext();
-    canvas.reset();
-  }
+  context.reset();
   return result;
 }
 

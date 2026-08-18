@@ -16,6 +16,7 @@
 #include <vector>
 
 class SoState;
+class SoNode;
 
 namespace SoRenderIR {
 
@@ -236,15 +237,16 @@ struct SoTextureData {
   // True when at least one texel can contribute alpha below one.
   bool hasTransparency = false;
 
-  SoTextureFilter minFilter = SO_TEXTURE_FILTER_NEAREST;
-  SoTextureFilter magFilter = SO_TEXTURE_FILTER_NEAREST;
-  SoTextureWrap wrapS = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
-  SoTextureWrap wrapT = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
   // A nonzero key permits a backend to retain the texture resource across
   // frame lifetimes. revision changes require the resource contents to be
   // refreshed; zero remains transient.
   uint64_t cacheKey = 0;
   uint64_t revision = 0;
+
+  SoTextureFilter minFilter = SO_TEXTURE_FILTER_NEAREST;
+  SoTextureFilter magFilter = SO_TEXTURE_FILTER_NEAREST;
+  SoTextureWrap wrapS = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+  SoTextureWrap wrapT = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
   // Request anisotropic filtering when Coin's texture-quality policy enables
   // it. The executor selects the driver's supported level.
   bool anisotropic = false;
@@ -601,6 +603,7 @@ struct SoPickResultList {
 */
 struct SoSelectionTarget {
   int commandIndex = -1;
+  uint64_t objectId = 0;
   SoPickElementType type = SO_PICK_OBJECT;
   int elementIndex = -1;
   SbColor4f color = SbColor4f(1.0f, 1.0f, 0.0f, 0.75f);
@@ -639,9 +642,9 @@ struct SoRenderCommand {
 
   SoOpacityClass   opacityClass = SO_OPACITY_OPAQUE;
   SoRenderStage    stage = SoRenderStage::Main;
-  SoLightingHandle lightingHandle = 0;
   // Stable scene identity. Zero means that the producer did not provide one.
   uint64_t         objectId = 0;
+  SoLightingHandle lightingHandle = 0;
   SoPixelRasterData pixelRaster;
   SoPickData       pick;
   void *           userData = nullptr; //!< Opaque, non-owned producer data.

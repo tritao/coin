@@ -15,8 +15,8 @@
 class SoPrimitiveVertex;
 class SoPath;
 class SoPathList;
-class SoNode;
 class SoCamera;
+class SoNode;
 class SoIRRenderActionP;
 
 /*!
@@ -97,10 +97,6 @@ public:
 
   //! Append a retained command produced during the current traversal.
   void addCommand(const SoRenderCommand & command);
-  //! Return the non-owned path retained for a command in this frame.
-  //! The pointer is borrowed and remains valid until the next apply/beginFrame
-  //! on this action or until the action is destroyed.
-  const SoPath * getCommandPath(int commandIndex) const;
 
   //! Mark the current frame as unsupported by the retained renderer.
   void markUnsupported(const SoNode * node, const char * reason);
@@ -110,6 +106,11 @@ public:
   const SoNode * getUnsupportedNode() const { return this->unsupportedNode; }
   //! Return a static or otherwise frame-stable explanation for the status.
   const char * getUnsupportedReason() const { return this->unsupportedReason; }
+  //! Return the non-owned path retained for a command in this frame.
+  //! The pointer is borrowed and remains valid until the next apply/beginFrame
+  //! on this action or until the action is destroyed.
+  const SoPath * getCommandPath(int commandIndex) const;
+
   //! Append a root without clearing the current retained frame.
   void traverseAdditionalRoot(
     SoNode * root,
@@ -124,13 +125,7 @@ public:
   void traverseAdditionalPath(SoPath * path,
                               const SoIRRenderContext & context);
 #endif
-  //! Traverse a delayed subtree using a copied replay context.
-  void traverseAdditionalSubtree(SoNode * root,
-                                 const SoIRRenderContext & context);
 
-  void beginAfterMainStage();
-  void endAfterMainStage();
-  bool isAfterMainStage() const { return this->afterMainStageDepth != 0; }
   SoRenderStage getRenderStage() const { return this->renderStage; }
   void setRenderStage(SoRenderStage stage) { this->renderStage = stage; }
   void applyRenderStage(SoRenderCommand & command);
@@ -175,8 +170,6 @@ private:
   void clearCommandPaths();
   void traverseAdditionalPathInternal(
     SoPath * path, const SoIRRenderContext * context);
-  void traverseAdditionalSubtreeInternal(
-    SoNode * root, const SoIRRenderContext * context);
   const SoIRRenderContext * getRenderContextOverride() const
   {
     return this->hasRenderContextOverride
@@ -190,14 +183,12 @@ private:
   SoDrawList       drawlist;
   std::vector<SoPath *> commandPaths;
   SoIRRenderActionP * pimpl;
-  bool unsupportedRendering = false;
-  const SoNode * unsupportedNode = nullptr;
-  const char * unsupportedReason = nullptr;
-  unsigned int     afterMainStageDepth = 0;
-  bool             afterMainDepthClearPending = false;
   SoRenderStage    renderStage = SoRenderStage::Main;
   SoIRRenderContext renderContextOverride;
   bool hasRenderContextOverride = false;
+  bool unsupportedRendering = false;
+  const SoNode * unsupportedNode = nullptr;
+  const char * unsupportedReason = nullptr;
 };
 
 /*! \brief RAII guard for an action-local manager render stage. */
