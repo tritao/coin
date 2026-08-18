@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -42,6 +43,22 @@ public:
                 const SoRenderParams & params) override;
 
 private:
+  struct ResourceCacheKey {
+    uint64_t geometry = 0;
+    uint64_t texture = 0;
+    bool operator==(const ResourceCacheKey & rhs) const
+    { return this->geometry == rhs.geometry && this->texture == rhs.texture; }
+  };
+  struct ResourceCacheKeyHash {
+    size_t operator()(const ResourceCacheKey & key) const
+    {
+      const size_t geometryHash = std::hash<uint64_t>()(key.geometry);
+      const size_t textureHash = std::hash<uint64_t>()(key.texture);
+      return geometryHash ^ (textureHash + static_cast<size_t>(0x9e3779b9) +
+                             (geometryHash << 6) + (geometryHash >> 2));
+    }
+  };
+
   struct CachedCommand {
     GLuint positionBuffer = 0;
     GLuint colorBuffer = 0;
@@ -62,7 +79,12 @@ private:
     int textureWidth = 0;
     int textureHeight = 0;
     int textureComponents = 0;
-    uint32_t cacheGeneration = 0;
+    uint64_t geometryCacheKey = 0;
+    uint64_t geometryRevision = 0;
+    uint64_t textureCacheKey = 0;
+    uint64_t textureRevision = 0;
+    ResourceCacheKey resourceKey;
+    bool persistent = false;
   };
 
   struct VisualProgram {
@@ -119,6 +141,7 @@ private:
   const cc_glglue * glue = nullptr;
   std::vector<CachedCommand> gpuCache;
   std::unordered_map<const SoRenderCommand *, size_t> commandToCache;
+  std::unordered_map<ResourceCacheKey, size_t, ResourceCacheKeyHash> resourceToCache;
   uint32_t cacheGeneration = 0;
   size_t cachedCommandCount = 0;
   bool haveCacheGeneration = false;
