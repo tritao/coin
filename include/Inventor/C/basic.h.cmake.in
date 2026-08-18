@@ -42,6 +42,7 @@
 #define COIN_HAVE_DEVICE_PIXEL_RATIO 1
 #define COIN_HAVE_IR_RENDER_ACTION 1
 #define COIN_HAVE_RENDER_PIPELINES 1
+#define COIN_HAVE_RETAINED_PICKING 1
 
 /*
   NOTE: basic.h is automatically generated from basic.h.in, so don't

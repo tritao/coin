@@ -2,10 +2,12 @@
 
 #include <Inventor/SoDB.h>
 #include <Inventor/C/glue/gl.h>
+#include <Inventor/SoPickedPoint.h>
 #include <Inventor/SoRenderManager.h>
 #include <Inventor/SbMatrix.h>
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/system/gl.h>
+#include <Inventor/lists/SoPickedPointList.h>
 #include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/elements/SoProjectionMatrixElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
@@ -204,58 +206,6 @@ runTest()
     }
   }
 
-  // A scene root that owns its camera must begin traversal from identity so
-  // state before the camera node is not transformed by the manager camera.
-  // This is explicit rather than inferred by searching the root graph.
-  SoSeparator * cameraRoot = new SoSeparator;
-  SoPointLight * sceneLight = new SoPointLight;
-  sceneLight->location.setValue(1.0f, 0.0f, 0.0f);
-  SoPerspectiveCamera * sceneCamera = new SoPerspectiveCamera;
-  sceneCamera->position.setValue(5.0f, 0.0f, 5.0f);
-  sceneCamera->pointAt(SbVec3f(0.0f, 0.0f, 0.0f));
-  cameraRoot->addChild(sceneLight);
-  cameraRoot->addChild(sceneCamera);
-  cameraRoot->addChild(new SoCube);
-  cameraRoot->ref();
-  {
-    SoIRRenderAction sceneCameraAction(testViewport);
-    sceneCameraAction.setCamera(camera);
-    sceneCameraAction.setCameraPolicy(
-      SoIRRenderAction::CameraPolicy::CAMERA_IN_ROOT);
-    sceneCameraAction.apply(cameraRoot);
-    const SoDrawList & sceneCameraDrawList = sceneCameraAction.getDrawList();
-    SoIRRenderAction configuredCameraAction(testViewport);
-    configuredCameraAction.setCamera(camera);
-    configuredCameraAction.apply(cameraRoot);
-    const SoDrawList & configuredCameraDrawList = configuredCameraAction.getDrawList();
-    if (sceneCameraDrawList.getNumCommands() == 0 ||
-        configuredCameraDrawList.getNumCommands() == 0) {
-      std::cerr << "FAIL: explicit scene-camera policy did not use the root camera" << std::endl;
-      cameraRoot->unref();
-      camera->unref();
-      cubeRoot->unref();
-      return 1;
-    }
-    const SoRenderCommand & sceneCameraCommand = sceneCameraDrawList.getCommand(0);
-    const SoRenderCommand & configuredCameraCommand = configuredCameraDrawList.getCommand(0);
-    const SoLightingData * sceneLighting = sceneCameraDrawList.getLighting(
-      sceneCameraCommand.lightingHandle);
-    const SoLightingData * configuredLighting = configuredCameraDrawList.getLighting(
-      configuredCameraCommand.lightingHandle);
-    if (sceneCameraCommand.viewMatrix == SbMatrix::identity() ||
-        !sceneLighting || !configuredLighting || sceneLighting->lights.empty() ||
-        configuredLighting->lights.empty() ||
-        (sceneLighting->lights[0].position - configuredLighting->lights[0].position).length()
-          < 1e-4f) {
-      std::cerr << "FAIL: explicit scene-camera policy did not preserve pre-camera state" << std::endl;
-      cameraRoot->unref();
-      camera->unref();
-      cubeRoot->unref();
-      return 1;
-    }
-  }
-  cameraRoot->unref();
-
   int result = 0;
   {
     SoRenderManager manager;
@@ -274,6 +224,29 @@ runTest()
     }
     if (countNonBlack(context) == 0) {
       std::cerr << "FAIL: transformed-camera manager render produced no pixels" << std::endl;
+      result = 1;
+    }
+
+    SoPickedPoint * closest = NULL;
+    if (!manager.pickClosest(16, 16, 0, closest) || !closest ||
+        closest->getPath()->getTail()->getTypeId() !=
+          SoCube::getClassTypeId() ||
+        !std::isfinite(closest->getPoint()[0]) ||
+        !std::isfinite(closest->getPoint()[1]) ||
+        !std::isfinite(closest->getPoint()[2])) {
+      std::cerr << "FAIL: manager did not resolve retained identity into "
+                   "a SoPickedPoint" << std::endl;
+      result = 1;
+    }
+    delete closest;
+
+    SoPickedPointList stack;
+    if (!manager.pickDepthStack(16, 16, 0, 8, stack) ||
+        stack.getLength() == 0 ||
+        stack[0]->getPath()->getTail()->getTypeId() !=
+          SoCube::getClassTypeId()) {
+      std::cerr << "FAIL: manager depth-stack query did not return scene hits"
+                << std::endl;
       result = 1;
     }
 

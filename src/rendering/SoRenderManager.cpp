@@ -71,7 +71,12 @@
 #include <Inventor/nodes/SoInfo.h>
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/SoPath.h>
+#include <Inventor/SoPickedPoint.h>
+#include <Inventor/lists/SoPickedPointList.h>
 #include <Inventor/details/SoDetail.h>
+#include <Inventor/details/SoFaceDetail.h>
+#include <Inventor/details/SoLineDetail.h>
+#include <Inventor/details/SoPointDetail.h>
 #include <Inventor/elements/SoDrawStyleElement.h>
 #include <Inventor/elements/SoComplexityTypeElement.h>
 #include <Inventor/elements/SoPolygonOffsetElement.h>
@@ -134,6 +139,88 @@ currentContextSupportsLegacyRendering()
 #else
   return FALSE;
 #endif
+}
+
+SoRenderParams
+retainedRenderParams(const SoRenderManagerP * manager)
+{
+  SoRenderParams params = {};
+  params.viewport = manager->viewport;
+  if (manager->camera) {
+    SbViewportRegion cameraViewport = manager->viewport;
+    const SbViewVolume viewVolume = manager->camera->getViewVolume(
+      manager->viewport, cameraViewport);
+    params.viewport = cameraViewport;
+    viewVolume.getMatrices(params.viewMatrix, params.projMatrix);
+  }
+  else {
+    params.viewMatrix = SbMatrix::identity();
+    params.projMatrix = SbMatrix::identity();
+  }
+  params.devicePixelRatio = manager->devicePixelRatio;
+  params.clearColor = manager->backgroundcolor;
+  params.clearDepth = 1.0f;
+  return params;
+}
+
+SoDetail *
+detailFromPickResult(const SoPickResult & hit)
+{
+  if (hit.elementIndex < 0) return NULL;
+  switch (hit.type) {
+  case SO_PICK_FACE: {
+    SoFaceDetail * detail = new SoFaceDetail;
+    detail->setFaceIndex(hit.elementIndex);
+    detail->setPartIndex(hit.elementIndex);
+    return detail;
+  }
+  case SO_PICK_EDGE: {
+    SoLineDetail * detail = new SoLineDetail;
+    detail->setLineIndex(hit.elementIndex);
+    detail->setPartIndex(hit.elementIndex);
+    return detail;
+  }
+  case SO_PICK_VERTEX: {
+    SoPointDetail * detail = new SoPointDetail;
+    detail->setCoordinateIndex(hit.elementIndex);
+    return detail;
+  }
+  case SO_PICK_OBJECT:
+  default:
+    return NULL;
+  }
+}
+
+SoPickedPoint *
+resolvePickResult(const SoRenderManagerP * manager,
+                  const SoPickResult & hit,
+                  const SoRenderParams & params)
+{
+  if (!manager->irAction || hit.generation == 0 ||
+      hit.generation != manager->irAction->getDrawList().getGeneration()) {
+    return NULL;
+  }
+  const SoPath * path = manager->irAction->getCommandPath(hit.commandIndex);
+  if (!path) return NULL;
+
+  const SbVec2s size = params.viewport.getViewportSizePixels();
+  if (size[0] <= 0 || size[1] <= 0) return NULL;
+  const float ndcX = (2.0f * (static_cast<float>(hit.pixelX) + 0.5f) /
+                      static_cast<float>(size[0])) - 1.0f;
+  const float ndcY = (2.0f * (static_cast<float>(hit.pixelY) + 0.5f) /
+                      static_cast<float>(size[1])) - 1.0f;
+  const float ndcZ = 2.0f * hit.depth - 1.0f;
+  SbMatrix worldToClip = params.viewMatrix;
+  worldToClip.multRight(params.projMatrix);
+  const SbMatrix clipToWorld = worldToClip.inverse();
+  SbVec3f worldPoint;
+  clipToWorld.multVecMatrix(SbVec3f(ndcX, ndcY, ndcZ), worldPoint);
+
+  SoPickedPoint * picked = new SoPickedPoint(path, worldPoint,
+                                             params.viewport);
+  SoDetail * detail = detailFromPickResult(hit);
+  if (detail) picked->setDetail(detail, path->getTail());
+  return picked;
 }
 
 } // namespace
@@ -313,6 +400,8 @@ SoRenderManager::SoRenderManager(void)
   PRIVATE(this)->renderBackend = NULL;
   PRIVATE(this)->renderBackendContextId = 0;
   PRIVATE(this)->drawListCallbackScope = FALSE;
+  PRIVATE(this)->pickTargetDirty = TRUE;
+  PRIVATE(this)->pickTargetGeneration = 0;
   PRIVATE(this)->viewport = SbViewportRegion(SbVec2s(400, 400));
   PRIVATE(this)->devicePixelRatio = 1.0f;
 
@@ -411,7 +500,6 @@ SoRenderManager::setSceneGraph(SoNode * const sceneroot)
   SoNode * oldroot = PRIVATE(this)->scene;
 
   PRIVATE(this)->scene = sceneroot;
-  PRIVATE(this)->clearPersistentSelection();
 
   if (PRIVATE(this)->scene) {
     PRIVATE(this)->scene->ref();
@@ -420,86 +508,6 @@ SoRenderManager::setSceneGraph(SoNode * const sceneroot)
   }
   
   if (oldroot) oldroot->unref();
-}
-
-SbBool
-SoRenderManager::setSelection(const SoPath * path, const SoDetail * detail,
-                              const SbColor4f & color, const SbBool append)
-{
-  // Generic subelement-to-SoDetail rebinding is intentionally deferred until
-  // the retained range metadata is proven to match Coin's detail semantics.
-  if (!path || detail) return FALSE;
-
-  if (!append) PRIVATE(this)->clearSelections();
-  SoRenderManagerP::PersistentSelection selection;
-  selection.path = path->copy();
-  selection.path->ref();
-  selection.color = color;
-  PRIVATE(this)->selections.push_back(selection);
-  this->scheduleRedraw();
-  return TRUE;
-}
-
-void
-SoRenderManager::clearSelection(void)
-{
-  PRIVATE(this)->clearSelections();
-  this->scheduleRedraw();
-}
-
-SbBool
-SoRenderManager::setHighlight(const SoPath * path, const SoDetail * detail,
-                              const SbColor4f & color)
-{
-  if (!path || detail) return FALSE;
-
-  PRIVATE(this)->clearHighlightSelection();
-  PRIVATE(this)->highlight.path = path->copy();
-  PRIVATE(this)->highlight.path->ref();
-  PRIVATE(this)->highlight.color = color;
-  PRIVATE(this)->hasHighlight = TRUE;
-  this->scheduleRedraw();
-  return TRUE;
-}
-
-void
-SoRenderManager::clearHighlight(void)
-{
-  PRIVATE(this)->clearHighlightSelection();
-  this->scheduleRedraw();
-}
-
-SbBool
-SoRenderManager::setSelectionFromPickId(const uint32_t pickId,
-                                         const SbColor4f & color,
-                                         const SbBool append)
-{
-  if (!PRIVATE(this)->irAction || pickId == 0) return FALSE;
-  SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
-  drawlist.buildPickLUT();
-  const SoPickLUTEntry * entry = drawlist.resolvePickId(pickId);
-  if (!entry || entry->type != SO_PICK_OBJECT || entry->elementIndex >= 0) {
-    return FALSE;
-  }
-  const SoPath * path = PRIVATE(this)->irAction->getCommandPath(
-    entry->commandIndex);
-  return this->setSelection(path, NULL, color, append);
-}
-
-SbBool
-SoRenderManager::setHighlightFromPickId(const uint32_t pickId,
-                                         const SbColor4f & color)
-{
-  if (!PRIVATE(this)->irAction || pickId == 0) return FALSE;
-  SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
-  drawlist.buildPickLUT();
-  const SoPickLUTEntry * entry = drawlist.resolvePickId(pickId);
-  if (!entry || entry->type != SO_PICK_OBJECT || entry->elementIndex >= 0) {
-    return FALSE;
-  }
-  const SoPath * path = PRIVATE(this)->irAction->getCommandPath(
-    entry->commandIndex);
-  return this->setHighlight(path, NULL, color);
 }
 
 /*!
@@ -1066,39 +1074,11 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
                  (clearzbuffer ? SO_PARAM_CLEAR_DEPTH : 0u);
   SoRenderPlanner planner;
   SoRenderPlan plan;
-  planner.build(drawlist, plan);
+  planner.build(drawlist, params.viewMatrix, plan);
 
-  // Convert persistent scene identity into current-frame command targets only
-  // after traversal.  A path may produce several commands (for example after
-  // material batching), so whole-object selection binds every matching one.
-  SoSelectionState selection;
-  const auto bindSelections = [&](
-    const std::vector<SoRenderManagerP::PersistentSelection> & identities,
-    std::vector<SoSelectionTarget> & targets) {
-    for (const SoRenderManagerP::PersistentSelection & identity : identities) {
-      if (!identity.path || identity.detail) continue;
-      for (int commandIndex = 0; commandIndex < drawlist.getNumCommands();
-           ++commandIndex) {
-        const SoPath * commandPath = PRIVATE(this)->irAction->getCommandPath(
-          commandIndex);
-        if (!commandPath || *commandPath != *identity.path) continue;
-        SoSelectionTarget target;
-        target.commandIndex = commandIndex;
-        target.color = identity.color;
-        targets.push_back(target);
-      }
-    }
-  };
-  bindSelections(PRIVATE(this)->selections, selection.selected);
-  if (PRIVATE(this)->hasHighlight) {
-    const std::vector<SoRenderManagerP::PersistentSelection> highlight(
-      1, PRIVATE(this)->highlight);
-    bindSelections(highlight, selection.highlighted);
-  }
-  const SoSelectionState * selectionPtr =
-    (selection.selected.empty() && selection.highlighted.empty())
-      ? nullptr : &selection;
-  PRIVATE(this)->renderBackend->render(drawlist, plan, params, selectionPtr);
+  PRIVATE(this)->renderBackend->render(drawlist, plan, params);
+  PRIVATE(this)->pickTargetDirty = TRUE;
+  PRIVATE(this)->pickTargetGeneration = 0;
 
   if (SoRenderManager::isRealTimeUpdateEnabled()) {
     SoField * realtime = SoDB::getGlobalField("realTime");
@@ -1617,6 +1597,7 @@ SoRenderManager::reinitialize(void)
 void
 SoRenderManager::scheduleRedraw(void)
 {
+  PRIVATE(this)->pickTargetDirty = TRUE;
   PRIVATE(this)->lock();
   if (this->isActive() && PRIVATE(this)->rendercb) {
 #if COIN_DEBUG && 0 // debug
@@ -2097,6 +2078,87 @@ SoRenderManager::getRenderPipeline(void) const
   return PRIVATE(this)->renderPipeline;
 }
 
+SbBool
+SoRenderManager::pickClosest(const int x, const int y, const int radius,
+                             SoPickedPoint *& result)
+{
+  result = NULL;
+  SoPickedPointList hits;
+  if (!this->pickDepthStack(x, y, radius, 1, hits, 1) ||
+      hits.getLength() == 0) return FALSE;
+  result = hits[0];
+  hits.remove(0);
+  return TRUE;
+}
+
+SbBool
+SoRenderManager::pickDepthStack(const int x, const int y, const int radius,
+                                const int maxLayers,
+                                SoPickedPointList & results,
+                                const int maxHits)
+{
+  results.truncate(0);
+  if (PRIVATE(this)->renderPipeline != RenderPipeline::DRAW_LIST ||
+      !PRIVATE(this)->renderBackend || !PRIVATE(this)->irAction ||
+      !PRIVATE(this)->renderBackend->isInitialized()) return FALSE;
+
+  SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
+  const SoRenderParams params = retainedRenderParams(PRIVATE(this));
+  if (PRIVATE(this)->pickTargetDirty ||
+      PRIVATE(this)->pickTargetGeneration != drawlist.getGeneration()) {
+    SoRenderPlanner planner;
+    SoRenderPlan plan;
+    planner.build(drawlist, params.viewMatrix, plan);
+    if (!PRIVATE(this)->renderBackend->updatePickBuffer(drawlist, plan,
+                                                        params)) return FALSE;
+    PRIVATE(this)->pickTargetDirty = FALSE;
+    PRIVATE(this)->pickTargetGeneration = drawlist.getGeneration();
+  }
+
+  SoPickResultList raw;
+  if (!PRIVATE(this)->renderBackend->pickDepthStack(
+        x, y, radius, maxLayers, maxHits, raw)) return FALSE;
+  if (raw.generation != drawlist.getGeneration()) return FALSE;
+  for (const SoPickResult & hit : raw.hits) {
+    SoPickedPoint * picked = resolvePickResult(PRIVATE(this), hit, params);
+    if (picked) results.append(picked);
+  }
+  return results.getLength() != 0;
+}
+
+SbBool
+SoRenderManager::pickVisibleRegion(const SbBox2s & region,
+                                   SoPickedPointList & results)
+{
+  results.truncate(0);
+  if (PRIVATE(this)->renderPipeline != RenderPipeline::DRAW_LIST ||
+      !PRIVATE(this)->renderBackend || !PRIVATE(this)->irAction ||
+      !PRIVATE(this)->renderBackend->isInitialized()) return FALSE;
+
+  SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
+  const SoRenderParams params = retainedRenderParams(PRIVATE(this));
+  if (PRIVATE(this)->pickTargetDirty ||
+      PRIVATE(this)->pickTargetGeneration != drawlist.getGeneration()) {
+    SoRenderPlanner planner;
+    SoRenderPlan plan;
+    planner.build(drawlist, params.viewMatrix, plan);
+    if (!PRIVATE(this)->renderBackend->updatePickBuffer(drawlist, plan,
+                                                        params)) return FALSE;
+    PRIVATE(this)->pickTargetDirty = FALSE;
+    PRIVATE(this)->pickTargetGeneration = drawlist.getGeneration();
+  }
+
+  SoPickResultList raw;
+  if (!PRIVATE(this)->renderBackend->pickVisibleRegion(region, raw)) {
+    return FALSE;
+  }
+  if (raw.generation != drawlist.getGeneration()) return FALSE;
+  for (const SoPickResult & hit : raw.hits) {
+    SoPickedPoint * picked = resolvePickResult(PRIVATE(this), hit, params);
+    if (picked) results.append(picked);
+  }
+  return results.getLength() != 0;
+}
 /*!
   This method returns the current auto clipping strategy.
 

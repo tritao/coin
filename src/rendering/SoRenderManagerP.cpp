@@ -67,36 +67,9 @@ SoRenderManagerP::SoRenderManagerP(SoRenderManager * publ)
 
 SoRenderManagerP::~SoRenderManagerP()
 {
-  this->clearPersistentSelection();
   delete this->getmatrixaction;
   delete this->getbboxaction;
   delete this->searchaction;
-}
-
-void
-SoRenderManagerP::clearSelections(void)
-{
-  for (PersistentSelection & selection : this->selections) {
-    if (selection.path) selection.path->unref();
-    delete selection.detail;
-  }
-  this->selections.clear();
-}
-
-void
-SoRenderManagerP::clearHighlightSelection(void)
-{
-  if (this->highlight.path) this->highlight.path->unref();
-  delete this->highlight.detail;
-  this->highlight = PersistentSelection();
-  this->hasHighlight = FALSE;
-}
-
-void
-SoRenderManagerP::clearPersistentSelection(void)
-{
-  this->clearSelections();
-  this->clearHighlightSelection();
 }
 
 // Internal callback.

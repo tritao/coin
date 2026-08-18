@@ -66,18 +66,8 @@ class SoRenderBackend;
 
 class SoRenderManagerP {
 public:
-  struct PersistentSelection {
-    SoPath * path = NULL;
-    SoDetail * detail = NULL;
-    SbColor4f color = SbColor4f(1.0f, 1.0f, 0.0f, 0.75f);
-  };
-
   SoRenderManagerP(SoRenderManager * publ);
   ~SoRenderManagerP();
-
-  void clearSelections(void);
-  void clearHighlightSelection(void);
-  void clearPersistentSelection(void);
 
   void setClippingPlanes(void);
   static void updateClippingPlanesCB(void * closure, SoSensor * sensor);
@@ -135,6 +125,8 @@ public:
   SoRenderBackend * renderBackend;
   uint32_t renderBackendContextId;
   SbBool drawListCallbackScope;
+  SbBool pickTargetDirty;
+  uint32_t pickTargetGeneration;
 
   SoRenderManager::StereoMode stereostenciltype;
   SoRenderManager::RenderMode rendermode;
@@ -152,10 +144,6 @@ public:
   typedef std::pair<SoRenderManagerRenderCB *, void *> RenderCBTouple;
   std::vector<RenderCBTouple> preRenderCallbacks;
   std::vector<RenderCBTouple> postRenderCallbacks;
-
-  std::vector<PersistentSelection> selections;
-  PersistentSelection highlight;
-  SbBool hasHighlight = FALSE;
 
   // "private" data
   static SbBool touchtimer;

@@ -339,6 +339,16 @@ target_include_directories(SoText2RasterTest PRIVATE
 	${PROJECT_BINARY_DIR}/include
 	${COIN_TARGET_INCLUDE_DIRECTORIES})
 add_test(NAME SoText2RasterTest COMMAND SoText2RasterTest)
+
+add_executable(RenderManagerPipelineTest RenderManagerPipelineTest.cpp)
+target_link_libraries(RenderManagerPipelineTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_include_directories(RenderManagerPipelineTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include
+	${PROJECT_BINARY_DIR}/include
+	${COIN_TARGET_INCLUDE_DIRECTORIES})
+add_test(NAME RenderManagerPipelineTest COMMAND RenderManagerPipelineTest)
+set_tests_properties(RenderManagerPipelineTest PROPERTIES LABELS "unit")
+
 if(HAVE_EGL)
 	coin_add_egl_test(NAME EGLBindingTest SOURCES EGLBindingTest.cpp
 		LABELS requires-egl)
