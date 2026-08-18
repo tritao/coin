@@ -98,6 +98,7 @@ runTest()
               << std::endl;
     result = 1;
   }
+
   const SoPickLUTEntry * pickEntry = action.getDrawList().resolvePickId(1);
   if (!pickEntry || pickEntry->objectId == 0) {
     std::cerr << "FAIL: retained pick entry did not carry stable object identity"
