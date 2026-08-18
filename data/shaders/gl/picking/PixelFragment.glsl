@@ -17,9 +17,11 @@ layout(location = 0) out uint outPickId;
 
 #include "../pixel/Common.glsl"
 #include "../material/AlphaTest.glsl"
+#include "Peel.glsl"
 
 void main()
 {
+  if (!coin_pick_peel_pass()) discard;
   vec2 rasterPixel = coin_pixel_raster_coordinate(
     gl_FragCoord.xy, u_viewportOrigin, u_pixelOrigin);
   if (!coin_pixel_in_raster(rasterPixel, u_rasterSize)) discard;

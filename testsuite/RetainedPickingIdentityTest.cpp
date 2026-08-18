@@ -28,7 +28,7 @@ const SoRenderCommand * commandFor(const SoIRRenderAction & action,
 {
   for (int i = 0; i < action.getDrawList().getNumCommands(); ++i) {
     const SoRenderCommand & command = action.getDrawList().getCommand(i);
-    if (command.userData == node) {
+    if (command.nodeId == node->getNodeId()) {
       index = i;
       return &command;
     }

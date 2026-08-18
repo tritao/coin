@@ -381,6 +381,8 @@ SoDrawList::buildPickLUT() const
     if (command.pick.elementRanges.empty()) {
       SoPickLUTEntry entry;
       entry.commandIndex = commandIndex;
+      entry.nodeId = command.nodeId;
+      entry.instanceId = command.instanceId;
       entry.objectId = command.objectId;
       entry.type = SO_PICK_OBJECT;
       entry.elementIndex = -1;
@@ -393,6 +395,8 @@ SoDrawList::buildPickLUT() const
     for (const SoRenderElementRange & range : command.pick.elementRanges) {
       SoPickLUTEntry entry;
       entry.commandIndex = commandIndex;
+      entry.nodeId = command.nodeId;
+      entry.instanceId = command.instanceId;
       entry.objectId = command.objectId;
       entry.type = range.type;
       entry.elementIndex = range.elementIndex;

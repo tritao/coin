@@ -55,7 +55,7 @@ struct Fixture {
     params.flags = SO_PARAM_CLEAR_WINDOW | SO_PARAM_CLEAR_DEPTH;
     SoRenderPlanner planner;
     SoRenderPlan plan;
-    planner.build(drawlist, plan);
+    planner.build(drawlist, params.viewMatrix, plan);
     backend.render(drawlist, plan, params);
     glFinish();
     return context.readPixels();

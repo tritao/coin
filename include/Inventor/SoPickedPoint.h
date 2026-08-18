@@ -50,6 +50,10 @@ public:
   SoPickedPoint(const SoPickedPoint & pp);
   SoPickedPoint(const SoPath * const path, SoState * const state,
                 const SbVec3f & objSpacePoint);
+  //! Construct a scene hit resolved without a live ray-picking traversal.
+  SoPickedPoint(const SoPath * const path,
+                const SbVec3f & worldSpacePoint,
+                const SbViewportRegion & viewport);
   ~SoPickedPoint();
   SoPickedPoint *copy() const;
   const SbVec3f &getPoint() const;
