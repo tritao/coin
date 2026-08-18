@@ -39,6 +39,7 @@ set(COIN_RENDERING_INTERNAL_FILES
 	SoVertexArrayIndexer.cpp
 	CoinOffscreenGLCanvas.h
 	CoinOffscreenGLCanvas.cpp
+	CoinGLReadback.h
 )
 
 # build library

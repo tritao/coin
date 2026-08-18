@@ -31,6 +31,7 @@
 \**************************************************************************/
 
 #include "CoinOffscreenGLCanvas.h"
+#include "CoinGLReadback.h"
 
 #include <climits>
 
@@ -324,33 +325,68 @@ cc_glglue_win32_updateHDCBitmap(this->context);
 }
 // *************************************************************************
 
-// Pushes the rendered pixels into the internal memory array.
+// Pushes the rendered pixels into the internal memory array.  This is kept
+// independent from the context owner so core-profile callers can exercise
+// the same readback and pixel-store contract without creating an EGL canvas.
 void
-CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
-                                  const SbVec2s & vpdims,
-                                  unsigned int dstrowsize,
-                                  unsigned int nrcomponents) const
+coin_read_pixels(uint8_t * dst, const SbVec2s & vpdims,
+                 unsigned int dstrowsize, unsigned int nrcomponents,
+                 const SbBool legacyContext)
 {
 #if COIN_BUILD_LEGACY_GL_RENDERER
-  const cc_glglue * glue = cc_glglue_instance((int) this->renderid);
-  const SbBool legacyContext = cc_glglue_context_supports_legacy_rendering(glue);
   if (legacyContext) {
-    glPushAttrib(GL_PIXEL_MODE_BIT);
+    glPixelTransferi(GL_MAP_COLOR, 0);
+    glPixelTransferi(GL_MAP_STENCIL, 0);
+    glPixelTransferi(GL_INDEX_SHIFT, 0);
+    glPixelTransferi(GL_INDEX_OFFSET, 0);
+    glPixelTransferf(GL_RED_SCALE, 1);
+    glPixelTransferf(GL_RED_BIAS, 0);
+    glPixelTransferf(GL_GREEN_SCALE, 1);
+    glPixelTransferf(GL_GREEN_BIAS, 0);
+    glPixelTransferf(GL_BLUE_SCALE, 1);
+    glPixelTransferf(GL_BLUE_BIAS, 0);
+    glPixelTransferf(GL_ALPHA_SCALE, 1);
+    glPixelTransferf(GL_ALPHA_BIAS, 0);
+    glPixelTransferf(GL_DEPTH_SCALE, 1);
+    glPixelTransferf(GL_DEPTH_BIAS, 0);
+
+    GLuint i = 0;
+    GLfloat f = 0.0f;
+    glPixelMapfv(GL_PIXEL_MAP_I_TO_I, 1, &f);
+    glPixelMapuiv(GL_PIXEL_MAP_S_TO_S, 1, &i);
+    glPixelMapfv(GL_PIXEL_MAP_I_TO_R, 1, &f);
+    glPixelMapfv(GL_PIXEL_MAP_I_TO_G, 1, &f);
+    glPixelMapfv(GL_PIXEL_MAP_I_TO_B, 1, &f);
+    glPixelMapfv(GL_PIXEL_MAP_I_TO_A, 1, &f);
+    glPixelMapfv(GL_PIXEL_MAP_R_TO_R, 1, &f);
+    glPixelMapfv(GL_PIXEL_MAP_G_TO_G, 1, &f);
+    glPixelMapfv(GL_PIXEL_MAP_B_TO_B, 1, &f);
+    glPixelMapfv(GL_PIXEL_MAP_A_TO_A, 1, &f);
   }
 #endif
 
-  GLint packSwapBytes;
-  GLint packLsbFirst;
+#if COIN_BUILD_LEGACY_GL_RENDERER
+  GLint packSwapBytes = 0;
+  GLint packLsbFirst = 0;
+#endif
   GLint packRowLength;
   GLint packSkipRows;
   GLint packSkipPixels;
   GLint packAlignment;
-  glGetIntegerv(GL_PACK_SWAP_BYTES, &packSwapBytes);
-  glGetIntegerv(GL_PACK_LSB_FIRST, &packLsbFirst);
+  GLint packImageHeight;
+  GLint packSkipImages;
+#if COIN_BUILD_LEGACY_GL_RENDERER
+  if (legacyContext) {
+    glGetIntegerv(GL_PACK_SWAP_BYTES, &packSwapBytes);
+    glGetIntegerv(GL_PACK_LSB_FIRST, &packLsbFirst);
+  }
+#endif
   glGetIntegerv(GL_PACK_ROW_LENGTH, &packRowLength);
   glGetIntegerv(GL_PACK_SKIP_ROWS, &packSkipRows);
   glGetIntegerv(GL_PACK_SKIP_PIXELS, &packSkipPixels);
   glGetIntegerv(GL_PACK_ALIGNMENT, &packAlignment);
+  glGetIntegerv(GL_PACK_IMAGE_HEIGHT, &packImageHeight);
+  glGetIntegerv(GL_PACK_SKIP_IMAGES, &packSkipImages);
 
     // First reset all settings that can influence the result of a
     // glReadPixels() call, to make sure we get the actual contents of
@@ -359,48 +395,22 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
     // The values set up below matches the default settings of an
     // OpenGL driver.
 
-    glPixelStorei(GL_PACK_SWAP_BYTES, 0);
-    glPixelStorei(GL_PACK_LSB_FIRST, 0);
+#if COIN_BUILD_LEGACY_GL_RENDERER
+    if (legacyContext) {
+      glPixelStorei(GL_PACK_SWAP_BYTES, 0);
+      glPixelStorei(GL_PACK_LSB_FIRST, 0);
+    }
+#endif
     glPixelStorei(GL_PACK_ROW_LENGTH, (GLint)dstrowsize);
     glPixelStorei(GL_PACK_SKIP_ROWS, 0);
     glPixelStorei(GL_PACK_SKIP_PIXELS, 0);
+    glPixelStorei(GL_PACK_IMAGE_HEIGHT, 0);
+    glPixelStorei(GL_PACK_SKIP_IMAGES, 0);
 
     // FIXME: should use best possible alignment, for speediest
     // operation. 20050617 mortene.
   //   glPixelStorei(GL_PACK_ALIGNMENT, 4);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-
-#if COIN_BUILD_LEGACY_GL_RENDERER
-    if (legacyContext) {
-      glPixelTransferi(GL_MAP_COLOR, 0);
-      glPixelTransferi(GL_MAP_STENCIL, 0);
-      glPixelTransferi(GL_INDEX_SHIFT, 0);
-      glPixelTransferi(GL_INDEX_OFFSET, 0);
-      glPixelTransferf(GL_RED_SCALE, 1);
-      glPixelTransferf(GL_RED_BIAS, 0);
-      glPixelTransferf(GL_GREEN_SCALE, 1);
-      glPixelTransferf(GL_GREEN_BIAS, 0);
-      glPixelTransferf(GL_BLUE_SCALE, 1);
-      glPixelTransferf(GL_BLUE_BIAS, 0);
-      glPixelTransferf(GL_ALPHA_SCALE, 1);
-      glPixelTransferf(GL_ALPHA_BIAS, 0);
-      glPixelTransferf(GL_DEPTH_SCALE, 1);
-      glPixelTransferf(GL_DEPTH_BIAS, 0);
-
-      GLuint i = 0;
-      GLfloat f = 0.0f;
-      glPixelMapfv(GL_PIXEL_MAP_I_TO_I, 1, &f);
-      glPixelMapuiv(GL_PIXEL_MAP_S_TO_S, 1, &i);
-      glPixelMapfv(GL_PIXEL_MAP_I_TO_R, 1, &f);
-      glPixelMapfv(GL_PIXEL_MAP_I_TO_G, 1, &f);
-      glPixelMapfv(GL_PIXEL_MAP_I_TO_B, 1, &f);
-      glPixelMapfv(GL_PIXEL_MAP_I_TO_A, 1, &f);
-      glPixelMapfv(GL_PIXEL_MAP_R_TO_R, 1, &f);
-      glPixelMapfv(GL_PIXEL_MAP_G_TO_G, 1, &f);
-      glPixelMapfv(GL_PIXEL_MAP_B_TO_B, 1, &f);
-      glPixelMapfv(GL_PIXEL_MAP_A_TO_A, 1, &f);
-    }
-#endif
 
     // The flushing of the OpenGL pipeline before and after the
     // glReadPixels() call is done as a work-around for a reported
@@ -452,17 +462,44 @@ CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
     }
     glFlush(); glFinish();
 
-    glPixelStorei(GL_PACK_SWAP_BYTES, packSwapBytes);
-    glPixelStorei(GL_PACK_LSB_FIRST, packLsbFirst);
+#if COIN_BUILD_LEGACY_GL_RENDERER
+    if (legacyContext) {
+      glPixelStorei(GL_PACK_SWAP_BYTES, packSwapBytes);
+      glPixelStorei(GL_PACK_LSB_FIRST, packLsbFirst);
+    }
+#endif
     glPixelStorei(GL_PACK_ROW_LENGTH, packRowLength);
     glPixelStorei(GL_PACK_SKIP_ROWS, packSkipRows);
     glPixelStorei(GL_PACK_SKIP_PIXELS, packSkipPixels);
     glPixelStorei(GL_PACK_ALIGNMENT, packAlignment);
+    glPixelStorei(GL_PACK_IMAGE_HEIGHT, packImageHeight);
+    glPixelStorei(GL_PACK_SKIP_IMAGES, packSkipImages);
+}
+
+// Pushes the rendered pixels into the internal memory array while retaining
+// the canvas-owned compatibility state around the profile-neutral helper.
+void
+CoinOffscreenGLCanvas::readPixels(uint8_t * dst,
+                                  const SbVec2s & vpdims,
+                                  unsigned int dstrowsize,
+                                  unsigned int nrcomponents) const
+{
+  SbBool legacyContext = FALSE;
 
 #if COIN_BUILD_LEGACY_GL_RENDERER
-    if (legacyContext) {
-      glPopAttrib();
-    }
+  const cc_glglue * glue = cc_glglue_instance((int) this->renderid);
+  legacyContext = cc_glglue_context_supports_legacy_rendering(glue);
+  if (legacyContext) {
+    glPushAttrib(GL_PIXEL_MODE_BIT);
+  }
+#endif
+
+  coin_read_pixels(dst, vpdims, dstrowsize, nrcomponents, legacyContext);
+
+#if COIN_BUILD_LEGACY_GL_RENDERER
+  if (legacyContext) {
+    glPopAttrib();
+  }
 #endif
 }
 

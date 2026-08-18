@@ -1,9 +1,10 @@
-#include "rendering/CoinOffscreenGLCanvas.h"
+#include "rendering/CoinGLReadback.h"
 
-#include <Inventor/C/glue/gl.h>
-#include <Inventor/SoDB.h>
+#include "support/GLTestContext.h"
 
-#include <cstdlib>
+#include <Inventor/system/gl.h>
+
+#include <cstdint>
 #include <iostream>
 
 namespace {
@@ -20,92 +21,72 @@ bool check(bool condition, const char * message)
   return condition;
 }
 
-void set_environment(const char * name, const char * value)
-{
-#ifdef _WIN32
-  _putenv_s(name, value);
-#else
-  setenv(name, value, 1);
-#endif
-}
-
-bool can_create_offscreen_context()
-{
-  void * context = cc_glglue_context_create_offscreen(2, 2);
-  if (context == NULL) return false;
-
-  if (!cc_glglue_context_make_current(context)) {
-    cc_glglue_context_destruct(context);
-    return false;
-  }
-
-  cc_glglue_context_reinstate_previous(context);
-  cc_glglue_context_destruct(context);
-  return true;
-}
-
-}
+} // namespace
 
 int main()
 {
-  set_environment("COIN_EGL", "1");
-  set_environment("EGL_PLATFORM", "surfaceless");
-  set_environment("COIN_EGL_CORE_PROFILE", "1");
+  GLTestContextConfig config;
+  config.profile = GLTestProfile::Core;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 2;
+  config.height = 2;
 
-  SoDB::init();
-
-  if (!can_create_offscreen_context()) {
-    SoDB::finish();
-    return skip("core EGL offscreen context could not be established");
+  GLTestContext context;
+  if (!context.initialize(config)) {
+    return skip("core GLFW OpenGL context is unavailable");
   }
+  if (!context.makeCurrent()) {
+    return skip("core GLFW OpenGL context could not be made current");
+  }
+  context.bindFramebuffer();
+
+  glClearColor(0.25f, 0.5f, 0.75f, 1.0f);
+  glClear(GL_COLOR_BUFFER_BIT);
+
+  glPixelStorei(GL_PACK_ALIGNMENT, 8);
+  glPixelStorei(GL_PACK_ROW_LENGTH, 7);
+  glPixelStorei(GL_PACK_SKIP_ROWS, 3);
+  glPixelStorei(GL_PACK_SKIP_PIXELS, 2);
+  glPixelStorei(GL_PACK_IMAGE_HEIGHT, 9);
+  glPixelStorei(GL_PACK_SKIP_IMAGES, 4);
+  while (glGetError() != GL_NO_ERROR) { }
+
+  uint8_t pixels[2 * 2 * 4] = { 0 };
+  coin_read_pixels(pixels, SbVec2s(2, 2), 2, 4, FALSE);
+
+  GLint packAlignment;
+  GLint packRowLength;
+  GLint packSkipRows;
+  GLint packSkipPixels;
+  GLint packImageHeight;
+  GLint packSkipImages;
+  glGetIntegerv(GL_PACK_ALIGNMENT, &packAlignment);
+  glGetIntegerv(GL_PACK_ROW_LENGTH, &packRowLength);
+  glGetIntegerv(GL_PACK_SKIP_ROWS, &packSkipRows);
+  glGetIntegerv(GL_PACK_SKIP_PIXELS, &packSkipPixels);
+  glGetIntegerv(GL_PACK_IMAGE_HEIGHT, &packImageHeight);
+  glGetIntegerv(GL_PACK_SKIP_IMAGES, &packSkipImages);
 
   int result = 0;
-  {
-    CoinOffscreenGLCanvas canvas;
-    canvas.setWantedSize(SbVec2s(2, 2));
-    if (canvas.activateGLContext() == 0) {
-      result = skip("core EGL offscreen context is unavailable");
-    }
-    else {
-      glClearColor(0.25f, 0.5f, 0.75f, 1.0f);
-      glClear(GL_COLOR_BUFFER_BIT);
+  if (!check(packAlignment == 8, "PACK_ALIGNMENT was not restored")) result = 1;
+  if (!check(packRowLength == 7, "PACK_ROW_LENGTH was not restored")) result = 1;
+  if (!check(packSkipRows == 3, "PACK_SKIP_ROWS was not restored")) result = 1;
+  if (!check(packSkipPixels == 2, "PACK_SKIP_PIXELS was not restored")) result = 1;
+  if (!check(packImageHeight == 9, "PACK_IMAGE_HEIGHT was not restored")) result = 1;
+  if (!check(packSkipImages == 4, "PACK_SKIP_IMAGES was not restored")) result = 1;
+  if (!check(glGetError() == GL_NO_ERROR,
+             "readback used compatibility-only pixel-store state")) result = 1;
 
-      glPixelStorei(GL_PACK_ALIGNMENT, 8);
-      glPixelStorei(GL_PACK_ROW_LENGTH, 7);
-      glPixelStorei(GL_PACK_SKIP_ROWS, 3);
-      glPixelStorei(GL_PACK_SKIP_PIXELS, 2);
-
-      uint8_t pixels[2 * 2 * 4] = { 0 };
-      canvas.readPixels(pixels, SbVec2s(2, 2), 2, 4);
-
-      GLint packAlignment;
-      GLint packRowLength;
-      GLint packSkipRows;
-      GLint packSkipPixels;
-      glGetIntegerv(GL_PACK_ALIGNMENT, &packAlignment);
-      glGetIntegerv(GL_PACK_ROW_LENGTH, &packRowLength);
-      glGetIntegerv(GL_PACK_SKIP_ROWS, &packSkipRows);
-      glGetIntegerv(GL_PACK_SKIP_PIXELS, &packSkipPixels);
-      if (!check(packAlignment == 8, "PACK_ALIGNMENT was not restored")) result = 1;
-      if (!check(packRowLength == 7, "PACK_ROW_LENGTH was not restored")) result = 1;
-      if (!check(packSkipRows == 3, "PACK_SKIP_ROWS was not restored")) result = 1;
-      if (!check(packSkipPixels == 2, "PACK_SKIP_PIXELS was not restored")) result = 1;
-
-      canvas.deactivateGLContext();
-
-      for (unsigned int i = 0; i < sizeof(pixels); i += 4) {
-        if (!check(pixels[i + 0] >= 60 && pixels[i + 0] <= 70,
-                   "red readback component is incorrect")) result = 1;
-        if (!check(pixels[i + 1] >= 120 && pixels[i + 1] <= 135,
-                   "green readback component is incorrect")) result = 1;
-        if (!check(pixels[i + 2] >= 185 && pixels[i + 2] <= 200,
-                   "blue readback component is incorrect")) result = 1;
-        if (!check(pixels[i + 3] >= 245,
-                   "alpha readback component is incorrect")) result = 1;
-      }
-    }
+  for (unsigned int i = 0; i < sizeof(pixels); i += 4) {
+    if (!check(pixels[i + 0] >= 60 && pixels[i + 0] <= 70,
+               "red readback component is incorrect")) result = 1;
+    if (!check(pixels[i + 1] >= 120 && pixels[i + 1] <= 135,
+               "green readback component is incorrect")) result = 1;
+    if (!check(pixels[i + 2] >= 185 && pixels[i + 2] <= 200,
+               "blue readback component is incorrect")) result = 1;
+    if (!check(pixels[i + 3] >= 245,
+               "alpha readback component is incorrect")) result = 1;
   }
-
-  SoDB::finish();
   return result;
 }
