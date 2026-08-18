@@ -1,6 +1,7 @@
-#include "rendering/CoinOffscreenGLCanvas.h"
+#include "support/GLTestContext.h"
 
 #include <Inventor/SoDB.h>
+#include <Inventor/C/glue/gl.h>
 #include <Inventor/SoRenderManager.h>
 #include <Inventor/SbMatrix.h>
 #include <Inventor/SbViewportRegion.h>
@@ -23,7 +24,6 @@
 
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
 #include <iostream>
 #include <vector>
 
@@ -33,15 +33,6 @@ int skip(const char * reason)
 {
   std::cout << "SKIP: " << reason << std::endl;
   return 77;
-}
-
-void set_environment(const char * name, const char * value)
-{
-#ifdef _WIN32
-  _putenv_s(name, value);
-#else
-  setenv(name, value, 1);
-#endif
 }
 
 bool retainedGLBaselineIsValid()
@@ -81,10 +72,9 @@ void postRender(void * data, SoRenderManager *)
   ++static_cast<CallbackCounts *>(data)->post;
 }
 
-int countNonBlack(CoinOffscreenGLCanvas & canvas)
+int countNonBlack(GLTestContext & context)
 {
-  std::vector<uint8_t> pixels(32 * 32 * 4, 0);
-  canvas.readPixels(pixels.data(), SbVec2s(32, 32), 32, 4);
+  const std::vector<uint8_t> pixels = context.readPixels();
   int count = 0;
   for (int i = 0; i < 32 * 32; ++i) {
     if (pixels[i * 4] > 5 || pixels[i * 4 + 1] > 5 || pixels[i * 4 + 2] > 5) {
@@ -94,10 +84,9 @@ int countNonBlack(CoinOffscreenGLCanvas & canvas)
   return count;
 }
 
-int countNonBlackRow(CoinOffscreenGLCanvas & canvas, const int y)
+int countNonBlackRow(GLTestContext & context, const int y)
 {
-  std::vector<uint8_t> pixels(32 * 32 * 4, 0);
-  canvas.readPixels(pixels.data(), SbVec2s(32, 32), 32, 4);
+  const std::vector<uint8_t> pixels = context.readPixels();
   int count = 0;
   for (int x = 0; x < 32; ++x) {
     const size_t offset = static_cast<size_t>(y * 32 + x) * 4;
@@ -114,10 +103,9 @@ struct PixelRGB {
   int blue;
 };
 
-PixelRGB centerPixel(CoinOffscreenGLCanvas & canvas)
+PixelRGB centerPixel(GLTestContext & context)
 {
-  std::vector<uint8_t> pixels(32 * 32 * 4, 0);
-  canvas.readPixels(pixels.data(), SbVec2s(32, 32), 32, 4);
+  const std::vector<uint8_t> pixels = context.readPixels();
   const size_t offset = static_cast<size_t>(16 * 32 + 16) * 4;
   return { pixels[offset], pixels[offset + 1], pixels[offset + 2] };
 }
@@ -137,7 +125,7 @@ void addTransparentCube(SoSeparator * root, const float z,
   root->addChild(group);
 }
 
-PixelRGB renderTransparentOrder(CoinOffscreenGLCanvas & canvas,
+PixelRGB renderTransparentOrder(GLTestContext & context,
                                 SoCamera * camera,
                                 const SbViewportRegion & viewport,
                                 const bool nearFirst)
@@ -163,7 +151,7 @@ PixelRGB renderTransparentOrder(CoinOffscreenGLCanvas & canvas,
   manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
   manager.render(TRUE, TRUE);
 
-  const PixelRGB result = centerPixel(canvas);
+  const PixelRGB result = centerPixel(context);
   root->unref();
   return result;
 }
@@ -173,19 +161,19 @@ PixelRGB renderTransparentOrder(CoinOffscreenGLCanvas & canvas,
 static int
 runTest()
 {
-  set_environment("COIN_EGL", "1");
-  set_environment("EGL_PLATFORM", "surfaceless");
-  set_environment("COIN_EGL_CORE_PROFILE", "1");
-
   SoDB::init();
-  CoinOffscreenGLCanvas canvas;
-  canvas.setWantedSize(SbVec2s(32, 32));
-  if (canvas.activateGLContext() == 0) {
-    return skip("core EGL offscreen context is unavailable");
+  GLTestContextConfig config;
+  config.profile = GLTestProfile::Core;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 32;
+  config.height = 32;
+  GLTestContext context;
+  if (!context.initialize(config)) {
+    return skip("core GLFW OpenGL context is unavailable");
   }
   if (!retainedGLBaselineIsValid()) {
     std::cerr << "FAIL: manager test requires OpenGL 3.3 / GLSL 330" << std::endl;
-    canvas.deactivateGLContext();
     return 1;
   }
 
@@ -214,10 +202,61 @@ runTest()
       std::cerr << "FAIL: transformed camera did not reach retained traversal state" << std::endl;
       camera->unref();
       cubeRoot->unref();
-      canvas.deactivateGLContext();
       return 1;
     }
   }
+
+  // A scene root that owns its camera must begin traversal from identity so
+  // state before the camera node is not transformed by the manager camera.
+  // This is explicit rather than inferred by searching the root graph.
+  SoSeparator * cameraRoot = new SoSeparator;
+  SoPointLight * sceneLight = new SoPointLight;
+  sceneLight->location.setValue(1.0f, 0.0f, 0.0f);
+  SoPerspectiveCamera * sceneCamera = new SoPerspectiveCamera;
+  sceneCamera->position.setValue(5.0f, 0.0f, 5.0f);
+  sceneCamera->pointAt(SbVec3f(0.0f, 0.0f, 0.0f));
+  cameraRoot->addChild(sceneLight);
+  cameraRoot->addChild(sceneCamera);
+  cameraRoot->addChild(new SoCube);
+  cameraRoot->ref();
+  {
+    SoIRRenderAction sceneCameraAction(testViewport);
+    sceneCameraAction.setCamera(camera);
+    sceneCameraAction.setCameraPolicy(
+      SoIRRenderAction::CameraPolicy::CAMERA_IN_ROOT);
+    sceneCameraAction.apply(cameraRoot);
+    const SoDrawList & sceneCameraDrawList = sceneCameraAction.getDrawList();
+    SoIRRenderAction configuredCameraAction(testViewport);
+    configuredCameraAction.setCamera(camera);
+    configuredCameraAction.apply(cameraRoot);
+    const SoDrawList & configuredCameraDrawList = configuredCameraAction.getDrawList();
+    if (sceneCameraDrawList.getNumCommands() == 0 ||
+        configuredCameraDrawList.getNumCommands() == 0) {
+      std::cerr << "FAIL: explicit scene-camera policy did not use the root camera" << std::endl;
+      cameraRoot->unref();
+      camera->unref();
+      cubeRoot->unref();
+      return 1;
+    }
+    const SoRenderCommand & sceneCameraCommand = sceneCameraDrawList.getCommand(0);
+    const SoRenderCommand & configuredCameraCommand = configuredCameraDrawList.getCommand(0);
+    const SoLightingData * sceneLighting = sceneCameraDrawList.getLighting(
+      sceneCameraCommand.lightingHandle);
+    const SoLightingData * configuredLighting = configuredCameraDrawList.getLighting(
+      configuredCameraCommand.lightingHandle);
+    if (sceneCameraCommand.viewMatrix == SbMatrix::identity() ||
+        !sceneLighting || !configuredLighting || sceneLighting->lights.empty() ||
+        configuredLighting->lights.empty() ||
+        (sceneLighting->lights[0].position - configuredLighting->lights[0].position).length()
+          < 1e-4f) {
+      std::cerr << "FAIL: explicit scene-camera policy did not preserve pre-camera state" << std::endl;
+      cameraRoot->unref();
+      camera->unref();
+      cubeRoot->unref();
+      return 1;
+    }
+  }
+  cameraRoot->unref();
 
   int result = 0;
   {
@@ -235,20 +274,20 @@ runTest()
       std::cerr << "FAIL: DrawList manager callbacks were not paired exactly once" << std::endl;
       result = 1;
     }
-    if (countNonBlack(canvas) == 0) {
+    if (countNonBlack(context) == 0) {
       std::cerr << "FAIL: transformed-camera manager render produced no pixels" << std::endl;
       result = 1;
     }
 
     manager.setRenderMode(SoRenderManager::WIREFRAME);
     manager.render(TRUE, TRUE);
-    if (countNonBlack(canvas) == 0) {
+    if (countNonBlack(context) == 0) {
       std::cerr << "FAIL: DrawList manager wireframe mode produced no pixels" << std::endl;
       result = 1;
     }
     manager.setRenderMode(SoRenderManager::POINTS);
     manager.render(TRUE, TRUE);
-    if (countNonBlack(canvas) == 0) {
+    if (countNonBlack(context) == 0) {
       std::cerr << "FAIL: DrawList manager points mode produced no pixels" << std::endl;
       result = 1;
     }
@@ -287,10 +326,10 @@ runTest()
     manager.setSceneGraph(dprRoot);
     manager.setDevicePixelRatio(1.0f);
     manager.render(TRUE, TRUE);
-    const int normalCoverage = countNonBlack(canvas);
+    const int normalCoverage = countNonBlack(context);
     manager.setDevicePixelRatio(2.0f);
     manager.render(TRUE, TRUE);
-    const int highDprCoverage = countNonBlack(canvas);
+    const int highDprCoverage = countNonBlack(context);
     if (highDprCoverage <= normalCoverage) {
       std::cerr << "FAIL: DPR did not widen retained points/lines" << std::endl;
       result = 1;
@@ -329,9 +368,9 @@ runTest()
   croppedManager.render(TRUE, TRUE);
   const SbVec2s croppedOrigin = croppedViewport.getViewportOriginPixels();
   const SbVec2s croppedSize = croppedViewport.getViewportSizePixels();
-  const int insideRows = countNonBlackRow(canvas, croppedOrigin[1] + croppedSize[1] / 2);
-  const int outsideTopRows = countNonBlackRow(canvas, 0);
-  const int outsideBottomRows = countNonBlackRow(canvas, 31);
+  const int insideRows = countNonBlackRow(context, croppedOrigin[1] + croppedSize[1] / 2);
+  const int outsideTopRows = countNonBlackRow(context, 0);
+  const int outsideBottomRows = countNonBlackRow(context, 31);
   if (insideRows == 0 || outsideTopRows != 0 || outsideBottomRows != 0) {
     std::cerr << "FAIL: manager did not apply the camera's cropped viewport" << std::endl;
     result = 1;
@@ -341,9 +380,9 @@ runTest()
   camera->viewportMapping = SoCamera::ADJUST_CAMERA;
   camera->aspectRatio = 1.0f;
 
-  const PixelRGB nearFirst = renderTransparentOrder(canvas, camera,
+  const PixelRGB nearFirst = renderTransparentOrder(context, camera,
                                                     testViewport, true);
-  const PixelRGB farFirst = renderTransparentOrder(canvas, camera,
+  const PixelRGB farFirst = renderTransparentOrder(context, camera,
                                                    testViewport, false);
   if (std::abs(nearFirst.red - farFirst.red) > 3 ||
       std::abs(nearFirst.green - farFirst.green) > 3 ||
@@ -354,32 +393,32 @@ runTest()
 
   // Reinitialization and replacement must not delete GL names owned by the
   // new context while disposing of resources created in the old context.
-  CoinOffscreenGLCanvas secondCanvas;
-  secondCanvas.setWantedSize(SbVec2s(32, 32));
+  GLTestContext secondContext;
   SoRenderManager * contextManager = new SoRenderManager;
   contextManager->setViewportRegion(testViewport);
   contextManager->setSceneGraph(cubeRoot);
   contextManager->setCamera(camera);
   contextManager->setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
   contextManager->render(TRUE, TRUE);
-  canvas.deactivateGLContext();
-  if (secondCanvas.activateGLContext() == 0) {
+  if (!secondContext.initialize(config)) {
     delete contextManager;
-    canvas.activateGLContext();
-    std::cerr << "FAIL: second EGL context was unavailable for replacement test" << std::endl;
+    context.makeCurrent();
+    std::cerr << "FAIL: second GLFW context was unavailable for replacement test" << std::endl;
     result = 1;
   }
   else {
     SbBool secondContextActive = TRUE;
+    const cc_glglue * secondGlue = secondContext.glue();
     GLuint sentinelBuffer = 0;
-    glGenBuffers(1, &sentinelBuffer);
-    glBindBuffer(GL_ARRAY_BUFFER, sentinelBuffer);
-    glBufferData(GL_ARRAY_BUFFER, 16, NULL, GL_STATIC_DRAW);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    cc_glglue_glGenBuffers(secondGlue, 1, &sentinelBuffer);
+    cc_glglue_glBindBuffer(secondGlue, GL_ARRAY_BUFFER, sentinelBuffer);
+    cc_glglue_glBufferData(secondGlue, GL_ARRAY_BUFFER, 16, NULL,
+                           GL_STATIC_DRAW);
+    cc_glglue_glBindBuffer(secondGlue, GL_ARRAY_BUFFER, 0);
 
     // The manager still owns resources from the first context here.
     contextManager->reinitialize();
-    if (!glIsBuffer(sentinelBuffer)) {
+    if (!cc_glglue_glIsBuffer(secondGlue, sentinelBuffer)) {
       std::cerr << "FAIL: reinitialize deleted a new-context GL buffer" << std::endl;
       result = 1;
     }
@@ -387,10 +426,9 @@ runTest()
 
     // Recreate a manager in the first context, then exercise replacement in
     // the second context without first calling reinitialize().
-    secondCanvas.deactivateGLContext();
     secondContextActive = FALSE;
-    if (canvas.activateGLContext() == 0) {
-      std::cerr << "FAIL: original EGL context could not be restored for replacement test" << std::endl;
+    if (!context.makeCurrent()) {
+      std::cerr << "FAIL: original GLFW context could not be restored for replacement test" << std::endl;
       result = 1;
     }
     else {
@@ -401,15 +439,14 @@ runTest()
       replacementManager->setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
       replacementManager->render(TRUE, TRUE);
 
-      canvas.deactivateGLContext();
-      if (secondCanvas.activateGLContext() == 0) {
-        std::cerr << "FAIL: second EGL context could not be restored for replacement test" << std::endl;
+      if (!secondContext.makeCurrent()) {
+        std::cerr << "FAIL: second GLFW context could not be restored for replacement test" << std::endl;
         result = 1;
       }
       else {
         secondContextActive = TRUE;
         replacementManager->render(TRUE, TRUE);
-        if (!glIsBuffer(sentinelBuffer)) {
+        if (!cc_glglue_glIsBuffer(secondGlue, sentinelBuffer)) {
           std::cerr << "FAIL: context replacement deleted a new-context GL buffer" << std::endl;
           result = 1;
         }
@@ -417,12 +454,11 @@ runTest()
       delete replacementManager;
     }
     if (secondContextActive) {
-      glDeleteBuffers(1, &sentinelBuffer);
+      cc_glglue_glDeleteBuffers(secondGlue, 1, &sentinelBuffer);
     }
-    secondCanvas.deactivateGLContext();
     secondContextActive = FALSE;
-    if (canvas.activateGLContext() == 0) {
-      std::cerr << "FAIL: original EGL context could not be restored" << std::endl;
+    if (!context.makeCurrent()) {
+      std::cerr << "FAIL: original GLFW context could not be restored" << std::endl;
       result = 1;
     }
   }
@@ -436,7 +472,7 @@ runTest()
   lostContextManager->setCamera(camera);
   lostContextManager->setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
   lostContextManager->render(TRUE, TRUE);
-  canvas.deactivateGLContext();
+  context.shutdown();
   delete lostContextManager;
 
   camera->unref();
