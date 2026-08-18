@@ -74,7 +74,7 @@ public:
 
     SoRenderPlanner planner;
     SoRenderPlan plan;
-    planner.build(drawlist, plan);
+    planner.build(drawlist, params.viewMatrix, plan);
     if (!renderer_.render(drawlist, plan, params)) {
       return false;
     }

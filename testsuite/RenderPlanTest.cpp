@@ -19,26 +19,27 @@ main()
   SoRenderCommand first;
   SoRenderCommand second;
   SoRenderCommand third;
-  first.userData = &first;
-  second.userData = &second;
-  third.userData = &third;
+  first.objectId = 1;
+  second.objectId = 2;
+  third.objectId = 3;
   drawlist.addCommand(first);
   drawlist.addCommand(second);
   drawlist.addCommand(third);
 
   const uint32_t generation = drawlist.getGeneration();
-  const void * const firstData = drawlist.getCommand(0).userData;
-  const void * const secondData = drawlist.getCommand(1).userData;
-  const void * const thirdData = drawlist.getCommand(2).userData;
+  const SoObjectId firstId = drawlist.getCommand(0).objectId;
+  const SoObjectId secondId = drawlist.getCommand(1).objectId;
+  const SoObjectId thirdId = drawlist.getCommand(2).objectId;
+  const SbMatrix frameViewMatrix = SbMatrix::identity();
 
   SoRenderPlanner planner;
   SoRenderPlan plan;
   SoDrawList empty;
-  planner.build(empty, plan);
+  planner.build(empty, frameViewMatrix, plan);
   bool result = check(plan.getNumDraws() == 0,
                       "empty DrawList did not produce an empty plan");
 
-  planner.build(drawlist, plan);
+  planner.build(drawlist, frameViewMatrix, plan);
 
   result = check(plan.getNumDraws() == 3,
                  "planner did not retain every command") &&
@@ -47,24 +48,24 @@ main()
           plan.getDraw(2).commandIndex == 2,
           "planner changed insertion order") &&
     check(drawlist.getGeneration() == generation &&
-          drawlist.getCommand(0).userData == firstData &&
-          drawlist.getCommand(1).userData == secondData &&
-          drawlist.getCommand(2).userData == thirdData,
+          drawlist.getCommand(0).objectId == firstId &&
+          drawlist.getCommand(1).objectId == secondId &&
+          drawlist.getCommand(2).objectId == thirdId,
           "planning modified the retained DrawList");
 
   drawlist.truncate(2);
-  planner.build(drawlist, plan);
+  planner.build(drawlist, frameViewMatrix, plan);
   result = check(plan.getNumDraws() == 2 &&
                  plan.getDraw(0).commandIndex == 0 &&
                  plan.getDraw(1).commandIndex == 1,
                  "planner did not rebuild from the current DrawList") && result;
   drawlist.clear();
-  planner.build(drawlist, plan);
+  planner.build(drawlist, frameViewMatrix, plan);
   result = check(plan.getNumDraws() == 0,
                  "rebuilding an empty DrawList left stale plan operations") &&
     result;
   drawlist.addCommand(first);
-  planner.build(drawlist, plan);
+  planner.build(drawlist, frameViewMatrix, plan);
   result = check(plan.getNumDraws() == 1 &&
                  plan.getDraw(0).commandIndex == 0,
                  "reusing a cleared plan did not rebuild its operations") &&

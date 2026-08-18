@@ -3,6 +3,7 @@
 
 void
 SoRenderPlanner::build(const SoDrawList & drawlist,
+                       const SbMatrix &,
                        SoRenderPlan & plan) const
 {
   plan.draws.clear();

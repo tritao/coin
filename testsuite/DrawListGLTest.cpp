@@ -37,7 +37,7 @@ SbBool renderWithPlan(SoGLRenderBackend & backend,
 {
   SoRenderPlanner planner;
   SoRenderPlan plan;
-  planner.build(drawlist, plan);
+  planner.build(drawlist, params.viewMatrix, plan);
   return backend.render(drawlist, plan, params);
 }
 

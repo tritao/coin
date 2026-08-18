@@ -9,6 +9,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -271,6 +272,7 @@ SoGLRenderBackend::invalidateCache()
   }
   this->gpuCache.clear();
   this->commandToCache.clear();
+  this->resourceToCache.clear();
   this->cachedCommandCount = 0;
   this->haveCacheGeneration = false;
 }
@@ -298,9 +300,33 @@ SoGLRenderBackend::getOrCreateCache(const SoRenderCommand * command)
     return this->gpuCache[found->second];
   }
 
+  const SoGeometryDesc & geometry = command->geometry;
+  const SoTextureData & texture = command->material.texture;
+  const bool hasTexture = (texture.cacheKey != 0 || texture.pixels != nullptr) &&
+    texture.width > 0 && texture.height > 0 && texture.numComponents >= 1 &&
+    texture.numComponents <= 4 && geometry.texcoords && geometry.vertexCount;
+  const bool persistent = geometry.cacheKey != 0 &&
+    (!hasTexture || texture.cacheKey != 0);
+  ResourceCacheKey resourceKey;
+  resourceKey.geometry = persistent ? geometry.cacheKey : 0;
+  resourceKey.texture = persistent && hasTexture ? texture.cacheKey : 0;
+  if (persistent) {
+    const auto resource = this->resourceToCache.find(resourceKey);
+    if (resource != this->resourceToCache.end()) {
+      this->commandToCache[command] = resource->second;
+      return this->gpuCache[resource->second];
+    }
+  }
+
   const size_t index = this->gpuCache.size();
   this->gpuCache.emplace_back();
   this->commandToCache[command] = index;
+  if (persistent) {
+    CachedCommand & entry = this->gpuCache.back();
+    entry.persistent = true;
+    entry.resourceKey = resourceKey;
+    this->resourceToCache[resourceKey] = index;
+  }
   return this->gpuCache.back();
 }
 
@@ -450,6 +476,10 @@ SoGLRenderBackend::updateCacheDescription(CachedCommand & entry,
   entry.textureWidth = hasTexture ? texture.width : 0;
   entry.textureHeight = hasTexture ? texture.height : 0;
   entry.textureComponents = hasTexture ? texture.numComponents : 0;
+  entry.geometryCacheKey = geometry.cacheKey;
+  entry.geometryRevision = geometry.revision;
+  entry.textureCacheKey = hasTexture ? texture.cacheKey : 0;
+  entry.textureRevision = hasTexture ? texture.revision : 0;
 }
 
 void
@@ -505,7 +535,11 @@ SoGLRenderBackend::textureDescriptionMatches(
   const SoRenderCommand & command) const
 {
   const SoTextureData & texture = command.material.texture;
-  return entry.texturePixelsKey == texture.pixels &&
+  const bool identityMatches = texture.cacheKey != 0
+    ? entry.textureCacheKey == texture.cacheKey &&
+      entry.textureRevision == texture.revision
+    : entry.texturePixelsKey == texture.pixels;
+  return identityMatches &&
     entry.textureWidth == texture.width &&
     entry.textureHeight == texture.height &&
     entry.textureComponents == texture.numComponents;
@@ -515,10 +549,21 @@ void
 SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
 {
   const uint32_t generation = drawlist.getGeneration();
-  if ((this->haveCacheGeneration && this->cacheGeneration != generation) ||
-      (this->haveCacheGeneration &&
-       this->cachedCommandCount != static_cast<size_t>(drawlist.getNumCommands()))) {
-    this->invalidateCache();
+  if (!this->haveCacheGeneration || this->cacheGeneration != generation) {
+    for (CachedCommand & entry : this->gpuCache) {
+      if (!entry.persistent) this->destroyCacheEntry(entry);
+    }
+    std::vector<CachedCommand> persistentEntries;
+    persistentEntries.reserve(this->gpuCache.size());
+    for (CachedCommand & entry : this->gpuCache) {
+      if (entry.persistent) persistentEntries.push_back(std::move(entry));
+    }
+    this->gpuCache.swap(persistentEntries);
+    this->resourceToCache.clear();
+    for (size_t i = 0; i < this->gpuCache.size(); ++i) {
+      this->resourceToCache[this->gpuCache[i].resourceKey] = i;
+    }
+    this->commandToCache.clear();
   }
   this->cacheGeneration = generation;
   this->haveCacheGeneration = true;
@@ -527,15 +572,18 @@ SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
   for (int i = 0; i < drawlist.getNumCommands(); ++i) {
     const SoRenderCommand & command = drawlist.getCommand(i);
     const SoGeometryDesc & geometry = command.geometry;
-    if (!geometry.positions || geometry.vertexCount == 0 ||
+    if ((!geometry.positions && geometry.cacheKey == 0) || geometry.vertexCount == 0 ||
         geometry.vertexCount > MAX_VERTEX_COUNT) continue;
 
     CachedCommand & entry = this->getOrCreateCache(&command);
     const uint32_t vertexStride = geometry.vertexStride
       ? geometry.vertexStride : sizeof(float) * 3;
+    const bool identityMatches = geometry.cacheKey != 0
+      ? entry.geometryCacheKey == geometry.cacheKey &&
+        entry.geometryRevision == geometry.revision
+      : entry.positionsKey == geometry.positions;
     const bool geometryMatches = entry.positionBuffer != 0 &&
-      entry.cacheGeneration == generation &&
-      entry.positionsKey == geometry.positions &&
+      identityMatches &&
       entry.colorsKey == geometry.colors &&
       entry.texcoordsKey == geometry.texcoords &&
       entry.indicesKey == geometry.indices &&
@@ -547,9 +595,9 @@ SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
       ((entry.texturePixelsKey != nullptr) ==
        (command.material.texture.pixels != nullptr));
     if (!geometryMatches) {
+      if (!geometry.positions) continue;
       this->uploadGeometry(entry, command);
       this->setupVisualVAO(entry);
-      entry.cacheGeneration = generation;
     }
   }
 }
@@ -560,7 +608,8 @@ SoGLRenderBackend::drawCommand(const SoRenderCommand & command,
                                 const SbMat & projMat,
                                 const SoRenderParams & params)
 {
-  if (!command.geometry.positions || command.geometry.vertexCount == 0) return;
+  if ((!command.geometry.positions && command.geometry.cacheKey == 0) ||
+      command.geometry.vertexCount == 0) return;
   const auto found = this->commandToCache.find(&command);
   if (found == this->commandToCache.end()) return;
   const CachedCommand & entry = this->gpuCache[found->second];

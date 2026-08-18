@@ -83,7 +83,8 @@ SoRenderBackend::debugValidateDrawList(const SoDrawList & drawlist) const
                          "Command %d has no vertices or indices", i);
     }
     if (command.geometry.vertexCount > 0 &&
-        command.geometry.positions == nullptr) {
+        command.geometry.positions == nullptr &&
+        command.geometry.cacheKey == 0) {
       SoDebugError::post("SoRenderBackend",
                          "Command %d is missing its position buffer", i);
     }

@@ -41,7 +41,8 @@ private:
 */
 class COIN_DLL_API SoRenderPlanner {
 public:
-  void build(const SoDrawList & drawlist, SoRenderPlan & plan) const;
+  void build(const SoDrawList & drawlist, const SbMatrix & frameViewMatrix,
+             SoRenderPlan & plan) const;
 };
 
 #endif // COIN_SORENDERPLAN_H
