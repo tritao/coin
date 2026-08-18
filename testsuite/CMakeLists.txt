@@ -69,18 +69,6 @@ endforeach()
 # However, those folders are not in the repository.
 if(COIN_BUILD_LEGACY_GL_RENDERER)
 	create_file_test("models" "testCorrectFile" false "incorrect")
-	add_executable(SoText2RasterLayoutTest
-		SoText2RasterLayoutTest.cpp)
-	target_link_libraries(SoText2RasterLayoutTest Coin
-		${COIN_TARGET_LINK_LIBRARIES})
-	target_include_directories(SoText2RasterLayoutTest PRIVATE
-		${PROJECT_SOURCE_DIR}/include
-		${PROJECT_BINARY_DIR}/include
-		${COIN_TARGET_INCLUDE_DIRECTORIES})
-	add_test(NAME SoText2RasterLayoutTest
-		COMMAND SoText2RasterLayoutTest)
-	set_tests_properties(SoText2RasterLayoutTest
-		PROPERTIES SKIP_RETURN_CODE 77)
 else()
 	# ExtSelection is part of the legacy renderer and is not registered in
 	# core-only builds, so do not include scenes that require that node.
@@ -189,6 +177,14 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		SOURCES DrawListGLTest.cpp)
 	coin_add_gl_test(NAME RetainedMaterialLightingGLTest PROFILE core
 		SOURCES retained-material-lighting-gl-test.cpp)
+	if(COIN_BUILD_LEGACY_GL_RENDERER)
+		coin_add_gl_test(NAME LegacySoText2RasterLayoutTest PROFILE compat
+			SOURCES LegacySoText2RasterLayoutTest.cpp LABELS requires-legacygl)
+		coin_add_gl_test(NAME LegacyDirectRasterTransparencyTest PROFILE compat
+			SOURCES LegacyDirectRasterTransparencyTest.cpp LABELS requires-legacygl)
+		coin_add_gl_test(NAME LegacyShapeGatingOrderTest PROFILE compat
+			SOURCES LegacyShapeGatingOrderTest.cpp LABELS requires-legacygl)
+	endif()
 endif()
 
 function(coin_add_egl_test)
@@ -260,31 +256,6 @@ target_include_directories(LegacyBlendingTest PRIVATE
 	${COIN_TARGET_INCLUDE_DIRECTORIES}
 )
 add_test(NAME LegacyBlendingTest COMMAND LegacyBlendingTest)
-
-if(COIN_BUILD_LEGACY_GL_RENDERER AND HAVE_EGL)
-	add_executable(LegacyDirectRasterTransparencyTest
-		LegacyDirectRasterTransparencyTest.cpp)
-	target_link_libraries(LegacyDirectRasterTransparencyTest Coin
-		${COIN_TARGET_LINK_LIBRARIES})
-	target_include_directories(LegacyDirectRasterTransparencyTest PRIVATE
-		${PROJECT_SOURCE_DIR}/include
-		${COIN_TARGET_INCLUDE_DIRECTORIES})
-	add_test(NAME LegacyDirectRasterTransparencyTest
-		COMMAND LegacyDirectRasterTransparencyTest)
-	set_tests_properties(LegacyDirectRasterTransparencyTest
-		PROPERTIES SKIP_RETURN_CODE 77)
-	add_executable(LegacyShapeGatingOrderTest
-		LegacyShapeGatingOrderTest.cpp)
-	target_link_libraries(LegacyShapeGatingOrderTest Coin
-		${COIN_TARGET_LINK_LIBRARIES})
-	target_include_directories(LegacyShapeGatingOrderTest PRIVATE
-		${PROJECT_SOURCE_DIR}/include
-		${COIN_TARGET_INCLUDE_DIRECTORIES})
-	add_test(NAME LegacyShapeGatingOrderTest
-		COMMAND LegacyShapeGatingOrderTest)
-	set_tests_properties(LegacyShapeGatingOrderTest
-		PROPERTIES SKIP_RETURN_CODE 77)
-endif()
 
 add_executable(RetainedIRTest RetainedIRTest.cpp)
 target_link_libraries(RetainedIRTest Coin ${COIN_TARGET_LINK_LIBRARIES})

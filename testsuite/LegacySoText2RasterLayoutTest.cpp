@@ -9,32 +9,26 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <vector>
 
 namespace {
 
-struct Bounds {
-  int minx;
-  int maxx;
-};
+struct Bounds { int minx; int maxx; };
 
-bool
-renderText(GLTestContext & context, SoText2::Justification justification,
-           Bounds & bounds)
+bool renderText(GLTestContext & context, SoText2::Justification justification,
+                Bounds & bounds)
 {
   SoSeparator * root = new SoSeparator;
   root->ref();
-
   SoOrthographicCamera * camera = new SoOrthographicCamera;
   camera->position = SbVec3f(0.0f, 0.0f, 1.0f);
   camera->height = 2.0f;
   root->addChild(camera);
-
   SoMaterial * material = new SoMaterial;
   material->diffuseColor = SbColor(1.0f, 1.0f, 1.0f);
   root->addChild(material);
-
   SoText2 * text = new SoText2;
   text->string.set1Value(0, "WIDE LINE");
   text->string.set1Value(1, "i");
@@ -59,18 +53,15 @@ renderText(GLTestContext & context, SoText2::Justification justification,
       }
     }
   }
-
   root->unref();
   return bounds.maxx >= bounds.minx;
 }
 
 }
 
-int
-main()
+int main()
 {
   SoDB::init();
-
   GLTestContextConfig config;
   config.profile = GLTestProfile::Compatibility;
   config.major = 3;
@@ -78,43 +69,30 @@ main()
   config.width = 128;
   config.height = 64;
   GLTestContext context;
-  if (!context.initialize(config)) {
-    SoDB::finish();
-    return 77;
-  }
+  if (!context.initialize(config)) { SoDB::finish(); return 77; }
 
-  Bounds left;
-  Bounds center;
-  Bounds right;
-  const bool rendered =
-    renderText(context, SoText2::LEFT, left) &&
+  Bounds left, center, right;
+  const bool rendered = renderText(context, SoText2::LEFT, left) &&
     renderText(context, SoText2::CENTER, center) &&
     renderText(context, SoText2::RIGHT, right);
-
   if (!rendered) {
     std::cout << "SKIP: LegacyGL compatibility rendering is unavailable" << std::endl;
     SoDB::finish();
     return 77;
   }
-
   const int leftWidth = left.maxx - left.minx;
   const int centerWidth = center.maxx - center.minx;
   const int rightWidth = right.maxx - right.minx;
-  const bool sameWidth =
-    std::abs(leftWidth - centerWidth) <= 2 &&
+  const bool sameWidth = std::abs(leftWidth - centerWidth) <= 2 &&
     std::abs(centerWidth - rightWidth) <= 2;
-  const bool aligned =
-    left.minx > center.minx + 5 &&
+  const bool aligned = left.minx > center.minx + 5 &&
     center.minx > right.minx + 5;
-
   if (!sameWidth || !aligned) {
-    std::cerr << "FAIL: multiline SoText2 justification is inconsistent"
-              << " (left=" << left.minx << ", center=" << center.minx
-              << ", right=" << right.minx << ")" << std::endl;
+    std::cerr << "FAIL: legacy multiline SoText2 justification is inconsistent"
+              << std::endl;
     SoDB::finish();
     return 1;
   }
-
   SoDB::finish();
   return 0;
 }

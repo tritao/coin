@@ -1,5 +1,4 @@
 #include <Inventor/SoDB.h>
-#include <Inventor/SoOffscreenRenderer.h>
 #include <Inventor/SbBox3f.h>
 #include <Inventor/actions/SoAction.h>
 #include <Inventor/actions/SoGLRenderAction.h>
@@ -15,8 +14,11 @@
 #include <Inventor/elements/SoShapeStyleElement.h>
 
 #include <algorithm>
-#include <cstdlib>
+#include "support/GLTestContext.h"
+
+#include <cstdint>
 #include <iostream>
+#include <vector>
 
 namespace {
 
@@ -66,18 +68,8 @@ skip(const char * reason)
   return 77;
 }
 
-void
-setEnvironment(const char * name, const char * value)
-{
-#ifdef _WIN32
-  _putenv_s(name, value);
-#else
-  setenv(name, value, 1);
-#endif
-}
-
 int
-testShadowMapDecision()
+testShadowMapDecision(GLTestContext & context)
 {
   ShadowMapGatingShape::initClass();
 
@@ -86,13 +78,12 @@ testShadowMapDecision()
   ShadowMapGatingShape * shape = new ShadowMapGatingShape;
   root->addChild(shape);
 
-  SoOffscreenRenderer renderer(SbViewportRegion(8, 8));
-  renderer.setComponents(SoOffscreenRenderer::RGB);
-  renderer.setBackgroundColor(SbColor(0.0f, 0.0f, 0.0f));
-  if (!renderer.render(root)) {
-    root->unref();
-    return skip("LegacyGL offscreen rendering is unavailable");
-  }
+  context.bindFramebuffer();
+  glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  SoGLRenderAction action(SbViewportRegion(8, 8));
+  action.setCacheContext(context.contextId());
+  action.apply(root);
 
   const SbBool rendered = shape->rendered;
   root->unref();
@@ -108,13 +99,9 @@ testShadowMapDecision()
 }
 
 static int
-runTest()
+runTest(GLTestContext & context)
 {
-  setEnvironment("COIN_EGL", "1");
-  setEnvironment("EGL_PLATFORM", "surfaceless");
-  SoDB::init();
-
-  const int shadowResult = testShadowMapDecision();
+  const int shadowResult = testShadowMapDecision(context);
 
   SoSeparator * root = new SoSeparator;
   root->ref();
@@ -142,20 +129,17 @@ runTest()
   faceSet->numVertices.set1Value(0, 3);
   root->addChild(faceSet);
 
-  SoOffscreenRenderer renderer(SbViewportRegion(64, 64));
-  renderer.setComponents(SoOffscreenRenderer::RGB);
-  renderer.setBackgroundColor(SbColor(0.0f, 0.0f, 0.0f));
-  renderer.getGLRenderAction()->setTransparencyType(
+  context.bindFramebuffer();
+  glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  SoGLRenderAction action(SbViewportRegion(64, 64));
+  action.setCacheContext(context.contextId());
+  action.setTransparencyType(
     SoGLRenderAction::SORTED_OBJECT_SORTED_TRIANGLE_BLEND);
-
-  if (!renderer.render(root)) {
-    root->unref();
-    return skip("LegacyGL offscreen rendering is unavailable");
-  }
-
-  const unsigned char * pixels = renderer.getBuffer();
+  action.apply(root);
+  const std::vector<uint8_t> pixels = context.readPixels();
   bool sawTransparentShape = false;
-  for (int i = 0; i < 64 * 64 * 3; i += 3) {
+  for (size_t i = 0; i < pixels.size(); i += 4) {
     if (pixels[i] > 20 && pixels[i] > pixels[i + 1] + 10 &&
         pixels[i] > pixels[i + 2] + 10) {
       sawTransparentShape = true;
@@ -176,7 +160,19 @@ runTest()
 int
 main()
 {
-  const int result = runTest();
+  SoDB::init();
+  GLTestContextConfig config;
+  config.profile = GLTestProfile::Compatibility;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 64;
+  config.height = 64;
+  GLTestContext context;
+  if (!context.initialize(config)) {
+    SoDB::finish();
+    return skip("LegacyGL compatibility context is unavailable");
+  }
+  const int result = runTest(context);
   SoDB::finish();
   return result;
 }
