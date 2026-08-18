@@ -3,6 +3,7 @@
 #include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/nodes/SoCube.h>
 #include <Inventor/nodes/SoDrawStyle.h>
+#include <Inventor/nodes/SoFont.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoTexture2.h>
@@ -84,6 +85,34 @@ runTest()
     result = 1;
   }
   opaqueRoot->unref();
+
+  int rasterWidths[2] = { 0, 0 };
+  const float fontSizes[2] = { 8.0f, 16.0f };
+  for (int sample = 0; sample < 2; ++sample) {
+    SoSeparator * sizedRoot = new SoSeparator;
+    sizedRoot->ref();
+    SoFont * font = new SoFont;
+    font->size = fontSizes[sample];
+    sizedRoot->addChild(font);
+    SoText2 * sizedText = new SoText2;
+    sizedText->string = "WIDE LINE";
+    sizedRoot->addChild(sizedText);
+    SoIRRenderAction sizedAction(SbViewportRegion(128, 64));
+    sizedAction.apply(sizedRoot);
+    for (int i = 0; i < sizedAction.getDrawList().getNumCommands(); ++i) {
+      const SoRenderCommand & command = sizedAction.getDrawList().getCommand(i);
+      if (command.pixelRaster.enabled) {
+        rasterWidths[sample] = command.material.texture.width;
+        break;
+      }
+    }
+    sizedRoot->unref();
+  }
+  if (rasterWidths[0] <= 0 || rasterWidths[1] <= rasterWidths[0]) {
+    std::cerr << "FAIL: SoText2 retained raster did not respect font size"
+              << std::endl;
+    result = 1;
+  }
 
   const unsigned char opaqueTexturePixel[] = { 255, 255, 255, 255 };
   SoSeparator * opaqueTexturedRoot = new SoSeparator;
