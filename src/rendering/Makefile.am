@@ -27,7 +27,8 @@ PrivateHeaders = \
 	SoOffscreenCGData.h \
 	SoOffscreenGLXData.h \
 	SoOffscreenWGLData.h \
-        SoRenderManagerP.h
+	SoRenderManagerP.h \
+	CoinGLReadback.h
 ObsoleteHeaders =
 
 ##$ BEGIN TEMPLATE Make-Common(rendering, rendering)

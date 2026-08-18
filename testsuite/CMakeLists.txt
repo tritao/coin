@@ -133,6 +133,18 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		${COIN_TARGET_LINK_LIBRARIES})
 	target_link_libraries(CoinGLTestSupport PRIVATE Coin)
 
+	# Compile the private readback implementation into the white-box test so
+	# the test does not depend on a non-public symbol crossing Coin's DLL ABI.
+	add_library(CoinGLReadbackTestSupport STATIC
+		${PROJECT_SOURCE_DIR}/src/rendering/CoinGLReadback.cpp)
+	target_link_libraries(CoinGLReadbackTestSupport PRIVATE CoinTestInternals Coin
+		${COIN_TARGET_LINK_LIBRARIES})
+	target_include_directories(CoinGLReadbackTestSupport PRIVATE
+		${PROJECT_SOURCE_DIR}/src
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES})
+
 	add_executable(GLSLRuntimeTest GLSLRuntimeTest.cpp)
 	target_link_libraries(GLSLRuntimeTest PRIVATE
 		CoinGLTestSupport CoinTestInternals Coin ${COIN_TARGET_LINK_LIBRARIES})
@@ -159,7 +171,8 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 
 	add_executable(OffscreenReadbackTest OffscreenReadbackTest.cpp)
 	target_link_libraries(OffscreenReadbackTest PRIVATE
-		CoinGLTestSupport CoinTestInternals Coin ${COIN_TARGET_LINK_LIBRARIES})
+		CoinGLTestSupport CoinGLReadbackTestSupport CoinTestInternals Coin
+		${COIN_TARGET_LINK_LIBRARIES})
 	target_include_directories(OffscreenReadbackTest PRIVATE
 		${PROJECT_SOURCE_DIR}/src
 		${PROJECT_SOURCE_DIR}/include
@@ -182,6 +195,17 @@ if(HAVE_EGL)
 	add_test(NAME EGLBindingTest COMMAND EGLBindingTest)
 	set_tests_properties(EGLBindingTest PROPERTIES SKIP_RETURN_CODE 77)
 
+	add_executable(OffscreenContextTest OffscreenContextTest.cpp)
+	target_link_libraries(OffscreenContextTest PRIVATE
+		CoinTestInternals Coin ${COIN_TARGET_LINK_LIBRARIES})
+	target_include_directories(OffscreenContextTest PRIVATE
+		${PROJECT_SOURCE_DIR}/src
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES})
+	add_test(NAME OffscreenContextTest COMMAND OffscreenContextTest)
+	set_tests_properties(OffscreenContextTest PROPERTIES
+		SKIP_RETURN_CODE 77 LABELS "egl;offscreen;requires-egl")
 endif()
 
 # Many warnings are generated from test macros on macOS with Xcode.
