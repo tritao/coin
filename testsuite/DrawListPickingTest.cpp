@@ -237,6 +237,66 @@ runTest()
                   << std::endl;
         result = 1;
       }
+
+      SoRenderCommand mainNear = command;
+      mainNear.modelMatrix.setTranslate(SbVec3f(0.0f, 0.0f, -0.4f));
+      SoRenderCommand mainFar = command;
+      mainFar.modelMatrix.setTranslate(SbVec3f(0.0f, 0.0f, 0.4f));
+      SoRenderCommand localNear = command;
+      localNear.modelMatrix.setTranslate(SbVec3f(0.0f, 0.0f, 0.2f));
+      SoRenderCommand localFar = command;
+      localFar.modelMatrix.setTranslate(SbVec3f(0.0f, 0.0f, 0.6f));
+      drawlist.clear();
+      drawlist.addCommand(mainNear);
+      drawlist.addCommand(mainFar);
+      SoDepthClearEvent localClear;
+      localClear.sequence = 2;
+      localClear.viewportOverride = TRUE;
+      localClear.viewportX = 32;
+      localClear.viewportY = 0;
+      localClear.viewportWidth = 32;
+      localClear.viewportHeight = 64;
+      drawlist.addDepthClearEvent(localClear);
+      drawlist.addCommand(localNear);
+      drawlist.addCommand(localFar);
+      if (!updatePickBuffer(backend, drawlist, params)) {
+        std::cerr << "FAIL: viewport-local depth-segment update failed"
+                  << std::endl;
+        result = 1;
+      }
+      else {
+        SoPickResultList insideSegments;
+        if (!backend.pickDepthStack(48, 20, 0, 8, 32, insideSegments) ||
+            insideSegments.hits.size() != 4 ||
+            insideSegments.hits[0].id != 3 ||
+            insideSegments.hits[1].id != 4 ||
+            insideSegments.hits[2].id != 1 ||
+            insideSegments.hits[3].id != 2) {
+          std::cerr << "FAIL: local depth-clear candidates did not follow "
+                       "visual segment order:";
+          for (const SoPickResult & hit : insideSegments.hits) {
+            std::cerr << ' ' << hit.id;
+          }
+          std::cerr << std::endl;
+          result = 1;
+        }
+
+        SoPickResultList outsideSegments;
+        if (!backend.pickDepthStack(16, 20, 0, 8, 32, outsideSegments) ||
+            outsideSegments.hits.size() != 4 ||
+            outsideSegments.hits[0].id != 1 ||
+            outsideSegments.hits[1].id != 3 ||
+            outsideSegments.hits[2].id != 2 ||
+            outsideSegments.hits[3].id != 4) {
+          std::cerr << "FAIL: local depth clear affected picking outside its "
+                       "viewport:";
+          for (const SoPickResult & hit : outsideSegments.hits) {
+            std::cerr << ' ' << hit.id;
+          }
+          std::cerr << std::endl;
+          result = 1;
+        }
+      }
     }
 
     // All explicit operations preserve the caller's mutable GL state,

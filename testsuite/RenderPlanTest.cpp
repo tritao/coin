@@ -140,7 +140,7 @@ main()
   boundsFar.modelMatrix.setTranslate(SbVec3f(0.0f, 0.0f, -3.0f));
   boundsDrawList.addCommand(boundsNear);
   boundsDrawList.addCommand(boundsFar);
-  planner.build(boundsDrawList, plan);
+  planner.build(boundsDrawList, frameViewMatrix, plan);
   std::vector<uint32_t> boundsDraws;
   for (int i = 0; i < plan.getNumOperations(); ++i) {
     if (plan.getOperation(i).type == SoRenderOperationType::DRAW) {
@@ -151,6 +151,35 @@ main()
                  boundsDraws[1] == 0,
                  "planner sorted transparency from model origins instead of bounds") &&
     result;
+
+  SbMatrix flippedFrameView = SbMatrix::identity();
+  flippedFrameView.setScale(SbVec3f(1.0f, 1.0f, -1.0f));
+  planner.build(boundsDrawList, flippedFrameView, plan);
+  boundsDraws.clear();
+  for (int i = 0; i < plan.getNumOperations(); ++i) {
+    if (plan.getOperation(i).type == SoRenderOperationType::DRAW) {
+      boundsDraws.push_back(plan.getOperation(i).commandIndex);
+    }
+  }
+  result = check(boundsDraws.size() == 2 && boundsDraws[0] == 0 &&
+                 boundsDraws[1] == 1,
+                 "planner ignored the frame camera") && result;
+
+  boundsFar.state.useCommandMatrices = TRUE;
+  boundsFar.viewMatrix.makeIdentity();
+  boundsDrawList.clear();
+  boundsDrawList.addCommand(boundsNear);
+  boundsDrawList.addCommand(boundsFar);
+  planner.build(boundsDrawList, flippedFrameView, plan);
+  boundsDraws.clear();
+  for (int i = 0; i < plan.getNumOperations(); ++i) {
+    if (plan.getOperation(i).type == SoRenderOperationType::DRAW) {
+      boundsDraws.push_back(plan.getOperation(i).commandIndex);
+    }
+  }
+  result = check(boundsDraws.size() == 2 && boundsDraws[0] == 1 &&
+                 boundsDraws[1] == 0,
+                 "planner ignored a command-matrix override") && result;
 
   drawlist.addCommand(second);
   SoDepthClearEvent event;

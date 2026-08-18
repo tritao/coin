@@ -124,13 +124,12 @@ public:
   //! path traversal; it is not a general snapshot of SoState.
   void traverseAdditionalPath(SoPath * path,
                               const SoIRRenderContext & context);
-#endif
-
-  SoRenderStage getRenderStage() const { return this->renderStage; }
-  void setRenderStage(SoRenderStage stage) { this->renderStage = stage; }
+  SoRenderStage getRenderStage() const;
+  void setRenderStage(SoRenderStage stage);
   void applyRenderStage(SoRenderCommand & command);
   //! Record a depth-clear barrier at the current traversal position.
   void requestDepthClear();
+#endif
 
 
   //! Return the generated draw list for the current frame.
@@ -170,13 +169,11 @@ private:
   void initializeCameraState(CameraPolicy policy);
   void resetFrameResources();
   void clearCommandPaths();
+#if defined(COIN_INTERNAL) || defined(COIN_ALLOW_PRIVATE_HEADERS)
   void traverseAdditionalPathInternal(
     SoPath * path, const SoIRRenderContext * context);
-  const SoIRRenderContext * getRenderContextOverride() const
-  {
-    return this->hasRenderContextOverride
-      ? &this->renderContextOverride : nullptr;
-  }
+  const SoIRRenderContext * getRenderContextOverride() const;
+#endif
 
   SbViewportRegion vpRegion;
   SoCamera *       camera = nullptr;
@@ -185,14 +182,12 @@ private:
   SoDrawList       drawlist;
   std::vector<SoPath *> commandPaths;
   SoIRRenderActionP * pimpl;
-  SoRenderStage    renderStage = SoRenderStage::Main;
-  SoIRRenderContext renderContextOverride;
-  bool hasRenderContextOverride = false;
   bool unsupportedRendering = false;
   const SoNode * unsupportedNode = nullptr;
   const char * unsupportedReason = nullptr;
 };
 
+#if defined(COIN_INTERNAL) || defined(COIN_ALLOW_PRIVATE_HEADERS)
 /*! \brief RAII guard for an action-local manager render stage. */
 class COIN_DLL_API SoIRRenderStageScope {
 public:
@@ -206,5 +201,6 @@ private:
   SoIRRenderAction * action;
   SoRenderStage previousStage;
 };
+#endif
 
 #endif // COIN_SOIRRENDERACTION_H

@@ -92,6 +92,9 @@ public:
   std::vector<int> instancePathIndices;
   SoInstanceId currentInstanceId = 0;
   SoInstanceId nextInstanceId = 1;
+  SoRenderStage renderStage = SoRenderStage::Main;
+  SoIRRenderContext renderContextOverride;
+  bool hasRenderContextOverride = false;
 };
 
 #define PRIVATE(obj) (obj->pimpl)
@@ -362,11 +365,11 @@ SoIRRenderAction::traverseAdditionalPathInternal(
   if (!path) return;
 
   this->traversalMethods->setUp();
-  const bool previousHasContext = this->hasRenderContextOverride;
-  const SoIRRenderContext previousContext = this->renderContextOverride;
-  this->hasRenderContextOverride = context != nullptr;
+  const bool previousHasContext = PRIVATE(this)->hasRenderContextOverride;
+  const SoIRRenderContext previousContext = PRIVATE(this)->renderContextOverride;
+  PRIVATE(this)->hasRenderContextOverride = context != nullptr;
   if (context) {
-    this->renderContextOverride = *context;
+    PRIVATE(this)->renderContextOverride = *context;
   }
   this->state->push();
   if (context) {
@@ -383,10 +386,17 @@ SoIRRenderAction::traverseAdditionalPathInternal(
   }
   this->switchToPathTraversal(path);
   this->state->pop();
-  this->hasRenderContextOverride = previousHasContext;
+  PRIVATE(this)->hasRenderContextOverride = previousHasContext;
   if (previousHasContext) {
-    this->renderContextOverride = previousContext;
+    PRIVATE(this)->renderContextOverride = previousContext;
   }
+}
+
+const SoIRRenderContext *
+SoIRRenderAction::getRenderContextOverride() const
+{
+  return PRIVATE(this)->hasRenderContextOverride
+    ? &PRIVATE(this)->renderContextOverride : nullptr;
 }
 
 void
@@ -482,13 +492,13 @@ SoIRRenderAction::allocateTextureStorage(const unsigned char * source,
 void
 SoIRRenderAction::applyRenderStage(SoRenderCommand & command)
 {
-  if (this->renderStage == SoRenderStage::Background) {
+  if (PRIVATE(this)->renderStage == SoRenderStage::Background) {
     command.stage = SoRenderStage::Background;
   }
-  else if (this->renderStage == SoRenderStage::AfterMain) {
+  else if (PRIVATE(this)->renderStage == SoRenderStage::AfterMain) {
     command.stage = SoRenderStage::AfterMain;
   }
-  else if (this->renderStage == SoRenderStage::Foreground ||
+  else if (PRIVATE(this)->renderStage == SoRenderStage::Foreground ||
            SoRenderPlacementElement::getLayer(this->state) ==
              SoRenderPlacementElement::FOREGROUND) {
     command.stage = SoRenderStage::Foreground;
@@ -499,7 +509,7 @@ void
 SoIRRenderAction::requestDepthClear()
 {
   SoDepthClearEvent event;
-  event.stage = this->renderStage;
+  event.stage = PRIVATE(this)->renderStage;
   if (SoRenderPlacementElement::getLayer(this->state) ==
       SoRenderPlacementElement::FOREGROUND) {
     event.stage = SoRenderStage::Foreground;
@@ -533,6 +543,18 @@ SoIRRenderStageScope::~SoIRRenderStageScope()
   this->action->setRenderStage(this->previousStage);
 }
 
+SoRenderStage
+SoIRRenderAction::getRenderStage() const
+{
+  return PRIVATE(this)->renderStage;
+}
+
+void
+SoIRRenderAction::setRenderStage(SoRenderStage stage)
+{
+  PRIVATE(this)->renderStage = stage;
+}
+
 void
 SoIRRenderAction::resetFrameResources()
 {
@@ -552,7 +574,7 @@ SoIRRenderAction::clearCommandPaths()
     if (path && SoDB::isInitialized()) path->unref();
   }
   this->commandPaths.clear();
-  this->renderStage = SoRenderStage::Main;
-  this->hasRenderContextOverride = false;
-  this->renderContextOverride = SoIRRenderContext();
+  PRIVATE(this)->renderStage = SoRenderStage::Main;
+  PRIVATE(this)->hasRenderContextOverride = false;
+  PRIVATE(this)->renderContextOverride = SoIRRenderContext();
 }

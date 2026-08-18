@@ -496,6 +496,7 @@ struct SoLightingData {
   std::vector<SoLightData> lights;
 };
 
+#if defined(COIN_INTERNAL) || defined(COIN_ALLOW_PRIVATE_HEADERS)
 /*!
   \struct SoIRRenderContext
   \brief State that must survive when a path is replayed after traversal.
@@ -533,6 +534,7 @@ struct COIN_DLL_API SoIRRenderContext {
   //! Apply the captured state to an active Inventor traversal.
   void applyToState(SoState * state, SbBool applyModelMatrix = TRUE) const;
 };
+#endif
 
 /*!
   \enum SoPickElementType
@@ -679,7 +681,6 @@ struct SoRenderCommand {
   SoObjectId       objectId = 0;   //!< Optional producer semantic identity.
   SoPixelRasterData pixelRaster;
   SoPickData       pick;
-  uint64_t         sortKey = 0; //!< IR/draw-list key used by sorting.
 };
 
 /*!
