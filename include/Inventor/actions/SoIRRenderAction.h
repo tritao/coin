@@ -92,8 +92,10 @@ public:
 
   //! Return the generated draw list for the current frame.
   const SoDrawList & getDrawList(void) const { return this->drawlist; }
+#if defined(COIN_INTERNAL) || defined(COIN_ALLOW_PRIVATE_HEADERS)
   //! Mutable access to the generated draw list for the current frame.
   SoDrawList & getMutableDrawList() { return this->drawlist; }
+#endif
 
   /*!
     \brief Allocate per-frame geometry storage owned by the action.

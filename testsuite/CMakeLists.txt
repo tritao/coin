@@ -259,6 +259,7 @@ if(COIN_BUILD_LEGACY_GL_RENDERER)
 endif()
 
 add_executable(RetainedIRTest RetainedIRTest.cpp)
+target_compile_definitions(RetainedIRTest PRIVATE COIN_ALLOW_PRIVATE_HEADERS)
 target_link_libraries(RetainedIRTest Coin ${COIN_TARGET_LINK_LIBRARIES})
 target_include_directories(RetainedIRTest PRIVATE
 	${PROJECT_SOURCE_DIR}/include
@@ -268,6 +269,7 @@ target_include_directories(RetainedIRTest PRIVATE
 add_test(NAME RetainedIRTest COMMAND RetainedIRTest)
 
 add_executable(RetainedNodeTest RetainedNodeTest.cpp)
+target_compile_definitions(RetainedNodeTest PRIVATE COIN_ALLOW_PRIVATE_HEADERS)
 target_link_libraries(RetainedNodeTest Coin ${COIN_TARGET_LINK_LIBRARIES})
 target_include_directories(RetainedNodeTest PRIVATE
 	${PROJECT_SOURCE_DIR}/include

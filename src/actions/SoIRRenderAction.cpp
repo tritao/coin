@@ -70,6 +70,10 @@ public:
 
   SoIRBuffer geometryPool;
   SbList<SoIRRenderAction::PrimitiveCollector *> collectorStack;
+  std::vector<SoNode *> instancePathNodes;
+  std::vector<int> instancePathIndices;
+  SoInstanceId currentInstanceId = 0;
+  SoInstanceId nextInstanceId = 1;
 };
 
 #define PRIVATE(obj) (obj->pimpl)
@@ -186,10 +190,28 @@ void
 SoIRRenderAction::addCommand(const SoRenderCommand & command)
 {
   SoRenderCommand retained = command;
-  if (retained.objectId == 0) {
-    const SoPath * currentPath = this->getCurPath();
-    SoNode * tail = currentPath ? currentPath->getTail() : nullptr;
-    if (tail) retained.objectId = tail->getNodeId();
+  const SoPath * currentPath = this->getCurPath();
+  SoNode * tail = currentPath ? currentPath->getTail() : nullptr;
+  if (retained.nodeId == 0 && tail) {
+    retained.nodeId = static_cast<SoNodeId>(tail->getNodeId());
+  }
+  if (retained.instanceId == 0 && currentPath) {
+    const int length = currentPath->getLength();
+    bool samePath = length == static_cast<int>(PRIVATE(this)->instancePathNodes.size());
+    for (int i = 0; samePath && i < length; ++i) {
+      samePath = currentPath->getNode(i) == PRIVATE(this)->instancePathNodes[i] &&
+        currentPath->getIndex(i) == PRIVATE(this)->instancePathIndices[i];
+    }
+    if (!samePath) {
+      PRIVATE(this)->instancePathNodes.resize(length);
+      PRIVATE(this)->instancePathIndices.resize(length);
+      for (int i = 0; i < length; ++i) {
+        PRIVATE(this)->instancePathNodes[i] = currentPath->getNode(i);
+        PRIVATE(this)->instancePathIndices[i] = currentPath->getIndex(i);
+      }
+      PRIVATE(this)->currentInstanceId = PRIVATE(this)->nextInstanceId++;
+    }
+    retained.instanceId = PRIVATE(this)->currentInstanceId;
   }
 
   if (!retained.geometry.hasBounds && retained.geometry.positions &&
@@ -273,4 +295,8 @@ SoIRRenderAction::resetFrameResources()
 {
   PRIVATE(this)->geometryPool.clear();
   PRIVATE(this)->collectorStack.truncate(0);
+  PRIVATE(this)->instancePathNodes.clear();
+  PRIVATE(this)->instancePathIndices.clear();
+  PRIVATE(this)->currentInstanceId = 0;
+  PRIVATE(this)->nextInstanceId = 1;
 }

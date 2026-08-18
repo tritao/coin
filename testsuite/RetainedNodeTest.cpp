@@ -78,7 +78,7 @@ runTest()
   firstPath->ref();
   action.apply(firstPath);
   check(action.getDrawList().getNumCommands() == 1 &&
-        action.getDrawList().getCommand(0).userData == firstCube,
+        action.getDrawList().getCommand(0).nodeId == firstCube->getNodeId(),
         "apply(SoPath*) did not traverse the selected cube", result);
   firstPath->unref();
 
@@ -107,6 +107,31 @@ runTest()
   }
   firstListPath->unref();
   secondListPath->unref();
+
+  SoSeparator * firstParent = new SoSeparator;
+  SoSeparator * secondParent = new SoSeparator;
+  SoCube * sharedCube = new SoCube;
+  firstParent->addChild(sharedCube);
+  secondParent->addChild(sharedCube);
+  SoSeparator * sharedRoot = new SoSeparator;
+  sharedRoot->ref();
+  sharedRoot->addChild(firstParent);
+  sharedRoot->addChild(secondParent);
+  action.apply(sharedRoot);
+  check(action.getDrawList().getNumCommands() == 2,
+        "shared DAG node did not produce two occurrences", result);
+  if (action.getDrawList().getNumCommands() == 2) {
+    const SoRenderCommand & first = action.getDrawList().getCommand(0);
+    const SoRenderCommand & second = action.getDrawList().getCommand(1);
+    check(first.nodeId == second.nodeId && first.nodeId == sharedCube->getNodeId(),
+          "shared DAG commands did not preserve node identity", result);
+    check(first.instanceId != 0 && second.instanceId != 0 &&
+          first.instanceId != second.instanceId,
+          "shared DAG commands did not preserve occurrence identity", result);
+    check(first.objectId == 0 && second.objectId == 0,
+          "traversal synthesized application object identity", result);
+  }
+  sharedRoot->unref();
 
   action.getMutableDrawList().addCommand(SoRenderCommand());
   action.apply(static_cast<SoNode *>(probe));

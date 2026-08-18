@@ -13,6 +13,10 @@
 #include <cstdint>
 #include <vector>
 
+using SoNodeId = uint64_t;
+using SoInstanceId = uint64_t;
+using SoObjectId = uint64_t;
+
 /*!
   \file SoRenderIR.h
   \brief Backend-neutral intermediate representation for retained rendering.
@@ -394,9 +398,9 @@ struct SoRenderCommand {
   SbMatrix         projMatrix;
 
   SoLightingHandle lightingHandle = 0;
-  // Stable scene identity. Zero means that the producer did not provide one.
-  uint64_t         objectId = 0;
-  void *           userData = nullptr; //!< Opaque, non-owned producer data.
+  SoNodeId         nodeId = 0;     //!< Identity of the underlying scene node.
+  SoInstanceId     instanceId = 0; //!< Identity of this rendered occurrence.
+  SoObjectId       objectId = 0;   //!< Optional producer semantic identity.
 };
 
 /*!

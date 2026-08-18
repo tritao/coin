@@ -203,7 +203,6 @@ private:
     this->fillGeometry(command.geometry);
     SoRenderIR::fillCommandStateFromState(
       this->action->getState(), this->action->getMutableDrawList(), command);
-    command.userData = this->shape;
     this->action->addCommand(command);
 
     this->vertices.clear();

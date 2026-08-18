@@ -105,7 +105,8 @@ runTest()
       const SoRenderCommand & command = drawlist.getCommand(i);
       if (command.geometry.topology != expected[i] ||
           command.geometry.vertexCount != counts[i] ||
-          command.userData != shape) {
+          command.nodeId != shape->getNodeId() ||
+          command.instanceId == 0) {
         std::cerr << "FAIL: mixed-topology command " << i
                   << " is incomplete" << std::endl;
         result = 1;
