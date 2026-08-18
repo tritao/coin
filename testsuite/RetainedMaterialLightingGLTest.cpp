@@ -1,12 +1,11 @@
-#include "rendering/CoinOffscreenGLCanvas.h"
 #include "rendering/SoGLRenderBackend.h"
 #include "rendering/SoRenderPlan.h"
+#include "support/GLTestContext.h"
 
 #include <Inventor/SoDB.h>
 
 #include <array>
 #include <cmath>
-#include <cstdlib>
 #include <iostream>
 #include <vector>
 
@@ -18,26 +17,22 @@ int skip(const char * reason)
   return 77;
 }
 
-void setEnvironment(const char * name, const char * value)
-{
-#ifdef _WIN32
-  _putenv_s(name, value);
-#else
-  setenv(name, value, 1);
-#endif
-}
-
 struct RenderFixture {
-  CoinOffscreenGLCanvas canvas;
+  GLTestContext context;
   SoGLRenderBackend backend;
 
   int initialize()
   {
-    canvas.setWantedSize(SbVec2s(64, 64));
-    if (canvas.activateGLContext() == 0) return 77;
+    GLTestContextConfig config;
+    config.profile = GLTestProfile::Core;
+    config.major = 3;
+    config.minor = 3;
+    config.width = 64;
+    config.height = 64;
+    if (!context.initialize(config)) return 77;
     SoRenderBackendInitParams init = {};
     if (backend.initialize(init)) return 0;
-    canvas.deactivateGLContext();
+    context.shutdown();
     return 1;
   }
 
@@ -54,18 +49,16 @@ struct RenderFixture {
     params.flags = SO_PARAM_CLEAR_WINDOW | SO_PARAM_CLEAR_DEPTH;
     SoRenderPlanner planner;
     SoRenderPlan plan;
-    planner.build(drawlist, plan);
+    planner.build(drawlist, params.viewMatrix, plan);
     backend.render(drawlist, plan, params);
     glFinish();
-    std::vector<uint8_t> pixels(64 * 64 * 4, 0);
-    canvas.readPixels(pixels.data(), SbVec2s(64, 64), 64, 4);
-    return pixels;
+    return context.readPixels();
   }
 
   void shutdown()
   {
     backend.shutdown();
-    canvas.deactivateGLContext();
+    context.shutdown();
   }
 };
 
@@ -536,15 +529,12 @@ bool testAlphaTest(RenderFixture & fixture)
 
 static int runTest()
 {
-  setEnvironment("COIN_EGL", "1");
-  setEnvironment("EGL_PLATFORM", "surfaceless");
-  setEnvironment("COIN_EGL_CORE_PROFILE", "1");
   SoDB::init();
   RenderFixture fixture;
   const int initializationResult = fixture.initialize();
   if (initializationResult != 0) {
     if (initializationResult == 77) {
-      return skip("core EGL retained-material context is unavailable");
+      return skip("core GLFW retained-material context is unavailable");
     }
     std::cerr << "FAIL: retained material backend did not initialize on the "
               << "verified OpenGL 3.3/GLSL 330 context" << std::endl;

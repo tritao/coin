@@ -95,5 +95,33 @@ main()
                  "planner did not schedule transparent commands back-to-front") &&
     result;
 
+  SbMatrix movedFrameView = SbMatrix::identity();
+  movedFrameView.setTranslate(SbVec3f(0.0f, 0.0f, -4.0f));
+  transparentNear.geometry.boundsCenter.setValue(0.0f, 0.0f, -3.0f);
+  transparentNear.geometry.hasBounds = TRUE;
+  transparentFar.geometry.boundsCenter.setValue(0.0f, 0.0f, 1.0f);
+  transparentFar.geometry.hasBounds = TRUE;
+  transparencyDrawList.clear();
+  transparencyDrawList.addCommand(opaque);
+  transparencyDrawList.addCommand(transparentNear);
+  transparencyDrawList.addCommand(transparentFar);
+  planner.build(transparencyDrawList, movedFrameView, plan);
+  result = check(plan.getDraw(1).commandIndex == 1 &&
+                 plan.getDraw(2).commandIndex == 2,
+                 "planner ignored frame camera and geometry bounds") && result;
+
+  SoRenderCommand overrideNear = transparentNear;
+  overrideNear.state.useCommandMatrices = TRUE;
+  overrideNear.viewMatrix.makeIdentity();
+  overrideNear.geometry.boundsCenter.setValue(0.0f, 0.0f, 2.0f);
+  transparencyDrawList.clear();
+  transparencyDrawList.addCommand(opaque);
+  transparencyDrawList.addCommand(overrideNear);
+  transparencyDrawList.addCommand(transparentFar);
+  planner.build(transparencyDrawList, movedFrameView, plan);
+  result = check(plan.getDraw(1).commandIndex == 2 &&
+                 plan.getDraw(2).commandIndex == 1,
+                 "planner ignored an explicit command-matrix override") && result;
+
   return result ? 0 : 1;
 }

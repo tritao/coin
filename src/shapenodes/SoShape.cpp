@@ -358,7 +358,6 @@ private:
       command.material.vertexColorAlphaIncludesOpacity =
         command.geometry.colors != nullptr && !packedVertexColors;
       SoRenderIR::finalizeCommand(command);
-      command.userData = this->shape;
       this->action->addCommand(command);
     }
   }

@@ -22,14 +22,17 @@ SoRenderPlanner::build(const SoDrawList & drawlist,
     const SoRenderCommand & command = drawlist.getCommand(
       static_cast<int>(commandIndex));
     SbMat view;
-    SbMat model;
     const SbMatrix & effectiveView = command.state.useCommandMatrices
       ? command.viewMatrix : frameViewMatrix;
     effectiveView.getValue(view);
-    command.modelMatrix.getValue(model);
-    const float worldX = model[3][0];
-    const float worldY = model[3][1];
-    const float worldZ = model[3][2];
+    SbVec3f worldCenter;
+    command.modelMatrix.multVecMatrix(
+      command.geometry.hasBounds ? command.geometry.boundsCenter
+                                 : SbVec3f(0.0f, 0.0f, 0.0f),
+      worldCenter);
+    const float worldX = worldCenter[0];
+    const float worldY = worldCenter[1];
+    const float worldZ = worldCenter[2];
     const float eyeZ = view[0][2] * worldX +
       view[1][2] * worldY +
       view[2][2] * worldZ +
