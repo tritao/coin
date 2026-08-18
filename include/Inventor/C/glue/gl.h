@@ -348,6 +348,9 @@ COIN_DLL_API void cc_glglue_glGetColorTableParameterfv(const cc_glglue * glue,
 
 COIN_DLL_API SbBool cc_glglue_has_blendequation(const cc_glglue * glue);
 COIN_DLL_API void cc_glglue_glBlendEquation(const cc_glglue * glue, GLenum mode);
+COIN_DLL_API void cc_glglue_glBlendEquationSeparate(const cc_glglue * glue,
+                                                     GLenum modeRGB,
+                                                     GLenum modeAlpha);
 
 /* Texture blend separate */
 COIN_DLL_API SbBool cc_glglue_has_blendfuncseparate(const cc_glglue * glue);

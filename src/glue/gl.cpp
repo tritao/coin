@@ -3469,6 +3469,14 @@ cc_glglue_glBlendEquation(const cc_glglue * glue, GLenum mode)
   else glue->glBlendEquationEXT(mode);
 }
 
+void
+cc_glglue_glBlendEquationSeparate(const cc_glglue * glue,
+                                  GLenum modeRGB, GLenum modeAlpha)
+{
+  assert(glue->glBlendEquationSeparate);
+  glue->glBlendEquationSeparate(modeRGB, modeAlpha);
+}
+
 SbBool
 cc_glglue_has_blendfuncseparate(const cc_glglue * glue)
 {
