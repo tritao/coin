@@ -34,6 +34,7 @@
 \**************************************************************************/
 
 #include <Inventor/SbColor4f.h>
+#include <Inventor/SbBox2s.h>
 #include <Inventor/SbVec2s.h>
 
 #include <cstdint>
@@ -55,6 +56,8 @@ class SoNodeSensor;
 class SoOneShotSensor;
 class SoSensor;
 class SoRenderManagerP;
+class SoPickedPoint;
+class SoPickedPointList;
 
 typedef void SoRenderManagerRenderCB(void * userdata, class SoRenderManager * mgr);
 
@@ -160,19 +163,6 @@ public:
   virtual void setSceneGraph(SoNode * const sceneroot);
   virtual SoNode * getSceneGraph(void) const;
 
-  //! Retain a whole-object scene identity for selection.
-  SbBool setSelection(const SoPath * path, const SoDetail * detail,
-                      const SbColor4f & color, SbBool append = FALSE);
-  void clearSelection(void);
-  //! Retain a whole-object scene identity for highlighting.
-  SbBool setHighlight(const SoPath * path, const SoDetail * detail,
-                      const SbColor4f & color);
-  void clearHighlight(void);
-  //! Resolve a current-frame pick ID immediately into persistent scene identity.
-  SbBool setSelectionFromPickId(uint32_t pickId, const SbColor4f & color,
-                                SbBool append = FALSE);
-  SbBool setHighlightFromPickId(uint32_t pickId, const SbColor4f & color);
-
   void setCamera(SoCamera * camera);
   SoCamera * getCamera(void) const;
 
@@ -228,6 +218,15 @@ public:
 #endif
   void setRenderPipeline(RenderPipeline pipeline);
   RenderPipeline getRenderPipeline(void) const;
+
+  /*! Return the closest renderer-neutral scene hit. The caller owns result. */
+  SbBool pickClosest(int x, int y, int radius, SoPickedPoint *& result);
+  /*! Return front-to-back renderer-neutral scene hits around a cursor. */
+  SbBool pickDepthStack(int x, int y, int radius, int maxLayers,
+                        SoPickedPointList & results, int maxHits = 32);
+  /*! Return deduplicated visible scene hits in a viewport-local region. */
+  SbBool pickVisibleRegion(const SbBox2s & region,
+                           SoPickedPointList & results);
   void setAudioRenderAction(SoAudioRenderAction * const action);
   SoAudioRenderAction * getAudioRenderAction(void) const;
 
