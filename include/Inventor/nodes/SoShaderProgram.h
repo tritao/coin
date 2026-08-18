@@ -38,10 +38,10 @@
 #include <Inventor/fields/SoMFNode.h>
 
 class SoState;
-class SoIRRenderAction;
 #if COIN_HAVE_LEGACY_GL_RENDERER
 class SoGLRenderAction;
 #endif
+class SoIRRenderAction;
 
 
 typedef void SoShaderProgramEnableCB(void * closure, 

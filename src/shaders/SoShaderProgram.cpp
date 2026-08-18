@@ -202,10 +202,11 @@
 */
 
 #include <Inventor/nodes/SoShaderProgram.h>
-#include <Inventor/actions/SoIRRenderAction.h>
 #include "coindefs.h"
 
 #include <cassert>
+
+#include <Inventor/actions/SoIRRenderAction.h>
 
 #if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/actions/SoGLRenderAction.h>

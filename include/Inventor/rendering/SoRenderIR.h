@@ -19,6 +19,7 @@ using SoNodeId = uint64_t;
 using SoInstanceId = uint64_t;
 using SoObjectId = uint64_t;
 class SoState;
+class SoNode;
 
 namespace SoRenderIR {
 
@@ -255,16 +256,17 @@ struct SoTextureData {
   // True when at least one texel can contribute alpha below one.
   bool hasTransparency = false;
 
-  SoTextureFilter minFilter = SO_TEXTURE_FILTER_NEAREST;
-  SoTextureFilter magFilter = SO_TEXTURE_FILTER_NEAREST;
-  SoTextureWrap wrapS = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
-  SoTextureWrap wrapT = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
-  SoTextureColorSpace colorSpace = SO_TEXTURE_COLORSPACE_LEGACY;
   // A nonzero key permits a backend to retain the texture resource across
   // frame lifetimes. revision changes require the resource contents to be
   // refreshed; zero remains transient.
   uint64_t cacheKey = 0;
   uint64_t revision = 0;
+
+  SoTextureFilter minFilter = SO_TEXTURE_FILTER_NEAREST;
+  SoTextureFilter magFilter = SO_TEXTURE_FILTER_NEAREST;
+  SoTextureWrap wrapS = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+  SoTextureWrap wrapT = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+  SoTextureColorSpace colorSpace = SO_TEXTURE_COLORSPACE_LEGACY;
   // Request anisotropic filtering when Coin's texture-quality policy enables
   // it. The executor selects the driver's supported level.
   bool anisotropic = false;

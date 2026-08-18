@@ -63,10 +63,10 @@
 #include "elements/SoRenderPlacementElement.h"
 #include "rendering/SoRenderIRP.h"
 
-#include <algorithm>
 #include <cassert>
-#include <limits>
+#include <algorithm>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 SO_ACTION_SOURCE(SoIRRenderAction);
@@ -268,6 +268,15 @@ SoIRRenderAction::addCommand(const SoRenderCommand & command)
   this->commandPaths[static_cast<size_t>(commandIndex)] = retainedPath;
 }
 
+void
+SoIRRenderAction::markUnsupported(const SoNode * node, const char * reason)
+{
+  if (this->unsupportedRendering) return;
+  this->unsupportedRendering = true;
+  this->unsupportedNode = node;
+  this->unsupportedReason = reason ? reason : "unsupported retained rendering semantics";
+}
+
 const SoPath *
 SoIRRenderAction::getCommandPath(int commandIndex) const
 {
@@ -297,16 +306,6 @@ SoIRRenderAction::apply(const SoPathList & pathlist, SbBool obeysrules)
 {
   this->beginFrame();
   inherited::apply(pathlist, obeysrules);
-}
-
-void
-SoIRRenderAction::markUnsupported(const SoNode * node, const char * reason)
-{
-  if (this->unsupportedRendering) return;
-  this->unsupportedRendering = true;
-  this->unsupportedNode = node;
-  this->unsupportedReason = reason ? reason :
-    "unsupported retained rendering semantics";
 }
 
 void
