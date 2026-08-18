@@ -38,6 +38,17 @@
  * internal CMake decision and must not be overrideable by consumers. */
 #define COIN_HAVE_LEGACY_GL_RENDERER @COIN_BUILD_LEGACY_GL_RENDERER_VALUE@
 
+#define COIN_RENDERER_API_VERSION 1
+#define COIN_HAVE_DEVICE_PIXEL_RATIO 1
+#define COIN_HAVE_RENDER_INVALIDATION 1
+#define COIN_HAVE_SHARED_GL_STATE_INVALIDATION 1
+#define COIN_HAVE_RENDER_BACKEND_LIFECYCLE 1
+#define COIN_HAVE_RENDER_MANAGER_STAGES 1
+#define COIN_HAVE_RENDER_LAYER_GROUP 1
+#define COIN_HAVE_IR_RENDER_ACTION 1
+#define COIN_HAVE_RENDER_PIPELINES 1
+#define COIN_HAVE_RETAINED_PICKING 1
+
 /*
   NOTE: basic.h is automatically generated from basic.h.in, so don't
   edit basic.h directly.
