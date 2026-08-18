@@ -94,6 +94,8 @@ option(COIN_BUILD_TESTS "Build unit tests when ON (default), skips them when OFF
 option(COIN_FETCH_TEST_DEPENDENCIES
   "Fetch missing test-only dependencies from pinned upstream sources." OFF)
 option(COIN_BUILD_VISUAL_TESTS "Enable visual regression test tooling and CLI helpers." OFF)
+option(COIN_FETCH_TEST_DEPENDENCIES
+  "Fetch missing test-only dependencies from pinned upstream sources." OFF)
 option(COIN_BUILD_DOCUMENTATION "Build and install API documentation (requires Doxygen)." OFF)
 option(COIN_BUILD_AWESOME_DOCUMENTATION "Build and install API documentation in new modern style (requires Doxygen)." OFF)
 option(COIN_BUILD_EXAMPLES "Build examples when ON (default), skips them when OFF." OFF)
@@ -184,6 +186,7 @@ cmake_dependent_option(COIN_DEBUG_CHECK_THREAD "Enable thread check in several c
 report_prepare(
   COIN_BUILD_SHARED_LIBS
   COIN_BUILD_TESTS
+  COIN_FETCH_TEST_DEPENDENCIES
   COIN_BUILD_VISUAL_TESTS
   COIN_BUILD_DOCUMENTATION
   COIN_BUILD_INTERNAL_DOCUMENTATION
@@ -1039,17 +1042,38 @@ endif()
 
 if(COIN_BUILD_VISUAL_TESTS)
   enable_testing()
-  find_package(yaml-cpp REQUIRED)
+  include(CoinTestDependencies)
+  coin_resolve_test_glfw()
+  if(NOT COIN_TEST_GLFW_TARGET)
+    if(COIN_FETCH_TEST_DEPENDENCIES)
+      message(FATAL_ERROR
+        "COIN_BUILD_VISUAL_TESTS=ON could not resolve GLFW after fetching the pinned dependency")
+    else()
+      message(FATAL_ERROR
+        "COIN_BUILD_VISUAL_TESTS=ON requires GLFW 3.3 or newer; install it or enable COIN_FETCH_TEST_DEPENDENCIES=ON")
+    endif()
+  endif()
+  coin_resolve_test_yaml_cpp()
+  if(NOT COIN_TEST_YAML_TARGET)
+    if(COIN_FETCH_TEST_DEPENDENCIES)
+      message(FATAL_ERROR
+        "COIN_BUILD_VISUAL_TESTS=ON could not resolve yaml-cpp after fetching the pinned dependency")
+    else()
+      message(FATAL_ERROR
+        "COIN_BUILD_VISUAL_TESTS=ON requires yaml-cpp; install it or enable COIN_FETCH_TEST_DEPENDENCIES=ON")
+    endif()
+  endif()
   add_subdirectory(thirdparty)
   add_subdirectory(tools)
   add_test(NAME visual_smoke COMMAND CoinVisualTests snapshot --help)
-  set_tests_properties(visual_smoke PROPERTIES LABELS "visual-smoke")
+  set_tests_properties(visual_smoke PROPERTIES LABELS "visual-contract")
   add_test(
     NAME visual_gl
     COMMAND CoinVisualTests run
       --artifacts-dir ${CMAKE_BINARY_DIR}/render_artifacts
   )
-  set_tests_properties(visual_gl PROPERTIES LABELS "visual-legacy")
+  set_tests_properties(visual_gl PROPERTIES
+    LABELS "visual-render;visual-legacy;requires-legacygl")
   add_test(
     NAME visual_compare_contract
     COMMAND ${CMAKE_COMMAND}

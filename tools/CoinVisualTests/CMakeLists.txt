@@ -1,6 +1,3 @@
-find_package(glfw3 3.3 REQUIRED)
-find_package(yaml-cpp REQUIRED)
-
 set(COIN_VISUAL_TEST_DEFAULT_SPEC_DIR "${PROJECT_SOURCE_DIR}/testsuite/render/specs")
 set(COIN_VISUAL_TEST_DEFAULT_ARTIFACT_DIR "${PROJECT_BINARY_DIR}/render_artifacts")
 configure_file(
@@ -30,8 +27,8 @@ target_include_directories(CoinVisualTests PRIVATE
 target_compile_features(CoinVisualTests PRIVATE cxx_std_17)
 
 target_link_libraries(CoinVisualTests PRIVATE
-  glfw
+  ${COIN_TEST_GLFW_TARGET}
   Coin
   stb
-  yaml-cpp::yaml-cpp
+  ${COIN_TEST_YAML_TARGET}
   ${COIN_TARGET_LINK_LIBRARIES})
