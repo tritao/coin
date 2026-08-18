@@ -123,6 +123,7 @@ runTest()
               << std::endl;
     result = 1;
   }
+
   const SoPickLUTEntry * pickEntry = action.getDrawList().resolvePickId(1);
   if (!pickEntry || pickEntry->nodeId == 0 || pickEntry->instanceId == 0 ||
       pickEntry->objectId != 0) {
