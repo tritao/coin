@@ -91,6 +91,8 @@ include(CoinCMakeUtilities)
 
 option(COIN_BUILD_SHARED_LIBS "Build shared library when ON (default), static when OFF." ON)
 option(COIN_BUILD_TESTS "Build unit tests when ON (default), skips them when OFF." ON)
+option(COIN_FETCH_TEST_DEPENDENCIES
+  "Fetch missing test-only dependencies from pinned upstream sources." OFF)
 option(COIN_BUILD_DOCUMENTATION "Build and install API documentation (requires Doxygen)." OFF)
 option(COIN_BUILD_AWESOME_DOCUMENTATION "Build and install API documentation in new modern style (requires Doxygen)." OFF)
 option(COIN_BUILD_EXAMPLES "Build examples when ON (default), skips them when OFF." OFF)

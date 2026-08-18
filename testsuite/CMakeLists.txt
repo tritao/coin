@@ -89,10 +89,66 @@ if (USE_PTHREAD)
 endif()
 add_test(NAME CoinTests COMMAND CoinTests)
 
+add_library(CoinTestInternals INTERFACE)
+target_compile_definitions(CoinTestInternals INTERFACE COIN_INTERNAL)
+target_include_directories(CoinTestInternals INTERFACE ${PROJECT_SOURCE_DIR}/src)
+
+set(COIN_BUILD_GL_TESTS "AUTO" CACHE STRING
+	"Build generic GLFW OpenGL integration tests (AUTO, ON, or OFF).")
+set_property(CACHE COIN_BUILD_GL_TESTS PROPERTY STRINGS AUTO ON OFF)
+string(TOUPPER "${COIN_BUILD_GL_TESTS}" COIN_BUILD_GL_TESTS)
+if(NOT COIN_BUILD_GL_TESTS STREQUAL "AUTO" AND
+	NOT COIN_BUILD_GL_TESTS STREQUAL "ON" AND
+	NOT COIN_BUILD_GL_TESTS STREQUAL "OFF")
+	message(FATAL_ERROR "COIN_BUILD_GL_TESTS must be AUTO, ON, or OFF")
+endif()
+
+set(COIN_BUILD_GL_TESTS_EFFECTIVE OFF)
+if(NOT COIN_BUILD_GL_TESTS STREQUAL "OFF")
+	include(CoinTestDependencies)
+	coin_resolve_test_glfw()
+	if(COIN_TEST_GLFW_TARGET)
+		set(COIN_BUILD_GL_TESTS_EFFECTIVE ON)
+	elseif(COIN_BUILD_GL_TESTS STREQUAL "ON")
+		message(FATAL_ERROR
+			"COIN_BUILD_GL_TESTS=ON requires GLFW 3.3 or newer; install it or enable COIN_FETCH_TEST_DEPENDENCIES=ON")
+	else()
+		message(STATUS "GLFW not found; generic OpenGL tests are disabled")
+	endif()
+endif()
+
+if(COIN_BUILD_GL_TESTS_EFFECTIVE)
+	add_library(CoinGLTestSupport STATIC
+		support/GLTestContext.cpp
+		support/GLTestFramebuffer.cpp)
+	target_include_directories(CoinGLTestSupport PUBLIC
+		${CMAKE_CURRENT_SOURCE_DIR}/support
+		${PROJECT_SOURCE_DIR}/src
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES})
+	target_compile_definitions(CoinGLTestSupport PUBLIC GLFW_INCLUDE_NONE)
+	target_link_libraries(CoinGLTestSupport PUBLIC
+		${COIN_TEST_GLFW_TARGET}
+		${COIN_TARGET_LINK_LIBRARIES})
+	target_link_libraries(CoinGLTestSupport PRIVATE Coin)
+
+	add_executable(GLSLRuntimeTest GLSLRuntimeTest.cpp)
+	target_link_libraries(GLSLRuntimeTest PRIVATE
+		CoinGLTestSupport CoinTestInternals Coin ${COIN_TARGET_LINK_LIBRARIES})
+	target_include_directories(GLSLRuntimeTest PRIVATE
+		${PROJECT_SOURCE_DIR}/src
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES})
+	add_test(NAME GLSLRuntimeTest COMMAND GLSLRuntimeTest)
+	set_tests_properties(GLSLRuntimeTest PROPERTIES
+		SKIP_RETURN_CODE 77 LABELS "gl-core")
+endif()
+
 if(HAVE_EGL)
 	add_executable(EGLBindingTest EGLBindingTest.cpp)
-	target_link_libraries(EGLBindingTest Coin ${COIN_TARGET_LINK_LIBRARIES})
-	target_compile_definitions(EGLBindingTest PRIVATE COIN_INTERNAL)
+	target_link_libraries(EGLBindingTest CoinTestInternals Coin ${COIN_TARGET_LINK_LIBRARIES})
 	target_include_directories(EGLBindingTest PRIVATE
 		${PROJECT_SOURCE_DIR}/src
 		${PROJECT_SOURCE_DIR}/include
@@ -102,17 +158,6 @@ if(HAVE_EGL)
 	add_test(NAME EGLBindingTest COMMAND EGLBindingTest)
 	set_tests_properties(EGLBindingTest PROPERTIES SKIP_RETURN_CODE 77)
 
-	add_executable(GLSLRuntimeTest GLSLRuntimeTest.cpp)
-	target_link_libraries(GLSLRuntimeTest Coin ${COIN_TARGET_LINK_LIBRARIES})
-	target_compile_definitions(GLSLRuntimeTest PRIVATE COIN_INTERNAL)
-	target_include_directories(GLSLRuntimeTest PRIVATE
-		${PROJECT_SOURCE_DIR}/src
-		${PROJECT_SOURCE_DIR}/include
-		${PROJECT_BINARY_DIR}/include
-		${COIN_TARGET_INCLUDE_DIRECTORIES}
-	)
-	add_test(NAME GLSLRuntimeTest COMMAND GLSLRuntimeTest)
-	set_tests_properties(GLSLRuntimeTest PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 
 # Many warnings are generated from test macros on macOS with Xcode.

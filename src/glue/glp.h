@@ -223,6 +223,7 @@ typedef void (APIENTRY * COIN_PFNGLGETCOLORTABLEPARAMETERFVPROC)(GLenum target,
 
 /* Typedefs for glBlendEquation[EXT]. */
 typedef void *(APIENTRY * COIN_PFNGLBLENDEQUATIONPROC)(GLenum);
+typedef void (APIENTRY * COIN_PFNGLBLENDEQUATIONSEPARATEPROC)(GLenum, GLenum);
 
 /* Typedef for glBlendFuncSeparate */
 typedef void *(APIENTRY * COIN_PFNGLBLENDFUNCSEPARATEPROC)(GLenum, GLenum, GLenum, GLenum);
@@ -684,6 +685,7 @@ struct cc_glglue {
 
   COIN_PFNGLBLENDEQUATIONPROC glBlendEquation;
   COIN_PFNGLBLENDEQUATIONPROC glBlendEquationEXT;
+  COIN_PFNGLBLENDEQUATIONSEPARATEPROC glBlendEquationSeparate;
 
   COIN_PFNGLBLENDFUNCSEPARATEPROC glBlendFuncSeparate;
 

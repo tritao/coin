@@ -1,8 +1,8 @@
 #include <Inventor/C/glue/gl.h>
 
 #include "glue/glp.h"
+#include "support/GLTestContext.h"
 
-#include <cstdlib>
 #include <iostream>
 #include <vector>
 
@@ -27,15 +27,6 @@ bool check_no_error(const char * message)
   std::cerr << "FAIL: " << message << " (0x" << std::hex << error
             << std::dec << ")" << std::endl;
   return false;
-}
-
-void set_environment(const char * name, const char * value)
-{
-#ifdef _WIN32
-  _putenv_s(name, value);
-#else
-  setenv(name, value, 1);
-#endif
 }
 
 void print_shader_log(const cc_glglue * glue, GLuint object, SbBool program)
@@ -84,19 +75,22 @@ bool compile_shader(const cc_glglue * glue, GLenum type, const char * source,
 
 int main()
 {
-  set_environment("COIN_EGL", "1");
-  set_environment("EGL_PLATFORM", "surfaceless");
-  set_environment("COIN_EGL_CORE_PROFILE", "1");
-
-  void * context = cc_glglue_context_create_offscreen(16, 16);
-  if (context == NULL) return skip("core EGL offscreen context is unavailable");
-
-  if (!cc_glglue_context_make_current(context)) {
-    cc_glglue_context_destruct(context);
-    return skip("core EGL offscreen context could not be made current");
+  GLTestContext context;
+  GLTestContextConfig config;
+  config.profile = GLTestProfile::Core;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 16;
+  config.height = 16;
+  if (!context.initialize(config)) {
+    return skip("core GLFW OpenGL context is unavailable");
+  }
+  if (!context.makeCurrent()) {
+    return skip("core GLFW OpenGL context could not be made current");
   }
 
-  const cc_glglue * glue = cc_glglue_instance_from_context_ptr(context);
+  const cc_glglue * glue = cc_glglue_instance(context.contextId());
+  if (glue == NULL) return skip("GL glue instance is unavailable");
   GLuint vertexShader = 0;
   GLuint fragmentShader = 0;
   GLuint program = 0;
@@ -147,7 +141,5 @@ int main()
   if (vertexShader != 0) glue->glDeleteShader(vertexShader);
   if (fragmentShader != 0) glue->glDeleteShader(fragmentShader);
 
-  cc_glglue_context_reinstate_previous(context);
-  cc_glglue_context_destruct(context);
   return result;
 }
