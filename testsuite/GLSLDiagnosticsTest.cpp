@@ -4,9 +4,8 @@
 #include "glue/glp.h"
 #include "shaders/SoGLSLShaderObject.h"
 #include "shaders/SoGLSLShaderProgram.h"
-#include "glue/gl_egl.h"
+#include "support/GLTestContext.h"
 
-#include <cstdlib>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -23,15 +22,6 @@ bool check(bool condition, const char * message)
 {
   if (!condition) std::cerr << "FAIL: " << message << std::endl;
   return condition;
-}
-
-void set_environment(const char * name, const char * value)
-{
-#ifdef _WIN32
-  _putenv_s(name, value);
-#else
-  setenv(name, value, 1);
-#endif
 }
 
 struct DiagnosticCapture {
@@ -71,26 +61,26 @@ bool contains(const DiagnosticCapture & capture, const char * text)
 
 int main()
 {
-  set_environment("COIN_EGL", "1");
-  set_environment("EGL_PLATFORM", "surfaceless");
-  set_environment("COIN_EGL_CORE_PROFILE", "1");
   SoDB::init();
 
-  void * context = cc_glglue_context_create_offscreen(16, 16);
-  if (context == NULL) {
+  GLTestContextConfig config;
+  config.profile = GLTestProfile::Core;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 16;
+  config.height = 16;
+  GLTestContext context;
+  if (!context.initialize(config)) {
     SoDB::finish();
-    return skip("core EGL offscreen context is unavailable");
+    return skip("core OpenGL test context is unavailable");
   }
-  if (!cc_glglue_context_make_current(context)) {
-    cc_glglue_context_destruct(context);
+  if (!context.makeCurrent()) {
     SoDB::finish();
-    return skip("core EGL offscreen context could not be made current");
+    return skip("core OpenGL test context could not be made current");
   }
 
-  const cc_glglue * glue = cc_glglue_instance_from_context_ptr(context);
+  const cc_glglue * glue = cc_glglue_instance(context.contextId());
   if (glue == NULL || glue->contextid == 0) {
-    cc_glglue_context_reinstate_previous(context);
-    cc_glglue_context_destruct(context);
     SoDB::finish();
     return skip("GL glue instance is unavailable");
   }
@@ -162,8 +152,6 @@ int main()
   } while (false);
 
   SoDebugError::setHandlerCallback(previousCallback, previousData);
-  cc_glglue_context_reinstate_previous(context);
-  cc_glglue_context_destruct(context);
   SoDB::finish();
   return result;
 }
