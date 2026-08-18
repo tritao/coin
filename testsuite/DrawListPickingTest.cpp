@@ -1,11 +1,10 @@
-#include "rendering/CoinOffscreenGLCanvas.h"
 #include "rendering/SoGLRenderBackend.h"
+#include "support/GLTestContext.h"
 
 #include <Inventor/SoDB.h>
 #include <Inventor/C/glue/gl.h>
 #include <Inventor/system/gl.h>
 
-#include <cstdlib>
 #include <cstdint>
 #include <iostream>
 #include <vector>
@@ -17,16 +16,6 @@ skip(const char * reason)
 {
   std::cout << "SKIP: " << reason << std::endl;
   return 77;
-}
-
-void
-setEnvironment(const char * name, const char * value)
-{
-#ifdef _WIN32
-  _putenv_s(name, value);
-#else
-  setenv(name, value, 1);
-#endif
 }
 
 SoRenderParams
@@ -69,11 +58,9 @@ updatePickBuffer(SoGLRenderBackend & backend, const SoDrawList & drawlist,
 }
 
 std::vector<uint8_t>
-readPixels(const CoinOffscreenGLCanvas & canvas)
+readPixels(const GLTestContext & context)
 {
-  std::vector<uint8_t> pixels(64 * 64 * 4, 0);
-  canvas.readPixels(pixels.data(), SbVec2s(64, 64), 64, 4);
-  return pixels;
+  return context.readPixels();
 }
 
 const uint8_t *
@@ -87,17 +74,17 @@ pixelAt(const std::vector<uint8_t> & pixels, const int x, const int y)
 static int
 runTest()
 {
-  setEnvironment("COIN_EGL", "1");
-  setEnvironment("EGL_PLATFORM", "surfaceless");
-  setEnvironment("COIN_EGL_CORE_PROFILE", "1");
-#if defined(__linux__)
-#endif
   SoDB::init();
 
-  CoinOffscreenGLCanvas canvas;
-  canvas.setWantedSize(SbVec2s(64, 64));
-  if (canvas.activateGLContext() == 0) {
-    return skip("core EGL offscreen context is unavailable");
+  GLTestContextConfig config;
+  config.profile = GLTestProfile::Core;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 64;
+  config.height = 64;
+  GLTestContext context;
+  if (!context.initialize(config)) {
+    return skip("core GLFW OpenGL context is unavailable");
   }
 
   SoGLRenderBackend backend;
@@ -105,7 +92,6 @@ runTest()
   if (!backend.initialize(initparams)) {
     std::cerr << "FAIL: retained picking backend did not initialize on the "
               << "verified OpenGL 3.3/GLSL 330 context" << std::endl;
-    canvas.deactivateGLContext();
     return 1;
   }
 
@@ -359,6 +345,10 @@ runTest()
     glDisable(GL_SCISSOR_TEST);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDepthMask(GL_TRUE);
+    // The state-preservation probe deliberately restores the default
+    // framebuffer. Rebind the shared test FBO before continuing with the
+    // visual selection checks.
+    context.bindFramebuffer();
 
     // Explicit non-indexed ranges resolve to the retained subelement rather
     // than requiring a per-vertex encoded identity.
@@ -437,7 +427,7 @@ runTest()
       }
       else {
         glFinish();
-        const std::vector<uint8_t> pixels = readPixels(canvas);
+        const std::vector<uint8_t> pixels = readPixels(context);
         const uint8_t * center = pixelAt(pixels, 32, 32);
         if (center[0] < 70 || center[2] < 40) {
           std::cerr << "FAIL: selection overlay did not blend over the object"
@@ -464,7 +454,7 @@ runTest()
     }
     else {
       glFinish();
-      const std::vector<uint8_t> pixels = readPixels(canvas);
+      const std::vector<uint8_t> pixels = readPixels(context);
       const uint8_t * center = pixelAt(pixels, 32, 32);
       if (center[0] < 70 || center[2] < 40) {
         std::cerr << "FAIL: non-pickable command could not be selected"
@@ -491,7 +481,7 @@ runTest()
     }
     else {
       glFinish();
-      const std::vector<uint8_t> pixels = readPixels(canvas);
+      const std::vector<uint8_t> pixels = readPixels(context);
       const uint8_t * center = pixelAt(pixels, 32, 32);
       if (center[1] < 70 || center[2] < 40) {
         std::cerr << "FAIL: subelement selection did not use its draw range"
@@ -635,7 +625,7 @@ runTest()
       result = 1;
     }
     else {
-      const std::vector<uint8_t> pixels = readPixels(canvas);
+      const std::vector<uint8_t> pixels = readPixels(context);
       const uint8_t * pixel = pixelAt(pixels, 21, 21);
       SoPickResult coverageHit;
       if (pixel[0] == 0 || !backend.pick(21, 21, 0, coverageHit)) {
@@ -656,7 +646,6 @@ runTest()
   }
 
   backend.shutdown();
-  canvas.deactivateGLContext();
   return result;
 }
 
