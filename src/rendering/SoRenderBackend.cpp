@@ -30,7 +30,21 @@ SoRenderBackend::updatePickBuffer(const SoDrawList &,
 }
 
 SbBool
-SoRenderBackend::pick(int, int, int, SoPickResult &) const
+SoRenderBackend::pickClosest(int, int, int, SoPickResult &)
+{
+  return FALSE;
+}
+
+SbBool
+SoRenderBackend::pickVisibleRegion(const SbBox2s &,
+                                   SoPickResultList &)
+{
+  return FALSE;
+}
+
+SbBool
+SoRenderBackend::pickDepthStack(int, int, int, int, int,
+                                SoPickResultList &)
 {
   return FALSE;
 }

@@ -47,7 +47,13 @@ public:
                           const SoRenderPlan & plan,
                           const SoRenderParams & params) override;
   //! Resolve the closest nonzero ID in a viewport-local pixel-radius query.
-  SbBool pick(int x, int y, int radius, SoPickResult & result) const override;
+  SbBool pickClosest(int x, int y, int radius,
+                     SoPickResult & result) override;
+  SbBool pickVisibleRegion(const SbBox2s & region,
+                           SoPickResultList & results) override;
+  SbBool pickDepthStack(int x, int y, int radius, int maxLayers,
+                        int maxHits,
+                        SoPickResultList & results) override;
   //! Render explicit selected/highlighted targets over the current framebuffer.
   SbBool renderSelection(const SoDrawList & drawlist,
                          const SoSelectionState & selection,
@@ -267,6 +273,8 @@ private:
       GLint viewportOrigin = -1;
       GLint pixelOrigin = -1;
       GLint texModColor = -1;
+      GLint previousDepth = -1;
+      GLint peelEnabled = -1;
     } uniforms;
   };
 
@@ -284,10 +292,15 @@ private:
   struct PickTarget {
     GLuint framebuffer = 0;
     GLuint colorTexture = 0;
-    GLuint depthBuffer = 0;
+    GLuint depthTextures[2] = {0, 0};
+    int activeDepth = 0;
+    bool peelEnabled = false;
     SbVec2s size;
     std::vector<SoPickLUTEntry> lookup;
     uint32_t generation = 0;
+    const SoDrawList * drawlist = nullptr;
+    SoRenderPlan plan;
+    SoRenderParams params;
     bool ready = false;
   } pickTarget;
 

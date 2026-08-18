@@ -205,6 +205,34 @@ runTest()
                   << std::endl;
         result = 1;
       }
+
+      SoPickResultList depthStack;
+      if (!backend.pickDepthStack(32, 32, 0, 8, 32, depthStack) ||
+          depthStack.generation != drawlist.getGeneration() ||
+          depthStack.hits.size() != 2 || depthStack.hits[0].id != 1 ||
+          depthStack.hits[1].id != 2 ||
+          !(depthStack.hits[0].depth < depthStack.hits[1].depth) ||
+          depthStack.truncated) {
+        std::cerr << "FAIL: bounded depth peeling did not return both "
+                     "transparent layers front-to-back" << std::endl;
+        result = 1;
+      }
+
+      SoPickResultList limitedStack;
+      if (!backend.pickDepthStack(32, 32, 0, 1, 32, limitedStack) ||
+          limitedStack.hits.size() != 1 || !limitedStack.truncated) {
+        std::cerr << "FAIL: depth-layer limit was not reported"
+                  << std::endl;
+        result = 1;
+      }
+
+      SoPickResultList visible;
+      if (!backend.pickVisibleRegion(SbBox2s(30, 30, 34, 34), visible) ||
+          visible.hits.size() != 1 || visible.hits[0].id != 1) {
+        std::cerr << "FAIL: visible-region picking did not deduplicate IDs"
+                  << std::endl;
+        result = 1;
+      }
     }
 
     // All explicit operations preserve the caller's mutable GL state,

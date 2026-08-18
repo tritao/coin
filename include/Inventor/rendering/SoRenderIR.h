@@ -456,17 +456,6 @@ struct SoPickData {
   std::vector<SoRenderElementRange> elementRanges;
 };
 
-/*! \struct SoPickResult
-  \brief Result of resolving a frame-local retained pick identifier.
-*/
-struct SoPickResult {
-  uint32_t id = 0;
-  int commandIndex = -1;
-  uint64_t objectId = 0;
-  SoPickElementType type = SO_PICK_OBJECT;
-  int elementIndex = -1;
-};
-
 /*!
   \struct SoPickLUTEntry
   \brief Frame-local mapping from an integer pick ID to a command range.
@@ -493,9 +482,28 @@ struct SoPickLUTEntry {
 */
 struct SoPickResult {
   uint32_t id = 0;
+  uint32_t generation = 0;
   int commandIndex = -1;
+  uint64_t objectId = 0;
   SoPickElementType type = SO_PICK_OBJECT;
   int elementIndex = -1;
+  int pixelX = 0;
+  int pixelY = 0;
+  float depth = 1.0f;
+};
+
+/*!
+  \struct SoPickResultList
+  \brief Results from one frame-local retained picking query.
+
+  Results are renderer mechanics and remain valid only for the recorded
+  DrawList generation.  Public scene-graph APIs resolve them to
+  SoPickedPoint instances before returning them to applications.
+*/
+struct SoPickResultList {
+  uint32_t generation = 0;
+  std::vector<SoPickResult> hits;
+  SbBool truncated = FALSE;
 };
 
 /*!

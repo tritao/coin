@@ -402,6 +402,8 @@ public:
     glGetIntegerv(GL_ACTIVE_TEXTURE, &activeTexture);
     cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture0);
+    cc_glglue_glActiveTexture(this->glue, GL_TEXTURE1);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture1);
     cc_glglue_glActiveTexture(this->glue,
                               static_cast<GLenum>(activeTexture));
 
@@ -428,6 +430,9 @@ public:
     cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
     cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D,
                             static_cast<GLuint>(texture0));
+    cc_glglue_glActiveTexture(this->glue, GL_TEXTURE1);
+    cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D,
+                            static_cast<GLuint>(texture1));
     cc_glglue_glActiveTexture(this->glue,
                               static_cast<GLenum>(activeTexture));
 
@@ -521,6 +526,7 @@ private:
   GLfloat polygonOffsetUnits = 0.0f;
   GLint activeTexture = GL_TEXTURE0;
   GLint texture0 = 0;
+  GLint texture1 = 0;
   GLboolean blend = GL_FALSE;
   GLboolean scissor = GL_FALSE;
   GLboolean depth = GL_FALSE;
@@ -2287,6 +2293,8 @@ SoGLRenderBackend::createShaders()
     u.viewportOrigin = uniform(program.handle, "u_viewportOrigin");
     u.pixelOrigin = uniform(program.handle, "u_pixelOrigin");
     u.texModColor = uniform(program.handle, "u_texModColor");
+    u.previousDepth = uniform(program.handle, "u_previousDepth");
+    u.peelEnabled = uniform(program.handle, "u_peelEnabled");
   };
   cachePickUniforms(this->pickPrograms.visual);
   cachePickUniforms(this->pickPrograms.line);
@@ -2309,22 +2317,27 @@ SoGLRenderBackend::destroyPickFramebuffer()
   if (!this->glue || !this->glue->has_fbo) {
     this->pickTarget.framebuffer = 0;
     this->pickTarget.colorTexture = 0;
-    this->pickTarget.depthBuffer = 0;
+    this->pickTarget.depthTextures[0] = 0;
+    this->pickTarget.depthTextures[1] = 0;
     this->pickTarget.size = SbVec2s(0, 0);
     return;
   }
   if (this->pickTarget.colorTexture) {
     cc_glglue_glDeleteTextures(this->glue, 1, &this->pickTarget.colorTexture);
   }
-  if (this->pickTarget.depthBuffer) {
-    cc_glglue_glDeleteRenderbuffers(this->glue, 1, &this->pickTarget.depthBuffer);
+  if (this->pickTarget.depthTextures[0] ||
+      this->pickTarget.depthTextures[1]) {
+    cc_glglue_glDeleteTextures(this->glue, 2,
+                               this->pickTarget.depthTextures);
   }
   if (this->pickTarget.framebuffer) {
     cc_glglue_glDeleteFramebuffers(this->glue, 1, &this->pickTarget.framebuffer);
   }
   this->pickTarget.framebuffer = 0;
   this->pickTarget.colorTexture = 0;
-  this->pickTarget.depthBuffer = 0;
+  this->pickTarget.depthTextures[0] = 0;
+  this->pickTarget.depthTextures[1] = 0;
+  this->pickTarget.activeDepth = 0;
   this->pickTarget.size = SbVec2s(0, 0);
 }
 
@@ -2337,11 +2350,6 @@ SoGLRenderBackend::ensurePickFramebuffer(const SbVec2s & size)
       !this->glue->glDeleteFramebuffers ||
       !this->glue->glCheckFramebufferStatus ||
       !this->glue->glFramebufferTexture2D ||
-      !this->glue->glFramebufferRenderbuffer ||
-      !this->glue->glGenRenderbuffers ||
-      !this->glue->glBindRenderbuffer ||
-      !this->glue->glDeleteRenderbuffers ||
-      !this->glue->glRenderbufferStorage ||
       !this->glue->glClearBufferuiv ||
       !this->glue->glClearBufferfv ||
       !this->glue->glUniform1ui) {
@@ -2372,14 +2380,21 @@ SoGLRenderBackend::ensurePickFramebuffer(const SbVec2s & size)
                                    GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                                    this->pickTarget.colorTexture, 0);
 
-  cc_glglue_glGenRenderbuffers(this->glue, 1, &this->pickTarget.depthBuffer);
-  cc_glglue_glBindRenderbuffer(this->glue, GL_RENDERBUFFER,
-                               this->pickTarget.depthBuffer);
-  cc_glglue_glRenderbufferStorage(this->glue, GL_RENDERBUFFER,
-                                  GL_DEPTH_COMPONENT24, size[0], size[1]);
-  cc_glglue_glFramebufferRenderbuffer(this->glue, GL_FRAMEBUFFER,
-                                      GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER,
-                                      this->pickTarget.depthBuffer);
+  cc_glglue_glGenTextures(this->glue, 2, this->pickTarget.depthTextures);
+  for (int i = 0; i < 2; ++i) {
+    cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D,
+                            this->pickTarget.depthTextures[i]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F,
+                 size[0], size[1], 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+  }
+  cc_glglue_glFramebufferTexture2D(this->glue, GL_FRAMEBUFFER,
+                                   GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D,
+                                   this->pickTarget.depthTextures[0], 0);
+  this->pickTarget.activeDepth = 0;
   glDrawBuffer(GL_COLOR_ATTACHMENT0);
   glReadBuffer(GL_COLOR_ATTACHMENT0);
 
@@ -2561,6 +2576,9 @@ SoGLRenderBackend::drawCoverageEntry(const SoDrawList & drawlist,
     if (locations->pickId >= 0 && this->glue->glUniform1ui) {
       this->glue->glUniform1ui(locations->pickId, id);
     }
+    uniform1i(locations->previousDepth, 1);
+    uniform1i(locations->peelEnabled,
+              this->pickTarget.peelEnabled ? 1 : 0);
   }
 
   if (useLineShader) {
@@ -2772,6 +2790,11 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
 
   cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
                               this->pickTarget.framebuffer);
+  cc_glglue_glFramebufferTexture2D(this->glue, GL_FRAMEBUFFER,
+                                   GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D,
+                                   this->pickTarget.depthTextures[0], 0);
+  this->pickTarget.activeDepth = 0;
+  this->pickTarget.peelEnabled = false;
   glDrawBuffer(GL_COLOR_ATTACHMENT0);
   glReadBuffer(GL_COLOR_ATTACHMENT0);
   glViewport(0, 0, size[0], size[1]);
@@ -2804,13 +2827,16 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
     }
   }
   this->pickTarget.generation = drawlist.getPickLUTGeneration();
+  this->pickTarget.drawlist = &drawlist;
+  this->pickTarget.plan = plan;
+  this->pickTarget.params = params;
   this->pickTarget.ready = true;
   return TRUE;
 }
 
 SbBool
-SoGLRenderBackend::pick(const int x, const int y, const int radius,
-                        SoPickResult & result) const
+SoGLRenderBackend::pickClosest(const int x, const int y, const int radius,
+                               SoPickResult & result)
 {
   result = SoPickResult();
   if (!this->isInitialized() || !this->pickTarget.ready ||
@@ -2831,14 +2857,21 @@ SoGLRenderBackend::pick(const int x, const int y, const int radius,
   glReadBuffer(GL_COLOR_ATTACHMENT0);
   const int readWidth = right - left + 1;
   const int readHeight = top - bottom + 1;
-  std::vector<GLuint> ids(static_cast<size_t>(readWidth) * readHeight, 0);
+  const size_t pixelCount = static_cast<size_t>(readWidth) * readHeight;
+  std::vector<GLuint> ids(pixelCount, 0);
+  std::vector<GLfloat> depths(pixelCount, 1.0f);
   ScopedPixelPackState packState;
   cc_glglue_glBindBuffer(this->glue, GL_PIXEL_PACK_BUFFER, 0);
   glReadPixels(left, bottom, readWidth, readHeight,
                GL_RED_INTEGER, GL_UNSIGNED_INT, ids.data());
+  glReadPixels(left, bottom, readWidth, readHeight,
+               GL_DEPTH_COMPONENT, GL_FLOAT, depths.data());
 
   GLuint bestId = 0;
   int bestDistance = 0;
+  int bestPixelX = 0;
+  int bestPixelY = 0;
+  float bestDepth = 1.0f;
   for (int row = 0; row < readHeight; ++row) {
     for (int column = 0; column < readWidth; ++column) {
       const GLuint id = ids[static_cast<size_t>(row) * readWidth + column];
@@ -2852,6 +2885,9 @@ SoGLRenderBackend::pick(const int x, const int y, const int radius,
       if (!bestId || distance < bestDistance) {
         bestId = id;
         bestDistance = distance;
+        bestPixelX = px;
+        bestPixelY = py;
+        bestDepth = depths[static_cast<size_t>(row) * readWidth + column];
       }
     }
   }
@@ -2860,10 +2896,252 @@ SoGLRenderBackend::pick(const int x, const int y, const int radius,
   if (bestId == 0 || bestId > this->pickTarget.lookup.size()) return FALSE;
   const SoPickLUTEntry & entry = this->pickTarget.lookup[bestId - 1];
   result.id = bestId;
+  result.generation = this->pickTarget.generation;
   result.commandIndex = entry.commandIndex;
+  result.objectId = entry.objectId;
   result.type = entry.type;
   result.elementIndex = entry.elementIndex;
+  result.pixelX = bestPixelX;
+  result.pixelY = bestPixelY;
+  result.depth = bestDepth;
   return TRUE;
+}
+
+SbBool
+SoGLRenderBackend::pickVisibleRegion(const SbBox2s & region,
+                                     SoPickResultList & results)
+{
+  results = SoPickResultList();
+  if (!this->isInitialized() || !this->pickTarget.ready ||
+      region.isEmpty()) return FALSE;
+
+  const int width = this->pickTarget.size[0];
+  const int height = this->pickTarget.size[1];
+  if (width <= 0 || height <= 0) return FALSE;
+  const int left = std::max(0, static_cast<int>(region.getMin()[0]));
+  const int bottom = std::max(0, static_cast<int>(region.getMin()[1]));
+  const int right = std::min(width - 1,
+                             static_cast<int>(region.getMax()[0]));
+  const int top = std::min(height - 1,
+                           static_cast<int>(region.getMax()[1]));
+  if (left > right || bottom > top) return FALSE;
+
+  ScopedGLState state(this->glue);
+  cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
+                              this->pickTarget.framebuffer);
+  glReadBuffer(GL_COLOR_ATTACHMENT0);
+  const int readWidth = right - left + 1;
+  const int readHeight = top - bottom + 1;
+  const size_t pixelCount = static_cast<size_t>(readWidth) * readHeight;
+  std::vector<GLuint> ids(pixelCount, 0);
+  std::vector<GLfloat> depths(pixelCount, 1.0f);
+  ScopedPixelPackState packState;
+  cc_glglue_glBindBuffer(this->glue, GL_PIXEL_PACK_BUFFER, 0);
+  glReadPixels(left, bottom, readWidth, readHeight,
+               GL_RED_INTEGER, GL_UNSIGNED_INT, ids.data());
+  glReadPixels(left, bottom, readWidth, readHeight,
+               GL_DEPTH_COMPONENT, GL_FLOAT, depths.data());
+
+  std::unordered_map<GLuint, SoPickResult> visible;
+  for (int row = 0; row < readHeight; ++row) {
+    for (int column = 0; column < readWidth; ++column) {
+      const size_t offset = static_cast<size_t>(row) * readWidth + column;
+      const GLuint id = ids[offset];
+      if (!id || id > this->pickTarget.lookup.size()) continue;
+      const float depth = depths[offset];
+      auto found = visible.find(id);
+      if (found != visible.end() && found->second.depth <= depth) continue;
+
+      const SoPickLUTEntry & entry = this->pickTarget.lookup[id - 1];
+      SoPickResult hit;
+      hit.id = id;
+      hit.generation = this->pickTarget.generation;
+      hit.commandIndex = entry.commandIndex;
+      hit.objectId = entry.objectId;
+      hit.type = entry.type;
+      hit.elementIndex = entry.elementIndex;
+      hit.pixelX = left + column;
+      hit.pixelY = bottom + row;
+      hit.depth = depth;
+      visible[id] = hit;
+    }
+  }
+
+  results.generation = this->pickTarget.generation;
+  results.hits.reserve(visible.size());
+  for (const auto & item : visible) results.hits.push_back(item.second);
+  std::sort(results.hits.begin(), results.hits.end(),
+    [](const SoPickResult & lhs, const SoPickResult & rhs) {
+      if (lhs.depth != rhs.depth) return lhs.depth < rhs.depth;
+      return lhs.id < rhs.id;
+    });
+  return !results.hits.empty();
+}
+
+SbBool
+SoGLRenderBackend::pickDepthStack(const int x, const int y, const int radius,
+                                  const int maxLayers, const int maxHits,
+                                  SoPickResultList & results)
+{
+  results = SoPickResultList();
+  if (!this->isInitialized() || !this->pickTarget.ready || radius < 0 ||
+      maxLayers <= 0 || maxHits <= 0 || !this->pickTarget.drawlist) {
+    return FALSE;
+  }
+
+  const int width = this->pickTarget.size[0];
+  const int height = this->pickTarget.size[1];
+  const int left = std::max(0, x - radius);
+  const int bottom = std::max(0, y - radius);
+  const int right = std::min(width - 1, x + radius);
+  const int top = std::min(height - 1, y + radius);
+  if (left > right || bottom > top) return FALSE;
+  const int readWidth = right - left + 1;
+  const int readHeight = top - bottom + 1;
+  const size_t pixelCount = static_cast<size_t>(readWidth) * readHeight;
+
+  const SoDrawList & drawlist = *this->pickTarget.drawlist;
+  if (drawlist.getGeneration() != this->pickTarget.generation) return FALSE;
+  const SoRenderPlan & plan = this->pickTarget.plan;
+  const SoRenderParams & params = this->pickTarget.params;
+  const uint32_t commandCount = static_cast<uint32_t>(
+    drawlist.getNumCommands());
+
+  ScopedGLState state(this->glue);
+  ScopedPixelPackState packState;
+  cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
+                              this->pickTarget.framebuffer);
+  glDrawBuffer(GL_COLOR_ATTACHMENT0);
+  glReadBuffer(GL_COLOR_ATTACHMENT0);
+  cc_glglue_glBindBuffer(this->glue, GL_PIXEL_PACK_BUFFER, 0);
+
+  auto readLayer = [&]() {
+    std::vector<GLuint> ids(pixelCount, 0);
+    std::vector<GLfloat> depths(pixelCount, 1.0f);
+    glReadPixels(left, bottom, readWidth, readHeight,
+                 GL_RED_INTEGER, GL_UNSIGNED_INT, ids.data());
+    glReadPixels(left, bottom, readWidth, readHeight,
+                 GL_DEPTH_COMPONENT, GL_FLOAT, depths.data());
+
+    std::unordered_map<GLuint, SoPickResult> layerHits;
+    for (int row = 0; row < readHeight; ++row) {
+      for (int column = 0; column < readWidth; ++column) {
+        const size_t offset = static_cast<size_t>(row) * readWidth + column;
+        const GLuint id = ids[offset];
+        if (!id || id > this->pickTarget.lookup.size()) continue;
+        const float depth = depths[offset];
+        auto found = layerHits.find(id);
+        if (found != layerHits.end() && found->second.depth <= depth) continue;
+
+        const SoPickLUTEntry & entry = this->pickTarget.lookup[id - 1];
+        SoPickResult hit;
+        hit.id = id;
+        hit.generation = this->pickTarget.generation;
+        hit.commandIndex = entry.commandIndex;
+        hit.objectId = entry.objectId;
+        hit.type = entry.type;
+        hit.elementIndex = entry.elementIndex;
+        hit.pixelX = left + column;
+        hit.pixelY = bottom + row;
+        hit.depth = depth;
+        layerHits[id] = hit;
+      }
+    }
+    std::vector<SoPickResult> ordered;
+    ordered.reserve(layerHits.size());
+    for (const auto & item : layerHits) ordered.push_back(item.second);
+    std::sort(ordered.begin(), ordered.end(),
+      [](const SoPickResult & lhs, const SoPickResult & rhs) {
+        if (lhs.depth != rhs.depth) return lhs.depth < rhs.depth;
+        return lhs.id < rhs.id;
+      });
+    return ordered;
+  };
+
+  auto renderLayer = [&](const int previousDepth, const int targetDepth,
+                         const bool peel) {
+    cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
+                                this->pickTarget.framebuffer);
+    cc_glglue_glFramebufferTexture2D(
+      this->glue, GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D,
+      this->pickTarget.depthTextures[targetDepth], 0);
+    this->pickTarget.activeDepth = targetDepth;
+    this->pickTarget.peelEnabled = peel;
+
+    cc_glglue_glActiveTexture(this->glue, GL_TEXTURE1);
+    cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D,
+                            this->pickTarget.depthTextures[previousDepth]);
+    cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
+
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(left, bottom, readWidth, readHeight);
+    glDisable(GL_BLEND);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+    const GLuint zero = 0;
+    const GLfloat clearDepth = params.clearDepth;
+    this->glue->glClearBufferuiv(GL_COLOR, 0, &zero);
+    this->glue->glClearBufferfv(GL_DEPTH, 0, &clearDepth);
+
+    SbMat frameView;
+    SbMat frameProjection;
+    params.viewMatrix.getValue(frameView);
+    params.projMatrix.getValue(frameProjection);
+    auto drawPickCommand = [&](const uint32_t commandIndex) {
+      for (size_t i = 0; i < this->pickTarget.lookup.size(); ++i) {
+        const SoPickLUTEntry & entry = this->pickTarget.lookup[i];
+        if (entry.commandIndex < 0 ||
+            static_cast<uint32_t>(entry.commandIndex) != commandIndex) {
+          continue;
+        }
+        this->drawPickEntry(drawlist, entry, static_cast<GLuint>(i + 1),
+                            frameView, frameProjection, params);
+      }
+    };
+    for (int i = 0; i < plan.getNumDraws(); ++i) {
+      const uint32_t commandIndex = plan.getDraw(i).commandIndex;
+      if (commandIndex >= commandCount) return false;
+      drawPickCommand(commandIndex);
+    }
+    return true;
+  };
+
+  results.generation = this->pickTarget.generation;
+  std::vector<GLuint> seenIds;
+  int currentDepth = 0;
+  for (int layer = 0; layer <= maxLayers; ++layer) {
+    const std::vector<SoPickResult> layerHits = readLayer();
+    if (layerHits.empty()) break;
+    if (layer == maxLayers) {
+      results.truncated = TRUE;
+      break;
+    }
+    for (const SoPickResult & hit : layerHits) {
+      if (std::find(seenIds.begin(), seenIds.end(), hit.id) !=
+          seenIds.end()) continue;
+      if (static_cast<int>(results.hits.size()) >= maxHits) {
+        results.truncated = TRUE;
+        break;
+      }
+      seenIds.push_back(hit.id);
+      results.hits.push_back(hit);
+    }
+    if (results.truncated) break;
+    const int nextDepth = 1 - currentDepth;
+    if (!renderLayer(currentDepth, nextDepth, true)) {
+      results.hits.clear();
+      results.truncated = FALSE;
+      break;
+    }
+    currentDepth = nextDepth;
+  }
+
+  // Restore the frontmost target in the queried region so subsequent hover
+  // queries remain cheap and observe the same snapshot.
+  renderLayer(1, 0, false);
+  this->pickTarget.peelEnabled = false;
+  this->pickTarget.activeDepth = 0;
+  return !results.hits.empty();
 }
 
 SbBool

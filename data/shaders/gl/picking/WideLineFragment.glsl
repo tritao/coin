@@ -3,6 +3,7 @@
 /* Integer-ID wide-line root. Stipple and shared surface coverage must match
  * the visual wide-line pipeline; only the final output differs. */
 #include "../material/FragmentEvaluation.glsl"
+#include "Peel.glsl"
 
 uniform int u_stipplePattern;
 uniform float u_stippleScale;
@@ -17,6 +18,7 @@ layout(location = 0) out uint outPickId;
 
 void main()
 {
+  if (!coin_pick_peel_pass()) discard;
   int bit = int(floor(max(v_lineDistance, 0.0) /
                     max(u_stippleScale, 1.0))) & 15;
   if (((u_stipplePattern >> bit) & 1) == 0) discard;

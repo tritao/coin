@@ -126,6 +126,37 @@ SoPickedPoint::SoPickedPoint(const SoPath * const pathptr, SoState * const state
 }
 
 /*!
+  Constructor for a scene hit resolved by a renderer rather than by a live
+  SoRayPickAction traversal.  It deliberately uses the existing object
+  layout: matrix information is reconstructed from the retained scene path
+  when requested.
+*/
+SoPickedPoint::SoPickedPoint(const SoPath * const pathptr,
+                             const SbVec3f & worldSpacePoint,
+                             const SbViewportRegion & viewportRegion)
+{
+  assert(pathptr);
+  this->path = pathptr->copy();
+  this->path->ref();
+  this->state = NULL;
+  this->point = worldSpacePoint;
+  this->viewport = viewportRegion;
+
+  this->applyMatrixAction(NULL);
+  this->getMatrixAction()->getInverse().multVecMatrix(worldSpacePoint,
+                                                       this->objPoint);
+  this->objNormal = this->normal = SbVec3f(0, 0, 1);
+  this->objTexCoords = this->texCoords = SbVec4f(0, 0, 0, 1);
+  this->materialIndex = 0;
+  this->onGeometry = TRUE;
+
+  const int pathlen = ((SoFullPath *)this->path)->getLength();
+  for (int i = 0; i < pathlen; ++i) {
+    this->detailList.append(NULL);
+  }
+}
+
+/*!
   Destructor.
  */
 SoPickedPoint::~SoPickedPoint()
@@ -321,7 +352,15 @@ void
 SoPickedPoint::setObjectNormal(const SbVec3f &normalref)
 {
   this->objNormal = normalref;
-  SoModelMatrixElement::get(this->state).multDirMatrix(normalref, this->normal);
+  if (this->state) {
+    SoModelMatrixElement::get(this->state).multDirMatrix(normalref,
+                                                         this->normal);
+  }
+  else {
+    this->applyMatrixAction(NULL);
+    this->getMatrixAction()->getMatrix().multDirMatrix(normalref,
+                                                        this->normal);
+  }
 }
 
 /*!
@@ -331,7 +370,15 @@ void
 SoPickedPoint::setObjectTextureCoords(const SbVec4f &texCoordsref)
 {
   this->objTexCoords = texCoordsref;
-  SoMultiTextureMatrixElement::get(this->state, 0).multVecMatrix(texCoordsref, this->texCoords);
+  if (this->state) {
+    SoMultiTextureMatrixElement::get(this->state, 0).multVecMatrix(
+      texCoordsref, this->texCoords);
+  }
+  else {
+    this->applyMatrixAction(NULL);
+    this->getMatrixAction()->getTextureMatrix().multVecMatrix(
+      texCoordsref, this->texCoords);
+  }
 }
 
 /*!
