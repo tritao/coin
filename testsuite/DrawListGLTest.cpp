@@ -1,12 +1,12 @@
-#include "rendering/CoinOffscreenGLCanvas.h"
 #include "rendering/SoGLRenderBackend.h"
+#include "rendering/SoRenderPlan.h"
+#include "support/GLTestContext.h"
 
 #include <Inventor/SoDB.h>
 #include <Inventor/system/gl.h>
 
 #include <cmath>
 #include <cstdio>
-#include <cstdlib>
 #include <iostream>
 #include <vector>
 
@@ -16,15 +16,6 @@ int skip(const char * reason)
 {
   std::cout << "SKIP: " << reason << std::endl;
   return 77;
-}
-
-void set_environment(const char * name, const char * value)
-{
-#ifdef _WIN32
-  _putenv_s(name, value);
-#else
-  setenv(name, value, 1);
-#endif
 }
 
 SoRenderParams renderParams()
@@ -40,11 +31,19 @@ SoRenderParams renderParams()
   return params;
 }
 
-std::vector<uint8_t> readPixels(const CoinOffscreenGLCanvas & canvas)
+SbBool renderWithPlan(SoGLRenderBackend & backend,
+                      const SoDrawList & drawlist,
+                      const SoRenderParams & params)
 {
-  std::vector<uint8_t> pixels(32 * 32 * 4, 0);
-  canvas.readPixels(pixels.data(), SbVec2s(32, 32), 32, 4);
-  return pixels;
+  SoRenderPlanner planner;
+  SoRenderPlan plan;
+  planner.build(drawlist, plan);
+  return backend.render(drawlist, plan, params);
+}
+
+std::vector<uint8_t> readPixels(const GLTestContext & context)
+{
+  return context.readPixels();
 }
 
 const uint8_t * pixelAt(const std::vector<uint8_t> & pixels, int x, int y)
@@ -91,15 +90,17 @@ SoRenderCommand texturedQuad(const float * positions,
 static int
 runTest()
 {
-  set_environment("COIN_EGL", "1");
-  set_environment("EGL_PLATFORM", "surfaceless");
-  set_environment("COIN_EGL_CORE_PROFILE", "1");
   SoDB::init();
 
-  CoinOffscreenGLCanvas canvas;
-  canvas.setWantedSize(SbVec2s(32, 32));
-  if (canvas.activateGLContext() == 0) {
-    return skip("core EGL offscreen context is unavailable");
+  GLTestContextConfig config;
+  config.profile = GLTestProfile::Core;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 32;
+  config.height = 32;
+  GLTestContext context;
+  if (!context.initialize(config)) {
+    return skip("core GLFW OpenGL context is unavailable");
   }
 
   const int glMajor = context.majorVersion();
@@ -122,7 +123,6 @@ runTest()
               << glMajor << "." << glMinor << " and GLSL "
               << (shadingLanguageVersion ? shadingLanguageVersion : "<unknown>")
               << std::endl;
-    canvas.deactivateGLContext();
     return 1;
   }
 
@@ -131,7 +131,6 @@ runTest()
   if (!backend.initialize(initparams)) {
     std::cerr << "FAIL: retained backend did not initialize on the verified "
               << "OpenGL 3.3/GLSL 330 context" << std::endl;
-    canvas.deactivateGLContext();
     return 1;
   }
 
@@ -178,18 +177,18 @@ runTest()
   const SoRenderParams params = renderParams();
   int result = 0;
   SoDrawList empty;
-  if (!backend.render(empty, params)) {
+  if (!renderWithPlan(backend, empty, params)) {
     std::cerr << "FAIL: empty draw list was not accepted" << std::endl;
     result = 1;
   }
 
-  if (!backend.render(drawlist, params)) {
+  if (!renderWithPlan(backend, drawlist, params)) {
     std::cerr << "FAIL: indexed draw-list execution failed" << std::endl;
     result = 1;
   }
   else {
     glFinish();
-    const std::vector<uint8_t> pixels = readPixels(canvas);
+    const std::vector<uint8_t> pixels = readPixels(context);
     if (!nearColor(pixelAt(pixels, 4, 16), 220, 220, 220)) {
       std::cerr << "FAIL: L texture upload produced unexpected pixels" << std::endl;
       result = 1;
@@ -210,7 +209,7 @@ runTest()
 
   // An unchanged DrawList must be safe to execute repeatedly without another
   // upload or a change in output.
-  if (!backend.render(drawlist, params)) {
+  if (!renderWithPlan(backend, drawlist, params)) {
     std::cerr << "FAIL: repeated DrawList execution failed" << std::endl;
     result = 1;
   }
@@ -236,13 +235,13 @@ runTest()
   unindexed.geometry.colors = vertexColors;
   unindexed.material.diffuse = SbVec4f(1.0f, 0.0f, 0.0f, 1.0f);
   drawlist.addCommand(unindexed);
-  if (!backend.render(drawlist, params)) {
+  if (!renderWithPlan(backend, drawlist, params)) {
     std::cerr << "FAIL: unindexed vertex-color execution failed" << std::endl;
     result = 1;
   }
   else {
     glFinish();
-    const std::vector<uint8_t> pixels = readPixels(canvas);
+    const std::vector<uint8_t> pixels = readPixels(context);
     if (!nearColor(pixelAt(pixels, 16, 16), 0, 255, 0)) {
       std::cerr << "FAIL: vertex color was not used for unindexed geometry"
                 << std::endl;
@@ -297,13 +296,13 @@ runTest()
   replaced.geometry.vertexStride = sizeof(float) * 3;
   replaced.material.diffuse = SbVec4f(0.0f, 0.0f, 1.0f, 1.0f);
   drawlist.addCommand(replaced);
-  if (!backend.render(drawlist, params)) {
+  if (!renderWithPlan(backend, drawlist, params)) {
     std::cerr << "FAIL: generation-invalidated DrawList execution failed" << std::endl;
     result = 1;
   }
   else {
     glFinish();
-    const std::vector<uint8_t> pixels = readPixels(canvas);
+    const std::vector<uint8_t> pixels = readPixels(context);
     if (!nearColor(pixelAt(pixels, 16, 16), 0, 0, 255)) {
       std::cerr << "FAIL: clear()/generation change reused stale GPU data" << std::endl;
       result = 1;
@@ -316,7 +315,6 @@ runTest()
     std::cerr << "FAIL: backend remained initialized after shutdown" << std::endl;
     result = 1;
   }
-  canvas.deactivateGLContext();
   return result;
 }
 
