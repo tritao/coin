@@ -269,9 +269,15 @@ public:
   /*! Submit a nonblocking closest-hit readback for hover interaction. */
   SbBool requestPickClosestAsync(int x, int y, int radius,
                                  SoAsyncPickRequest & request);
-  /*! Poll a hover request without waiting. The caller owns a HIT result. */
+  /*! Poll a closest-pick request without waiting. The caller owns a HIT result. */
   SoAsyncPickStatus pollPickClosestAsync(
     const SoAsyncPickRequest & request, SoPickedPoint *& result);
+  /*! Submit a depthless retained-identity query for interaction tracking. */
+  SbBool requestPickIdentityAsync(int x, int y, int radius,
+                                  SoAsyncPickRequest & request);
+  /*! Poll an identity query without constructing a 3D SoPickedPoint. */
+  SoAsyncPickStatus pollPickIdentityAsync(
+    const SoAsyncPickRequest & request, SoPickIdentity & result);
   SoRenderStatistics getRenderStatistics() const;
   //! Enable intrusive per-command CPU phase timing for diagnostics.
   void setRenderPhaseTimingEnabled(SbBool enabled);

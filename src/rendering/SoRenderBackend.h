@@ -94,6 +94,10 @@ public:
                                          SoAsyncPickRequest & request);
   virtual SoAsyncPickStatus pollPickClosestAsync(
     const SoAsyncPickRequest & request, SoPickResult & result);
+  virtual SbBool requestPickIdentityAsync(int x, int y, int radius,
+                                          SoAsyncPickRequest & request);
+  virtual SoAsyncPickStatus pollPickIdentityAsync(
+    const SoAsyncPickRequest & request, SoPickIdentity & result);
   virtual SoRenderStatistics getRenderStatistics() const;
   //! Enable intrusive per-command CPU phase timing for diagnostics.
   void setPhaseTimingEnabled(SbBool enabled);

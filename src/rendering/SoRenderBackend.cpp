@@ -70,6 +70,38 @@ SoRenderBackend::pollPickClosestAsync(const SoAsyncPickRequest &,
   return SoAsyncPickStatus::FAILED;
 }
 
+SbBool
+SoRenderBackend::requestPickIdentityAsync(const int x, const int y,
+                                          const int radius,
+                                          SoAsyncPickRequest & request)
+{
+  return this->requestPickClosestAsync(
+    x, y, radius, SoPickReadbackMode::ID_ONLY, request);
+}
+
+SoAsyncPickStatus
+SoRenderBackend::pollPickIdentityAsync(const SoAsyncPickRequest & request,
+                                       SoPickIdentity & result)
+{
+  result = SoPickIdentity();
+  SoPickResult hit;
+  const SoAsyncPickStatus status = this->pollPickClosestAsync(request, hit);
+  if (status != SoAsyncPickStatus::HIT) return status;
+  if (hit.hasDepth || request.mode != SoPickReadbackMode::ID_ONLY) {
+    return SoAsyncPickStatus::FAILED;
+  }
+  result.generation = hit.generation;
+  result.commandIndex = hit.commandIndex;
+  result.nodeId = hit.nodeId;
+  result.instanceId = hit.instanceId;
+  result.objectId = hit.objectId;
+  result.type = hit.type;
+  result.elementIndex = hit.elementIndex;
+  result.pixelX = hit.pixelX;
+  result.pixelY = hit.pixelY;
+  return SoAsyncPickStatus::HIT;
+}
+
 SoRenderStatistics
 SoRenderBackend::getRenderStatistics() const
 {

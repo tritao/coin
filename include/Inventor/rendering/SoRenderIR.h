@@ -624,6 +624,26 @@ enum class SoPickReadbackMode : uint8_t {
 };
 
 /*!
+  \struct SoPickIdentity
+  \brief Lightweight retained hit identity without geometric depth.
+
+  This result is suitable for asynchronous preselection, pointer tracking,
+  and other interaction policies that do not require a reconstructed 3D
+  point. It remains valid only for its recorded DrawList generation.
+*/
+struct SoPickIdentity {
+  uint32_t generation = 0;
+  int commandIndex = -1;
+  SoNodeId nodeId = 0;
+  SoInstanceId instanceId = 0;
+  SoObjectId objectId = 0;
+  SoPickElementType type = SO_PICK_OBJECT;
+  int elementIndex = -1;
+  int pixelX = 0;
+  int pixelY = 0;
+};
+
+/*!
   \struct SoPickResultList
   \brief Results from one frame-local retained picking query.
 

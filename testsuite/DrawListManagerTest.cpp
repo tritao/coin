@@ -362,6 +362,30 @@ runTest()
       delete hover;
     }
 
+    SoAsyncPickRequest identityRequest;
+    if (!manager.requestPickIdentityAsync(16, 16, 0, identityRequest) ||
+        identityRequest.mode != SoPickReadbackMode::ID_ONLY) {
+      std::cerr << "FAIL: manager rejected asynchronous pick identity"
+                << std::endl;
+      result = 1;
+    }
+    else {
+      SoPickIdentity identity;
+      SoAsyncPickStatus identityStatus =
+        manager.pollPickIdentityAsync(identityRequest, identity);
+      if (identityStatus == SoAsyncPickStatus::PENDING) {
+        glFinish();
+        identityStatus = manager.pollPickIdentityAsync(identityRequest,
+                                                        identity);
+      }
+      if (identityStatus != SoAsyncPickStatus::HIT ||
+          identity.generation == 0 || identity.commandIndex < 0) {
+        std::cerr << "FAIL: manager asynchronous identity was incorrect"
+                  << std::endl;
+        result = 1;
+      }
+    }
+
     SoPickedPointList stack;
     if (!manager.pickDepthStack(16, 16, 0, 8, stack) ||
         stack.getLength() == 0 ||

@@ -2463,6 +2463,49 @@ SoRenderManager::pollPickClosestAsync(const SoAsyncPickRequest & request,
   return result ? SoAsyncPickStatus::HIT : SoAsyncPickStatus::STALE;
 }
 
+SbBool
+SoRenderManager::requestPickIdentityAsync(const int x, const int y,
+                                          const int radius,
+                                          SoAsyncPickRequest & request)
+{
+  request = SoAsyncPickRequest();
+  if (PRIVATE(this)->renderPipeline != RenderPipeline::DRAW_LIST ||
+      !PRIVATE(this)->renderBackend || !PRIVATE(this)->irAction ||
+      !PRIVATE(this)->renderBackend->isInitialized()) return FALSE;
+  SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
+  const SoRenderParams params = retainedRenderParams(PRIVATE(this));
+  if (PRIVATE(this)->pickTargetDirty ||
+      PRIVATE(this)->pickTargetGeneration != drawlist.getGeneration()) {
+    SoRenderPlanner planner;
+    SoRenderPlan plan;
+    planner.build(drawlist, params.viewMatrix, plan);
+    if (!PRIVATE(this)->renderBackend->updatePickBuffer(drawlist, plan,
+                                                        params)) return FALSE;
+    PRIVATE(this)->pickTargetDirty = FALSE;
+    PRIVATE(this)->pickTargetGeneration = drawlist.getGeneration();
+  }
+  return PRIVATE(this)->renderBackend->requestPickIdentityAsync(
+    x, y, radius, request);
+}
+
+SoAsyncPickStatus
+SoRenderManager::pollPickIdentityAsync(const SoAsyncPickRequest & request,
+                                       SoPickIdentity & result)
+{
+  result = SoPickIdentity();
+  if (PRIVATE(this)->renderPipeline != RenderPipeline::DRAW_LIST ||
+      !PRIVATE(this)->renderBackend || !PRIVATE(this)->irAction ||
+      !PRIVATE(this)->renderBackend->isInitialized()) {
+    return SoAsyncPickStatus::FAILED;
+  }
+  const SoAsyncPickStatus status =
+    PRIVATE(this)->renderBackend->pollPickIdentityAsync(request, result);
+  if (status != SoAsyncPickStatus::HIT) return status;
+  return result.generation ==
+      PRIVATE(this)->irAction->getDrawList().getGeneration()
+    ? SoAsyncPickStatus::HIT : SoAsyncPickStatus::STALE;
+}
+
 SoRenderStatistics
 SoRenderManager::getRenderStatistics() const
 {
