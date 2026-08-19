@@ -402,6 +402,23 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 			SOURCES LegacyShapeGatingOrderTest.cpp
 			LABELS legacygl)
 	endif()
+	if(COIN_BUILD_BENCHMARKS)
+		add_executable(CoinRenderGLBenchmarks CoinRenderGLBenchmarks.cpp)
+		target_link_libraries(CoinRenderGLBenchmarks PRIVATE
+			CoinGLTestSupport CoinPrivateTestHeaders Coin
+			${COIN_TARGET_LINK_LIBRARIES})
+		target_include_directories(CoinRenderGLBenchmarks PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR}/support
+			${PROJECT_SOURCE_DIR}/src
+			${PROJECT_SOURCE_DIR}/include
+			${PROJECT_BINARY_DIR}/include
+			${COIN_TARGET_INCLUDE_DIRECTORIES})
+		add_test(NAME CoinRenderGLBenchmarksSmoke
+			COMMAND CoinRenderGLBenchmarks --smoke)
+		set_tests_properties(CoinRenderGLBenchmarksSmoke PROPERTIES
+			SKIP_RETURN_CODE 77
+			LABELS "benchmark;benchmark-gl;benchmark-render")
+	endif()
 endif()
 
 if(HAVE_EGL)
@@ -413,6 +430,27 @@ if(HAVE_EGL)
 		NAME OffscreenContextTest
 		SOURCES OffscreenContextTest.cpp
 		LABELS offscreen requires-egl)
+endif()
+
+if(COIN_BUILD_BENCHMARKS)
+	add_executable(CoinRenderBenchmarks CoinRenderBenchmarks.cpp)
+	target_link_libraries(CoinRenderBenchmarks PRIVATE
+		CoinPrivateTestHeaders Coin ${COIN_TARGET_LINK_LIBRARIES})
+	target_include_directories(CoinRenderBenchmarks PRIVATE
+		${PROJECT_SOURCE_DIR}/src
+		${PROJECT_SOURCE_DIR}/include
+		${PROJECT_BINARY_DIR}/include
+		${COIN_TARGET_INCLUDE_DIRECTORIES})
+
+	add_test(NAME CoinRenderBenchmarksSmoke
+		COMMAND CoinRenderBenchmarks --smoke)
+	set_tests_properties(CoinRenderBenchmarksSmoke PROPERTIES
+		LABELS "benchmark;benchmark-render;benchmark-picking;benchmark-selection")
+
+	add_test(NAME CoinRenderLifecycleStress
+		COMMAND CoinRenderBenchmarks --stress --frames 10000)
+	set_tests_properties(CoinRenderLifecycleStress PROPERTIES
+		LABELS "stress;stress-render;stress-picking;stress-lifecycle")
 endif()
 
 # Keep the ordinary non-GL tests in the unit capability without maintaining a
