@@ -1258,29 +1258,66 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
       0, SbVec3f((sample & 1) ? -0.40f : -0.44f, -0.42f, 0.0f));
   });
 
-  const int sharedCommandCount = std::min(drawCount, 1000);
-  SoSeparator * sharedBranch = new SoSeparator;
-  SoCoordinate3 * sharedCoordinates = new SoCoordinate3;
-  const SbVec3f sharedTriangle[] = {
-    SbVec3f(-0.42f, -0.42f, 0.0f), SbVec3f(0.42f, -0.42f, 0.0f),
-    SbVec3f(0.0f, 0.42f, 0.0f)
-  };
-  sharedCoordinates->point.setValues(0, 3, sharedTriangle);
-  sharedBranch->addChild(sharedCoordinates);
-  for (int i = 0; i < sharedCommandCount; ++i) {
-    SoFaceSet * face = new SoFaceSet;
-    face->numVertices.set1Value(0, 3);
-    sharedBranch->addChild(face);
+  const int sharedCounts[] = { 1, 10, 100, 1000, 10000 };
+  for (size_t countIndex = 0;
+       countIndex < sizeof(sharedCounts) / sizeof(sharedCounts[0]);
+       ++countIndex) {
+    const int sharedCommandCount = sharedCounts[countIndex];
+    if (sharedCommandCount > drawCount) continue;
+
+    SoSeparator * sharedScene = new SoSeparator;
+    SoSeparator * sharedContainer = new SoSeparator;
+    SoSeparator * sharedBranch = new SoSeparator;
+    SoCoordinate3 * sharedCoordinates = new SoCoordinate3;
+    const SbVec3f sharedTriangle[] = {
+      SbVec3f(-0.42f, -0.42f, 0.0f), SbVec3f(0.42f, -0.42f, 0.0f),
+      SbVec3f(0.0f, 0.42f, 0.0f)
+    };
+    sharedCoordinates->point.setValues(0, 3, sharedTriangle);
+    sharedBranch->addChild(sharedCoordinates);
+    for (int i = 0; i < sharedCommandCount; ++i) {
+      SoFaceSet * face = new SoFaceSet;
+      face->numVertices.set1Value(0, 3);
+      sharedBranch->addChild(face);
+    }
+    sharedContainer->addChild(sharedBranch);
+    sharedScene->addChild(sharedContainer);
+    sharedScene->ref();
+    manager.setSceneGraph(sharedScene);
+    context.bindFramebuffer();
+    manager.render(TRUE, TRUE);
+
+    std::vector<double> cpuTimes;
+    std::vector<double> constructionTimes;
+    for (int sample = 0; sample < samples; ++sample) {
+      sharedCoordinates->point.set1Value(
+        0, SbVec3f((sample & 1) ? -0.40f : -0.44f, -0.42f, 0.0f));
+      context.bindFramebuffer();
+      const Clock::time_point start = Clock::now();
+      manager.render(TRUE, TRUE);
+      cpuTimes.push_back(elapsedMs(start));
+      constructionTimes.push_back(
+        manager.getRenderStatistics().drawListConstructionNanoseconds /
+        1000000.0);
+    }
+    Measurement sharedResult;
+    sharedResult.workload = "incremental_geometry_shared_" +
+      std::to_string(sharedCommandCount);
+    sharedResult.renderer = "DrawList";
+    sharedResult.profile = profile == GLTestProfile::Core
+      ? "core" : "compatibility";
+    sharedResult.semanticDraws = sharedCommandCount;
+    sharedResult.samples = samples;
+    sharedResult.cpuMedianMs = percentile(cpuTimes, 0.5);
+    sharedResult.cpuP95Ms = percentile(cpuTimes, 0.95);
+    sharedResult.drawListConstructionMs = percentile(constructionTimes, 0.5);
+    sharedResult.renderStatistics = manager.getRenderStatistics();
+    sharedResult.pixelChecksum = checksumPixels(context.readPixels());
+    results.push_back(sharedResult);
+
+    manager.setSceneGraph(NULL);
+    sharedScene->unref();
   }
-  scene->addChild(sharedBranch);
-  context.bindFramebuffer();
-  manager.render(TRUE, TRUE);
-  const std::string sharedName = "incremental_geometry_shared_" +
-    std::to_string(sharedCommandCount) + "_of";
-  measure(sharedName.c_str(), [&](int sample) {
-    sharedCoordinates->point.set1Value(
-      0, SbVec3f((sample & 1) ? -0.40f : -0.44f, -0.42f, 0.0f));
-  });
 
   manager.releaseRenderBackendResources();
   manager.setCamera(NULL);
