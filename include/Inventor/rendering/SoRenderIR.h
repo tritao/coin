@@ -666,6 +666,11 @@ struct SoRenderStatistics {
   uint64_t instancedCommands = 0;
   uint64_t drawCallsAvoided = 0;
   uint64_t instanceBytesUploaded = 0;
+  uint64_t instanceBatches2To4 = 0;
+  uint64_t instanceBatches5To16 = 0;
+  uint64_t instanceBatches17To64 = 0;
+  uint64_t instanceBatches65Plus = 0;
+  uint64_t maxInstanceBatchSize = 0;
 };
 
 /*!

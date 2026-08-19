@@ -21,6 +21,7 @@
 #include <Inventor/nodes/SoTranslation.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -66,6 +67,10 @@ struct Measurement {
   double asyncPickSubmitMs = 0.0;
   double asyncPickReadyMs = 0.0;
   double asyncPickPollMaxMs = 0.0;
+  double selectionMedianMs = 0.0;
+  double selectionP95Ms = 0.0;
+  double mutationMedianMs = 0.0;
+  double mutationP95Ms = 0.0;
   SoRenderStatistics renderStatistics;
   double pickMedianMs = 0.0;
   double pickP95Ms = 0.0;
@@ -564,6 +569,224 @@ bool runIndexedInstances(GLTestProfile profile, int instanceCount, int samples,
   return true;
 }
 
+bool runMixedRetainedScene(GLTestProfile profile, int commandCount, int samples,
+                           Measurement & result, std::string & unavailable)
+{
+  GLTestContextConfig config;
+  config.profile = profile;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 256;
+  config.height = 256;
+  GLTestContext context;
+  if (!context.initialize(config) || !checkTimerQueries()) {
+    unavailable = "required OpenGL context or timer queries are unavailable";
+    return false;
+  }
+  const float quad[] = {
+    -0.025f, -0.025f, 0.0f, 0.025f, -0.025f, 0.0f,
+     0.025f,  0.025f, 0.0f, -0.025f, 0.025f, 0.0f
+  };
+  const uint32_t indices[] = { 0, 1, 2, 0, 2, 3 };
+  const int segments = commandCount >= 100 ? 5 : 2;
+  const int perSegment = commandCount / segments;
+  const int repeatedA = perSegment / 2;
+  const int unique = perSegment / 5;
+  const int repeatedB = perSegment / 5;
+  const int transparent = perSegment - repeatedA - unique - repeatedB;
+  std::vector<std::array<float, 12>> uniqueGeometry;
+  uniqueGeometry.reserve(static_cast<size_t>(unique * segments));
+  SoDrawList drawlist;
+  drawlist.reserve(commandCount);
+  const int columns = static_cast<int>(std::ceil(std::sqrt(
+    static_cast<double>(commandCount))));
+  const int rows = (commandCount + columns - 1) / columns;
+  const float dx = 1.8f / static_cast<float>(std::max(1, columns - 1));
+  const float dy = 1.8f / static_cast<float>(std::max(1, rows - 1));
+  const auto append = [&](int index, uint64_t resourceKey,
+                          const float * positions, bool translucent) {
+    SoRenderCommand command;
+    const float x = index == 0 ? 0.0f : -0.9f + (index % columns) * dx;
+    const float y = index == 0 ? 0.0f : -0.9f + (index / columns) * dy;
+    command.modelMatrix.setTranslate(SbVec3f(
+      x, y, translucent ? -static_cast<float>(index % 11) * 0.002f : 0.0f));
+    command.geometry.topology = SO_TOPOLOGY_TRIANGLES;
+    command.geometry.vertexCount = 4;
+    command.geometry.indexCount = 6;
+    command.geometry.positions = positions;
+    command.geometry.indices = indices;
+    command.geometry.vertexStride = sizeof(float) * 3;
+    command.geometry.resourceKey = resourceKey;
+    command.geometry.resourceRevision = 1;
+    const float shade = static_cast<float>((index * 29) % 101) / 100.0f;
+    command.material.diffuse = SbVec4f(0.2f + 0.7f * shade,
+                                       0.8f - 0.5f * shade,
+                                       0.3f + 0.5f * shade,
+                                       translucent ? 0.6f : 1.0f);
+    command.objectId = static_cast<SoObjectId>(index + 1);
+    command.nodeId = static_cast<SoNodeId>(index + 1001);
+    command.instanceId = static_cast<SoInstanceId>(index + 2001);
+    if (translucent) {
+      command.opacityClass = SO_OPACITY_TRANSPARENT;
+      command.material.opacity = 0.6f;
+      command.state.depth.writeEnabled = FALSE;
+      command.state.blend.enabled = TRUE;
+      command.state.blend.srcRGBFactor = SO_BLEND_FACTOR_SRC_ALPHA;
+      command.state.blend.dstRGBFactor = SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+      command.state.blend.srcAlphaFactor = SO_BLEND_FACTOR_SRC_ALPHA;
+      command.state.blend.dstAlphaFactor = SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    }
+    drawlist.addCommand(command);
+  };
+  int index = 0;
+  for (int segment = 0; segment < segments; ++segment) {
+    if (segment) {
+      SoDepthClearEvent event;
+      event.sequence = static_cast<uint32_t>(index);
+      drawlist.addDepthClearEvent(event);
+    }
+    for (int i = 0; i < repeatedA; ++i, ++index)
+      append(index, 0x4d495845440001ULL, quad, false);
+    for (int i = 0; i < unique; ++i, ++index) {
+      const float skew = static_cast<float>((index % 7) + 1) * 0.001f;
+      uniqueGeometry.push_back({-0.025f, -0.025f, 0.0f,
+        0.025f + skew, -0.025f, 0.0f, 0.025f, 0.025f, 0.0f,
+        -0.025f, 0.025f + skew, 0.0f});
+      append(index, 0x100000ULL + index, uniqueGeometry.back().data(), false);
+    }
+    for (int i = 0; i < repeatedB; ++i, ++index)
+      append(index, 0x4d495845440002ULL, quad, false);
+    for (int i = 0; i < transparent; ++i, ++index)
+      append(index, 0x4d495845440003ULL, quad, true);
+  }
+  SoSelectionState selection;
+  for (int selected = 0; selected < commandCount; selected += 10) {
+    SoSelectionTarget target;
+    target.commandIndex = selected;
+    target.objectId = static_cast<SoObjectId>(selected + 1);
+    target.nodeId = static_cast<SoNodeId>(selected + 1001);
+    target.instanceId = static_cast<SoInstanceId>(selected + 2001);
+    target.color = SbColor4f(1.0f, 0.8f, 0.0f, 0.65f);
+    selection.selected.push_back(target);
+  }
+  SoRenderParams params;
+  params.viewport = SbViewportRegion(256, 256);
+  params.viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(256, 256));
+  params.viewMatrix.makeIdentity();
+  params.projMatrix.makeIdentity();
+  params.clearColor.setValue(0.0f, 0.0f, 0.0f, 1.0f);
+  params.clearDepth = 1.0f;
+  params.flags = SO_PARAM_CLEAR_WINDOW | SO_PARAM_CLEAR_DEPTH;
+  SoRenderPlanner planner;
+  SoRenderPlan plan;
+  planner.build(drawlist, params.viewMatrix, plan);
+  SoGLRenderBackend backend;
+  SoRenderBackendInitParams initParams;
+  if (!backend.initialize(initParams)) {
+    unavailable = "retained OpenGL backend initialization failed";
+    return false;
+  }
+  backend.setPhaseTimingEnabled(TRUE);
+  for (int warmup = 0; warmup < 5; ++warmup) {
+    context.bindFramebuffer();
+    backend.render(drawlist, plan, params);
+  }
+  glFinish();
+  std::vector<double> cpu, gpu, completion, preparation, state, program, submit;
+  GLuint query = 0;
+  glGenQueries(1, &query);
+  for (int sample = 0; sample < samples; ++sample) {
+    context.bindFramebuffer();
+    const Clock::time_point totalStart = Clock::now();
+    glBeginQuery(GL_TIME_ELAPSED, query);
+    const Clock::time_point cpuStart = Clock::now();
+    backend.render(drawlist, plan, params);
+    cpu.push_back(elapsedMs(cpuStart));
+    const SoRenderStatistics stats = backend.getRenderStatistics();
+    preparation.push_back(stats.commandPreparationNanoseconds / 1000000.0);
+    state.push_back(stats.stateSetupNanoseconds / 1000000.0);
+    program.push_back(stats.programBindingNanoseconds / 1000000.0);
+    submit.push_back(stats.drawSubmissionNanoseconds / 1000000.0);
+    glEndQuery(GL_TIME_ELAPSED);
+    GLuint64 nanoseconds = 0;
+    glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
+    completion.push_back(elapsedMs(totalStart));
+    gpu.push_back(static_cast<double>(nanoseconds) / 1000000.0);
+  }
+  glDeleteQueries(1, &query);
+  const SoRenderStatistics statistics = backend.getRenderStatistics();
+  std::vector<double> selectionTimes, pickTimes, refreshTimes, mutationTimes;
+  for (int sample = 0; sample < samples; ++sample) {
+    context.bindFramebuffer();
+    backend.render(drawlist, plan, params);
+    const Clock::time_point start = Clock::now();
+    backend.renderSelection(drawlist, selection, params);
+    selectionTimes.push_back(elapsedMs(start));
+  }
+  glFinish();
+  context.bindFramebuffer();
+  backend.updatePickBuffer(drawlist, plan, params);
+  for (int sample = 0; sample < samples; ++sample) {
+    SoPickResult pick;
+    Clock::time_point start = Clock::now();
+    backend.pickClosest(128, 128, 2, pick);
+    pickTimes.push_back(elapsedMs(start));
+    start = Clock::now();
+    backend.updatePickBuffer(drawlist, plan, params);
+    backend.pickClosest(128, 128, 2, pick);
+    refreshTimes.push_back(elapsedMs(start));
+  }
+  for (int sample = 0; sample < samples; ++sample) {
+    const uint64_t revision = static_cast<uint64_t>(sample + 2);
+    for (int command = 0; command < drawlist.getNumCommands(); ++command) {
+      SoRenderCommand & item = drawlist.getCommand(command);
+      if (item.geometry.resourceKey == 0x4d495845440001ULL)
+        item.geometry.resourceRevision = revision;
+    }
+    const Clock::time_point start = Clock::now();
+    context.bindFramebuffer();
+    backend.render(drawlist, plan, params);
+    mutationTimes.push_back(elapsedMs(start));
+  }
+  context.bindFramebuffer();
+  backend.render(drawlist, plan, params);
+  const uint64_t checksum = checksumPixels(context.readPixels());
+  if (statistics.drawCalls <= 1 ||
+      statistics.drawCalls >= static_cast<uint64_t>(commandCount) ||
+      statistics.instancedBatches <= 1 || statistics.maxInstanceBatchSize < 5 ||
+      checksum == 0) {
+    unavailable = "mixed workload did not retain expected batch fragmentation";
+    backend.shutdown();
+    return false;
+  }
+  backend.shutdown();
+  result.workload = "mixed_retained_scene";
+  result.renderer = "DrawList";
+  result.profile = profile == GLTestProfile::Core ? "core" : "compatibility";
+  result.semanticDraws = commandCount;
+  result.samples = samples;
+  result.cpuMedianMs = percentile(cpu, 0.5);
+  result.cpuP95Ms = percentile(cpu, 0.95);
+  result.gpuMedianMs = percentile(gpu, 0.5);
+  result.gpuP95Ms = percentile(gpu, 0.95);
+  result.completionMedianMs = percentile(completion, 0.5);
+  result.completionP95Ms = percentile(completion, 0.95);
+  result.commandPreparationMs = percentile(preparation, 0.5);
+  result.stateSetupMs = percentile(state, 0.5);
+  result.programBindingMs = percentile(program, 0.5);
+  result.drawSubmissionMs = percentile(submit, 0.5);
+  result.selectionMedianMs = percentile(selectionTimes, 0.5);
+  result.selectionP95Ms = percentile(selectionTimes, 0.95);
+  result.pickMedianMs = percentile(pickTimes, 0.5);
+  result.pickP95Ms = percentile(pickTimes, 0.95);
+  result.refreshPickMs = percentile(refreshTimes, 0.5);
+  result.mutationMedianMs = percentile(mutationTimes, 0.5);
+  result.mutationP95Ms = percentile(mutationTimes, 0.95);
+  result.renderStatistics = statistics;
+  result.pixelChecksum = checksum;
+  return true;
+}
+
 Options parseOptions(int argc, char ** argv)
 {
   Options options;
@@ -608,6 +831,10 @@ std::string toJson(const std::vector<Measurement> & results,
         << ", \"async_pick_submit_ms\": " << r.asyncPickSubmitMs
         << ", \"async_pick_ready_ms\": " << r.asyncPickReadyMs
         << ", \"async_pick_poll_max_ms\": " << r.asyncPickPollMaxMs
+        << ", \"selection_median_ms\": " << r.selectionMedianMs
+        << ", \"selection_p95_ms\": " << r.selectionP95Ms
+        << ", \"mutation_median_ms\": " << r.mutationMedianMs
+        << ", \"mutation_p95_ms\": " << r.mutationP95Ms
         << ", \"draw_calls\": " << r.renderStatistics.drawCalls
         << ", \"program_binds\": " << r.renderStatistics.programBinds
         << ", \"skipped_program_binds\": "
@@ -640,6 +867,16 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.drawCallsAvoided
         << ", \"instance_bytes_uploaded\": "
         << r.renderStatistics.instanceBytesUploaded
+        << ", \"instance_batches_2_to_4\": "
+        << r.renderStatistics.instanceBatches2To4
+        << ", \"instance_batches_5_to_16\": "
+        << r.renderStatistics.instanceBatches5To16
+        << ", \"instance_batches_17_to_64\": "
+        << r.renderStatistics.instanceBatches17To64
+        << ", \"instance_batches_65_plus\": "
+        << r.renderStatistics.instanceBatches65Plus
+        << ", \"max_instance_batch_size\": "
+        << r.renderStatistics.maxInstanceBatchSize
         << ", \"command_preparation_ms\": "
         << r.commandPreparationMs
         << ", \"state_setup_ms\": "
@@ -732,6 +969,24 @@ int main(int argc, char ** argv)
           (profiles[p] == GLTestProfile::Core ? "core: " : "compatibility: ") +
           reason);
       }
+    }
+  }
+  const GLTestProfile mixedProfiles[] = {
+    GLTestProfile::Compatibility, GLTestProfile::Core
+  };
+  for (size_t i = 0;
+       i < sizeof(mixedProfiles) / sizeof(mixedProfiles[0]); ++i) {
+    Measurement mixed;
+    std::string reason;
+    if (runMixedRetainedScene(mixedProfiles[i], options.smoke ? 40 : 500,
+                              samples, mixed, reason)) {
+      results.push_back(mixed);
+    }
+    else {
+      unavailable.push_back(std::string("mixed_retained_scene:DrawList ") +
+        (mixedProfiles[i] == GLTestProfile::Core ? "core: " :
+                                                   "compatibility: ") +
+        reason);
     }
   }
   const std::string document = toJson(results, unavailable, options);

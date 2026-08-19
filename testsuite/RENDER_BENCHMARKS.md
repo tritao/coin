@@ -45,11 +45,19 @@ driver-call reductions deterministic even when wall-clock timings are noisy.
 VAO binds are reported separately because they describe geometry submission,
 not semantic pipeline state.
 Instanced runs report batches, absorbed commands, avoided draw calls, and
-transient instance bytes. The initial batching contract is deliberately
-limited to adjacent opaque, untextured, non-indexed triangle commands with
-identical geometry, lighting, depth, and raster state. Unlit batches may vary
-their diffuse color, which is uploaded as per-instance data; other material
-differences retain the ordinary command path.
+transient instance bytes. Batch-size buckets and the largest batch expose
+fragmentation that a single average would hide. Batching is deliberately
+limited to adjacent untextured triangle commands with identical geometry,
+lighting, depth, blend, and raster state. It supports indexed and non-indexed
+opaque geometry plus already-sorted unlit transparent geometry. Unlit batches
+may vary diffuse RGBA through per-instance data; incompatible state retains the
+ordinary command path.
+
+The `mixed_retained_scene` workload combines repeated and unique indexed
+geometry, opaque and transparent groups, depth segments, a 10% selected subset,
+cached and refreshed picking, and shared-resource revision churn. It reports
+selection and mutation latency separately from ordinary rendering so the next
+optimization target is chosen from measured phase costs.
 Retained runs additionally enable opt-in per-command CPU phase timing for
 command preparation, state setup, program/uniform binding, and draw submission.
 Normal rendering leaves this intrusive timing disabled.

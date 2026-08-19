@@ -2172,6 +2172,13 @@ SoGLRenderBackend::drawInstancedCommands(
   statistics.instancedCommands += commandIndices.size();
   statistics.drawCallsAvoided += commandIndices.size() - 1;
   statistics.instanceBytesUploaded += instanceData.size() * sizeof(float);
+  const uint64_t batchSize = static_cast<uint64_t>(commandIndices.size());
+  if (batchSize <= 4) ++statistics.instanceBatches2To4;
+  else if (batchSize <= 16) ++statistics.instanceBatches5To16;
+  else if (batchSize <= 64) ++statistics.instanceBatches17To64;
+  else ++statistics.instanceBatches65Plus;
+  statistics.maxInstanceBatchSize = std::max(
+    statistics.maxInstanceBatchSize, batchSize);
 }
 
 SoGLRenderBackend::RasterPath
