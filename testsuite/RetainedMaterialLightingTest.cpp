@@ -320,10 +320,37 @@ runTest()
     textureRoot->addChild(new SoCube);
     SoIRRenderAction textureAction(SbViewportRegion(32, 32));
     textureAction.apply(textureRoot);
-    if (textureAction.getDrawList().getNumCommands() != 2 ||
-        textureAction.getDrawList().getCommand(0).material.texture.pixels !=
-          textureAction.getDrawList().getCommand(1).material.texture.pixels) {
-      std::cerr << "FAIL: frame texture payload was copied once per command"
+    if (textureAction.getDrawList().getNumCommands() != 2) {
+      std::cerr << "FAIL: shared texture scene did not emit two commands"
+                << std::endl;
+      result = 1;
+      textureRoot->unref();
+      return result;
+    }
+    const SoTextureData & firstTexture =
+      textureAction.getDrawList().getCommand(0).material.texture;
+    const SoTextureData & secondTexture =
+      textureAction.getDrawList().getCommand(1).material.texture;
+    if (firstTexture.pixels != secondTexture.pixels ||
+        firstTexture.cacheKey == 0 ||
+        firstTexture.cacheKey != secondTexture.cacheKey ||
+        firstTexture.revision != secondTexture.revision) {
+      std::cerr << "FAIL: shared scene texture lost its retained identity"
+                << std::endl;
+      result = 1;
+    }
+
+    const uint64_t originalKey = firstTexture.cacheKey;
+    const uint64_t originalRevision = firstTexture.revision;
+    const unsigned char replacement[] = { 32, 64, 128, 255 };
+    sharedTexture->image.setValue(SbVec2s(1, 1), 4, replacement);
+    textureAction.apply(textureRoot);
+    const SoTextureData & updatedTexture =
+      textureAction.getDrawList().getCommand(0).material.texture;
+    if ((updatedTexture.cacheKey == originalKey &&
+         updatedTexture.revision == originalRevision) ||
+        updatedTexture.pixels[0] != replacement[0]) {
+      std::cerr << "FAIL: changed scene texture retained a stale identity"
                 << std::endl;
       result = 1;
     }

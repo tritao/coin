@@ -122,6 +122,7 @@ public:
   static Wrap getWrapS(SoState * const state, const int unit = 0);
   static Wrap getWrapT(SoState * const state, const int unit = 0);
   static Wrap getWrapR(SoState * const state, const int unit = 0);
+  static SbUniqueId getNodeId(SoState * const state, const int unit = 0);
 
   static SbBool containsTransparency(SoState * const state);
 

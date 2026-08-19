@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cstdint>
 #include <climits>
 #include <cstdlib>
 #include <inttypes.h>
@@ -763,6 +764,13 @@ fillTextureFromState(SoState * state, SoIRRenderAction * action,
     bytes, byteCount, size[0], size[1], numComponents, hasTransparency);
 
   material.texture.pixels = copy;
+  // Scene texture images remain owned by their nodes. Preserve that source
+  // identity so repeated shapes and later frames can share the uploaded GL
+  // resource; the element's node id changes whenever its texture node does.
+  material.texture.cacheKey = static_cast<uint64_t>(
+    reinterpret_cast<uintptr_t>(bytes));
+  material.texture.revision = static_cast<uint64_t>(
+    SoMultiTextureImageElement::getNodeId(state, 0));
   material.texture.width = size[0];
   material.texture.height = size[1];
   material.texture.numComponents = numComponents;
