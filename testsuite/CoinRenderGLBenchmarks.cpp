@@ -1,4 +1,6 @@
 #include "support/GLTestContext.h"
+#include "rendering/SoGLRenderBackend.h"
+#include "rendering/SoRenderPlan.h"
 
 #include <Inventor/SoDB.h>
 #include <Inventor/SoPickedPoint.h>
@@ -427,6 +429,150 @@ bool runVariant(GLTestProfile profile,
   return true;
 }
 
+bool runIndexedInstances(GLTestProfile profile, int instanceCount, int samples,
+                         Measurement & result, std::string & unavailable)
+{
+  GLTestContextConfig config;
+  config.profile = profile;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 256;
+  config.height = 256;
+  GLTestContext context;
+  if (!context.initialize(config)) {
+    unavailable = "requested OpenGL context is unavailable";
+    return false;
+  }
+  if (!checkTimerQueries()) {
+    unavailable = "OpenGL timer queries are unavailable";
+    return false;
+  }
+
+  const float positions[] = {
+    -0.03f, -0.03f, 0.0f,  0.03f, -0.03f, 0.0f,
+     0.03f,  0.03f, 0.0f, -0.03f,  0.03f, 0.0f
+  };
+  const uint32_t indices[] = { 0, 1, 2, 0, 2, 3 };
+  const int columns = static_cast<int>(std::ceil(std::sqrt(
+    static_cast<double>(instanceCount))));
+  const int rows = (instanceCount + columns - 1) / columns;
+  const float xSpacing = columns > 1 ? 1.8f / static_cast<float>(columns - 1) : 0.0f;
+  const float ySpacing = rows > 1 ? 1.8f / static_cast<float>(rows - 1) : 0.0f;
+  SoDrawList drawlist;
+  for (int i = 0; i < instanceCount; ++i) {
+    SoRenderCommand command;
+    const float x = columns > 1 ? -0.9f + (i % columns) * xSpacing : 0.0f;
+    const float y = rows > 1 ? -0.9f + (i / columns) * ySpacing : 0.0f;
+    command.modelMatrix.setTranslate(SbVec3f(x, y, 0.0f));
+    command.geometry.topology = SO_TOPOLOGY_TRIANGLES;
+    command.geometry.vertexCount = 4;
+    command.geometry.indexCount = 6;
+    command.geometry.positions = positions;
+    command.geometry.indices = indices;
+    command.geometry.vertexStride = sizeof(float) * 3;
+    command.geometry.cacheKey = 0x494e5354414e4345ULL;
+    command.geometry.revision = 1;
+    const float shade = static_cast<float>((i * 17) % 101) / 100.0f;
+    command.material.diffuse = SbVec4f(0.25f + shade * 0.7f,
+                                       0.85f - shade * 0.5f,
+                                       0.35f + shade * 0.4f, 1.0f);
+    drawlist.addCommand(command);
+  }
+
+  SoRenderParams params;
+  params.viewport = SbViewportRegion(256, 256);
+  params.viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(256, 256));
+  params.viewMatrix.makeIdentity();
+  params.projMatrix.makeIdentity();
+  params.clearColor.setValue(0.0f, 0.0f, 0.0f, 1.0f);
+  params.clearDepth = 1.0f;
+  params.flags = SO_PARAM_CLEAR_WINDOW | SO_PARAM_CLEAR_DEPTH;
+  SoRenderPlanner planner;
+  SoRenderPlan plan;
+  planner.build(drawlist, params.viewMatrix, plan);
+  SoGLRenderBackend backend;
+  SoRenderBackendInitParams initParams;
+  if (!backend.initialize(initParams)) {
+    unavailable = "retained OpenGL backend initialization failed";
+    return false;
+  }
+  backend.setPhaseTimingEnabled(TRUE);
+
+  for (int warmup = 0; warmup < 5; ++warmup) {
+    context.bindFramebuffer();
+    if (!backend.render(drawlist, plan, params)) {
+      backend.shutdown();
+      unavailable = "indexed retained render failed";
+      return false;
+    }
+  }
+  glFinish();
+
+  std::vector<double> cpu;
+  std::vector<double> gpu;
+  std::vector<double> completion;
+  std::vector<double> commandPreparation;
+  std::vector<double> stateSetup;
+  std::vector<double> programBinding;
+  std::vector<double> drawSubmission;
+  GLuint query = 0;
+  glGenQueries(1, &query);
+  for (int sample = 0; sample < samples; ++sample) {
+    context.bindFramebuffer();
+    const Clock::time_point totalStart = Clock::now();
+    glBeginQuery(GL_TIME_ELAPSED, query);
+    const Clock::time_point cpuStart = Clock::now();
+    backend.render(drawlist, plan, params);
+    cpu.push_back(elapsedMs(cpuStart));
+    const SoRenderStatistics statistics = backend.getRenderStatistics();
+    commandPreparation.push_back(statistics.commandPreparationNanoseconds / 1000000.0);
+    stateSetup.push_back(statistics.stateSetupNanoseconds / 1000000.0);
+    programBinding.push_back(statistics.programBindingNanoseconds / 1000000.0);
+    drawSubmission.push_back(statistics.drawSubmissionNanoseconds / 1000000.0);
+    glEndQuery(GL_TIME_ELAPSED);
+    GLuint64 nanoseconds = 0;
+    glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
+    completion.push_back(elapsedMs(totalStart));
+    gpu.push_back(static_cast<double>(nanoseconds) / 1000000.0);
+  }
+  glDeleteQueries(1, &query);
+
+  const SoRenderStatistics statistics = backend.getRenderStatistics();
+  const uint64_t pixelChecksum = checksumPixels(context.readPixels());
+  const bool expectedBatch = instanceCount > 1;
+  if (statistics.drawCalls != 1 ||
+      (expectedBatch && (statistics.instancedCommands !=
+                           static_cast<uint64_t>(instanceCount) ||
+                         statistics.drawCallsAvoided !=
+                           static_cast<uint64_t>(instanceCount - 1))) ||
+      pixelChecksum == 0) {
+    std::cerr << "FAIL: indexed instance workload did not render as one "
+                 "correct batch\n";
+    backend.shutdown();
+    return false;
+  }
+  backend.shutdown();
+
+  result.workload = "indexed_instances_" + std::to_string(instanceCount);
+  result.renderer = "DrawList";
+  result.profile = profile == GLTestProfile::Core ? "core" : "compatibility";
+  result.semanticDraws = instanceCount;
+  result.samples = samples;
+  result.cpuMedianMs = percentile(cpu, 0.5);
+  result.cpuP95Ms = percentile(cpu, 0.95);
+  result.gpuMedianMs = percentile(gpu, 0.5);
+  result.gpuP95Ms = percentile(gpu, 0.95);
+  result.completionMedianMs = percentile(completion, 0.5);
+  result.completionP95Ms = percentile(completion, 0.95);
+  result.commandPreparationMs = percentile(commandPreparation, 0.5);
+  result.stateSetupMs = percentile(stateSetup, 0.5);
+  result.programBindingMs = percentile(programBinding, 0.5);
+  result.drawSubmissionMs = percentile(drawSubmission, 0.5);
+  result.renderStatistics = statistics;
+  result.pixelChecksum = pixelChecksum;
+  return true;
+}
+
 Options parseOptions(int argc, char ** argv)
 {
   Options options;
@@ -574,6 +720,28 @@ int main(int argc, char ** argv)
     }
     else unavailable.push_back(std::string(workloadName(workloads[i])) +
       ":DrawList core: " + coreReason);
+  }
+  const int indexedCounts[] = { 1, options.smoke ? 8 : 100,
+                                options.smoke ? 0 : 500 };
+  for (size_t i = 0; i < sizeof(indexedCounts) / sizeof(indexedCounts[0]); ++i) {
+    if (indexedCounts[i] == 0) continue;
+    const GLTestProfile profiles[] = {
+      GLTestProfile::Compatibility, GLTestProfile::Core
+    };
+    for (size_t p = 0; p < sizeof(profiles) / sizeof(profiles[0]); ++p) {
+      Measurement indexed;
+      std::string reason;
+      if (runIndexedInstances(profiles[p], indexedCounts[i], samples,
+                              indexed, reason)) {
+        results.push_back(indexed);
+      }
+      else {
+        unavailable.push_back("indexed_instances_" +
+          std::to_string(indexedCounts[i]) + ":DrawList " +
+          (profiles[p] == GLTestProfile::Core ? "core: " : "compatibility: ") +
+          reason);
+      }
+    }
   }
   const std::string document = toJson(results, unavailable, options);
   if (options.output.empty()) std::cout << document;

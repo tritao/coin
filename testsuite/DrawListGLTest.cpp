@@ -262,6 +262,52 @@ runTest()
     }
   }
 
+  // Identical indexed geometry with distinct transforms and unlit diffuse
+  // colors should retain command identity while sharing one instanced draw.
+  const float indexedInstanceQuad[] = {
+    -0.35f, -0.35f, 0.0f,
+     0.35f, -0.35f, 0.0f,
+     0.35f,  0.35f, 0.0f,
+    -0.35f,  0.35f, 0.0f
+  };
+  drawlist.clear();
+  SoRenderCommand indexedInstance;
+  indexedInstance.modelMatrix.setTranslate(SbVec3f(-0.5f, 0.0f, 0.0f));
+  indexedInstance.geometry.topology = SO_TOPOLOGY_TRIANGLES;
+  indexedInstance.geometry.vertexCount = 4;
+  indexedInstance.geometry.indexCount = 6;
+  indexedInstance.geometry.positions = indexedInstanceQuad;
+  indexedInstance.geometry.indices = indices;
+  indexedInstance.geometry.vertexStride = sizeof(float) * 3;
+  indexedInstance.geometry.cacheKey = 0x100u;
+  indexedInstance.geometry.revision = 1;
+  indexedInstance.material.diffuse = SbVec4f(1.0f, 0.0f, 0.0f, 1.0f);
+  drawlist.addCommand(indexedInstance);
+  indexedInstance.modelMatrix.setTranslate(SbVec3f(0.5f, 0.0f, 0.0f));
+  indexedInstance.material.diffuse = SbVec4f(0.0f, 0.0f, 1.0f, 1.0f);
+  drawlist.addCommand(indexedInstance);
+  if (!renderWithPlan(backend, drawlist, params)) {
+    std::cerr << "FAIL: indexed instanced execution failed" << std::endl;
+    result = 1;
+  }
+  else {
+    glFinish();
+    const SoRenderStatistics statistics = backend.getRenderStatistics();
+    const std::vector<uint8_t> pixels = readPixels(context);
+    if (statistics.drawCalls != 1 || statistics.instancedCommands != 2 ||
+        statistics.drawCallsAvoided != 1) {
+      std::cerr << "FAIL: indexed commands did not collapse into one draw"
+                << std::endl;
+      result = 1;
+    }
+    if (!nearColor(pixelAt(pixels, 8, 16), 255, 0, 0) ||
+        !nearColor(pixelAt(pixels, 24, 16), 0, 0, 255)) {
+      std::cerr << "FAIL: indexed instancing lost transform or color data"
+                << std::endl;
+      result = 1;
+    }
+  }
+
   // Exercise unindexed geometry and the basic vertex-color path.
   const float triangle[] = {
     -0.8f, -0.8f, 0.0f,

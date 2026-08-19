@@ -2027,7 +2027,10 @@ bool
 SoGLRenderBackend::canInstanceCommand(const SoRenderCommand & command) const
 {
   return command.geometry.topology == SO_TOPOLOGY_TRIANGLES &&
-    command.geometry.indices == nullptr && command.geometry.indexCount == 0 &&
+    ((command.geometry.indices == nullptr &&
+      command.geometry.indexCount == 0) ||
+     (command.geometry.indices != nullptr &&
+      command.geometry.indexCount != 0)) &&
     command.geometry.colors == nullptr &&
     command.opacityClass == SO_OPACITY_OPAQUE &&
     command.material.opacity == 1.0f &&
@@ -2129,9 +2132,17 @@ SoGLRenderBackend::drawInstancedCommands(
                          1.0f);
   finishPhase(statistics.programBindingNanoseconds);
   this->bindVertexArray(entry.vertexArray);
-  glDrawArraysInstanced(GL_TRIANGLES, 0,
-                        static_cast<GLsizei>(first.geometry.vertexCount),
-                        static_cast<GLsizei>(commandIndices.size()));
+  const GLsizei instanceCount = static_cast<GLsizei>(commandIndices.size());
+  if (first.geometry.indices && first.geometry.indexCount) {
+    glDrawElementsInstanced(
+      GL_TRIANGLES, static_cast<GLsizei>(first.geometry.indexCount),
+      GL_UNSIGNED_INT, nullptr, instanceCount);
+  }
+  else {
+    glDrawArraysInstanced(GL_TRIANGLES, 0,
+                          static_cast<GLsizei>(first.geometry.vertexCount),
+                          instanceCount);
+  }
   this->glue->glUniform1f(this->visualProgram.surface.transforms.instanced,
                          0.0f);
   finishPhase(statistics.drawSubmissionNanoseconds);
