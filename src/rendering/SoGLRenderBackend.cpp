@@ -3780,6 +3780,7 @@ SoGLRenderBackend::requestPickClosestAsync(const int x, const int y,
 
   AsyncPickSlot & slot =
     this->asyncPickSlots[this->nextAsyncPickSlot++ % 3];
+  const bool orphanStorage = slot.active;
   if (slot.fence) {
     glDeleteSync(slot.fence);
     slot.fence = nullptr;
@@ -3808,9 +3809,13 @@ SoGLRenderBackend::requestPickClosestAsync(const int x, const int y,
                               this->pickTarget.framebuffer);
   glReadBuffer(GL_COLOR_ATTACHMENT0);
   cc_glglue_glBindBuffer(this->glue, GL_PIXEL_PACK_BUFFER, slot.buffer);
-  cc_glglue_glBufferData(this->glue, GL_PIXEL_PACK_BUFFER,
-                         static_cast<intptr_t>(requiredBytes), nullptr,
-                         GL_STREAM_READ);
+  if (orphanStorage || slot.capacityBytes < requiredBytes) {
+    cc_glglue_glBufferData(this->glue, GL_PIXEL_PACK_BUFFER,
+                           static_cast<intptr_t>(requiredBytes), nullptr,
+                           GL_STREAM_READ);
+    slot.capacityBytes = requiredBytes;
+    ++this->submissionCache.statistics.asyncPickBufferAllocations;
+  }
   glReadPixels(left, bottom, slot.width, slot.height,
                GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
   if (slot.includeDepth) {

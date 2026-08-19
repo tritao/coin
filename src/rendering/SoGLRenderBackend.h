@@ -333,6 +333,7 @@ private:
     int centerY = 0;
     bool active = false;
     bool includeDepth = true;
+    size_t capacityBytes = 0;
   } asyncPickSlots[3];
   uint64_t nextAsyncPickRequestId = 1;
   size_t nextAsyncPickSlot = 0;

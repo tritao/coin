@@ -782,6 +782,8 @@ bool runMixedRetainedScene(GLTestProfile profile, int commandCount, int samples,
   statistics.pickDrawCalls = pickStatistics.pickDrawCalls;
   statistics.pickInstancedBatches = pickStatistics.pickInstancedBatches;
   statistics.pickInstancedEntries = pickStatistics.pickInstancedEntries;
+  statistics.asyncPickBufferAllocations =
+    pickStatistics.asyncPickBufferAllocations;
   for (int sample = 0; sample < samples; ++sample) {
     const uint64_t revision = static_cast<uint64_t>(sample + 2);
     for (int command = 0; command < drawlist.getNumCommands(); ++command) {
@@ -947,6 +949,8 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.pickInstancedBatches
         << ", \"pick_instanced_entries\": "
         << r.renderStatistics.pickInstancedEntries
+        << ", \"async_pick_buffer_allocations\": "
+        << r.renderStatistics.asyncPickBufferAllocations
         << ", \"command_preparation_ms\": "
         << r.commandPreparationMs
         << ", \"state_setup_ms\": "

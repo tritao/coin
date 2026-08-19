@@ -681,6 +681,7 @@ struct SoRenderStatistics {
   uint64_t pickDrawCalls = 0;
   uint64_t pickInstancedBatches = 0;
   uint64_t pickInstancedEntries = 0;
+  uint64_t asyncPickBufferAllocations = 0;
 };
 
 /*!
