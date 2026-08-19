@@ -311,10 +311,11 @@ runTest()
   // State or resource differences must terminate an instance batch. Keep
   // these cases together so additions to the eligibility rules remain easy
   // to audit against the state they are allowed to coalesce.
-  const auto expectBatchBreak = [&](const SoRenderCommand & second,
+  const auto expectBatchBreak = [&](const SoRenderCommand & first,
+                                    const SoRenderCommand & second,
                                     const char * boundary) {
     drawlist.clear();
-    drawlist.addCommand(indexedInstance);
+    drawlist.addCommand(first);
     drawlist.addCommand(second);
     if (!renderWithPlan(backend, drawlist, params)) {
       std::cerr << "FAIL: " << boundary << " batch-boundary render failed"
@@ -331,25 +332,133 @@ runTest()
   };
   SoRenderCommand differentGeometry = indexedInstance;
   differentGeometry.geometry.cacheKey = 0x101u;
-  expectBatchBreak(differentGeometry, "geometry-resource");
+  expectBatchBreak(indexedInstance, differentGeometry, "geometry-resource");
   SoRenderCommand differentMaterial = indexedInstance;
   differentMaterial.material.shadingModel = SO_SHADING_LEGACY_GOURAUD;
-  expectBatchBreak(differentMaterial, "shading-model");
+  expectBatchBreak(indexedInstance, differentMaterial, "shading-model");
   SoRenderCommand differentDepth = indexedInstance;
   differentDepth.state.depth.func = SO_DEPTH_LESS;
-  expectBatchBreak(differentDepth, "depth-state");
+  expectBatchBreak(indexedInstance, differentDepth, "depth-state");
   SoRenderCommand transparent = indexedInstance;
   transparent.opacityClass = SO_OPACITY_TRANSPARENT;
   transparent.material.opacity = 0.5f;
   transparent.material.diffuse[3] = 0.5f;
   transparent.state.blend.enabled = TRUE;
-  expectBatchBreak(transparent, "transparency");
+  expectBatchBreak(indexedInstance, transparent, "transparency");
   SoRenderCommand viewportOverride = indexedInstance;
   viewportOverride.state.raster.viewportOverride = TRUE;
   viewportOverride.state.raster.viewportEnabled = TRUE;
   viewportOverride.state.raster.viewportWidth = 32;
   viewportOverride.state.raster.viewportHeight = 32;
-  expectBatchBreak(viewportOverride, "viewport");
+  expectBatchBreak(indexedInstance, viewportOverride, "viewport");
+
+  // Transparent instances must follow the planner's back-to-front order.
+  // Compare the batch against the same draws forced through separate GPU
+  // resources so this test detects an order change, not just a plausible
+  // blended color.
+  SoRenderCommand farTransparent = indexedInstance;
+  farTransparent.modelMatrix.setTranslate(SbVec3f(0.0f, 0.0f, 0.5f));
+  farTransparent.geometry.cacheKey = 0x200u;
+  farTransparent.opacityClass = SO_OPACITY_TRANSPARENT;
+  farTransparent.material.opacity = 0.5f;
+  farTransparent.material.diffuse = SbVec4f(1.0f, 0.0f, 0.0f, 0.5f);
+  farTransparent.state.depth.writeEnabled = FALSE;
+  farTransparent.state.blend.enabled = TRUE;
+  farTransparent.state.blend.srcRGBFactor = SO_BLEND_FACTOR_SRC_ALPHA;
+  farTransparent.state.blend.dstRGBFactor =
+    SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+  farTransparent.state.blend.srcAlphaFactor = SO_BLEND_FACTOR_ONE;
+  farTransparent.state.blend.dstAlphaFactor =
+    SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+  SoRenderCommand nearTransparent = farTransparent;
+  nearTransparent.modelMatrix.setTranslate(SbVec3f(0.0f, 0.0f, -0.5f));
+  nearTransparent.geometry.cacheKey = 0x201u;
+  nearTransparent.material.diffuse = SbVec4f(0.0f, 0.0f, 1.0f, 0.5f);
+  drawlist.clear();
+  drawlist.addCommand(nearTransparent);
+  drawlist.addCommand(farTransparent);
+  std::vector<uint8_t> transparentReference;
+  if (!renderWithPlan(backend, drawlist, params)) {
+    std::cerr << "FAIL: transparent reference render failed" << std::endl;
+    result = 1;
+  }
+  else {
+    glFinish();
+    transparentReference = readPixels(context);
+    if (backend.getRenderStatistics().drawCalls != 2) {
+      std::cerr << "FAIL: transparent reference was not independent"
+                << std::endl;
+      result = 1;
+    }
+  }
+  nearTransparent.geometry.cacheKey = 0x202u;
+  farTransparent.geometry.cacheKey = 0x202u;
+  drawlist.clear();
+  drawlist.addCommand(nearTransparent);
+  drawlist.addCommand(farTransparent);
+  if (!renderWithPlan(backend, drawlist, params)) {
+    std::cerr << "FAIL: transparent instanced render failed" << std::endl;
+    result = 1;
+  }
+  else {
+    glFinish();
+    const SoRenderStatistics statistics = backend.getRenderStatistics();
+    const std::vector<uint8_t> pixels = readPixels(context);
+    if (transparentReference.empty()) {
+      std::cerr << "FAIL: transparent reference pixels are unavailable"
+                << std::endl;
+      result = 1;
+    }
+    else {
+      const uint8_t * reference = pixelAt(transparentReference, 16, 16);
+      const uint8_t * instanced = pixelAt(pixels, 16, 16);
+      if (statistics.drawCalls != 1 || statistics.instancedCommands != 2 ||
+          !nearColor(instanced, reference[0], reference[1], reference[2])) {
+        std::cerr << "FAIL: transparent batch changed sorted blending"
+                  << " (draws=" << statistics.drawCalls
+                  << ", instances=" << statistics.instancedCommands
+                  << ", reference=" << static_cast<int>(reference[0]) << ','
+                  << static_cast<int>(reference[1]) << ','
+                  << static_cast<int>(reference[2]) << ", instanced="
+                  << static_cast<int>(instanced[0]) << ','
+                  << static_cast<int>(instanced[1]) << ','
+                  << static_cast<int>(instanced[2]) << ')' << std::endl;
+        result = 1;
+      }
+    }
+  }
+
+  SoRenderCommand differentBlend = farTransparent;
+  differentBlend.state.blend.dstRGBFactor = SO_BLEND_FACTOR_ONE;
+  expectBatchBreak(farTransparent, differentBlend, "blend-state");
+  SoRenderCommand differentOpacity = farTransparent;
+  differentOpacity.material.opacity = 0.25f;
+  expectBatchBreak(farTransparent, differentOpacity, "material-opacity");
+  SoRenderCommand alphaTested = farTransparent;
+  alphaTested.state.alphaTest.policy = SO_ALPHA_TEST_POLICY_EXPLICIT;
+  alphaTested.state.alphaTest.function = SO_ALPHA_TEST_GREATER;
+  alphaTested.state.alphaTest.reference = 0.25f;
+  expectBatchBreak(farTransparent, alphaTested, "alpha-test");
+  const unsigned char transparentTexel[] = { 255, 255, 255, 128 };
+  SoRenderCommand texturedTransparent = farTransparent;
+  texturedTransparent.material.texture.pixels = transparentTexel;
+  texturedTransparent.material.texture.width = 1;
+  texturedTransparent.material.texture.height = 1;
+  texturedTransparent.material.texture.numComponents = 4;
+  expectBatchBreak(farTransparent, texturedTransparent, "texture");
+
+  drawlist.clear();
+  drawlist.addCommand(farTransparent);
+  SoDepthClearEvent transparentBarrier;
+  transparentBarrier.sequence = 1;
+  drawlist.addDepthClearEvent(transparentBarrier);
+  drawlist.addCommand(nearTransparent);
+  if (!renderWithPlan(backend, drawlist, params) ||
+      backend.getRenderStatistics().drawCalls != 2) {
+    std::cerr << "FAIL: instancing crossed a transparent depth segment"
+              << std::endl;
+    result = 1;
+  }
 
   // A revision change replaces the shared indexed resource while preserving
   // batching. This catches stale EBO/VBO reuse after producer mutation.

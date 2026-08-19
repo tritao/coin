@@ -93,6 +93,18 @@ sameAlphaTest(const SoAlphaTestState & lhs, const SoAlphaTestState & rhs)
     lhs.reference == rhs.reference;
 }
 
+bool
+sameBlendState(const SoBlendState & lhs, const SoBlendState & rhs)
+{
+  return lhs.enabled == rhs.enabled &&
+    lhs.srcRGBFactor == rhs.srcRGBFactor &&
+    lhs.dstRGBFactor == rhs.dstRGBFactor &&
+    lhs.srcAlphaFactor == rhs.srcAlphaFactor &&
+    lhs.dstAlphaFactor == rhs.dstAlphaFactor &&
+    lhs.rgbEquation == rhs.rgbEquation &&
+    lhs.alphaEquation == rhs.alphaEquation;
+}
+
 GLenum
 textureWrapToGL(const SoTextureWrap wrap)
 {
@@ -2026,16 +2038,20 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
 bool
 SoGLRenderBackend::canInstanceCommand(const SoRenderCommand & command) const
 {
+  const bool opaque = command.opacityClass == SO_OPACITY_OPAQUE &&
+    command.material.opacity == 1.0f &&
+    command.material.diffuse[3] == 1.0f &&
+    !command.state.blend.enabled;
+  const bool transparent =
+    command.opacityClass == SO_OPACITY_TRANSPARENT &&
+    command.material.shadingModel == SO_SHADING_UNLIT &&
+    command.state.blend.enabled;
   return command.geometry.topology == SO_TOPOLOGY_TRIANGLES &&
     ((command.geometry.indices == nullptr &&
       command.geometry.indexCount == 0) ||
      (command.geometry.indices != nullptr &&
       command.geometry.indexCount != 0)) &&
-    command.geometry.colors == nullptr &&
-    command.opacityClass == SO_OPACITY_OPAQUE &&
-    command.material.opacity == 1.0f &&
-    command.material.diffuse[3] == 1.0f &&
-    !command.state.blend.enabled &&
+    command.geometry.colors == nullptr && (opaque || transparent) &&
     command.state.alphaTest.policy == SO_ALPHA_TEST_POLICY_NONE &&
     command.state.raster.visible &&
     command.state.raster.fillMode == SO_RASTER_FILL &&
@@ -2064,8 +2080,12 @@ SoGLRenderBackend::canInstanceTogether(const SoRenderCommand & first,
                                                      next.material) ||
     sameInstancedUnlitMaterial(first.material, next.material);
   return materialMatches &&
+    first.opacityClass == next.opacityClass &&
+    first.material.opacity == next.material.opacity &&
+    first.stage == next.stage &&
     first.lightingHandle == next.lightingHandle &&
     sameAlphaTest(first.state.alphaTest, next.state.alphaTest) &&
+    sameBlendState(first.state.blend, next.state.blend) &&
     first.state.depth.enabled == next.state.depth.enabled &&
     first.state.depth.writeEnabled == next.state.depth.writeEnabled &&
     first.state.depth.func == next.state.depth.func &&
