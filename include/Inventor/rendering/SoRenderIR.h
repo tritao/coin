@@ -103,9 +103,12 @@ struct SoGeometryDesc {
   \enum SoShadingModel
   \brief Effective shading contract carried by a render command.
 
-  The legacy-compatible model is the current default. It preserves the
-  fixed-function Coin/GL behavior while the DrawList backend is migrated to
-  an explicit shading model.
+  The shading model defines how a backend interprets SoMaterialData. Material
+  fields are semantic inputs to that model; backends must not assume one
+  universal interpretation for every shading model.
+
+  The legacy-compatible model is the current default and preserves existing
+  Inventor material and lighting semantics.
 */
 enum SoShadingModel : uint8_t {
   SO_SHADING_UNLIT = 0,
@@ -128,6 +131,19 @@ enum SoTextureWrap : uint8_t {
   SO_TEXTURE_WRAP_CLAMP_TO_EDGE = 0,
   SO_TEXTURE_WRAP_REPEAT,
   SO_TEXTURE_WRAP_CLAMP_TO_BORDER
+};
+
+/*!
+  \enum SoTextureColorSpace
+  \brief Semantic color-space interpretation of an embedded texture.
+
+  LEGACY preserves the backend behavior used before this field existed.
+  Producers must opt in explicitly to LINEAR or SRGB interpretation.
+*/
+enum SoTextureColorSpace : uint8_t {
+  SO_TEXTURE_COLORSPACE_LEGACY = 0,
+  SO_TEXTURE_COLORSPACE_LINEAR,
+  SO_TEXTURE_COLORSPACE_SRGB
 };
 
 // --- Depth state ---------------------------------------------------------
@@ -217,6 +233,7 @@ struct SoTextureData {
   SoTextureFilter magFilter = SO_TEXTURE_FILTER_NEAREST;
   SoTextureWrap wrapS = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
   SoTextureWrap wrapT = SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
+  SoTextureColorSpace colorSpace = SO_TEXTURE_COLORSPACE_LEGACY;
 
   // A nonzero key permits a backend to retain the texture resource across
   // frame lifetimes. revision changes require the resource contents to be
@@ -228,6 +245,11 @@ struct SoTextureData {
 /*!
   \struct SoMaterialData
   \brief Snapshot of the logical Inventor material state for one draw call.
+
+  shadingModel defines how the payload is interpreted. The ambient, diffuse,
+  specular, emissive, and shininess fields represent the current Inventor
+  material semantics; they are not a universal contract for every possible
+  shading model.
 
   Texture pixels are embedded in the IR as borrowed data; the producer owns the
   storage and keeps it alive until the backend finishes consuming the frame.
