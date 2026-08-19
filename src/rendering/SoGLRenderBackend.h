@@ -72,6 +72,22 @@ public:
                          const SoRenderParams & params) override;
 
 private:
+  enum class InstanceCommandClass {
+    ELIGIBLE,
+    GEOMETRY,
+    VERTEX_ATTRIBUTES,
+    MATERIAL,
+    TEXTURE,
+    RENDER_STATE
+  };
+  enum class InstanceCompatibility {
+    COMPATIBLE,
+    COMMAND_INELIGIBLE,
+    GEOMETRY_RESOURCE,
+    MATERIAL,
+    RENDER_STATE
+  };
+
   struct ResourceCacheKey {
     uint64_t geometry = 0;
     uint64_t texture = 0;
@@ -469,6 +485,10 @@ private:
   bool canInstanceCommand(const SoRenderCommand & command) const;
   bool canInstanceTogether(const SoRenderCommand & first,
                            const SoRenderCommand & next) const;
+  InstanceCommandClass classifyInstanceCommand(
+    const SoRenderCommand & command) const;
+  InstanceCompatibility classifyInstanceCompatibility(
+    const SoRenderCommand & first, const SoRenderCommand & next) const;
   void drawInstancedCommands(const SoDrawList & drawlist,
                              const std::vector<uint32_t> & commandIndices,
                              const SoRenderParams & params);

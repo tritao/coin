@@ -698,6 +698,15 @@ struct SoRenderStatistics {
   uint64_t instanceBatches17To64 = 0;
   uint64_t instanceBatches65Plus = 0;
   uint64_t maxInstanceBatchSize = 0;
+  uint64_t instanceRejectedGeometry = 0;
+  uint64_t instanceRejectedVertexAttributes = 0;
+  uint64_t instanceRejectedMaterial = 0;
+  uint64_t instanceRejectedTexture = 0;
+  uint64_t instanceRejectedRenderState = 0;
+  uint64_t instanceBreakGeometryResource = 0;
+  uint64_t instanceBreakMaterial = 0;
+  uint64_t instanceBreakRenderState = 0;
+  uint64_t instanceBreakPlanBoundary = 0;
   uint64_t pickDrawCalls = 0;
   uint64_t pickInstancedBatches = 0;
   uint64_t pickInstancedEntries = 0;

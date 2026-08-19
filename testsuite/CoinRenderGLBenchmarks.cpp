@@ -802,6 +802,8 @@ bool runMixedRetainedScene(GLTestProfile profile, int commandCount, int samples,
   if (statistics.drawCalls <= 1 ||
       statistics.drawCalls >= static_cast<uint64_t>(commandCount) ||
       statistics.instancedBatches <= 1 || statistics.maxInstanceBatchSize < 5 ||
+      statistics.instanceBreakGeometryResource == 0 ||
+      statistics.instanceBreakPlanBoundary == 0 ||
       statistics.pickDrawCalls >= static_cast<uint64_t>(commandCount) ||
       statistics.pickInstancedBatches <= 1 ||
       statistics.pickInstancedEntries == 0 ||
@@ -943,6 +945,24 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.instanceBatches65Plus
         << ", \"max_instance_batch_size\": "
         << r.renderStatistics.maxInstanceBatchSize
+        << ", \"instance_rejected_geometry\": "
+        << r.renderStatistics.instanceRejectedGeometry
+        << ", \"instance_rejected_vertex_attributes\": "
+        << r.renderStatistics.instanceRejectedVertexAttributes
+        << ", \"instance_rejected_material\": "
+        << r.renderStatistics.instanceRejectedMaterial
+        << ", \"instance_rejected_texture\": "
+        << r.renderStatistics.instanceRejectedTexture
+        << ", \"instance_rejected_render_state\": "
+        << r.renderStatistics.instanceRejectedRenderState
+        << ", \"instance_break_geometry_resource\": "
+        << r.renderStatistics.instanceBreakGeometryResource
+        << ", \"instance_break_material\": "
+        << r.renderStatistics.instanceBreakMaterial
+        << ", \"instance_break_render_state\": "
+        << r.renderStatistics.instanceBreakRenderState
+        << ", \"instance_break_plan_boundary\": "
+        << r.renderStatistics.instanceBreakPlanBoundary
         << ", \"pick_draw_calls\": "
         << r.renderStatistics.pickDrawCalls
         << ", \"pick_instanced_batches\": "

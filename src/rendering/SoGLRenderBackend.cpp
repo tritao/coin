@@ -2051,6 +2051,28 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
 bool
 SoGLRenderBackend::canInstanceCommand(const SoRenderCommand & command) const
 {
+  return this->classifyInstanceCommand(command) ==
+    InstanceCommandClass::ELIGIBLE;
+}
+
+SoGLRenderBackend::InstanceCommandClass
+SoGLRenderBackend::classifyInstanceCommand(
+  const SoRenderCommand & command) const
+{
+  if (command.geometry.topology != SO_TOPOLOGY_TRIANGLES ||
+      !((command.geometry.indices == nullptr &&
+         command.geometry.indexCount == 0) ||
+        (command.geometry.indices != nullptr &&
+         command.geometry.indexCount != 0))) {
+    return InstanceCommandClass::GEOMETRY;
+  }
+  if (command.geometry.colors != nullptr) {
+    return InstanceCommandClass::VERTEX_ATTRIBUTES;
+  }
+  if (command.material.texture.cacheKey != 0 ||
+      command.material.texture.pixels != nullptr) {
+    return InstanceCommandClass::TEXTURE;
+  }
   const bool opaque = command.opacityClass == SO_OPACITY_OPAQUE &&
     command.material.opacity == 1.0f &&
     command.material.diffuse[3] == 1.0f &&
@@ -2059,42 +2081,41 @@ SoGLRenderBackend::canInstanceCommand(const SoRenderCommand & command) const
     command.opacityClass == SO_OPACITY_TRANSPARENT &&
     command.material.shadingModel == SO_SHADING_UNLIT &&
     command.state.blend.enabled;
-  return command.geometry.topology == SO_TOPOLOGY_TRIANGLES &&
-    ((command.geometry.indices == nullptr &&
-      command.geometry.indexCount == 0) ||
-     (command.geometry.indices != nullptr &&
-      command.geometry.indexCount != 0)) &&
-    command.geometry.colors == nullptr && (opaque || transparent) &&
-    command.state.alphaTest.policy == SO_ALPHA_TEST_POLICY_NONE &&
-    command.state.raster.visible &&
-    command.state.raster.fillMode == SO_RASTER_FILL &&
-    !command.state.raster.viewportOverride &&
-    !command.state.raster.polygonOffsetFilled &&
-    !command.state.raster.polygonOffsetLines &&
-    !command.state.raster.polygonOffsetPoints &&
-    !command.state.useCommandMatrices && !command.pixelRaster.enabled &&
-    command.material.texture.cacheKey == 0 &&
-    command.material.texture.pixels == nullptr;
+  if (!opaque && !transparent) return InstanceCommandClass::MATERIAL;
+  if (command.state.alphaTest.policy != SO_ALPHA_TEST_POLICY_NONE ||
+      !command.state.raster.visible ||
+      command.state.raster.fillMode != SO_RASTER_FILL ||
+      command.state.raster.viewportOverride ||
+      command.state.raster.polygonOffsetFilled ||
+      command.state.raster.polygonOffsetLines ||
+      command.state.raster.polygonOffsetPoints ||
+      command.state.useCommandMatrices || command.pixelRaster.enabled) {
+    return InstanceCommandClass::RENDER_STATE;
+  }
+  return InstanceCommandClass::ELIGIBLE;
 }
 
-bool
-SoGLRenderBackend::canInstanceTogether(const SoRenderCommand & first,
-                                       const SoRenderCommand & next) const
+SoGLRenderBackend::InstanceCompatibility
+SoGLRenderBackend::classifyInstanceCompatibility(
+  const SoRenderCommand & first, const SoRenderCommand & next) const
 {
   if (!this->canInstanceCommand(first) || !this->canInstanceCommand(next)) {
-    return false;
+    return InstanceCompatibility::COMMAND_INELIGIBLE;
   }
   const auto firstCache = this->commandToCache.find(&first);
   const auto nextCache = this->commandToCache.find(&next);
   if (firstCache == this->commandToCache.end() ||
       nextCache == this->commandToCache.end() ||
-      firstCache->second != nextCache->second) return false;
-  const bool materialMatches = sameMaterialUniforms(first.material,
-                                                     next.material) ||
-    sameInstancedUnlitMaterial(first.material, next.material);
-  return materialMatches &&
-    first.opacityClass == next.opacityClass &&
-    first.material.opacity == next.material.opacity &&
+      firstCache->second != nextCache->second) {
+    return InstanceCompatibility::GEOMETRY_RESOURCE;
+  }
+  if (!(sameMaterialUniforms(first.material, next.material) ||
+        sameInstancedUnlitMaterial(first.material, next.material)) ||
+      first.opacityClass != next.opacityClass ||
+      first.material.opacity != next.material.opacity) {
+    return InstanceCompatibility::MATERIAL;
+  }
+  const bool stateMatches =
     first.stage == next.stage &&
     first.lightingHandle == next.lightingHandle &&
     sameAlphaTest(first.state.alphaTest, next.state.alphaTest) &&
@@ -2105,6 +2126,16 @@ SoGLRenderBackend::canInstanceTogether(const SoRenderCommand & first,
     first.state.depth.range == next.state.depth.range &&
     first.state.raster.cullBackFaces == next.state.raster.cullBackFaces &&
     first.state.raster.frontFaceCCW == next.state.raster.frontFaceCCW;
+  return stateMatches ? InstanceCompatibility::COMPATIBLE
+                      : InstanceCompatibility::RENDER_STATE;
+}
+
+bool
+SoGLRenderBackend::canInstanceTogether(const SoRenderCommand & first,
+                                       const SoRenderCommand & next) const
+{
+  return this->classifyInstanceCompatibility(first, next) ==
+    InstanceCompatibility::COMPATIBLE;
 }
 
 void
@@ -4358,18 +4389,48 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
       const SoRenderCommand & first = drawlist.getCommand(
         static_cast<int>(operation.commandIndex));
       std::vector<uint32_t> instanceCommands;
-      if (this->canInstanceCommand(first)) {
+      const InstanceCommandClass commandClass =
+        this->classifyInstanceCommand(first);
+      if (commandClass == InstanceCommandClass::ELIGIBLE) {
         instanceCommands.push_back(operation.commandIndex);
         for (int nextOperation = i + 1;
              nextOperation < plan.getNumOperations(); ++nextOperation) {
           const SoRenderOperation & next = plan.getOperation(nextOperation);
-          if (next.type != SoRenderOperationType::DRAW ||
-              next.commandIndex >= commandCount) break;
+          if (next.type != SoRenderOperationType::DRAW) {
+            ++this->submissionCache.statistics.instanceBreakPlanBoundary;
+            break;
+          }
+          if (next.commandIndex >= commandCount) break;
           const SoRenderCommand & nextCommand = drawlist.getCommand(
             static_cast<int>(next.commandIndex));
-          if (!this->canInstanceTogether(first, nextCommand)) break;
+          const InstanceCompatibility compatibility =
+            this->classifyInstanceCompatibility(first, nextCommand);
+          if (compatibility != InstanceCompatibility::COMPATIBLE) {
+            SoRenderStatistics & statistics =
+              this->submissionCache.statistics;
+            if (compatibility == InstanceCompatibility::GEOMETRY_RESOURCE)
+              ++statistics.instanceBreakGeometryResource;
+            else if (compatibility == InstanceCompatibility::MATERIAL)
+              ++statistics.instanceBreakMaterial;
+            else if (compatibility == InstanceCompatibility::RENDER_STATE)
+              ++statistics.instanceBreakRenderState;
+            break;
+          }
           instanceCommands.push_back(next.commandIndex);
         }
+      }
+      else {
+        SoRenderStatistics & statistics = this->submissionCache.statistics;
+        if (commandClass == InstanceCommandClass::GEOMETRY)
+          ++statistics.instanceRejectedGeometry;
+        else if (commandClass == InstanceCommandClass::VERTEX_ATTRIBUTES)
+          ++statistics.instanceRejectedVertexAttributes;
+        else if (commandClass == InstanceCommandClass::MATERIAL)
+          ++statistics.instanceRejectedMaterial;
+        else if (commandClass == InstanceCommandClass::TEXTURE)
+          ++statistics.instanceRejectedTexture;
+        else
+          ++statistics.instanceRejectedRenderState;
       }
       if (instanceCommands.size() > 1) {
         this->drawInstancedCommands(drawlist, instanceCommands, params);
