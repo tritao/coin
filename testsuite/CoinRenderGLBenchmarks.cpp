@@ -55,6 +55,7 @@ enum class WorkloadKind {
 struct Options {
   bool smoke = false;
   int samples = 0;
+  int rebuildOnly = 0;
   std::string output;
 };
 
@@ -1160,10 +1161,12 @@ Options parseOptions(int argc, char ** argv)
     const std::string arg(argv[i]);
     if (arg == "--smoke") options.smoke = true;
     else if (arg == "--samples" && i + 1 < argc) options.samples = std::atoi(argv[++i]);
+    else if (arg == "--rebuild-only" && i + 1 < argc)
+      options.rebuildOnly = std::atoi(argv[++i]);
     else if (arg == "--output" && i + 1 < argc) options.output = argv[++i];
     else {
       std::cerr << "Usage: CoinRenderGLBenchmarks [--smoke] [--samples N] "
-                   "[--output FILE]\n";
+                   "[--rebuild-only N] [--output FILE]\n";
       std::exit(2);
     }
   }
@@ -1323,6 +1326,29 @@ int main(int argc, char ** argv)
   };
   std::vector<Measurement> results;
   std::vector<std::string> unavailable;
+  if (options.rebuildOnly > 0) {
+    Measurement rebuild;
+    std::string reason;
+    if (runVariant(GLTestProfile::Core,
+                   SoRenderManager::RenderPipeline::DRAW_LIST,
+                   "DrawList", WorkloadKind::FeatureRich,
+                   options.rebuildOnly, samples, rebuild, reason, true)) {
+      rebuild.workload = "feature_rich_rebuild_" +
+        std::to_string(options.rebuildOnly);
+      results.push_back(rebuild);
+    }
+    else unavailable.push_back("feature_rich_rebuild_" +
+      std::to_string(options.rebuildOnly) + ":DrawList core: " + reason);
+    const std::string document = toJson(results, unavailable, options);
+    if (options.output.empty()) std::cout << document;
+    else {
+      std::ofstream output(options.output.c_str());
+      if (!output) return 1;
+      output << document;
+    }
+    SoDB::finish();
+    return results.empty() ? 77 : 0;
+  }
   for (size_t i = 0; i < sizeof(workloads) / sizeof(workloads[0]); ++i) {
 #if COIN_HAVE_LEGACY_GL_RENDERER
     Measurement legacy;

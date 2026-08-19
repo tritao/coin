@@ -44,6 +44,8 @@ invalidate the retained frame before every sample. These scaling points expose
 the cost of scene traversal and IR construction separately from transparent
 sorting, GL submission, and GPU completion. Full runs cap these larger curves
 at ten samples; smoke runs execute only a small rebuild case.
+For profiler runs, `--rebuild-only N` skips unrelated workloads and executes
+only the core-profile forced-rebuild scene at the requested object count.
 
 Picking is split into one-time cold target creation, target refresh after a
 changed frame, and warm repeated-hover latency. Retained runs also report
