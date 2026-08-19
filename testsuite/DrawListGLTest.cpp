@@ -517,6 +517,27 @@ runTest()
     }
   }
 
+  // Lit transparent commands with identical material state use the same
+  // already-sorted consecutive batching rule as unlit transparency.
+  nearTransparent.material.diffuse = farTransparent.material.diffuse;
+  nearTransparent.material.shadingModel = SO_SHADING_LEGACY_GOURAUD;
+  farTransparent.material.shadingModel = SO_SHADING_LEGACY_GOURAUD;
+  drawlist.clear();
+  drawlist.addCommand(nearTransparent);
+  drawlist.addCommand(farTransparent);
+  if (!renderWithPlan(backend, drawlist, params)) {
+    std::cerr << "FAIL: lit transparent instanced render failed" << std::endl;
+    result = 1;
+  }
+  else {
+    const SoRenderStatistics statistics = backend.getRenderStatistics();
+    if (statistics.drawCalls != 1 || statistics.instancedCommands != 2) {
+      std::cerr << "FAIL: identical lit transparency did not batch"
+                << std::endl;
+      result = 1;
+    }
+  }
+
   SoRenderCommand differentBlend = farTransparent;
   differentBlend.state.blend.dstRGBFactor = SO_BLEND_FACTOR_ONE;
   expectBatchBreak(farTransparent, differentBlend, "blend-state");

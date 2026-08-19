@@ -47,11 +47,12 @@ not semantic pipeline state.
 Instanced runs report batches, absorbed commands, avoided draw calls, and
 transient instance bytes. Batch-size buckets and the largest batch expose
 fragmentation that a single average would hide. Batching is deliberately
-limited to adjacent untextured triangle commands with identical geometry,
+limited to adjacent triangle commands with identical geometry, texture,
 lighting, depth, blend, and raster state. It supports indexed and non-indexed
-opaque geometry plus already-sorted unlit transparent geometry. Unlit batches
-may vary diffuse RGBA through per-instance data; incompatible state retains the
-ordinary command path.
+opaque geometry plus already-sorted transparent geometry. Lit transparent
+batches require identical material state; unlit batches may vary diffuse RGBA
+through per-instance data. Incompatible state retains the ordinary command
+path.
 
 The `mixed_retained_scene` workload combines repeated and unique indexed
 geometry, opaque and transparent groups, depth segments, a 10% selected subset,

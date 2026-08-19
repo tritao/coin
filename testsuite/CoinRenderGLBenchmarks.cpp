@@ -379,18 +379,30 @@ bool runVariant(GLTestProfile profile,
   glDeleteQueries(1, &query);
   const SoRenderStatistics renderStatistics = manager.getRenderStatistics();
   if (pipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
+    const bool expectedInstanceCoverage = drawCount >= 20
+      ? renderStatistics.instancedCommands == static_cast<uint64_t>(drawCount)
+      : renderStatistics.instancedCommands != 0;
     const bool expectedBatching = workload == WorkloadKind::FeatureRich
-      ? renderStatistics.instancedCommands != 0 &&
+      ? expectedInstanceCoverage &&
         renderStatistics.drawCalls < static_cast<uint64_t>(drawCount) &&
         renderStatistics.instanceBreakGeometryResource != 0 &&
-        renderStatistics.instanceRejectedMaterial ==
-          static_cast<uint64_t>(drawCount - drawCount * 4 / 5)
+        renderStatistics.instanceRejectedMaterial == 0
       : renderStatistics.instancedCommands ==
           static_cast<uint64_t>(drawCount) &&
         renderStatistics.drawCalls == 1;
     if (!expectedBatching) {
       std::cerr << "FAIL: " << renderer << ' ' << workloadName(workload)
-                << " did not retain expected batching\n";
+                << " did not retain expected batching"
+                << " (draws=" << renderStatistics.drawCalls
+                << ", instances=" << renderStatistics.instancedCommands
+                << ", material-rejected="
+                << renderStatistics.instanceRejectedMaterial
+                << ", geometry-breaks="
+                << renderStatistics.instanceBreakGeometryResource
+                << ", material-breaks="
+                << renderStatistics.instanceBreakMaterial
+                << ", plan-breaks="
+                << renderStatistics.instanceBreakPlanBoundary << ")\n";
       camera->unref();
       scene->unref();
       return false;
@@ -712,8 +724,6 @@ bool runFeatureRichScene(GLTestProfile profile, int commandCount, int samples,
   const int litCount = commandCount * 2 / 5;
   const int texturedCount = commandCount / 5;
   const int coloredCount = commandCount / 5;
-  const int transparentLitCount =
-    commandCount - litCount - texturedCount - coloredCount;
   const int columns = static_cast<int>(std::ceil(std::sqrt(
     static_cast<double>(commandCount))));
   const int rows = (commandCount + columns - 1) / columns;
@@ -826,15 +836,12 @@ bool runFeatureRichScene(GLTestProfile profile, int commandCount, int samples,
   glDeleteQueries(1, &query);
   const SoRenderStatistics statistics = backend.getRenderStatistics();
   const uint64_t checksum = checksumPixels(context.readPixels());
-  const uint64_t expectedDrawCalls = static_cast<uint64_t>(
-    3 + transparentLitCount);
+  const uint64_t expectedDrawCalls = 4;
   if (statistics.drawCalls != expectedDrawCalls ||
-      statistics.instancedCommands !=
-        static_cast<uint64_t>(litCount + texturedCount + coloredCount) ||
+      statistics.instancedCommands != static_cast<uint64_t>(commandCount) ||
       statistics.instanceRejectedTexture != 0 ||
       statistics.instanceRejectedVertexAttributes != 0 ||
-      statistics.instanceRejectedMaterial !=
-        static_cast<uint64_t>(transparentLitCount) || checksum == 0) {
+      statistics.instanceRejectedMaterial != 0 || checksum == 0) {
     unavailable = "feature-rich workload classification was incorrect";
     backend.shutdown();
     return false;

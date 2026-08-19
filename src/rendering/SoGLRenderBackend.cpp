@@ -2093,7 +2093,6 @@ SoGLRenderBackend::classifyInstanceCommand(
     !command.state.blend.enabled;
   const bool transparent =
     command.opacityClass == SO_OPACITY_TRANSPARENT &&
-    command.material.shadingModel == SO_SHADING_UNLIT &&
     command.state.blend.enabled;
   if (!opaque && !transparent) return InstanceCommandClass::MATERIAL;
   if (command.geometry.colors != nullptr && !opaque) {
