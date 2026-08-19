@@ -61,6 +61,7 @@
 #include <Inventor/elements/SoLazyElement.h>
 
 #include <algorithm>
+#include <chrono>
 //FIXME:Need this include early, since including it via SoRenderManagerP.h will cause problems for cygwin. Don't understand the root cause BFG 20090629
 #include <vector>
 
@@ -403,6 +404,9 @@ SoRenderManager::SoRenderManager(void)
   PRIVATE(this)->irAction = NULL;
   PRIVATE(this)->renderBackend = NULL;
   PRIVATE(this)->renderPhaseTimingEnabled = FALSE;
+  PRIVATE(this)->drawListConstructionNanoseconds = 0;
+  PRIVATE(this)->planConstructionNanoseconds = 0;
+  PRIVATE(this)->drawListRebuilds = 0;
   PRIVATE(this)->renderBackendContextId = 0;
   PRIVATE(this)->drawListCallbackScope = FALSE;
   PRIVATE(this)->drawListValid = FALSE;
@@ -1173,6 +1177,14 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
     PRIVATE(this)->drawListBackgroundRevision != backgroundRevision ||
     PRIVATE(this)->drawListForegroundRevision != foregroundRevision;
 
+  using RenderPhaseClock = std::chrono::steady_clock;
+  PRIVATE(this)->drawListConstructionNanoseconds = 0;
+  PRIVATE(this)->planConstructionNanoseconds = 0;
+  PRIVATE(this)->drawListRebuilds = rebuildDrawList ? 1 : 0;
+  const RenderPhaseClock::time_point drawListStart =
+    PRIVATE(this)->renderPhaseTimingEnabled && rebuildDrawList
+      ? RenderPhaseClock::now() : RenderPhaseClock::time_point();
+
   if (rebuildDrawList) action->beginFrame();
 
   const auto applyTraversalState = [this, renderMode](SoState * traversalState) {
@@ -1301,6 +1313,11 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
     PRIVATE(this)->drawListCameraRevision = cameraRevision;
     PRIVATE(this)->drawListBackgroundRevision = backgroundRevision;
     PRIVATE(this)->drawListForegroundRevision = foregroundRevision;
+    if (PRIVATE(this)->renderPhaseTimingEnabled) {
+      PRIVATE(this)->drawListConstructionNanoseconds =
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+          RenderPhaseClock::now() - drawListStart).count());
+    }
   }
 
   SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
@@ -1330,7 +1347,15 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
                  (clearzbuffer ? SO_PARAM_CLEAR_DEPTH : 0u);
   SoRenderPlanner planner;
   SoRenderPlan plan;
+  const RenderPhaseClock::time_point planStart =
+    PRIVATE(this)->renderPhaseTimingEnabled
+      ? RenderPhaseClock::now() : RenderPhaseClock::time_point();
   planner.build(drawlist, params.viewMatrix, plan);
+  if (PRIVATE(this)->renderPhaseTimingEnabled) {
+    PRIVATE(this)->planConstructionNanoseconds =
+      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        RenderPhaseClock::now() - planStart).count());
+  }
 
   PRIVATE(this)->renderBackend->render(
     drawlist, plan, params, &drawlist.getSelectionState());
@@ -2509,9 +2534,15 @@ SoRenderManager::pollPickIdentityAsync(const SoAsyncPickRequest & request,
 SoRenderStatistics
 SoRenderManager::getRenderStatistics() const
 {
-  return PRIVATE(this)->renderBackend
+  SoRenderStatistics statistics = PRIVATE(this)->renderBackend
     ? PRIVATE(this)->renderBackend->getRenderStatistics()
     : SoRenderStatistics();
+  statistics.drawListConstructionNanoseconds =
+    PRIVATE(this)->drawListConstructionNanoseconds;
+  statistics.planConstructionNanoseconds =
+    PRIVATE(this)->planConstructionNanoseconds;
+  statistics.drawListRebuilds = PRIVATE(this)->drawListRebuilds;
+  return statistics;
 }
 
 void

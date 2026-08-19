@@ -128,6 +128,9 @@ public:
   SoIRRenderAction * irAction;
   SoRenderBackend * renderBackend;
   SbBool renderPhaseTimingEnabled;
+  uint64_t drawListConstructionNanoseconds;
+  uint64_t planConstructionNanoseconds;
+  uint64_t drawListRebuilds;
   uint32_t renderBackendContextId;
   SbBool drawListCallbackScope;
   SbBool drawListValid;

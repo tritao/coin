@@ -711,6 +711,11 @@ struct SoRenderStatistics {
   uint64_t pickInstancedBatches = 0;
   uint64_t pickInstancedEntries = 0;
   uint64_t asyncPickBufferAllocations = 0;
+  // Manager-owned CPU phases. Draw-list construction is zero when a retained
+  // frame is reused; plan construction is measured for every submitted frame.
+  uint64_t drawListConstructionNanoseconds = 0;
+  uint64_t planConstructionNanoseconds = 0;
+  uint64_t drawListRebuilds = 0;
 };
 
 /*!

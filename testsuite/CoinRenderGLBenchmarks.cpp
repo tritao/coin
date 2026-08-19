@@ -70,6 +70,8 @@ struct Measurement {
   double gpuP95Ms = 0.0;
   double completionMedianMs = 0.0;
   double completionP95Ms = 0.0;
+  double drawListConstructionMs = 0.0;
+  double planConstructionMs = 0.0;
   double commandPreparationMs = 0.0;
   double stateSetupMs = 0.0;
   double programBindingMs = 0.0;
@@ -290,7 +292,7 @@ bool runVariant(GLTestProfile profile,
                 SoRenderManager::RenderPipeline pipeline,
                 const std::string & renderer, WorkloadKind workload,
                 int drawCount, int samples, Measurement & result,
-                std::string & unavailable)
+                std::string & unavailable, bool forceDrawListRebuild = false)
 {
   GLTestContextConfig config;
   config.profile = profile;
@@ -349,6 +351,8 @@ bool runVariant(GLTestProfile profile,
   std::vector<double> cpu;
   std::vector<double> gpu;
   std::vector<double> completion;
+  std::vector<double> drawListConstruction;
+  std::vector<double> planConstruction;
   std::vector<double> commandPreparation;
   std::vector<double> stateSetup;
   std::vector<double> programBinding;
@@ -360,9 +364,17 @@ bool runVariant(GLTestProfile profile,
     const Clock::time_point totalStart = Clock::now();
     glBeginQuery(GL_TIME_ELAPSED, query);
     const Clock::time_point cpuStart = Clock::now();
+    if (forceDrawListRebuild &&
+        pipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
+      manager.invalidateDrawList();
+    }
     manager.render(TRUE, TRUE);
     cpu.push_back(elapsedMs(cpuStart));
     const SoRenderStatistics sampleStatistics = manager.getRenderStatistics();
+    drawListConstruction.push_back(
+      sampleStatistics.drawListConstructionNanoseconds / 1000000.0);
+    planConstruction.push_back(
+      sampleStatistics.planConstructionNanoseconds / 1000000.0);
     commandPreparation.push_back(
       sampleStatistics.commandPreparationNanoseconds / 1000000.0);
     stateSetup.push_back(sampleStatistics.stateSetupNanoseconds / 1000000.0);
@@ -523,6 +535,8 @@ bool runVariant(GLTestProfile profile,
   result.gpuP95Ms = percentile(gpu, 0.95);
   result.completionMedianMs = percentile(completion, 0.5);
   result.completionP95Ms = percentile(completion, 0.95);
+  result.drawListConstructionMs = percentile(drawListConstruction, 0.5);
+  result.planConstructionMs = percentile(planConstruction, 0.5);
   result.commandPreparationMs = percentile(commandPreparation, 0.5);
   result.stateSetupMs = percentile(stateSetup, 0.5);
   result.programBindingMs = percentile(programBinding, 0.5);
@@ -1178,6 +1192,9 @@ std::string toJson(const std::vector<Measurement> & results,
         << ", \"gpu_p95_ms\": " << r.gpuP95Ms
         << ", \"completion_median_ms\": " << r.completionMedianMs
         << ", \"completion_p95_ms\": " << r.completionP95Ms
+        << ", \"drawlist_construction_ms\": "
+        << r.drawListConstructionMs
+        << ", \"plan_construction_ms\": " << r.planConstructionMs
         << ", \"cold_pick_ms\": " << r.coldPickMs
         << ", \"refresh_pick_ms\": " << r.refreshPickMs
         << ", \"async_pick_submit_ms\": " << r.asyncPickSubmitMs
@@ -1220,6 +1237,8 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.vertexArrayBinds
         << ", \"skipped_vertex_array_binds\": "
         << r.renderStatistics.skippedVertexArrayBinds
+        << ", \"drawlist_rebuilds\": "
+        << r.renderStatistics.drawListRebuilds
         << ", \"instanced_batches\": "
         << r.renderStatistics.instancedBatches
         << ", \"instanced_commands\": "
@@ -1336,6 +1355,30 @@ int main(int argc, char ** argv)
     }
     else unavailable.push_back(std::string(workloadName(workloads[i])) +
       ":DrawList core: " + coreReason);
+  }
+  const int rebuildCounts[] = {
+    options.smoke ? 40 : 500,
+    options.smoke ? 0 : 5000,
+    options.smoke ? 0 : 50000
+  };
+  const int rebuildSamples = options.smoke ? samples : std::min(samples, 10);
+  for (size_t i = 0;
+       i < sizeof(rebuildCounts) / sizeof(rebuildCounts[0]); ++i) {
+    if (rebuildCounts[i] == 0) continue;
+    Measurement rebuild;
+    std::string reason;
+    if (runVariant(GLTestProfile::Core,
+                   SoRenderManager::RenderPipeline::DRAW_LIST,
+                   "DrawList", WorkloadKind::FeatureRich,
+                   rebuildCounts[i], rebuildSamples, rebuild, reason, true)) {
+      rebuild.workload = "feature_rich_rebuild_" +
+        std::to_string(rebuildCounts[i]);
+      results.push_back(rebuild);
+    }
+    else {
+      unavailable.push_back("feature_rich_rebuild_" +
+        std::to_string(rebuildCounts[i]) + ":DrawList core: " + reason);
+    }
   }
   const int indexedCounts[] = { 1, options.smoke ? 8 : 100,
                                 options.smoke ? 0 : 500 };

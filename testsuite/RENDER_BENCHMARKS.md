@@ -34,6 +34,17 @@ semantic scenes through DrawList compatibility and core contexts. Builds with
 context. It reports CPU render-call time, GPU timer-query time, end-to-end GPU
 completion time, dense-scene closest-pick latency, and a non-empty-frame pixel checksum. Unsupported profiles are
 reported in the JSON `unavailable` array rather than being mistaken for results.
+End-to-end retained measurements split manager-owned draw-list construction
+and render-plan construction from backend command preparation, state setup,
+program binding, and draw submission. A cached retained frame reports zero
+draw-list construction time and `drawlist_rebuilds: 0`.
+
+The core-profile `feature_rich_rebuild_500`, `_5000`, and `_50000` workloads
+invalidate the retained frame before every sample. These scaling points expose
+the cost of scene traversal and IR construction separately from transparent
+sorting, GL submission, and GPU completion. Full runs cap these larger curves
+at ten samples; smoke runs execute only a small rebuild case.
+
 Picking is split into one-time cold target creation, target refresh after a
 changed frame, and warm repeated-hover latency. Retained runs also report
 asynchronous readback submission, time-to-ready, and maximum nonblocking poll
