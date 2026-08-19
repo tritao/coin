@@ -52,6 +52,9 @@ public:
     uint64_t nodeEntries = 0;    //!< Nodes listed across all paths.
     uint64_t nodeReferences = 0; //!< Distinct nodes owned by the frame.
     uint64_t estimatedStorageBytes = 0;
+    uint64_t dependencyBranches = 0;
+    uint64_t dependencyCommandReferences = 0;
+    uint64_t dependencyEstimatedStorageBytes = 0;
   };
 
   /*! Camera state policy used when starting a root traversal. */
@@ -159,8 +162,8 @@ public:
   int updateCommandMatricesForStatePath(const SoPath * statePath);
   //! Refresh effective diffuse colors after one material notification.
   int updateCommandDiffuseColorsForStatePath(const SoPath * statePath);
-  //! Regenerate geometry when one source maps to exactly one command.
-  int updateSingleCommandGeometryForStatePath(const SoPath * statePath);
+  //! Transactionally regenerate compatible commands affected by one source.
+  int updateCommandGeometryForStatePath(const SoPath * statePath);
 #endif
 
 

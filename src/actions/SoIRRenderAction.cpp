@@ -69,6 +69,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -79,6 +80,11 @@ public:
   struct PathRecord {
     size_t first = 0;
     size_t length = 0;
+  };
+
+  struct DependencyLink {
+    size_t commandIndex;
+    size_t next;
   };
 
   // An open-addressed table avoids one allocation per retained node. Keeping
@@ -140,6 +146,9 @@ public:
   std::vector<int> pathIndices;
   std::vector<SoNode *> ownedPathNodes;
   std::vector<SoNode *> ownedPathNodeTable;
+  std::unordered_map<SoNode *, size_t> branchDependencyHeads;
+  std::vector<DependencyLink> branchDependencyLinks;
+  bool recordBranchDependencies = true;
   SoRenderStage renderStage = SoRenderStage::Main;
   SoIRRenderContext renderContextOverride;
   bool hasRenderContextOverride = false;
@@ -355,6 +364,25 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
       SoNode * node = static_cast<SoNode *>(nodeArray[i]);
       PRIVATE(this)->pathNodes.push_back(node);
       PRIVATE(this)->pathIndices.push_back(indexArray[i]);
+      if (PRIVATE(this)->recordBranchDependencies &&
+          i + 1 < pathRecord.length) {
+        const size_t noDependency = std::numeric_limits<size_t>::max();
+        std::pair<std::unordered_map<SoNode *, size_t>::iterator, bool> branch =
+          PRIVATE(this)->branchDependencyHeads.emplace(node, noDependency);
+        if (branch.second) {
+          ++PRIVATE(this)->pathStatistics.dependencyBranches;
+          PRIVATE(this)->pathStatistics.dependencyEstimatedStorageBytes +=
+            sizeof(SoNode *) + sizeof(size_t);
+        }
+        SoIRRenderActionP::DependencyLink dependency = {
+          static_cast<size_t>(commandIndex), branch.first->second
+        };
+        PRIVATE(this)->branchDependencyLinks.push_back(dependency);
+        branch.first->second = PRIVATE(this)->branchDependencyLinks.size() - 1;
+        ++PRIVATE(this)->pathStatistics.dependencyCommandReferences;
+        PRIVATE(this)->pathStatistics.dependencyEstimatedStorageBytes +=
+          sizeof(dependency);
+      }
       if (PRIVATE(this)->retainPathNode(node)) {
         ++PRIVATE(this)->pathStatistics.nodeReferences;
         PRIVATE(this)->pathStatistics.estimatedStorageBytes += sizeof(node);
@@ -560,9 +588,16 @@ SoIRRenderAction::findCommandsAffectedByStatePath(
   const int * prefixIndices = statePath->indices.getArrayPtr();
   const int changedChildIndex =
     prefixIndices[statePath->getFullLength() - 1];
-  for (size_t commandIndex = 0;
-       commandIndex < PRIVATE(this)->commandPathRecords.size();
-       ++commandIndex) {
+  SoNode * branch = static_cast<SoNode *>(
+    prefixNodes[statePathOffset + prefixLength - 1]);
+  const std::unordered_map<SoNode *, size_t>::const_iterator found =
+    PRIVATE(this)->branchDependencyHeads.find(branch);
+  if (found == PRIVATE(this)->branchDependencyHeads.end()) return;
+  const size_t noDependency = std::numeric_limits<size_t>::max();
+  for (size_t linkIndex = found->second; linkIndex != noDependency;
+       linkIndex = PRIVATE(this)->branchDependencyLinks[linkIndex].next) {
+    const size_t commandIndex =
+      PRIVATE(this)->branchDependencyLinks[linkIndex].commandIndex;
     const SoIRRenderActionP::PathRecord & record =
       PRIVATE(this)->commandPathRecords[commandIndex];
     if (record.length <= prefixLength ||
@@ -625,17 +660,12 @@ SoIRRenderAction::updateCommandDiffuseColorsForStatePath(
 }
 
 int
-SoIRRenderAction::updateSingleCommandGeometryForStatePath(
+SoIRRenderAction::updateCommandGeometryForStatePath(
   const SoPath * statePath)
 {
   std::vector<size_t> commandIndices;
   this->findCommandsAffectedByStatePath(statePath, commandIndices);
-  if (commandIndices.size() != 1) return 0;
-
-  const size_t commandIndex = commandIndices.front();
-  const SoPath * commandPath = this->getCommandPath(
-    static_cast<int>(commandIndex));
-  if (!commandPath) return 0;
+  if (commandIndices.empty()) return 0;
 
   const int originalCommandCount = this->drawlist.getNumCommands();
   const size_t originalRecordCount =
@@ -648,19 +678,35 @@ SoIRRenderAction::updateSingleCommandGeometryForStatePath(
   const SoIRBuffer::Checkpoint geometryCheckpoint =
     PRIVATE(this)->geometryPool.checkpoint();
 
-  this->traverseAdditionalPath(const_cast<SoPath *>(commandPath));
-  bool replacedOneCommand =
-    this->drawlist.getNumCommands() == originalCommandCount + 1 &&
-    PRIVATE(this)->commandPathRecords.size() == originalRecordCount + 1 &&
+  PRIVATE(this)->recordBranchDependencies = false;
+  bool replacementShapeMatches = true;
+  for (std::vector<size_t>::const_iterator it = commandIndices.begin();
+       replacementShapeMatches && it != commandIndices.end(); ++it) {
+    const SoPath * commandPath = this->getCommandPath(static_cast<int>(*it));
+    if (!commandPath) {
+      replacementShapeMatches = false;
+      break;
+    }
+    const int before = this->drawlist.getNumCommands();
+    this->traverseAdditionalPath(const_cast<SoPath *>(commandPath));
+    replacementShapeMatches = this->drawlist.getNumCommands() == before + 1;
+  }
+  PRIVATE(this)->recordBranchDependencies = true;
+  bool replacementsCompatible = replacementShapeMatches &&
+    this->drawlist.getNumCommands() ==
+      originalCommandCount + static_cast<int>(commandIndices.size()) &&
+    PRIVATE(this)->commandPathRecords.size() ==
+      originalRecordCount + commandIndices.size() &&
     !this->unsupportedRendering;
-  if (replacedOneCommand) {
-    SoRenderCommand & original =
-      this->drawlist.getCommand(static_cast<int>(commandIndex));
-    const SoRenderCommand & replacement =
-      this->drawlist.getCommand(originalCommandCount);
+
+  for (size_t i = 0; replacementsCompatible && i < commandIndices.size(); ++i) {
+    const SoRenderCommand & original = this->drawlist.getCommand(
+      static_cast<int>(commandIndices[i]));
+    const SoRenderCommand & replacement = this->drawlist.getCommand(
+      originalCommandCount + static_cast<int>(i));
     const SoGeometryDesc & source = replacement.geometry;
     const SoGeometryDesc & destination = original.geometry;
-    replacedOneCommand = source.topology == destination.topology &&
+    replacementsCompatible = source.topology == destination.topology &&
       source.vertexCount == destination.vertexCount &&
       source.normalCount == destination.normalCount &&
       source.indexCount == destination.indexCount &&
@@ -674,7 +720,16 @@ SoIRRenderAction::updateSingleCommandGeometryForStatePath(
       (source.colors != NULL) == (destination.colors != NULL) &&
       (source.indices != NULL) == (destination.indices != NULL) &&
       replacement.material.texture.numComponents == 0;
-    if (replacedOneCommand) {
+  }
+
+  if (replacementsCompatible) {
+    for (size_t i = 0; i < commandIndices.size(); ++i) {
+      SoRenderCommand & original = this->drawlist.getCommand(
+        static_cast<int>(commandIndices[i]));
+      const SoRenderCommand & replacement = this->drawlist.getCommand(
+        originalCommandCount + static_cast<int>(i));
+      const SoGeometryDesc & source = replacement.geometry;
+      const SoGeometryDesc & destination = original.geometry;
       if (source.positions) std::memcpy(
         const_cast<float *>(destination.positions), source.positions,
         static_cast<size_t>(source.vertexCount) * 3 * sizeof(float));
@@ -711,7 +766,7 @@ SoIRRenderAction::updateSingleCommandGeometryForStatePath(
   this->unsupportedRendering = originalUnsupported;
   this->unsupportedNode = originalUnsupportedNode;
   this->unsupportedReason = originalUnsupportedReason;
-  return replacedOneCommand ? 1 : 0;
+  return replacementsCompatible ? static_cast<int>(commandIndices.size()) : 0;
 }
 
 void
@@ -900,6 +955,9 @@ SoIRRenderAction::clearCommandPaths()
   PRIVATE(this)->pathNodes.clear();
   PRIVATE(this)->pathIndices.clear();
   PRIVATE(this)->ownedPathNodes.clear();
+  PRIVATE(this)->branchDependencyHeads.clear();
+  PRIVATE(this)->branchDependencyLinks.clear();
+  PRIVATE(this)->recordBranchDependencies = true;
   PRIVATE(this)->resetPathNodeTable();
   PRIVATE(this)->renderStage = SoRenderStage::Main;
   PRIVATE(this)->hasRenderContextOverride = false;

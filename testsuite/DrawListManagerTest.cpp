@@ -523,9 +523,8 @@ runTest()
     result = 1;
   }
 
-  // A private coordinate source can regenerate one retained command. Shared
-  // sources remain a full-rebuild case until multi-command replacement is
-  // transactional.
+  // Coordinate changes regenerate all compatible commands in their retained
+  // branch as one transaction.
   {
     const SbVec3f triangle[] = {
       SbVec3f(-0.8f, -0.8f, 0.0f), SbVec3f(0.8f, -0.8f, 0.0f),
@@ -577,9 +576,14 @@ runTest()
     geometryManager.render(TRUE, TRUE);
     const SoRenderStatistics sharedGeometryStatistics =
       geometryManager.getRenderStatistics();
-    if (sharedGeometryStatistics.drawListRebuilds != 1 ||
-        sharedGeometryStatistics.incrementalCommandUpdates != 0) {
-      std::cerr << "FAIL: shared coordinate source bypassed full rebuild"
+    const std::vector<uint8_t> incrementalSharedPixels = context.readPixels();
+    geometryManager.invalidateDrawList();
+    geometryManager.render(TRUE, TRUE);
+    const std::vector<uint8_t> rebuiltSharedPixels = context.readPixels();
+    if (sharedGeometryStatistics.drawListRebuilds != 0 ||
+        sharedGeometryStatistics.incrementalCommandUpdates != 2 ||
+        incrementalSharedPixels != rebuiltSharedPixels) {
+      std::cerr << "FAIL: shared coordinate commands were not regenerated"
                 << std::endl;
       result = 1;
     }

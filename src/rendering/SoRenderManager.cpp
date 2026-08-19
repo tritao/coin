@@ -1219,7 +1219,7 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
            rootSensor->getChangedField() ==
              &static_cast<SoCoordinate3 *>(
                rootSensor->getChangedNode())->point) {
-    updated = action->updateSingleCommandGeometryForStatePath(
+    updated = action->updateCommandGeometryForStatePath(
       rootSensor->getChangedPath());
   }
   if (updated > 0) {
@@ -2617,6 +2617,11 @@ SoRenderManager::getRenderStatistics() const
     statistics.retainedPathNodeEntries = paths.nodeEntries;
     statistics.retainedPathNodeReferences = paths.nodeReferences;
     statistics.retainedPathStorageBytes = paths.estimatedStorageBytes;
+    statistics.retainedDependencyBranches = paths.dependencyBranches;
+    statistics.retainedDependencyCommandReferences =
+      paths.dependencyCommandReferences;
+    statistics.retainedDependencyStorageBytes =
+      paths.dependencyEstimatedStorageBytes;
   }
   return statistics;
 }
