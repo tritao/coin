@@ -852,6 +852,11 @@ public:
   const SoGeometryResource * getGeometryResource(
     SoGeometryHandle handle) const;
   int getNumGeometryResources() const;
+  //! Resolve a command resource, falling back to its compatibility descriptor.
+  const SoGeometryDesc & getCommandGeometry(
+    const SoRenderCommand & command) const;
+  //! Remove resources beyond count; existing lower handles remain stable.
+  void truncateGeometryResources(int count);
 
   int getNumCommands() const;
   //! Remove commands beyond index count without reordering remaining commands.

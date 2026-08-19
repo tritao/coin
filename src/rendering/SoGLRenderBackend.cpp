@@ -880,14 +880,14 @@ SoGLRenderBackend::discard()
   this->setInitialized(FALSE);
 }
 SoGLRenderBackend::CachedCommand &
-SoGLRenderBackend::getOrCreateCache(const SoRenderCommand * command)
+SoGLRenderBackend::getOrCreateCache(const SoRenderCommand * command,
+                                    const SoGeometryDesc & geometry)
 {
   const auto found = this->commandToCache.find(command);
   if (found != this->commandToCache.end()) {
     return this->gpuCache[found->second];
   }
 
-  const SoGeometryDesc & geometry = command->geometry;
   const uint64_t geometryResourceKey = geometry.resourceKey != 0
     ? geometry.resourceKey : geometry.cacheKey;
   const SoTextureData & texture = command->material.texture;
@@ -1124,9 +1124,9 @@ SoGLRenderBackend::uploadLineDistanceBuffer(CachedCommand & entry,
 void
 SoGLRenderBackend::updateCacheDescription(CachedCommand & entry,
                                           const SoRenderCommand & command,
+                                          const SoGeometryDesc & geometry,
                                           const GLsizei vertexStride)
 {
-  const SoGeometryDesc & geometry = command.geometry;
   const SoTextureData & texture = command.material.texture;
   const bool hasTexture = texture.pixels && texture.width > 0 &&
     texture.height > 0 && texture.numComponents >= 1 &&
@@ -1166,9 +1166,9 @@ SoGLRenderBackend::updateCacheDescription(CachedCommand & entry,
 
 void
 SoGLRenderBackend::uploadGeometry(CachedCommand & entry,
-                                  const SoRenderCommand & command)
+                                  const SoRenderCommand & command,
+                                  const SoGeometryDesc & geometry)
 {
-  const SoGeometryDesc & geometry = command.geometry;
   const GLsizei vertexStride = static_cast<GLsizei>(
     geometry.vertexStride ? geometry.vertexStride : sizeof(float) * 3);
 
@@ -1183,7 +1183,7 @@ SoGLRenderBackend::uploadGeometry(CachedCommand & entry,
   cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, 0);
   cc_glglue_glBindBuffer(this->glue, GL_ELEMENT_ARRAY_BUFFER, 0);
 
-  this->updateCacheDescription(entry, command, vertexStride);
+  this->updateCacheDescription(entry, command, geometry, vertexStride);
 }
 
 void
@@ -1590,7 +1590,7 @@ SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
 
   for (int i = 0; i < drawlist.getNumCommands(); ++i) {
     const SoRenderCommand & command = drawlist.getCommand(i);
-    const SoGeometryDesc & geometry = command.geometry;
+    const SoGeometryDesc & geometry = drawlist.getCommandGeometry(command);
     const uint64_t geometryResourceKey = geometry.resourceKey != 0
       ? geometry.resourceKey : geometry.cacheKey;
     const uint64_t geometryResourceRevision = geometry.resourceKey != 0
@@ -1599,7 +1599,7 @@ SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
         geometry.vertexCount == 0 ||
         geometry.vertexCount > MAX_VERTEX_COUNT) continue;
 
-    CachedCommand & entry = this->getOrCreateCache(&command);
+    CachedCommand & entry = this->getOrCreateCache(&command, geometry);
     const uint32_t vertexStride = geometry.vertexStride
       ? geometry.vertexStride : sizeof(float) * 3;
     const bool lineGeometry = geometry.topology == SO_TOPOLOGY_LINES ||
@@ -1625,7 +1625,7 @@ SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
       lineDistanceMatches && this->textureDescriptionMatches(entry, command);
     if (!geometryMatches) {
       if (!geometry.positions) continue;
-      this->uploadGeometry(entry, command);
+      this->uploadGeometry(entry, command, geometry);
       this->setupVisualVAO(entry);
     }
   }

@@ -193,24 +193,22 @@ SoRenderBackend::debugValidateDrawList(const SoDrawList & drawlist) const
   const int num = drawlist.getNumCommands();
   for (int i = 0; i < num; ++i) {
     const SoRenderCommand & command = drawlist.getCommand(i);
-    if (command.geometry.topology >= SO_TOPOLOGY_COUNT) {
+    const SoGeometryDesc & geometry = drawlist.getCommandGeometry(command);
+    if (geometry.topology >= SO_TOPOLOGY_COUNT) {
       SoDebugError::post("SoRenderBackend",
                          "Command %d has invalid topology (%d)",
-                         i, static_cast<int>(command.geometry.topology));
+                         i, static_cast<int>(geometry.topology));
     }
-    if (command.geometry.vertexCount == 0 &&
-        command.geometry.indexCount == 0) {
+    if (geometry.vertexCount == 0 && geometry.indexCount == 0) {
       SoDebugError::post("SoRenderBackend",
                          "Command %d has no vertices or indices", i);
     }
-    if (command.geometry.vertexCount > 0 &&
-        command.geometry.positions == nullptr &&
-        command.geometry.cacheKey == 0) {
+    if (geometry.vertexCount > 0 && geometry.positions == nullptr &&
+        geometry.cacheKey == 0) {
       SoDebugError::post("SoRenderBackend",
                          "Command %d is missing its position buffer", i);
     }
-    if (command.geometry.indexCount > 0 &&
-        command.geometry.indices == nullptr) {
+    if (geometry.indexCount > 0 && geometry.indices == nullptr) {
       SoDebugError::post("SoRenderBackend",
                          "Command %d is missing its index buffer", i);
     }

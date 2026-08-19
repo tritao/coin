@@ -43,6 +43,8 @@ runTest()
       !resolvedFirst || resolvedFirst->sourceKey != 17 ||
       resolvedFirst->revision != 4 ||
       resourceDrawList.getCommand(0).geometryHandle != firstHandle ||
+      resourceDrawList.getCommandGeometry(
+        resourceDrawList.getCommand(0)).vertexCount != 3 ||
       resourceDrawList.getGeometryResource(SO_INVALID_GEOMETRY_HANDLE) ||
       resourceDrawList.getGeometryResource(secondHandle + 1)) {
     std::cerr << "FAIL: draw-list geometry resource handles were unstable"
@@ -117,9 +119,19 @@ runTest()
     result = 1;
   }
   else {
+    if (action.getDrawList().getNumGeometryResources() != 2) {
+      std::cerr << "FAIL: retained producer did not register geometry resources"
+                << std::endl;
+      result = 1;
+    }
     const SoRenderCommand & commandA = action.getDrawList().getCommand(0);
     const SoRenderCommand & commandB = action.getDrawList().getCommand(1);
-    if (commandA.nodeId == 0 || commandA.nodeId != commandB.nodeId ||
+    if (commandA.geometryHandle == SO_INVALID_GEOMETRY_HANDLE ||
+        commandB.geometryHandle == SO_INVALID_GEOMETRY_HANDLE ||
+        commandA.geometryHandle == commandB.geometryHandle ||
+        !action.getDrawList().getGeometryResource(commandA.geometryHandle) ||
+        !action.getDrawList().getGeometryResource(commandB.geometryHandle) ||
+        commandA.nodeId == 0 || commandA.nodeId != commandB.nodeId ||
         commandA.instanceId == 0 || commandB.instanceId == 0 ||
         commandA.instanceId == commandB.instanceId) {
       std::cerr << "FAIL: shared DAG shape occurrences conflated retained identity"

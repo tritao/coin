@@ -410,6 +410,22 @@ SoDrawList::getNumGeometryResources() const
   return static_cast<int>(this->geometryResources.size());
 }
 
+const SoGeometryDesc &
+SoDrawList::getCommandGeometry(const SoRenderCommand & command) const
+{
+  const SoGeometryResource * resource =
+    this->getGeometryResource(command.geometryHandle);
+  return resource ? resource->geometry : command.geometry;
+}
+
+void
+SoDrawList::truncateGeometryResources(int count)
+{
+  if (count >= 0 && count < static_cast<int>(this->geometryResources.size())) {
+    this->geometryResources.resize(static_cast<size_t>(count));
+  }
+}
+
 void
 SoDrawList::addDepthClearEvent(const SoDepthClearEvent & event)
 {

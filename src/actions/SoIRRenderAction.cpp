@@ -351,6 +351,12 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
       state, this->drawlist);
   }
 
+  SoGeometryResource geometryResource;
+  geometryResource.geometry = retained.geometry;
+  geometryResource.sourceKey = retained.geometry.cacheKey;
+  geometryResource.revision = retained.geometry.revision;
+  retained.geometryHandle =
+    this->drawlist.addGeometryResource(std::move(geometryResource));
   const int commandIndex = this->drawlist.getNumCommands();
   this->drawlist.addCommand(std::move(retained));
 
@@ -694,6 +700,8 @@ SoIRRenderAction::updateCommandGeometryForStatePath(
   std::sort(commandIndices.begin(), commandIndices.end());
 
   const int originalCommandCount = this->drawlist.getNumCommands();
+  const int originalResourceCount =
+    this->drawlist.getNumGeometryResources();
   const size_t originalRecordCount =
     PRIVATE(this)->commandPathRecords.size();
   const size_t originalNodeCount = PRIVATE(this)->pathNodes.size();
@@ -793,18 +801,27 @@ SoIRRenderAction::updateCommandGeometryForStatePath(
         const_cast<uint32_t *>(destination.indices), source.indices,
         static_cast<size_t>(source.indexCount) * sizeof(uint32_t));
       SoRenderCommand retainedReplacement = replacement;
+      retainedReplacement.geometryHandle = original.geometryHandle;
       retainedReplacement.geometry.positions = destination.positions;
       retainedReplacement.geometry.normals = destination.normals;
       retainedReplacement.geometry.texcoords = destination.texcoords;
       retainedReplacement.geometry.colors = destination.colors;
       retainedReplacement.geometry.indices = destination.indices;
       original = std::move(retainedReplacement);
+      SoGeometryResource * resource =
+        this->drawlist.getGeometryResource(original.geometryHandle);
+      if (resource) {
+        resource->geometry = original.geometry;
+        resource->sourceKey = original.geometry.cacheKey;
+        resource->revision = original.geometry.revision;
+      }
     }
   }
 
   // The compatible payload was copied into the original command's storage.
   // Discard the temporary command, path metadata, and scratch allocations.
   this->drawlist.truncate(originalCommandCount);
+  this->drawlist.truncateGeometryResources(originalResourceCount);
   PRIVATE(this)->commandPathRecords.resize(originalRecordCount);
   PRIVATE(this)->pathNodes.resize(originalNodeCount);
   PRIVATE(this)->pathIndices.resize(originalNodeCount);

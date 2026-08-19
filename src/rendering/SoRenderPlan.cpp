@@ -26,10 +26,10 @@ SoRenderPlanner::build(const SoDrawList & drawlist,
     const SbMatrix & effectiveView = command.state.useCommandMatrices
       ? command.viewMatrix : frameViewMatrix;
     effectiveView.getValue(view);
+    const SoGeometryDesc & geometry = drawlist.getCommandGeometry(command);
     SbVec3f worldCenter;
     command.modelMatrix.multVecMatrix(
-      command.geometry.hasBounds ? command.geometry.boundsCenter
-                                 : SbVec3f(0.0f, 0.0f, 0.0f),
+      geometry.hasBounds ? geometry.boundsCenter : SbVec3f(0.0f, 0.0f, 0.0f),
       worldCenter);
     const float worldX = worldCenter[0];
     const float worldY = worldCenter[1];
