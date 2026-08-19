@@ -308,6 +308,83 @@ runTest()
     }
   }
 
+  // State or resource differences must terminate an instance batch. Keep
+  // these cases together so additions to the eligibility rules remain easy
+  // to audit against the state they are allowed to coalesce.
+  const auto expectBatchBreak = [&](const SoRenderCommand & second,
+                                    const char * boundary) {
+    drawlist.clear();
+    drawlist.addCommand(indexedInstance);
+    drawlist.addCommand(second);
+    if (!renderWithPlan(backend, drawlist, params)) {
+      std::cerr << "FAIL: " << boundary << " batch-boundary render failed"
+                << std::endl;
+      result = 1;
+      return;
+    }
+    const SoRenderStatistics statistics = backend.getRenderStatistics();
+    if (statistics.drawCalls != 2 || statistics.instancedBatches != 0) {
+      std::cerr << "FAIL: instancing crossed the " << boundary
+                << " boundary" << std::endl;
+      result = 1;
+    }
+  };
+  SoRenderCommand differentGeometry = indexedInstance;
+  differentGeometry.geometry.cacheKey = 0x101u;
+  expectBatchBreak(differentGeometry, "geometry-resource");
+  SoRenderCommand differentMaterial = indexedInstance;
+  differentMaterial.material.shadingModel = SO_SHADING_LEGACY_GOURAUD;
+  expectBatchBreak(differentMaterial, "shading-model");
+  SoRenderCommand differentDepth = indexedInstance;
+  differentDepth.state.depth.func = SO_DEPTH_LESS;
+  expectBatchBreak(differentDepth, "depth-state");
+  SoRenderCommand transparent = indexedInstance;
+  transparent.opacityClass = SO_OPACITY_TRANSPARENT;
+  transparent.material.opacity = 0.5f;
+  transparent.material.diffuse[3] = 0.5f;
+  transparent.state.blend.enabled = TRUE;
+  expectBatchBreak(transparent, "transparency");
+  SoRenderCommand viewportOverride = indexedInstance;
+  viewportOverride.state.raster.viewportOverride = TRUE;
+  viewportOverride.state.raster.viewportEnabled = TRUE;
+  viewportOverride.state.raster.viewportWidth = 32;
+  viewportOverride.state.raster.viewportHeight = 32;
+  expectBatchBreak(viewportOverride, "viewport");
+
+  // A revision change replaces the shared indexed resource while preserving
+  // batching. This catches stale EBO/VBO reuse after producer mutation.
+  const float movedIndexedInstanceQuad[] = {
+    -0.35f, 0.15f, 0.0f,
+     0.35f, 0.15f, 0.0f,
+     0.35f, 0.85f, 0.0f,
+    -0.35f, 0.85f, 0.0f
+  };
+  drawlist.clear();
+  indexedInstance.geometry.positions = movedIndexedInstanceQuad;
+  indexedInstance.geometry.revision = 2;
+  indexedInstance.modelMatrix.setTranslate(SbVec3f(-0.5f, 0.0f, 0.0f));
+  indexedInstance.material.diffuse = SbVec4f(1.0f, 0.0f, 0.0f, 1.0f);
+  drawlist.addCommand(indexedInstance);
+  indexedInstance.modelMatrix.setTranslate(SbVec3f(0.5f, 0.0f, 0.0f));
+  indexedInstance.material.diffuse = SbVec4f(0.0f, 0.0f, 1.0f, 1.0f);
+  drawlist.addCommand(indexedInstance);
+  if (!renderWithPlan(backend, drawlist, params)) {
+    std::cerr << "FAIL: revised indexed instance render failed" << std::endl;
+    result = 1;
+  }
+  else {
+    glFinish();
+    const SoRenderStatistics statistics = backend.getRenderStatistics();
+    const std::vector<uint8_t> pixels = readPixels(context);
+    if (statistics.drawCalls != 1 || statistics.instancedCommands != 2 ||
+        !nearColor(pixelAt(pixels, 8, 24), 255, 0, 0) ||
+        !nearColor(pixelAt(pixels, 24, 24), 0, 0, 255)) {
+      std::cerr << "FAIL: revised indexed resource was stale or unbatched"
+                << std::endl;
+      result = 1;
+    }
+  }
+
   // Exercise unindexed geometry and the basic vertex-color path.
   const float triangle[] = {
     -0.8f, -0.8f, 0.0f,

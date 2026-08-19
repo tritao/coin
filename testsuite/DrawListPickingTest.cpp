@@ -221,6 +221,81 @@ runTest()
       result = 1;
     }
 
+    // Visual instancing must not merge interaction identity. These commands
+    // share one indexed geometry resource but retain independent pick IDs and
+    // selection targets.
+    const float instanceQuad[] = {
+      -0.35f, -0.35f, 0.0f,  0.35f, -0.35f, 0.0f,
+       0.35f,  0.35f, 0.0f, -0.35f,  0.35f, 0.0f
+    };
+    const uint32_t instanceIndices[] = { 0, 1, 2, 0, 2, 3 };
+    SoRenderCommand instanceCommand;
+    instanceCommand.geometry.topology = SO_TOPOLOGY_TRIANGLES;
+    instanceCommand.geometry.vertexCount = 4;
+    instanceCommand.geometry.indexCount = 6;
+    instanceCommand.geometry.positions = instanceQuad;
+    instanceCommand.geometry.indices = instanceIndices;
+    instanceCommand.geometry.vertexStride = sizeof(float) * 3;
+    instanceCommand.geometry.resourceKey = 0x5049434b4944ULL;
+    instanceCommand.geometry.resourceRevision = 1;
+    instanceCommand.material.diffuse = SbVec4f(0.0f, 0.0f, 1.0f, 1.0f);
+    instanceCommand.modelMatrix.setTranslate(SbVec3f(-0.5f, 0.0f, 0.0f));
+    instanceCommand.objectId = 101;
+    instanceCommand.nodeId = 201;
+    instanceCommand.instanceId = 301;
+    drawlist.clear();
+    drawlist.addCommand(instanceCommand);
+    instanceCommand.modelMatrix.setTranslate(SbVec3f(0.5f, 0.0f, 0.0f));
+    instanceCommand.objectId = 102;
+    instanceCommand.nodeId = 202;
+    instanceCommand.instanceId = 302;
+    drawlist.addCommand(instanceCommand);
+    if (!updatePickBuffer(backend, drawlist, params)) {
+      std::cerr << "FAIL: instanced-identity pick update failed" << std::endl;
+      result = 1;
+    }
+    else {
+      SoPickResult leftHit;
+      SoPickResult rightHit;
+      if (!backend.pick(16, 32, 0, leftHit) ||
+          leftHit.commandIndex != 0 || leftHit.objectId != 101 ||
+          leftHit.nodeId != 201 || leftHit.instanceId != 301 ||
+          !backend.pick(48, 32, 0, rightHit) ||
+          rightHit.commandIndex != 1 || rightHit.objectId != 102 ||
+          rightHit.nodeId != 202 || rightHit.instanceId != 302) {
+        std::cerr << "FAIL: visual instances lost independent pick identity"
+                  << std::endl;
+        result = 1;
+      }
+    }
+
+    SoSelectionState instanceSelection;
+    SoSelectionTarget instanceTarget;
+    instanceTarget.commandIndex = 1;
+    instanceTarget.objectId = 102;
+    instanceTarget.nodeId = 202;
+    instanceTarget.instanceId = 302;
+    instanceTarget.color = SbColor4f(0.0f, 1.0f, 0.0f, 0.75f);
+    instanceSelection.selected.push_back(instanceTarget);
+    const SoRenderPlan instancePlan = makePlan(drawlist);
+    if (!backend.render(drawlist, instancePlan, params, &instanceSelection)) {
+      std::cerr << "FAIL: instanced-identity selection render failed"
+                << std::endl;
+      result = 1;
+    }
+    else {
+      glFinish();
+      const std::vector<uint8_t> pixels = readPixels(context);
+      const uint8_t * left = pixelAt(pixels, 16, 32);
+      const uint8_t * right = pixelAt(pixels, 48, 32);
+      if (left[2] < 200 || left[1] > 30 ||
+          right[1] < 150 || right[2] > 100) {
+        std::cerr << "FAIL: selection did not address one visual instance"
+                  << std::endl;
+        result = 1;
+      }
+    }
+
     // Explicit picking writes depth even for commands classified as
     // transparent.  The nearest command must win independent of draw order.
     SoRenderCommand nearCommand = command;
