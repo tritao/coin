@@ -173,9 +173,24 @@ mixIRCacheHash(uint64_t hash, uint64_t value)
 uint64_t
 hashIRGeometryBytes(uint64_t hash, const void * data, const size_t bytes)
 {
+  // Resource keys need a frame-stable content fingerprint, not a byte-stream
+  // hash.
+  // Mixing words avoids serializing one multiply per byte; memcpy keeps loads
+  // valid for unaligned geometry buffers and avoids aliasing violations.
   const unsigned char * input = static_cast<const unsigned char *>(data);
-  for (size_t i = 0; i < bytes; ++i) {
-    hash = mixIRCacheHash(hash, input[i]);
+  size_t offset = 0;
+  while (bytes - offset >= sizeof(uint64_t)) {
+    uint64_t word;
+    std::memcpy(&word, input + offset, sizeof(word));
+    hash = mixIRCacheHash(hash, word);
+    offset += sizeof(word);
+  }
+  if (offset < bytes) {
+    uint64_t tail = 0;
+    const size_t tailBytes = bytes - offset;
+    std::memcpy(&tail, input + offset, tailBytes);
+    hash = mixIRCacheHash(hash, tail);
+    hash = mixIRCacheHash(hash, tailBytes);
   }
   return hash;
 }
