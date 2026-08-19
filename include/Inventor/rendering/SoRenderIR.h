@@ -808,6 +808,7 @@ public:
   uint32_t getGeneration() const { return generation; }
 
   void addCommand(const SoRenderCommand & cmd);
+  void addCommand(SoRenderCommand && cmd);
   SoRenderCommand & emplaceCommand();
 
   int getNumCommands() const;

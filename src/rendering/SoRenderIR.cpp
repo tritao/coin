@@ -43,6 +43,7 @@
 #include <climits>
 #include <cstdlib>
 #include <inttypes.h>
+#include <utility>
 
 namespace {
 
@@ -326,6 +327,14 @@ void
 SoDrawList::addCommand(const SoRenderCommand & cmd)
 {
   this->commands.push_back(cmd);
+  this->pickLUT.clear();
+  this->pickLUTGeneration = 0;
+}
+
+void
+SoDrawList::addCommand(SoRenderCommand && cmd)
+{
+  this->commands.push_back(std::move(cmd));
   this->pickLUT.clear();
   this->pickLUTGeneration = 0;
 }

@@ -67,6 +67,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <utility>
 #include <vector>
 
 SO_ACTION_SOURCE(SoIRRenderAction);
@@ -198,7 +199,14 @@ SoIRRenderAction::beginFrame()
 void
 SoIRRenderAction::addCommand(const SoRenderCommand & command)
 {
-  SoRenderCommand retained = command;
+  SoRenderCommand copy = command;
+  this->addCommand(std::move(copy));
+}
+
+void
+SoIRRenderAction::addCommand(SoRenderCommand && command)
+{
+  SoRenderCommand retained = std::move(command);
   const SoPath * currentPath = this->getCurPath();
   SoNode * tail = currentPath ? currentPath->getTail() : nullptr;
   if (retained.nodeId == 0 && tail) {
@@ -261,7 +269,7 @@ SoIRRenderAction::addCommand(const SoRenderCommand & command)
   }
 
   const int commandIndex = this->drawlist.getNumCommands();
-  this->drawlist.addCommand(retained);
+  this->drawlist.addCommand(std::move(retained));
 
   SoPath * retainedPath = currentPath ? currentPath->copy() : NULL;
   if (retainedPath) retainedPath->ref();

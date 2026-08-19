@@ -55,6 +55,7 @@ class SoVBO;
 
 #include <cstring>
 #include <cstdlib>
+#include <utility>
 #include <vector>
 
 #ifdef HAVE_CONFIG_H
@@ -275,6 +276,8 @@ public:
   SoIRPrimitiveAssembler(SoIRRenderAction * action, SoShape * shape)
     : action(action), shape(shape), topology(SO_TOPOLOGY_COUNT)
   {
+    this->vertices.reserve(4);
+    this->primitiveRanges.reserve(1);
     makeIRGeometryIdentity(action, shape,
                            this->geometryCacheKey,
                            this->geometryRevision);
@@ -331,6 +334,7 @@ private:
   SoIRMaterialBatchPlan buildMaterialBatches(SoState * state)
   {
     SoIRMaterialBatchPlan plan;
+    plan.batches.reserve(1);
     const size_t count = this->vertices.size();
     const size_t primitiveWidth = this->topology == SO_TOPOLOGY_TRIANGLES ? 3
       : this->topology == SO_TOPOLOGY_LINES ? 2 : 1;
@@ -396,7 +400,7 @@ private:
     float * texcoords = static_cast<float *>(
       this->action->allocateGeometryStorage(sizeof(float) * 4 * count));
     const SoIRMaterialBatchPlan plan = this->buildMaterialBatches(state);
-    batches = plan.batches;
+    batches = std::move(plan.batches);
 
     float * colors = nullptr;
     if (plan.needsVertexColors) {
@@ -473,6 +477,7 @@ private:
       const size_t primitiveWidth = this->topology == SO_TOPOLOGY_TRIANGLES
         ? 3 : (this->topology == SO_TOPOLOGY_LINES ? 2 : 1);
       std::vector<SoRenderElementRange> pickRanges;
+      pickRanges.reserve(batch.count / primitiveWidth);
       bool completePickRanges = true;
       for (const SoIRPrimitiveRange & range : this->primitiveRanges) {
         if (range.first < batch.first || range.first >= batchEnd) continue;
@@ -490,10 +495,10 @@ private:
       const size_t expectedRanges = primitiveWidth == 0 ? 0
         : batch.count / primitiveWidth;
       if (completePickRanges && pickRanges.size() == expectedRanges) {
-        command.pick.elementRanges = pickRanges;
+        command.pick.elementRanges = std::move(pickRanges);
       }
       this->action->applyRenderStage(command);
-      this->action->addCommand(command);
+      this->action->addCommand(std::move(command));
     }
     this->primitiveRanges.clear();
   }
