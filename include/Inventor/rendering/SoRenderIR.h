@@ -780,6 +780,7 @@ struct SoRenderCommand {
   SoOpacityClass   opacityClass = SO_OPACITY_OPAQUE;
   SoRenderStage    stage = SoRenderStage::Main;
   SoLightingHandle lightingHandle = 0;
+  int32_t          materialIndex = 0; //!< Effective Inventor material index.
   SoNodeId         nodeId = 0;     //!< Identity of the underlying scene node.
   SoInstanceId     instanceId = 0; //!< Frame-local rendered path occurrence.
   SoObjectId       objectId = 0;   //!< Optional producer semantic identity.

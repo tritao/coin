@@ -518,6 +518,7 @@ private:
 
       SoRenderIR::fillCommandStateFromAction(
         this->action, command, std::max(batch.materialIndex, 0));
+      command.materialIndex = std::max(batch.materialIndex, 0);
       const bool packedVertexColors =
         SoLazyElementP::hasPackedVertexColorState(state);
       if (packedVertexColors) {

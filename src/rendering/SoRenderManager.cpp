@@ -68,6 +68,7 @@
 #include <Inventor/system/gl.h>
 #include <Inventor/nodes/SoInfo.h>
 #include <Inventor/nodes/SoCamera.h>
+#include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoTranslation.h>
 #include <Inventor/SoPath.h>
 #include <Inventor/SoPickedPoint.h>
@@ -1186,27 +1187,35 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   PRIVATE(this)->incrementalCommandUpdates = 0;
   SoRenderManagerRootSensor * rootSensor =
     static_cast<SoRenderManagerRootSensor *>(PRIVATE(this)->rootsensor);
-  const bool canPatchSingleTranslation = rootSensor &&
+  const bool canPatchSingleStateChange = rootSensor &&
     PRIVATE(this)->drawListValid && !PRIVATE(this)->drawListDirty &&
     sceneRevisionChanged &&
     rootSensor->getNotificationCount() == 1 &&
     rootSensor->getChangedNode() && rootSensor->getChangedPath() &&
-    rootSensor->getChangedNode()->isOfType(SoTranslation::getClassTypeId()) &&
-    rootSensor->getChangedField() ==
-      &static_cast<SoTranslation *>(rootSensor->getChangedNode())->translation &&
     PRIVATE(this)->afterMainSceneCallbacks.empty() &&
     PRIVATE(this)->drawListCameraRevision == cameraRevision &&
     PRIVATE(this)->drawListBackgroundRevision == backgroundRevision &&
     PRIVATE(this)->drawListForegroundRevision == foregroundRevision;
-  if (canPatchSingleTranslation) {
-    const int updated = action->updateCommandMatricesForStatePath(
+  int updated = 0;
+  if (canPatchSingleStateChange &&
+      rootSensor->getChangedNode()->isOfType(SoTranslation::getClassTypeId()) &&
+      rootSensor->getChangedField() ==
+        &static_cast<SoTranslation *>(rootSensor->getChangedNode())->translation) {
+    updated = action->updateCommandMatricesForStatePath(
       rootSensor->getChangedPath());
-    if (updated > 0) {
-      PRIVATE(this)->incrementalCommandUpdates =
-        static_cast<uint64_t>(updated);
-      PRIVATE(this)->drawListDirty = FALSE;
-      PRIVATE(this)->drawListSceneRevision = sceneRevision;
-    }
+  }
+  else if (canPatchSingleStateChange &&
+           rootSensor->getChangedNode()->isOfType(SoMaterial::getClassTypeId()) &&
+           rootSensor->getChangedField() ==
+             &static_cast<SoMaterial *>(
+               rootSensor->getChangedNode())->diffuseColor) {
+    updated = action->updateCommandDiffuseColorsForStatePath(
+      rootSensor->getChangedPath());
+  }
+  if (updated > 0) {
+    PRIVATE(this)->incrementalCommandUpdates = static_cast<uint64_t>(updated);
+    PRIVATE(this)->drawListDirty = FALSE;
+    PRIVATE(this)->drawListSceneRevision = sceneRevision;
   }
   if (rootSensor) rootSensor->resetNotification();
 

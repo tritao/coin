@@ -1,6 +1,7 @@
 // src/actions/SoIRRenderAction.cpp
 
 #include <Inventor/actions/SoIRRenderAction.h>
+#include <Inventor/actions/SoCallbackAction.h>
 #include <Inventor/actions/SoGetMatrixAction.h>
 
 #include <Inventor/SoPath.h>
@@ -523,7 +524,28 @@ SoIRRenderAction::getRenderContextOverride() const
 int
 SoIRRenderAction::updateCommandMatricesForStatePath(const SoPath * statePath)
 {
-  if (!statePath || statePath->getFullLength() < 2) return 0;
+  std::vector<size_t> commandIndices;
+  this->findCommandsAffectedByStatePath(statePath, commandIndices);
+  int updated = 0;
+  for (std::vector<size_t>::const_iterator it = commandIndices.begin();
+       it != commandIndices.end(); ++it) {
+    const SoPath * commandPath = this->getCommandPath(static_cast<int>(*it));
+    if (!commandPath) continue;
+    SoGetMatrixAction matrixAction(this->vpRegion);
+    matrixAction.apply(const_cast<SoPath *>(commandPath));
+    this->drawlist.getCommand(static_cast<int>(*it)).modelMatrix =
+      matrixAction.getMatrix();
+    ++updated;
+  }
+  return updated;
+}
+
+void
+SoIRRenderAction::findCommandsAffectedByStatePath(
+  const SoPath * statePath, std::vector<size_t> & commandIndices) const
+{
+  commandIndices.clear();
+  if (!statePath || statePath->getFullLength() < 2) return;
   // Paths recorded while applying the scene root begin at its child. Match the
   // affected branch below that root; the changed state node itself is a left
   // sibling of the recorded shape path.
@@ -534,7 +556,6 @@ SoIRRenderAction::updateCommandMatricesForStatePath(const SoPath * statePath)
   const int * prefixIndices = statePath->indices.getArrayPtr();
   const int changedChildIndex =
     prefixIndices[statePath->getFullLength() - 1];
-  int updated = 0;
   for (size_t commandIndex = 0;
        commandIndex < PRIVATE(this)->commandPathRecords.size();
        ++commandIndex) {
@@ -553,14 +574,47 @@ SoIRRenderAction::updateCommandMatricesForStatePath(const SoPath * statePath)
         PRIVATE(this)->pathIndices[entry] ==
           prefixIndices[statePathOffset + i];
     }
-    if (!matches) continue;
-    const SoPath * commandPath =
-      this->getCommandPath(static_cast<int>(commandIndex));
+    if (matches) commandIndices.push_back(commandIndex);
+  }
+}
+
+namespace {
+struct MaterialReplay {
+  int materialIndex;
+  SoMaterialData material;
+};
+
+SoCallbackAction::Response
+captureEffectiveMaterial(void * data, SoCallbackAction * action,
+                         const SoNode *)
+{
+  MaterialReplay * replay = static_cast<MaterialReplay *>(data);
+  SoRenderIR::fillMaterialFromState(
+    action->getState(), replay->material, replay->materialIndex);
+  return SoCallbackAction::ABORT;
+}
+}
+
+int
+SoIRRenderAction::updateCommandDiffuseColorsForStatePath(
+  const SoPath * statePath)
+{
+  std::vector<size_t> commandIndices;
+  this->findCommandsAffectedByStatePath(statePath, commandIndices);
+  int updated = 0;
+  for (std::vector<size_t>::const_iterator it = commandIndices.begin();
+       it != commandIndices.end(); ++it) {
+    const SoPath * commandPath = this->getCommandPath(static_cast<int>(*it));
     if (!commandPath) continue;
-    SoGetMatrixAction matrixAction(this->vpRegion);
-    matrixAction.apply(const_cast<SoPath *>(commandPath));
-    this->drawlist.getCommand(static_cast<int>(commandIndex)).modelMatrix =
-      matrixAction.getMatrix();
+    SoRenderCommand & command =
+      this->drawlist.getCommand(static_cast<int>(*it));
+    MaterialReplay replay = { command.materialIndex, SoMaterialData() };
+    SoCallbackAction materialAction(this->vpRegion);
+    materialAction.addPreTailCallback(captureEffectiveMaterial, &replay);
+    materialAction.apply(const_cast<SoPath *>(commandPath));
+    command.material.diffuse[0] = replay.material.diffuse[0];
+    command.material.diffuse[1] = replay.material.diffuse[1];
+    command.material.diffuse[2] = replay.material.diffuse[2];
     ++updated;
   }
   return updated;

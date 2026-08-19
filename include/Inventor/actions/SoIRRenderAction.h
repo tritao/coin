@@ -157,6 +157,8 @@ public:
   void applyRenderStage(SoRenderCommand & command);
   //! Refresh matrices for commands affected by one state-node notification.
   int updateCommandMatricesForStatePath(const SoPath * statePath);
+  //! Refresh effective diffuse colors after one material notification.
+  int updateCommandDiffuseColorsForStatePath(const SoPath * statePath);
 #endif
 
 
@@ -203,6 +205,8 @@ private:
   void resetFrameResources();
   void clearCommandPaths();
 #if defined(COIN_INTERNAL)
+  void findCommandsAffectedByStatePath(
+    const SoPath * statePath, std::vector<size_t> & commandIndices) const;
   void traverseAdditionalPathInternal(
     SoPath * path, const SoIRRenderContext * context);
   const SoIRRenderContext * getRenderContextOverride() const;

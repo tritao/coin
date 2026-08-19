@@ -194,8 +194,10 @@ runTest()
   traversalCounter->setCallback(countTraversal, &traversalCount);
   SoTranslation * cubeTranslation = new SoTranslation;
   cubeTranslation->translation.setValue(0.0f, 0.0f, -3.0f);
+  SoMaterial * cubeMaterial = new SoMaterial;
   cubeRoot->addChild(traversalCounter);
   cubeRoot->addChild(cubeTranslation);
+  cubeRoot->addChild(cubeMaterial);
   cubeRoot->addChild(new SoCube);
   cubeRoot->ref();
 
@@ -330,14 +332,46 @@ runTest()
                 << std::endl;
       result = 1;
     }
+    cubeMaterial->diffuseColor.setValue(0.2f, 0.6f, 0.8f);
+    manager.render(TRUE, TRUE);
+    const SoRenderStatistics materialStatistics = manager.getRenderStatistics();
+    if (traversalCount != traversalCountAfterFirstRender + 1 ||
+        materialStatistics.drawListRebuilds != 0 ||
+        materialStatistics.incrementalCommandUpdates != 1) {
+      std::cerr << "FAIL: isolated diffuse color did not update its retained command"
+                << std::endl;
+      result = 1;
+    }
+    const PixelRGB incrementalMaterialPixel = centerPixel(context);
+    manager.invalidateDrawList();
+    manager.render(TRUE, TRUE);
+    const PixelRGB rebuiltMaterialPixel = centerPixel(context);
+    if (incrementalMaterialPixel.red != rebuiltMaterialPixel.red ||
+        incrementalMaterialPixel.green != rebuiltMaterialPixel.green ||
+        incrementalMaterialPixel.blue != rebuiltMaterialPixel.blue) {
+      std::cerr << "FAIL: incremental diffuse color differs from full rebuild"
+                << std::endl;
+      result = 1;
+    }
+    cubeMaterial->transparency.setValue(0.2f);
+    manager.render(TRUE, TRUE);
+    const SoRenderStatistics transparencyStatistics =
+      manager.getRenderStatistics();
+    if (traversalCount != traversalCountAfterFirstRender + 3 ||
+        transparencyStatistics.drawListRebuilds != 1 ||
+        transparencyStatistics.incrementalCommandUpdates != 0) {
+      std::cerr << "FAIL: transparency change bypassed full state rebuild"
+                << std::endl;
+      result = 1;
+    }
     cubeRoot->touch();
     manager.render(TRUE, TRUE);
-    if (traversalCount != traversalCountAfterFirstRender + 2) {
+    if (traversalCount != traversalCountAfterFirstRender + 4) {
       std::cerr << "FAIL: changed scene did not invalidate cached DrawList"
                 << std::endl;
       result = 1;
     }
-    if (callbacks.pre != 5 || callbacks.post != 5) {
+    if (callbacks.pre != 8 || callbacks.post != 8) {
       std::cerr << "FAIL: cached DrawList renders skipped manager callbacks"
                 << std::endl;
       result = 1;
