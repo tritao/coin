@@ -2079,9 +2079,6 @@ SoGLRenderBackend::classifyInstanceCommand(
          command.geometry.indexCount != 0))) {
     return InstanceCommandClass::GEOMETRY;
   }
-  if (command.geometry.colors != nullptr) {
-    return InstanceCommandClass::VERTEX_ATTRIBUTES;
-  }
   const SoTextureData & texture = command.material.texture;
   const bool hasTexture = texture.cacheKey != 0 || texture.pixels != nullptr;
   if (hasTexture &&
@@ -2099,6 +2096,9 @@ SoGLRenderBackend::classifyInstanceCommand(
     command.material.shadingModel == SO_SHADING_UNLIT &&
     command.state.blend.enabled;
   if (!opaque && !transparent) return InstanceCommandClass::MATERIAL;
+  if (command.geometry.colors != nullptr && !opaque) {
+    return InstanceCommandClass::VERTEX_ATTRIBUTES;
+  }
   if (command.state.alphaTest.policy != SO_ALPHA_TEST_POLICY_NONE ||
       !command.state.raster.visible ||
       command.state.raster.fillMode != SO_RASTER_FILL ||

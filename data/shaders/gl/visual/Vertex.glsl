@@ -24,7 +24,7 @@ flat out uint v_pickId;
 
 void main()
 {
-  v_color = u_instanced > 0.5
+  v_color = u_instanced > 0.5 && u_useVertexColor < 0.5
     ? a_instanceColor : coin_surface_vertex_color(a_color);
   v_texcoord = a_texcoord;
   v_pickId = a_instancePickId;

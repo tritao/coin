@@ -729,13 +729,12 @@ bool runFeatureRichScene(GLTestProfile profile, int commandCount, int samples,
   const SoRenderStatistics statistics = backend.getRenderStatistics();
   const uint64_t checksum = checksumPixels(context.readPixels());
   const uint64_t expectedDrawCalls = static_cast<uint64_t>(
-    2 + coloredCount + transparentLitCount);
+    3 + transparentLitCount);
   if (statistics.drawCalls != expectedDrawCalls ||
       statistics.instancedCommands !=
-        static_cast<uint64_t>(litCount + texturedCount) ||
+        static_cast<uint64_t>(litCount + texturedCount + coloredCount) ||
       statistics.instanceRejectedTexture != 0 ||
-      statistics.instanceRejectedVertexAttributes !=
-        static_cast<uint64_t>(coloredCount) ||
+      statistics.instanceRejectedVertexAttributes != 0 ||
       statistics.instanceRejectedMaterial !=
         static_cast<uint64_t>(transparentLitCount) || checksum == 0) {
     unavailable = "feature-rich workload classification was incorrect";

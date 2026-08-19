@@ -345,6 +345,40 @@ runTest()
     }
   }
 
+  // Opaque per-vertex colors remain shared geometry inputs while model
+  // transforms are selected per instance.
+  const float greenVertexColors[] = {
+    0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f,
+    0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f, 0.0f, 1.0f
+  };
+  SoRenderCommand vertexColorInstance = indexedInstance;
+  vertexColorInstance.modelMatrix.setTranslate(SbVec3f(-0.5f, 0.0f, 0.0f));
+  vertexColorInstance.geometry.cacheKey = 0x500u;
+  vertexColorInstance.geometry.colors = greenVertexColors;
+  vertexColorInstance.material.diffuse = SbVec4f(1.0f, 0.0f, 0.0f, 1.0f);
+  drawlist.clear();
+  drawlist.addCommand(vertexColorInstance);
+  vertexColorInstance.modelMatrix.setTranslate(SbVec3f(0.5f, 0.0f, 0.0f));
+  vertexColorInstance.material.diffuse = SbVec4f(0.0f, 0.0f, 1.0f, 1.0f);
+  drawlist.addCommand(vertexColorInstance);
+  if (!renderWithPlan(backend, drawlist, params)) {
+    std::cerr << "FAIL: vertex-colored instanced execution failed"
+              << std::endl;
+    result = 1;
+  }
+  else {
+    glFinish();
+    const SoRenderStatistics statistics = backend.getRenderStatistics();
+    const std::vector<uint8_t> pixels = readPixels(context);
+    if (statistics.drawCalls != 1 || statistics.instancedCommands != 2 ||
+        !nearColor(pixelAt(pixels, 8, 16), 0, 255, 0) ||
+        !nearColor(pixelAt(pixels, 24, 16), 0, 255, 0)) {
+      std::cerr << "FAIL: vertex-colored commands lost batching or color"
+                << std::endl;
+      result = 1;
+    }
+  }
+
   // State or resource differences must terminate an instance batch. Keep
   // these cases together so additions to the eligibility rules remain easy
   // to audit against the state they are allowed to coalesce.
@@ -394,6 +428,18 @@ runTest()
   SoRenderCommand differentSampler = texturedInstance;
   differentSampler.material.texture.magFilter = SO_TEXTURE_FILTER_LINEAR;
   expectBatchBreak(texturedInstance, differentSampler, "texture-sampler");
+  SoRenderCommand differentVertexColors = vertexColorInstance;
+  differentVertexColors.geometry.cacheKey = 0x501u;
+  expectBatchBreak(vertexColorInstance, differentVertexColors,
+                   "vertex-color-resource");
+  SoRenderCommand transparentVertexColors = vertexColorInstance;
+  transparentVertexColors.opacityClass = SO_OPACITY_TRANSPARENT;
+  transparentVertexColors.material.opacity = 0.5f;
+  transparentVertexColors.material.diffuse[3] = 0.5f;
+  transparentVertexColors.state.depth.writeEnabled = FALSE;
+  transparentVertexColors.state.blend.enabled = TRUE;
+  expectBatchBreak(vertexColorInstance, transparentVertexColors,
+                   "vertex-color-transparency");
 
   // Transparent instances must follow the planner's back-to-front order.
   // Compare the batch against the same draws forced through separate GPU
