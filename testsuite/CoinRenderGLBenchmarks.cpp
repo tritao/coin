@@ -13,11 +13,17 @@
 #endif
 #include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoCamera.h>
+#include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoFaceSet.h>
 #include <Inventor/nodes/SoLightModel.h>
 #include <Inventor/nodes/SoMaterial.h>
+#include <Inventor/nodes/SoMaterialBinding.h>
+#include <Inventor/nodes/SoNormal.h>
+#include <Inventor/nodes/SoNormalBinding.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoTexture2.h>
+#include <Inventor/nodes/SoTextureCoordinate2.h>
 #include <Inventor/nodes/SoTranslation.h>
 
 #include <algorithm>
@@ -38,7 +44,13 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-enum class WorkloadKind { ManyDraws, MaterialChurn, Transparency, DensePicking };
+enum class WorkloadKind {
+  ManyDraws,
+  MaterialChurn,
+  Transparency,
+  DensePicking,
+  FeatureRich
+};
 
 struct Options {
   bool smoke = false;
@@ -103,6 +115,7 @@ const char * workloadName(WorkloadKind kind)
   case WorkloadKind::MaterialChurn: return "many_material_changes";
   case WorkloadKind::Transparency: return "transparent_sorting";
   case WorkloadKind::DensePicking: return "single_pick_dense_scene";
+  case WorkloadKind::FeatureRich: return "feature_rich_scene_end_to_end";
   }
   return "unknown";
 }
@@ -121,8 +134,14 @@ SoSeparator * makeScene(WorkloadKind kind, int drawCount,
   camera->farDistance = 100.0f;
   camera->focalDistance = 10.0f;
   SoLightModel * lightModel = new SoLightModel;
-  lightModel->model = SoLightModel::BASE_COLOR;
+  lightModel->model = kind == WorkloadKind::FeatureRich
+    ? SoLightModel::PHONG : SoLightModel::BASE_COLOR;
   root->addChild(lightModel);
+  if (kind == WorkloadKind::FeatureRich) {
+    SoDirectionalLight * light = new SoDirectionalLight;
+    light->direction.setValue(0.0f, 0.0f, -1.0f);
+    root->addChild(light);
+  }
   SoMaterial * defaultMaterial = new SoMaterial;
   defaultMaterial->diffuseColor.setValue(0.3f, 0.7f, 1.0f);
   root->addChild(defaultMaterial);
@@ -135,6 +154,54 @@ SoSeparator * makeScene(WorkloadKind kind, int drawCount,
   const int columns = static_cast<int>(std::ceil(std::sqrt(
     static_cast<double>(drawCount))));
   const int rows = (drawCount + columns - 1) / columns;
+  SoCoordinate3 * sharedCoordinates = nullptr;
+  SoNormal * sharedNormals = nullptr;
+  SoNormalBinding * sharedNormalBinding = nullptr;
+  SoTextureCoordinate2 * sharedTexcoords = nullptr;
+  SoTexture2 * sharedTexture = nullptr;
+  SoMaterial * litMaterial = nullptr;
+  SoMaterial * vertexMaterial = nullptr;
+  SoMaterialBinding * vertexBinding = nullptr;
+  SoMaterial * transparentMaterial = nullptr;
+  SoFaceSet * sharedFace = nullptr;
+  if (kind == WorkloadKind::FeatureRich) {
+    sharedCoordinates = new SoCoordinate3;
+    sharedCoordinates->point.setValues(0, 3, triangle);
+    const SbVec3f normals[] = {
+      SbVec3f(0.0f, 0.0f, 1.0f), SbVec3f(0.0f, 0.0f, 1.0f),
+      SbVec3f(0.0f, 0.0f, 1.0f)
+    };
+    sharedNormals = new SoNormal;
+    sharedNormals->vector.setValues(0, 3, normals);
+    sharedNormalBinding = new SoNormalBinding;
+    sharedNormalBinding->value = SoNormalBinding::PER_VERTEX;
+    const SbVec2f textureCoordinates[] = {
+      SbVec2f(0.0f, 0.0f), SbVec2f(1.0f, 0.0f), SbVec2f(0.5f, 1.0f)
+    };
+    sharedTexcoords = new SoTextureCoordinate2;
+    sharedTexcoords->point.setValues(0, 3, textureCoordinates);
+    const unsigned char texels[] = {
+      220, 80, 40, 255, 40, 180, 220, 255,
+      40, 180, 220, 255, 220, 80, 40, 255
+    };
+    sharedTexture = new SoTexture2;
+    sharedTexture->image.setValue(SbVec2s(2, 2), 4, texels);
+    litMaterial = new SoMaterial;
+    litMaterial->diffuseColor.setValue(0.65f, 0.72f, 0.85f);
+    const SbColor vertexColors[] = {
+      SbColor(1.0f, 0.2f, 0.2f), SbColor(0.2f, 1.0f, 0.2f),
+      SbColor(0.2f, 0.2f, 1.0f)
+    };
+    vertexMaterial = new SoMaterial;
+    vertexMaterial->diffuseColor.setValues(0, 3, vertexColors);
+    vertexBinding = new SoMaterialBinding;
+    vertexBinding->value = SoMaterialBinding::PER_VERTEX;
+    transparentMaterial = new SoMaterial;
+    transparentMaterial->diffuseColor.setValue(0.65f, 0.72f, 0.85f);
+    transparentMaterial->transparency = 0.45f;
+    sharedFace = new SoFaceSet;
+    sharedFace->numVertices.set1Value(0, 3);
+  }
   for (int i = 0; i < drawCount; ++i) {
     SoSeparator * draw = new SoSeparator;
     draw->renderCaching = SoSeparator::OFF;
@@ -152,7 +219,27 @@ SoSeparator * makeScene(WorkloadKind kind, int drawCount,
     translation->translation.setValue(x, y, z);
     draw->addChild(translation);
 
-    if (kind != WorkloadKind::ManyDraws) {
+    if (kind == WorkloadKind::FeatureRich) {
+      const int group = i < drawCount * 2 / 5 ? 0
+        : (i < drawCount * 3 / 5 ? 1
+          : (i < drawCount * 4 / 5 ? 2 : 3));
+      if (group == 2) {
+        draw->addChild(vertexMaterial);
+        draw->addChild(vertexBinding);
+      }
+      else {
+        draw->addChild(group == 3 ? transparentMaterial : litMaterial);
+      }
+      if (group == 1) {
+        draw->addChild(sharedTexture);
+        draw->addChild(sharedTexcoords);
+      }
+      draw->addChild(sharedCoordinates);
+      draw->addChild(sharedNormals);
+      draw->addChild(sharedNormalBinding);
+      draw->addChild(sharedFace);
+    }
+    else if (kind != WorkloadKind::ManyDraws) {
       SoMaterial * material = new SoMaterial;
       const float value = static_cast<float>((i * 17) % 101) / 100.0f;
       material->diffuseColor.setValue(0.2f + value * 0.8f,
@@ -161,12 +248,14 @@ SoSeparator * makeScene(WorkloadKind kind, int drawCount,
       if (kind == WorkloadKind::Transparency) material->transparency = 0.35f;
       draw->addChild(material);
     }
-    SoCoordinate3 * coordinates = new SoCoordinate3;
-    coordinates->point.setValues(0, 3, triangle);
-    SoFaceSet * face = new SoFaceSet;
-    face->numVertices.set1Value(0, 3);
-    draw->addChild(coordinates);
-    draw->addChild(face);
+    if (kind != WorkloadKind::FeatureRich) {
+      SoCoordinate3 * coordinates = new SoCoordinate3;
+      coordinates->point.setValues(0, 3, triangle);
+      SoFaceSet * face = new SoFaceSet;
+      face->numVertices.set1Value(0, 3);
+      draw->addChild(coordinates);
+      draw->addChild(face);
+    }
     root->addChild(draw);
   }
   return root;
@@ -232,7 +321,9 @@ bool runVariant(GLTestProfile profile,
   manager.setViewportRegion(viewport);
   manager.setSceneGraph(scene);
   manager.setCamera(camera);
-  manager.setLightingMode(SoRenderManager::UNLIT);
+  manager.setLightingMode(workload == WorkloadKind::FeatureRich
+                            ? SoRenderManager::LIT
+                            : SoRenderManager::UNLIT);
   manager.setRenderPipeline(pipeline);
   manager.setRenderPhaseTimingEnabled(
     pipeline == SoRenderManager::RenderPipeline::DRAW_LIST);
@@ -288,11 +379,18 @@ bool runVariant(GLTestProfile profile,
   glDeleteQueries(1, &query);
   const SoRenderStatistics renderStatistics = manager.getRenderStatistics();
   if (pipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
-    if (renderStatistics.instancedCommands !=
-          static_cast<uint64_t>(drawCount) ||
-        renderStatistics.drawCalls != 1) {
+    const bool expectedBatching = workload == WorkloadKind::FeatureRich
+      ? renderStatistics.instancedCommands != 0 &&
+        renderStatistics.drawCalls < static_cast<uint64_t>(drawCount) &&
+        renderStatistics.instanceBreakGeometryResource != 0 &&
+        renderStatistics.instanceRejectedMaterial ==
+          static_cast<uint64_t>(drawCount - drawCount * 4 / 5)
+      : renderStatistics.instancedCommands ==
+          static_cast<uint64_t>(drawCount) &&
+        renderStatistics.drawCalls == 1;
+    if (!expectedBatching) {
       std::cerr << "FAIL: " << renderer << ' ' << workloadName(workload)
-                << " did not collapse compatible commands into one batch\n";
+                << " did not retain expected batching\n";
       camera->unref();
       scene->unref();
       return false;
@@ -1194,7 +1292,8 @@ int main(int argc, char ** argv)
     WorkloadKind::ManyDraws,
     WorkloadKind::MaterialChurn,
     WorkloadKind::Transparency,
-    WorkloadKind::DensePicking
+    WorkloadKind::DensePicking,
+    WorkloadKind::FeatureRich
   };
   std::vector<Measurement> results;
   std::vector<std::string> unavailable;
