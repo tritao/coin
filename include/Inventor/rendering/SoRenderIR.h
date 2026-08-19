@@ -723,6 +723,7 @@ struct SoRenderStatistics {
   uint64_t retainedPathNodeEntries = 0;
   uint64_t retainedPathNodeReferences = 0;
   uint64_t retainedPathStorageBytes = 0;
+  uint64_t incrementalCommandUpdates = 0;
 };
 
 /*!

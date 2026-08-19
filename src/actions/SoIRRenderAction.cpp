@@ -1,6 +1,7 @@
 // src/actions/SoIRRenderAction.cpp
 
 #include <Inventor/actions/SoIRRenderAction.h>
+#include <Inventor/actions/SoGetMatrixAction.h>
 
 #include <Inventor/SoPath.h>
 #include <Inventor/SoDB.h>
@@ -517,6 +518,52 @@ SoIRRenderAction::getRenderContextOverride() const
 {
   return PRIVATE(this)->hasRenderContextOverride
     ? &PRIVATE(this)->renderContextOverride : nullptr;
+}
+
+int
+SoIRRenderAction::updateCommandMatricesForStatePath(const SoPath * statePath)
+{
+  if (!statePath || statePath->getFullLength() < 2) return 0;
+  // Paths recorded while applying the scene root begin at its child. Match the
+  // affected branch below that root; the changed state node itself is a left
+  // sibling of the recorded shape path.
+  const size_t statePathOffset = 1;
+  const size_t prefixLength =
+    static_cast<size_t>(statePath->getFullLength() - 1) - statePathOffset;
+  void ** prefixNodes = statePath->nodes.getArrayPtr();
+  const int * prefixIndices = statePath->indices.getArrayPtr();
+  const int changedChildIndex =
+    prefixIndices[statePath->getFullLength() - 1];
+  int updated = 0;
+  for (size_t commandIndex = 0;
+       commandIndex < PRIVATE(this)->commandPathRecords.size();
+       ++commandIndex) {
+    const SoIRRenderActionP::PathRecord & record =
+      PRIVATE(this)->commandPathRecords[commandIndex];
+    if (record.length <= prefixLength ||
+        PRIVATE(this)->pathIndices[record.first + prefixLength] <=
+          changedChildIndex) {
+      continue;
+    }
+    bool matches = true;
+    for (size_t i = 0; matches && i < prefixLength; ++i) {
+      const size_t entry = record.first + i;
+      matches =
+        PRIVATE(this)->pathNodes[entry] == prefixNodes[statePathOffset + i] &&
+        PRIVATE(this)->pathIndices[entry] ==
+          prefixIndices[statePathOffset + i];
+    }
+    if (!matches) continue;
+    const SoPath * commandPath =
+      this->getCommandPath(static_cast<int>(commandIndex));
+    if (!commandPath) continue;
+    SoGetMatrixAction matrixAction(this->vpRegion);
+    matrixAction.apply(const_cast<SoPath *>(commandPath));
+    this->drawlist.getCommand(static_cast<int>(commandIndex)).modelMatrix =
+      matrixAction.getMatrix();
+    ++updated;
+  }
+  return updated;
 }
 
 void

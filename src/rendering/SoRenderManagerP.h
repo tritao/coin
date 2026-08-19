@@ -55,6 +55,7 @@ class SbMatrix;
 class SoNodeSensor;
 class SoInfo;
 class SoNode;
+class SoField;
 class SoPath;
 class SoDetail;
 class SoAction;
@@ -131,6 +132,7 @@ public:
   uint64_t drawListConstructionNanoseconds;
   uint64_t planConstructionNanoseconds;
   uint64_t drawListRebuilds;
+  uint64_t incrementalCommandUpdates;
   uint32_t renderBackendContextId;
   SbBool drawListCallbackScope;
   SbBool drawListValid;
@@ -191,14 +193,23 @@ class SoRenderManagerRootSensor : public SoNodeSensor {
   typedef SoNodeSensor inherited;
 
 public:
-  SoRenderManagerRootSensor(SoSensorCB * func, void * data) : inherited(func, data) { }
-  virtual ~SoRenderManagerRootSensor() { }
+  SoRenderManagerRootSensor(SoSensorCB * func, void * data);
+  virtual ~SoRenderManagerRootSensor();
 
   void notify(SoNotList * l) override;
+  SoNode * getChangedNode(void) const { return this->changedNode; }
+  SoField * getChangedField(void) const { return this->changedField; }
+  const SoPath * getChangedPath(void) const { return this->changedPath; }
+  unsigned int getNotificationCount(void) const { return this->notificationCount; }
+  void resetNotification(void);
   static SbBool debug(void);
 
 private:
   static int debugrootnotifications;
+  SoNode * changedNode;
+  SoField * changedField;
+  SoPath * changedPath;
+  unsigned int notificationCount;
 };
 
 // *************************************************************************

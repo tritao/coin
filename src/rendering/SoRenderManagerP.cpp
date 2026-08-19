@@ -385,10 +385,59 @@ SoRenderManagerP::invokeAfterMainSceneCallbacks(SoAction * action)
 #undef PUBLIC
 
 void
+SoRenderManagerRootSensor::resetNotification(void)
+{
+  this->unschedule();
+  this->changedNode = NULL;
+  this->changedField = NULL;
+  if (this->changedPath) this->changedPath->unref();
+  this->changedPath = NULL;
+  this->notificationCount = 0;
+}
+
+SoRenderManagerRootSensor::SoRenderManagerRootSensor(SoSensorCB * func,
+                                                     void * data)
+  : inherited(func, data), changedNode(NULL), changedField(NULL),
+    changedPath(NULL), notificationCount(0)
+{
+}
+
+SoRenderManagerRootSensor::~SoRenderManagerRootSensor()
+{
+  this->resetNotification();
+}
+
+void
 SoRenderManagerRootSensor::notify(SoNotList * l)
 {
-  l->print();
-  (void)fprintf(stdout, "end\n");
+  ++this->notificationCount;
+  this->changedField = l->getLastField();
+  SoNotRec * changed = l->getFirstRecAtNode();
+  this->changedNode = changed
+    ? static_cast<SoNode *>(changed->getBase()) : NULL;
+  if (this->changedPath) this->changedPath->unref();
+  this->changedPath = NULL;
+  if (this->changedNode) {
+    const SoNotRec * record = l->getLastRec();
+    while (record &&
+           !record->getBase()->isOfType(SoNode::getClassTypeId())) {
+      record = record->getPrevious();
+    }
+    if (record) {
+      this->changedPath = new SoPath(
+        static_cast<SoNode *>(record->getBase()));
+      this->changedPath->ref();
+      while (record->getBase() != this->changedNode) {
+        record = record->getPrevious();
+        this->changedPath->append(
+          static_cast<SoNode *>(record->getBase()));
+      }
+    }
+  }
+  if (SoRenderManagerRootSensor::debug()) {
+    l->print();
+    (void)fprintf(stdout, "end\n");
+  }
 
   inherited::notify(l);
 }

@@ -68,6 +68,7 @@
 #include <Inventor/system/gl.h>
 #include <Inventor/nodes/SoInfo.h>
 #include <Inventor/nodes/SoCamera.h>
+#include <Inventor/nodes/SoTranslation.h>
 #include <Inventor/SoPath.h>
 #include <Inventor/SoPickedPoint.h>
 #include <Inventor/lists/SoPickedPointList.h>
@@ -407,6 +408,7 @@ SoRenderManager::SoRenderManager(void)
   PRIVATE(this)->drawListConstructionNanoseconds = 0;
   PRIVATE(this)->planConstructionNanoseconds = 0;
   PRIVATE(this)->drawListRebuilds = 0;
+  PRIVATE(this)->incrementalCommandUpdates = 0;
   PRIVATE(this)->renderBackendContextId = 0;
   PRIVATE(this)->drawListCallbackScope = FALSE;
   PRIVATE(this)->drawListValid = FALSE;
@@ -611,9 +613,8 @@ void
 SoRenderManager::attachRootSensor(SoNode * const sceneroot)
 {
   if (!PRIVATE(this)->rootsensor) {
-    (SoRenderManagerRootSensor::debug()) ?
-      PRIVATE(this)->rootsensor = new SoRenderManagerRootSensor(SoRenderManager::nodesensorCB, this):
-      PRIVATE(this)->rootsensor = new SoNodeSensor(SoRenderManager::nodesensorCB, this);
+    PRIVATE(this)->rootsensor = new SoRenderManagerRootSensor(
+      SoRenderManager::nodesensorCB, this);
     // set a high priority on the root sensor. The actual redraw
     // scheduling is handled by the redraw sensor at the correct
     // priority (root sensor callback triggers the redraw sensor). Set
@@ -1169,6 +1170,46 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   const uint64_t foregroundRevision = PRIVATE(this)->renderLayerForegroundRoot
     ? static_cast<uint64_t>(
         PRIVATE(this)->renderLayerForegroundRoot->getNodeId()) : 0;
+  using RenderPhaseClock = std::chrono::steady_clock;
+  PRIVATE(this)->drawListConstructionNanoseconds = 0;
+  PRIVATE(this)->planConstructionNanoseconds = 0;
+  const bool sceneRevisionChanged =
+    PRIVATE(this)->drawListSceneRevision != sceneRevision;
+  const bool needsFrameUpdate = !PRIVATE(this)->drawListValid ||
+    PRIVATE(this)->drawListDirty || sceneRevisionChanged ||
+    PRIVATE(this)->drawListCameraRevision != cameraRevision ||
+    PRIVATE(this)->drawListBackgroundRevision != backgroundRevision ||
+    PRIVATE(this)->drawListForegroundRevision != foregroundRevision;
+  const RenderPhaseClock::time_point updateStart =
+    PRIVATE(this)->renderPhaseTimingEnabled && needsFrameUpdate
+      ? RenderPhaseClock::now() : RenderPhaseClock::time_point();
+  PRIVATE(this)->incrementalCommandUpdates = 0;
+  SoRenderManagerRootSensor * rootSensor =
+    static_cast<SoRenderManagerRootSensor *>(PRIVATE(this)->rootsensor);
+  const bool canPatchSingleTranslation = rootSensor &&
+    PRIVATE(this)->drawListValid && !PRIVATE(this)->drawListDirty &&
+    sceneRevisionChanged &&
+    rootSensor->getNotificationCount() == 1 &&
+    rootSensor->getChangedNode() && rootSensor->getChangedPath() &&
+    rootSensor->getChangedNode()->isOfType(SoTranslation::getClassTypeId()) &&
+    rootSensor->getChangedField() ==
+      &static_cast<SoTranslation *>(rootSensor->getChangedNode())->translation &&
+    PRIVATE(this)->afterMainSceneCallbacks.empty() &&
+    PRIVATE(this)->drawListCameraRevision == cameraRevision &&
+    PRIVATE(this)->drawListBackgroundRevision == backgroundRevision &&
+    PRIVATE(this)->drawListForegroundRevision == foregroundRevision;
+  if (canPatchSingleTranslation) {
+    const int updated = action->updateCommandMatricesForStatePath(
+      rootSensor->getChangedPath());
+    if (updated > 0) {
+      PRIVATE(this)->incrementalCommandUpdates =
+        static_cast<uint64_t>(updated);
+      PRIVATE(this)->drawListDirty = FALSE;
+      PRIVATE(this)->drawListSceneRevision = sceneRevision;
+    }
+  }
+  if (rootSensor) rootSensor->resetNotification();
+
   const SbBool rebuildDrawList =
     !PRIVATE(this)->drawListValid || PRIVATE(this)->drawListDirty ||
     !PRIVATE(this)->afterMainSceneCallbacks.empty() ||
@@ -1177,13 +1218,17 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
     PRIVATE(this)->drawListBackgroundRevision != backgroundRevision ||
     PRIVATE(this)->drawListForegroundRevision != foregroundRevision;
 
-  using RenderPhaseClock = std::chrono::steady_clock;
-  PRIVATE(this)->drawListConstructionNanoseconds = 0;
-  PRIVATE(this)->planConstructionNanoseconds = 0;
   PRIVATE(this)->drawListRebuilds = rebuildDrawList ? 1 : 0;
   const RenderPhaseClock::time_point drawListStart =
     PRIVATE(this)->renderPhaseTimingEnabled && rebuildDrawList
-      ? RenderPhaseClock::now() : RenderPhaseClock::time_point();
+      ? updateStart : RenderPhaseClock::time_point();
+
+  if (!rebuildDrawList && PRIVATE(this)->incrementalCommandUpdates > 0 &&
+      PRIVATE(this)->renderPhaseTimingEnabled) {
+    PRIVATE(this)->drawListConstructionNanoseconds =
+      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        RenderPhaseClock::now() - updateStart).count());
+  }
 
   if (rebuildDrawList) action->beginFrame();
 
@@ -2542,6 +2587,8 @@ SoRenderManager::getRenderStatistics() const
   statistics.planConstructionNanoseconds =
     PRIVATE(this)->planConstructionNanoseconds;
   statistics.drawListRebuilds = PRIVATE(this)->drawListRebuilds;
+  statistics.incrementalCommandUpdates =
+    PRIVATE(this)->incrementalCommandUpdates;
   if (PRIVATE(this)->irAction) {
     const SoIRRenderAction::PathStatistics & paths =
       PRIVATE(this)->irAction->getPathStatistics();

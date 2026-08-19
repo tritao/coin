@@ -308,14 +308,36 @@ runTest()
                 << std::endl;
       result = 1;
     }
+    cubeTranslation->translation.setValue(0.1f, 0.0f, -3.0f);
+    manager.render(TRUE, TRUE);
+    const SoRenderStatistics transformStatistics = manager.getRenderStatistics();
+    if (traversalCount != traversalCountAfterFirstRender ||
+        transformStatistics.drawListRebuilds != 0 ||
+        transformStatistics.incrementalCommandUpdates != 1) {
+      std::cerr << "FAIL: isolated translation did not update its retained command"
+                << std::endl;
+      result = 1;
+    }
+    cubeTranslation->translation.setValue(0.2f, 0.0f, -3.0f);
+    cubeTranslation->translation.setValue(0.3f, 0.0f, -3.0f);
+    manager.render(TRUE, TRUE);
+    const SoRenderStatistics repeatedTransformStatistics =
+      manager.getRenderStatistics();
+    if (traversalCount != traversalCountAfterFirstRender + 1 ||
+        repeatedTransformStatistics.drawListRebuilds != 1 ||
+        repeatedTransformStatistics.incrementalCommandUpdates != 0) {
+      std::cerr << "FAIL: multiple notifications did not use a full rebuild"
+                << std::endl;
+      result = 1;
+    }
     cubeRoot->touch();
     manager.render(TRUE, TRUE);
-    if (traversalCount != traversalCountAfterFirstRender + 1) {
+    if (traversalCount != traversalCountAfterFirstRender + 2) {
       std::cerr << "FAIL: changed scene did not invalidate cached DrawList"
                 << std::endl;
       result = 1;
     }
-    if (callbacks.pre != 3 || callbacks.post != 3) {
+    if (callbacks.pre != 5 || callbacks.post != 5) {
       std::cerr << "FAIL: cached DrawList renders skipped manager callbacks"
                 << std::endl;
       result = 1;
