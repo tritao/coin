@@ -1249,6 +1249,10 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
     mutations.materials[0]->diffuseColor.set1Value(
       0, SbColor((sample & 1) ? 0.7f : 0.2f, 0.4f, 0.6f));
   });
+  measure("incremental_transparency_1", [&](int sample) {
+    mutations.materials[0]->transparency.set1Value(
+      0, (sample & 1) ? 0.25f : 0.0f);
+  });
   measure("incremental_geometry_1", [&](int sample) {
     mutations.coordinates[0]->point.set1Value(
       0, SbVec3f((sample & 1) ? -0.40f : -0.44f, -0.42f, 0.0f));
