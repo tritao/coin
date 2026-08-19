@@ -304,6 +304,7 @@ void
 SoDrawList::clear()
 {
   this->commands.clear();
+  this->geometryResources.clear();
   this->lightingSetups.clear();
   this->depthClearEvents.clear();
   this->selection = SoSelectionState();
@@ -367,6 +368,46 @@ SoDrawList::emplaceCommand()
   this->pickLUTGeneration = 0;
   this->commands.emplace_back();
   return this->commands.back();
+}
+
+SoGeometryHandle
+SoDrawList::addGeometryResource(const SoGeometryResource & resource)
+{
+  this->geometryResources.push_back(resource);
+  return static_cast<SoGeometryHandle>(this->geometryResources.size());
+}
+
+SoGeometryHandle
+SoDrawList::addGeometryResource(SoGeometryResource && resource)
+{
+  this->geometryResources.push_back(std::move(resource));
+  return static_cast<SoGeometryHandle>(this->geometryResources.size());
+}
+
+SoGeometryResource *
+SoDrawList::getGeometryResource(SoGeometryHandle handle)
+{
+  if (handle == SO_INVALID_GEOMETRY_HANDLE ||
+      static_cast<size_t>(handle) > this->geometryResources.size()) {
+    return nullptr;
+  }
+  return &this->geometryResources[static_cast<size_t>(handle - 1)];
+}
+
+const SoGeometryResource *
+SoDrawList::getGeometryResource(SoGeometryHandle handle) const
+{
+  if (handle == SO_INVALID_GEOMETRY_HANDLE ||
+      static_cast<size_t>(handle) > this->geometryResources.size()) {
+    return nullptr;
+  }
+  return &this->geometryResources[static_cast<size_t>(handle - 1)];
+}
+
+int
+SoDrawList::getNumGeometryResources() const
+{
+  return static_cast<int>(this->geometryResources.size());
 }
 
 void

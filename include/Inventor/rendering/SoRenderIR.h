@@ -120,6 +120,24 @@ struct SoGeometryDesc {
 
 };
 
+//! Stable, draw-list-local reference to an owned geometry resource.
+using SoGeometryHandle = uint32_t;
+static constexpr SoGeometryHandle SO_INVALID_GEOMETRY_HANDLE = 0;
+
+/*!
+  \struct SoGeometryResource
+  \brief Draw-list-owned geometry payload and producer revision identity.
+
+  Resource handles are one-based and remain stable until SoDrawList::clear().
+  The descriptor retains the existing borrowed-pointer contract while
+  producers migrate geometry storage into the resource table.
+*/
+struct SoGeometryResource {
+  SoGeometryDesc geometry;
+  uint64_t sourceKey = 0;
+  uint64_t revision = 0;
+};
+
 /*!
   \enum SoShadingModel
   \brief Effective shading contract carried by a render command.
@@ -773,6 +791,7 @@ struct SoRenderCommand {
   // Geometry, texture pixels, and other pointer-valued fields are borrowed;
   // see the lifetime contract on SoGeometryDesc and SoTextureData.
   SoGeometryDesc   geometry;
+  SoGeometryHandle geometryHandle = SO_INVALID_GEOMETRY_HANDLE;
   SoMaterialData   material;
   SoRenderState    state;
 
@@ -825,6 +844,15 @@ public:
   void addCommand(SoRenderCommand && cmd);
   SoRenderCommand & emplaceCommand();
 
+  //! Append an owned geometry resource and return its stable one-based handle.
+  SoGeometryHandle addGeometryResource(const SoGeometryResource & resource);
+  SoGeometryHandle addGeometryResource(SoGeometryResource && resource);
+  //! Return NULL for the invalid handle or a handle outside this draw list.
+  SoGeometryResource * getGeometryResource(SoGeometryHandle handle);
+  const SoGeometryResource * getGeometryResource(
+    SoGeometryHandle handle) const;
+  int getNumGeometryResources() const;
+
   int getNumCommands() const;
   //! Remove commands beyond index count without reordering remaining commands.
   void truncate(int count);
@@ -870,6 +898,7 @@ public:
 
 private:
   std::vector<SoRenderCommand> commands;
+  std::vector<SoGeometryResource> geometryResources;
   std::vector<SoLightingData> lightingSetups;
   std::vector<SoDepthClearEvent> depthClearEvents;
   SoSelectionState selection;

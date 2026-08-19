@@ -19,6 +19,44 @@ runTest()
   root->ref();
 
   int result = 0;
+  SoDrawList resourceDrawList;
+  SoGeometryResource firstResource;
+  firstResource.geometry.vertexCount = 3;
+  firstResource.sourceKey = 17;
+  firstResource.revision = 4;
+  const SoGeometryHandle firstHandle =
+    resourceDrawList.addGeometryResource(firstResource);
+  SoGeometryResource secondResource;
+  secondResource.geometry.vertexCount = 6;
+  const SoGeometryHandle secondHandle =
+    resourceDrawList.addGeometryResource(std::move(secondResource));
+  SoRenderCommand resourceCommand;
+  resourceCommand.geometry = firstResource.geometry;
+  resourceCommand.geometryHandle = firstHandle;
+  resourceDrawList.addCommand(resourceCommand);
+  const SoGeometryResource * resolvedFirst =
+    resourceDrawList.getGeometryResource(firstHandle);
+  if (firstHandle == SO_INVALID_GEOMETRY_HANDLE ||
+      secondHandle == SO_INVALID_GEOMETRY_HANDLE ||
+      firstHandle == secondHandle ||
+      resourceDrawList.getNumGeometryResources() != 2 ||
+      !resolvedFirst || resolvedFirst->sourceKey != 17 ||
+      resolvedFirst->revision != 4 ||
+      resourceDrawList.getCommand(0).geometryHandle != firstHandle ||
+      resourceDrawList.getGeometryResource(SO_INVALID_GEOMETRY_HANDLE) ||
+      resourceDrawList.getGeometryResource(secondHandle + 1)) {
+    std::cerr << "FAIL: draw-list geometry resource handles were unstable"
+              << std::endl;
+    result = 1;
+  }
+  resourceDrawList.clear();
+  if (resourceDrawList.getNumGeometryResources() != 0 ||
+      resourceDrawList.getGeometryResource(firstHandle)) {
+    std::cerr << "FAIL: draw-list clear retained stale geometry resources"
+              << std::endl;
+    result = 1;
+  }
+
   SoTextureData texture;
   if (texture.colorSpace != SO_TEXTURE_COLORSPACE_LEGACY) {
     std::cerr << "FAIL: retained textures changed legacy color interpretation"
