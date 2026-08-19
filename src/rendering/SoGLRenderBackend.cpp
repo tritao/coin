@@ -94,6 +94,19 @@ sameInstancedUnlitMaterial(const SoMaterialData & lhs,
 }
 
 bool
+sameInstancedTexture(const SoTextureData & lhs, const SoTextureData & rhs)
+{
+  return lhs.cacheKey == rhs.cacheKey && lhs.revision == rhs.revision &&
+    lhs.width == rhs.width && lhs.height == rhs.height &&
+    lhs.numComponents == rhs.numComponents &&
+    lhs.hasTransparency == rhs.hasTransparency &&
+    lhs.minFilter == rhs.minFilter && lhs.magFilter == rhs.magFilter &&
+    lhs.wrapS == rhs.wrapS && lhs.wrapT == rhs.wrapT &&
+    lhs.colorSpace == rhs.colorSpace && lhs.anisotropic == rhs.anisotropic &&
+    lhs.model == rhs.model && lhs.blendColor == rhs.blendColor;
+}
+
+bool
 sameAlphaTest(const SoAlphaTestState & lhs, const SoAlphaTestState & rhs)
 {
   return lhs.policy == rhs.policy && lhs.function == rhs.function &&
@@ -2069,8 +2082,12 @@ SoGLRenderBackend::classifyInstanceCommand(
   if (command.geometry.colors != nullptr) {
     return InstanceCommandClass::VERTEX_ATTRIBUTES;
   }
-  if (command.material.texture.cacheKey != 0 ||
-      command.material.texture.pixels != nullptr) {
+  const SoTextureData & texture = command.material.texture;
+  const bool hasTexture = texture.cacheKey != 0 || texture.pixels != nullptr;
+  if (hasTexture &&
+      (!command.geometry.texcoords || texture.width <= 0 ||
+       texture.height <= 0 || texture.numComponents < 1 ||
+       texture.numComponents > 4)) {
     return InstanceCommandClass::TEXTURE;
   }
   const bool opaque = command.opacityClass == SO_OPACITY_OPAQUE &&
@@ -2111,6 +2128,7 @@ SoGLRenderBackend::classifyInstanceCompatibility(
   }
   if (!(sameMaterialUniforms(first.material, next.material) ||
         sameInstancedUnlitMaterial(first.material, next.material)) ||
+      !sameInstancedTexture(first.material.texture, next.material.texture) ||
       first.opacityClass != next.opacityClass ||
       first.material.opacity != next.material.opacity) {
     return InstanceCompatibility::MATERIAL;

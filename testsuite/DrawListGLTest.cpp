@@ -308,6 +308,43 @@ runTest()
     }
   }
 
+  // A shared texture and sampler are batch resources; transform and diffuse
+  // color remain per-instance inputs.
+  const unsigned char whiteTexel[] = { 255, 255, 255, 255 };
+  SoRenderCommand texturedInstance = indexedInstance;
+  texturedInstance.modelMatrix.setTranslate(SbVec3f(-0.5f, 0.0f, 0.0f));
+  texturedInstance.geometry.cacheKey = 0x300u;
+  texturedInstance.geometry.texcoords = texcoords;
+  texturedInstance.geometry.texcoordStride = sizeof(float) * 4;
+  texturedInstance.material.texture.pixels = whiteTexel;
+  texturedInstance.material.texture.width = 1;
+  texturedInstance.material.texture.height = 1;
+  texturedInstance.material.texture.numComponents = 4;
+  texturedInstance.material.texture.cacheKey = 0x400u;
+  texturedInstance.material.texture.revision = 1;
+  texturedInstance.material.diffuse = SbVec4f(1.0f, 0.0f, 0.0f, 1.0f);
+  drawlist.clear();
+  drawlist.addCommand(texturedInstance);
+  texturedInstance.modelMatrix.setTranslate(SbVec3f(0.5f, 0.0f, 0.0f));
+  texturedInstance.material.diffuse = SbVec4f(0.0f, 0.0f, 1.0f, 1.0f);
+  drawlist.addCommand(texturedInstance);
+  if (!renderWithPlan(backend, drawlist, params)) {
+    std::cerr << "FAIL: textured instanced execution failed" << std::endl;
+    result = 1;
+  }
+  else {
+    glFinish();
+    const SoRenderStatistics statistics = backend.getRenderStatistics();
+    const std::vector<uint8_t> pixels = readPixels(context);
+    if (statistics.drawCalls != 1 || statistics.instancedCommands != 2 ||
+        !nearColor(pixelAt(pixels, 8, 16), 255, 0, 0) ||
+        !nearColor(pixelAt(pixels, 24, 16), 0, 0, 255)) {
+      std::cerr << "FAIL: textured commands lost batching or instance data"
+                << std::endl;
+      result = 1;
+    }
+  }
+
   // State or resource differences must terminate an instance batch. Keep
   // these cases together so additions to the eligibility rules remain easy
   // to audit against the state they are allowed to coalesce.
@@ -351,6 +388,12 @@ runTest()
   viewportOverride.state.raster.viewportWidth = 32;
   viewportOverride.state.raster.viewportHeight = 32;
   expectBatchBreak(indexedInstance, viewportOverride, "viewport");
+  SoRenderCommand differentTexture = texturedInstance;
+  differentTexture.material.texture.cacheKey = 0x401u;
+  expectBatchBreak(texturedInstance, differentTexture, "texture-resource");
+  SoRenderCommand differentSampler = texturedInstance;
+  differentSampler.material.texture.magFilter = SO_TEXTURE_FILTER_LINEAR;
+  expectBatchBreak(texturedInstance, differentSampler, "texture-sampler");
 
   // Transparent instances must follow the planner's back-to-front order.
   // Compare the batch against the same draws forced through separate GPU

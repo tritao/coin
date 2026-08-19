@@ -729,11 +729,11 @@ bool runFeatureRichScene(GLTestProfile profile, int commandCount, int samples,
   const SoRenderStatistics statistics = backend.getRenderStatistics();
   const uint64_t checksum = checksumPixels(context.readPixels());
   const uint64_t expectedDrawCalls = static_cast<uint64_t>(
-    1 + texturedCount + coloredCount + transparentLitCount);
+    2 + coloredCount + transparentLitCount);
   if (statistics.drawCalls != expectedDrawCalls ||
-      statistics.instancedCommands != static_cast<uint64_t>(litCount) ||
-      statistics.instanceRejectedTexture !=
-        static_cast<uint64_t>(texturedCount) ||
+      statistics.instancedCommands !=
+        static_cast<uint64_t>(litCount + texturedCount) ||
+      statistics.instanceRejectedTexture != 0 ||
       statistics.instanceRejectedVertexAttributes !=
         static_cast<uint64_t>(coloredCount) ||
       statistics.instanceRejectedMaterial !=
