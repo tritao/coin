@@ -393,6 +393,11 @@ SoRenderManager::SoRenderManager(void)
 #else
     SoRenderManager::RenderPipeline::DRAW_LIST;
 #endif
+  PRIVATE(this)->lastRenderResult.requestedPipeline = PRIVATE(this)->renderPipeline;
+  PRIVATE(this)->lastRenderResult.usedPipeline = PRIVATE(this)->renderPipeline;
+  PRIVATE(this)->lastRenderResult.fallbackReason =
+    SoRenderManager::RenderResult::FallbackReason::NONE;
+  PRIVATE(this)->lastRenderResult.rendered = FALSE;
   PRIVATE(this)->lightingmode = SoRenderManager::LIT;
   PRIVATE(this)->irAction = NULL;
   PRIVATE(this)->renderBackend = NULL;
@@ -768,6 +773,10 @@ SoRenderManager::removeSuperimposition(Superimposition * s)
 void
 SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
 {
+  PRIVATE(this)->lastRenderResult.requestedPipeline = PRIVATE(this)->renderPipeline;
+  PRIVATE(this)->lastRenderResult.usedPipeline = PRIVATE(this)->renderPipeline;
+  PRIVATE(this)->lastRenderResult.fallbackReason = RenderResult::FallbackReason::NONE;
+  PRIVATE(this)->lastRenderResult.rendered = FALSE;
   if (PRIVATE(this)->renderPipeline == RenderPipeline::DRAW_LIST) {
     this->renderDrawListPipeline(clearwindow, clearzbuffer);
     return;
@@ -845,6 +854,7 @@ SoRenderManager::render(const SbBool clearwindow, const SbBool clearzbuffer)
     // let SoGLRenderAction handle the accumulation buffer
     this->render(PRIVATE(this)->glaction, TRUE, clearwindow, clearzbuffer);
   }
+  PRIVATE(this)->lastRenderResult.rendered = TRUE;
 #endif // COIN_BUILD_LEGACY_GL_RENDERER
 }
 
@@ -1007,6 +1017,10 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
       PRIVATE(this)->renderPipeline = SoRenderManager::RenderPipeline::LEGACY_GL;
       this->render(clearwindow, clearzbuffer);
       PRIVATE(this)->renderPipeline = savedPipeline;
+      PRIVATE(this)->lastRenderResult.requestedPipeline = savedPipeline;
+      PRIVATE(this)->lastRenderResult.usedPipeline = RenderPipeline::LEGACY_GL;
+      PRIVATE(this)->lastRenderResult.fallbackReason =
+        RenderResult::FallbackReason::MANAGER_FEATURE_UNSUPPORTED;
 #endif
     }
     else {
@@ -1022,6 +1036,8 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
     // Do not shut down or replace a backend after its context disappeared.
     // A vanished context must not be used to release its former GL objects.
     PRIVATE(this)->drawListCallbackScope = FALSE;
+    PRIVATE(this)->lastRenderResult.fallbackReason =
+      RenderResult::FallbackReason::CONTEXT_UNSUPPORTED;
     return;
   }
 
@@ -1042,6 +1058,7 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
     PRIVATE(this)->invokePreRenderCallbacks();
     PRIVATE(this)->invokePostRenderCallbacks();
     PRIVATE(this)->drawListCallbackScope = FALSE;
+    PRIVATE(this)->lastRenderResult.rendered = TRUE;
     return;
   }
 
@@ -1079,12 +1096,20 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
         PRIVATE(this)->renderPipeline = SoRenderManager::RenderPipeline::LEGACY_GL;
         this->render(clearwindow, clearzbuffer);
         PRIVATE(this)->renderPipeline = savedPipeline;
+        PRIVATE(this)->lastRenderResult.requestedPipeline = savedPipeline;
+        PRIVATE(this)->lastRenderResult.usedPipeline = RenderPipeline::LEGACY_GL;
+        PRIVATE(this)->lastRenderResult.fallbackReason =
+          RenderResult::FallbackReason::BACKEND_INITIALIZATION_FAILED;
 #endif
       }
       else {
         SoDebugError::post(
           "SoRenderManager::renderDrawListPipeline",
           "DrawList backend initialization failed in the current GL context");
+      }
+      if (!PRIVATE(this)->lastRenderResult.rendered) {
+        PRIVATE(this)->lastRenderResult.fallbackReason =
+          RenderResult::FallbackReason::BACKEND_INITIALIZATION_FAILED;
       }
       return;
     }
@@ -1215,6 +1240,10 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
       PRIVATE(this)->renderPipeline = SoRenderManager::RenderPipeline::LEGACY_GL;
       this->render(clearwindow, clearzbuffer);
       PRIVATE(this)->renderPipeline = savedPipeline;
+      PRIVATE(this)->lastRenderResult.requestedPipeline = savedPipeline;
+      PRIVATE(this)->lastRenderResult.usedPipeline = RenderPipeline::LEGACY_GL;
+      PRIVATE(this)->lastRenderResult.fallbackReason =
+        RenderResult::FallbackReason::TRAVERSAL_UNSUPPORTED;
       PRIVATE(this)->drawListCallbackScope = FALSE;
       PRIVATE(this)->invokePostRenderCallbacks();
       return;
@@ -1226,6 +1255,8 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
       reason ? reason : "unsupported retained rendering semantics");
     PRIVATE(this)->drawListCallbackScope = FALSE;
     PRIVATE(this)->invokePostRenderCallbacks();
+    PRIVATE(this)->lastRenderResult.fallbackReason =
+      RenderResult::FallbackReason::TRAVERSAL_UNSUPPORTED;
     return;
   }
 
@@ -1272,6 +1303,7 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
 
   PRIVATE(this)->invokePostRenderCallbacks();
   PRIVATE(this)->drawListCallbackScope = FALSE;
+  PRIVATE(this)->lastRenderResult.rendered = TRUE;
 }
 
 /*!
@@ -2284,6 +2316,25 @@ SoRenderManager::RenderPipeline
 SoRenderManager::getRenderPipeline(void) const
 {
   return PRIVATE(this)->renderPipeline;
+}
+
+SbBool
+SoRenderManager::isRenderPipelineAvailable(const RenderPipeline pipeline) const
+{
+  if (pipeline == RenderPipeline::LEGACY_GL) {
+#if COIN_BUILD_LEGACY_GL_RENDERER
+    return currentContextSupportsLegacyRendering();
+#else
+    return FALSE;
+#endif
+  }
+  return coin_gl_current_context() != NULL;
+}
+
+const SoRenderManager::RenderResult &
+SoRenderManager::getLastRenderResult(void) const
+{
+  return PRIVATE(this)->lastRenderResult;
 }
 
 SbBool

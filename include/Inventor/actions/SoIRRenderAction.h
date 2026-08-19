@@ -119,7 +119,9 @@ public:
   //! Traverse a path without clearing the retained frame. Ancestor traversal
   //! reconstructs inherited scene state for the replayed path.
   void traverseAdditionalPath(SoPath * path);
-#if defined(COIN_INTERNAL) || defined(COIN_ALLOW_PRIVATE_HEADERS)
+  //! Record a depth-clear barrier at the current traversal position.
+  void requestDepthClear();
+#if defined(COIN_INTERNAL)
   //! Traverse a path using a copied replay context. The context supplements
   //! path traversal; it is not a general snapshot of SoState.
   void traverseAdditionalPath(SoPath * path,
@@ -127,17 +129,20 @@ public:
   SoRenderStage getRenderStage() const;
   void setRenderStage(SoRenderStage stage);
   void applyRenderStage(SoRenderCommand & command);
-  //! Record a depth-clear barrier at the current traversal position.
-  void requestDepthClear();
 #endif
 
 
   //! Return the generated draw list for the current frame.
   const SoDrawList & getDrawList(void) const { return this->drawlist; }
-#if defined(COIN_INTERNAL) || defined(COIN_ALLOW_PRIVATE_HEADERS)
-  //! Mutable access to the generated draw list for the current frame.
+  /*!
+    \brief Return mutable access to commands emitted in the current frame.
+
+    This advanced extension point lets custom nodes annotate commands emitted
+    by inherited retained traversal, for example with application-specific
+    element ranges or selection state. Mutations must remain scoped to the
+    current traversal and preserve SoDrawList invariants.
+  */
   SoDrawList & getMutableDrawList() { return this->drawlist; }
-#endif
 
   /*!
     \brief Allocate per-frame geometry storage owned by the action.
@@ -169,7 +174,7 @@ private:
   void initializeCameraState(CameraPolicy policy);
   void resetFrameResources();
   void clearCommandPaths();
-#if defined(COIN_INTERNAL) || defined(COIN_ALLOW_PRIVATE_HEADERS)
+#if defined(COIN_INTERNAL)
   void traverseAdditionalPathInternal(
     SoPath * path, const SoIRRenderContext * context);
   const SoIRRenderContext * getRenderContextOverride() const;
@@ -187,7 +192,7 @@ private:
   const char * unsupportedReason = nullptr;
 };
 
-#if defined(COIN_INTERNAL) || defined(COIN_ALLOW_PRIVATE_HEADERS)
+#if defined(COIN_INTERNAL)
 /*! \brief RAII guard for an action-local manager render stage. */
 class COIN_DLL_API SoIRRenderStageScope {
 public:

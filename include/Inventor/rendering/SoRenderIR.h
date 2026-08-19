@@ -16,6 +16,9 @@
 #include <vector>
 
 using SoNodeId = uint64_t;
+//! Identifies one rendered scene-path occurrence within a retained frame.
+//! Zero means unspecified. Automatically assigned values are not guaranteed
+//! to remain stable across frames.
 using SoInstanceId = uint64_t;
 using SoObjectId = uint64_t;
 class SoState;
@@ -496,7 +499,7 @@ struct SoLightingData {
   std::vector<SoLightData> lights;
 };
 
-#if defined(COIN_INTERNAL) || defined(COIN_ALLOW_PRIVATE_HEADERS)
+#if defined(COIN_INTERNAL)
 /*!
   \struct SoIRRenderContext
   \brief State that must survive when a path is replayed after traversal.
@@ -575,7 +578,7 @@ struct SoPickData {
 struct SoPickLUTEntry {
   int commandIndex = -1;
   SoNodeId nodeId = 0;
-  SoInstanceId instanceId = 0;
+  SoInstanceId instanceId = 0; //!< Frame-local rendered path occurrence.
   SoObjectId objectId = 0;
   SoPickElementType type = SO_PICK_OBJECT;
   int elementIndex = -1;
@@ -599,7 +602,7 @@ struct SoPickResult {
   uint32_t generation = 0;
   int commandIndex = -1;
   SoNodeId nodeId = 0;
-  SoInstanceId instanceId = 0;
+  SoInstanceId instanceId = 0; //!< Frame-local rendered path occurrence.
   SoObjectId objectId = 0;
   SoPickElementType type = SO_PICK_OBJECT;
   int elementIndex = -1;
@@ -635,7 +638,7 @@ struct SoPickResultList {
 struct SoSelectionTarget {
   int commandIndex = -1;
   SoNodeId nodeId = 0;
-  SoInstanceId instanceId = 0;
+  SoInstanceId instanceId = 0; //!< Frame-local rendered path occurrence.
   SoObjectId objectId = 0;
   SoPickElementType type = SO_PICK_OBJECT;
   int elementIndex = -1;
@@ -677,7 +680,7 @@ struct SoRenderCommand {
   SoRenderStage    stage = SoRenderStage::Main;
   SoLightingHandle lightingHandle = 0;
   SoNodeId         nodeId = 0;     //!< Identity of the underlying scene node.
-  SoInstanceId     instanceId = 0; //!< Identity of this rendered occurrence.
+  SoInstanceId     instanceId = 0; //!< Frame-local rendered path occurrence.
   SoObjectId       objectId = 0;   //!< Optional producer semantic identity.
   SoPixelRasterData pixelRaster;
   SoPickData       pick;

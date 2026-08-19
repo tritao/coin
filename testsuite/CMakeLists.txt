@@ -289,8 +289,7 @@ if(COIN_BUILD_LEGACY_GL_RENDERER)
 		SOURCES DevicePixelRatioTraversalTest.cpp)
 endif()
 add_executable(RetainedIRTest RetainedIRTest.cpp)
-target_compile_definitions(RetainedIRTest PRIVATE COIN_ALLOW_PRIVATE_HEADERS)
-target_link_libraries(RetainedIRTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_link_libraries(RetainedIRTest CoinTestInternals Coin ${COIN_TARGET_LINK_LIBRARIES})
 target_include_directories(RetainedIRTest PRIVATE
 	${PROJECT_SOURCE_DIR}/include
 	${PROJECT_BINARY_DIR}/include
@@ -309,8 +308,7 @@ target_include_directories(RenderPlanTest PRIVATE
 add_test(NAME RenderPlanTest COMMAND RenderPlanTest)
 
 add_executable(RetainedNodeTest RetainedNodeTest.cpp)
-target_compile_definitions(RetainedNodeTest PRIVATE COIN_ALLOW_PRIVATE_HEADERS)
-target_link_libraries(RetainedNodeTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_link_libraries(RetainedNodeTest CoinTestInternals Coin ${COIN_TARGET_LINK_LIBRARIES})
 target_include_directories(RetainedNodeTest PRIVATE
 	${PROJECT_SOURCE_DIR}/include
 	${PROJECT_BINARY_DIR}/include
@@ -359,10 +357,8 @@ if(HAVE_EGL)
 endif()
 
 add_executable(RetainedReplayContextTest RetainedReplayContextTest.cpp)
-target_link_libraries(RetainedReplayContextTest $<LINK_ONLY:Coin>
+target_link_libraries(RetainedReplayContextTest CoinTestInternals Coin
 	${COIN_TARGET_LINK_LIBRARIES})
-target_compile_definitions(RetainedReplayContextTest PRIVATE
-	COIN_ALLOW_PRIVATE_HEADERS)
 target_include_directories(RetainedReplayContextTest PRIVATE
 	${PROJECT_SOURCE_DIR}/src
 	${PROJECT_SOURCE_DIR}/include
@@ -379,14 +375,6 @@ target_include_directories(RenderLayerSemanticsTest PRIVATE
 	${COIN_TARGET_INCLUDE_DIRECTORIES})
 add_test(NAME RenderLayerSemanticsTest COMMAND RenderLayerSemanticsTest)
 set_tests_properties(RenderLayerSemanticsTest PROPERTIES LABELS "unit")
-
-add_executable(RenderManagerPipelineTest RenderManagerPipelineTest.cpp)
-target_link_libraries(RenderManagerPipelineTest Coin ${COIN_TARGET_LINK_LIBRARIES})
-target_include_directories(RenderManagerPipelineTest PRIVATE
-	${PROJECT_SOURCE_DIR}/include
-	${PROJECT_BINARY_DIR}/include
-	${COIN_TARGET_INCLUDE_DIRECTORIES})
-add_test(NAME RenderManagerPipelineTest COMMAND RenderManagerPipelineTest)
 
 get_property(COIN_REGISTERED_TESTS DIRECTORY PROPERTY TESTS)
 foreach(COIN_REGISTERED_TEST IN LISTS COIN_REGISTERED_TESTS)

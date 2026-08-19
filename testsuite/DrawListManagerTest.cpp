@@ -268,10 +268,25 @@ runTest()
     manager.setCamera(camera);
     manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
 
+    if (!manager.isRenderPipelineAvailable(SoRenderManager::RenderPipeline::DRAW_LIST)) {
+      std::cerr << "FAIL: DrawList was unavailable in a valid core context" << std::endl;
+      result = 1;
+    }
+
     CallbackCounts callbacks;
     manager.addPreRenderCallback(preRender, &callbacks);
     manager.addPostRenderCallback(postRender, &callbacks);
     manager.render(TRUE, TRUE);
+    const SoRenderManager::RenderResult & renderResult = manager.getLastRenderResult();
+    if (!renderResult.rendered ||
+        renderResult.requestedPipeline != SoRenderManager::RenderPipeline::DRAW_LIST ||
+        renderResult.usedPipeline != SoRenderManager::RenderPipeline::DRAW_LIST ||
+        renderResult.fallbackReason !=
+          SoRenderManager::RenderResult::FallbackReason::NONE) {
+      std::cerr << "FAIL: DrawList render result did not report the executed pipeline"
+                << std::endl;
+      result = 1;
+    }
     if (callbacks.pre != 1 || callbacks.post != 1) {
       std::cerr << "FAIL: DrawList manager callbacks were not paired exactly once" << std::endl;
       result = 1;

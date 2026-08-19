@@ -123,6 +123,7 @@ public:
   float devicePixelRatio;
   SbBool cameraInSceneGraph;
   SoRenderManager::RenderPipeline renderPipeline;
+  SoRenderManager::RenderResult lastRenderResult;
   SoRenderManager::LightingMode lightingmode;
   SoIRRenderAction * irAction;
   SoRenderBackend * renderBackend;

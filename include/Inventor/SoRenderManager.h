@@ -86,6 +86,21 @@ public:
     DRAW_LIST
   };
 
+  struct RenderResult {
+    enum class FallbackReason {
+      NONE,
+      MANAGER_FEATURE_UNSUPPORTED,
+      CONTEXT_UNSUPPORTED,
+      BACKEND_INITIALIZATION_FAILED,
+      TRAVERSAL_UNSUPPORTED
+    };
+
+    RenderPipeline requestedPipeline;
+    RenderPipeline usedPipeline;
+    FallbackReason fallbackReason;
+    SbBool rendered;
+  };
+
   class COIN_DLL_API Superimposition {
   public:
     enum StateFlags {
@@ -245,6 +260,8 @@ public:
 #endif
   void setRenderPipeline(RenderPipeline pipeline);
   RenderPipeline getRenderPipeline(void) const;
+  SbBool isRenderPipelineAvailable(RenderPipeline pipeline) const;
+  const RenderResult & getLastRenderResult(void) const;
 
   /*! Return the closest renderer-neutral scene hit. The caller owns result. */
   SbBool pickClosest(int x, int y, int radius, SoPickedPoint *& result);

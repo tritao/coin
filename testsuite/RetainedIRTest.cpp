@@ -50,6 +50,48 @@ runTest()
     result = 1;
   }
 
+  SoSeparator * dagRoot = new SoSeparator;
+  dagRoot->ref();
+  SoSeparator * parentA = new SoSeparator;
+  SoSeparator * parentB = new SoSeparator;
+  SoCoordinate3 * coordinatesA = new SoCoordinate3;
+  SoCoordinate3 * coordinatesB = new SoCoordinate3;
+  const SbVec3f triangle[] = {
+    SbVec3f(-1.0f, -1.0f, 0.0f),
+    SbVec3f(1.0f, -1.0f, 0.0f),
+    SbVec3f(0.0f, 1.0f, 0.0f)
+  };
+  coordinatesA->point.setValues(0, 3, triangle);
+  coordinatesB->point.setValues(0, 3, triangle);
+  SoFaceSet * sharedFaceSet = new SoFaceSet;
+  sharedFaceSet->numVertices.set1Value(0, 3);
+  parentA->addChild(coordinatesA);
+  parentA->addChild(sharedFaceSet);
+  parentB->addChild(coordinatesB);
+  parentB->addChild(sharedFaceSet);
+  dagRoot->addChild(parentA);
+  dagRoot->addChild(parentB);
+
+  action.apply(dagRoot);
+  if (action.getDrawList().getNumCommands() != 2) {
+    std::cerr << "FAIL: shared DAG shape did not emit two commands"
+              << std::endl;
+    result = 1;
+  }
+  else {
+    const SoRenderCommand & commandA = action.getDrawList().getCommand(0);
+    const SoRenderCommand & commandB = action.getDrawList().getCommand(1);
+    if (commandA.nodeId == 0 || commandA.nodeId != commandB.nodeId ||
+        commandA.instanceId == 0 || commandB.instanceId == 0 ||
+        commandA.instanceId == commandB.instanceId) {
+      std::cerr << "FAIL: shared DAG shape occurrences conflated retained identity"
+                << std::endl;
+      result = 1;
+    }
+  }
+  dagRoot->unref();
+  action.apply(root);
+
   SoRenderCommand command;
   command.geometry.topology = SO_TOPOLOGY_TRIANGLES;
   command.geometry.vertexCount = 3;
