@@ -71,6 +71,8 @@ struct Measurement {
   double selectionP95Ms = 0.0;
   double mutationMedianMs = 0.0;
   double mutationP95Ms = 0.0;
+  double pickUpdateCpuMedianMs = 0.0;
+  double pickUpdateCompletionMedianMs = 0.0;
   SoRenderStatistics renderStatistics;
   double pickMedianMs = 0.0;
   double pickP95Ms = 0.0;
@@ -716,6 +718,7 @@ bool runMixedRetainedScene(GLTestProfile profile, int commandCount, int samples,
   glDeleteQueries(1, &query);
   const SoRenderStatistics statistics = backend.getRenderStatistics();
   std::vector<double> selectionTimes, pickTimes, refreshTimes, mutationTimes;
+  std::vector<double> pickUpdateCpuTimes, pickUpdateCompletionTimes;
   for (int sample = 0; sample < samples; ++sample) {
     context.bindFramebuffer();
     backend.render(drawlist, plan, params);
@@ -735,6 +738,15 @@ bool runMixedRetainedScene(GLTestProfile profile, int commandCount, int samples,
     backend.updatePickBuffer(drawlist, plan, params);
     backend.pickClosest(128, 128, 2, pick);
     refreshTimes.push_back(elapsedMs(start));
+  }
+  for (int sample = 0; sample < samples; ++sample) {
+    glFinish();
+    const Clock::time_point completionStart = Clock::now();
+    const Clock::time_point cpuStart = Clock::now();
+    backend.updatePickBuffer(drawlist, plan, params);
+    pickUpdateCpuTimes.push_back(elapsedMs(cpuStart));
+    glFinish();
+    pickUpdateCompletionTimes.push_back(elapsedMs(completionStart));
   }
   for (int sample = 0; sample < samples; ++sample) {
     const uint64_t revision = static_cast<uint64_t>(sample + 2);
@@ -780,6 +792,9 @@ bool runMixedRetainedScene(GLTestProfile profile, int commandCount, int samples,
   result.pickMedianMs = percentile(pickTimes, 0.5);
   result.pickP95Ms = percentile(pickTimes, 0.95);
   result.refreshPickMs = percentile(refreshTimes, 0.5);
+  result.pickUpdateCpuMedianMs = percentile(pickUpdateCpuTimes, 0.5);
+  result.pickUpdateCompletionMedianMs = percentile(
+    pickUpdateCompletionTimes, 0.5);
   result.mutationMedianMs = percentile(mutationTimes, 0.5);
   result.mutationP95Ms = percentile(mutationTimes, 0.95);
   result.renderStatistics = statistics;
@@ -835,6 +850,10 @@ std::string toJson(const std::vector<Measurement> & results,
         << ", \"selection_p95_ms\": " << r.selectionP95Ms
         << ", \"mutation_median_ms\": " << r.mutationMedianMs
         << ", \"mutation_p95_ms\": " << r.mutationP95Ms
+        << ", \"pick_update_cpu_median_ms\": "
+        << r.pickUpdateCpuMedianMs
+        << ", \"pick_update_completion_median_ms\": "
+        << r.pickUpdateCompletionMedianMs
         << ", \"draw_calls\": " << r.renderStatistics.drawCalls
         << ", \"program_binds\": " << r.renderStatistics.programBinds
         << ", \"skipped_program_binds\": "
