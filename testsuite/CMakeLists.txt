@@ -279,9 +279,7 @@ target_include_directories(RetainedIRTest PRIVATE
 )
 add_test(NAME RetainedIRTest COMMAND RetainedIRTest)
 
-add_executable(RenderPlanTest
-	RenderPlanTest.cpp
-	${PROJECT_SOURCE_DIR}/src/rendering/SoRenderPlan.cpp)
+add_executable(RenderPlanTest RenderPlanTest.cpp)
 target_link_libraries(RenderPlanTest Coin ${COIN_TARGET_LINK_LIBRARIES})
 target_include_directories(RenderPlanTest PRIVATE
 	${PROJECT_SOURCE_DIR}/src

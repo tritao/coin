@@ -131,18 +131,20 @@ struct TextureUploadFormat {
 };
 
 TextureUploadFormat
-textureUploadFormat(const int components)
+textureUploadFormat(const int components, const SoTextureColorSpace colorSpace)
 {
+  const bool srgb = colorSpace == SO_TEXTURE_COLORSPACE_SRGB;
   switch (components) {
   case 1:
     return { GL_R8, GL_RED, { GL_RED, GL_RED, GL_RED, GL_ONE } };
   case 2:
     return { GL_RG8, GL_RG, { GL_RED, GL_RED, GL_RED, GL_GREEN } };
   case 3:
-    return { GL_RGB8, GL_RGB, { GL_RED, GL_GREEN, GL_BLUE, GL_ONE } };
+    return { srgb ? GL_SRGB8 : GL_RGB8, GL_RGB,
+             { GL_RED, GL_GREEN, GL_BLUE, GL_ONE } };
   case 4:
   default:
-    return { GL_RGBA8, GL_RGBA,
+    return { srgb ? GL_SRGB8_ALPHA8 : GL_RGBA8, GL_RGBA,
              { GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA } };
   }
 }
@@ -419,7 +421,7 @@ SoGLRenderBackend::uploadTexture(CachedCommand & entry,
   cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, entry.texture);
 
   const TextureUploadFormat format =
-    textureUploadFormat(texture.numComponents);
+    textureUploadFormat(texture.numComponents, texture.colorSpace);
   const ScopedPixelUnpackState unpackState(this->glue);
   glTexImage2D(GL_TEXTURE_2D, 0, format.internalFormat,
                texture.width, texture.height, 0, format.format,
@@ -476,6 +478,8 @@ SoGLRenderBackend::updateCacheDescription(CachedCommand & entry,
   entry.textureWidth = hasTexture ? texture.width : 0;
   entry.textureHeight = hasTexture ? texture.height : 0;
   entry.textureComponents = hasTexture ? texture.numComponents : 0;
+  entry.textureColorSpace = hasTexture
+    ? texture.colorSpace : SO_TEXTURE_COLORSPACE_LEGACY;
   entry.geometryCacheKey = geometry.cacheKey;
   entry.geometryRevision = geometry.revision;
   entry.textureCacheKey = hasTexture ? texture.cacheKey : 0;
@@ -542,7 +546,8 @@ SoGLRenderBackend::textureDescriptionMatches(
   return identityMatches &&
     entry.textureWidth == texture.width &&
     entry.textureHeight == texture.height &&
-    entry.textureComponents == texture.numComponents;
+    entry.textureComponents == texture.numComponents &&
+    entry.textureColorSpace == texture.colorSpace;
 }
 
 void

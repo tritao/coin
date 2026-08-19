@@ -79,6 +79,7 @@ private:
     int textureWidth = 0;
     int textureHeight = 0;
     int textureComponents = 0;
+    SoTextureColorSpace textureColorSpace = SO_TEXTURE_COLORSPACE_LEGACY;
     uint64_t geometryCacheKey = 0;
     uint64_t geometryRevision = 0;
     uint64_t textureCacheKey = 0;

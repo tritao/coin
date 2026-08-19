@@ -214,6 +214,54 @@ runTest()
     result = 1;
   }
 
+  // Explicit color-space semantics select the upload format, and form part
+  // of persistent texture identity even when the producer keeps its key and
+  // revision unchanged.
+  const float fullQuad[] = {
+    -1.0f, -1.0f, 0.0f, 1.0f, -1.0f, 0.0f,
+     1.0f,  1.0f, 0.0f, -1.0f, 1.0f, 0.0f
+  };
+  const unsigned char middleGray[] = { 128, 128, 128 };
+  SoDrawList colorSpaceDrawlist;
+  SoRenderCommand colorSpaceCommand = texturedQuad(
+    fullQuad, indices, texcoords, middleGray, 3,
+    SbVec4f(1.0f, 1.0f, 1.0f, 1.0f));
+  colorSpaceCommand.material.texture.cacheKey = 0x73u;
+  colorSpaceCommand.material.texture.revision = 1;
+  colorSpaceCommand.material.texture.colorSpace = SO_TEXTURE_COLORSPACE_LINEAR;
+  colorSpaceDrawlist.addCommand(colorSpaceCommand);
+  if (!renderWithPlan(backend, colorSpaceDrawlist, params)) {
+    std::cerr << "FAIL: linear texture color space was not accepted"
+              << std::endl;
+    result = 1;
+  }
+  else {
+    glFinish();
+    const std::vector<uint8_t> pixels = readPixels(context);
+    if (!nearColor(pixelAt(pixels, 16, 16), 128, 128, 128)) {
+      std::cerr << "FAIL: linear texture upload changed texel interpretation"
+                << std::endl;
+      result = 1;
+    }
+  }
+
+  colorSpaceDrawlist.clear();
+  colorSpaceCommand.material.texture.colorSpace = SO_TEXTURE_COLORSPACE_SRGB;
+  colorSpaceDrawlist.addCommand(colorSpaceCommand);
+  if (!renderWithPlan(backend, colorSpaceDrawlist, params)) {
+    std::cerr << "FAIL: sRGB texture color space was not accepted" << std::endl;
+    result = 1;
+  }
+  else {
+    glFinish();
+    const std::vector<uint8_t> pixels = readPixels(context);
+    if (!nearColor(pixelAt(pixels, 16, 16), 55, 55, 55)) {
+      std::cerr << "FAIL: texture cache ignored changed color-space semantics"
+                << std::endl;
+      result = 1;
+    }
+  }
+
   // Exercise unindexed geometry and the basic vertex-color path.
   const float triangle[] = {
     -0.8f, -0.8f, 0.0f,
