@@ -575,6 +575,195 @@ bool runIndexedInstances(GLTestProfile profile, int instanceCount, int samples,
   return true;
 }
 
+bool runFeatureRichScene(GLTestProfile profile, int commandCount, int samples,
+                         Measurement & result, std::string & unavailable)
+{
+  GLTestContextConfig config;
+  config.profile = profile;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 256;
+  config.height = 256;
+  GLTestContext context;
+  if (!context.initialize(config) || !checkTimerQueries()) {
+    unavailable = "required OpenGL context or timer queries are unavailable";
+    return false;
+  }
+
+  const float positions[] = {
+    -0.025f, -0.025f, 0.0f, 0.025f, -0.025f, 0.0f,
+     0.025f,  0.025f, 0.0f, -0.025f, 0.025f, 0.0f
+  };
+  const float normals[] = {
+    0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f,
+    0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 1.0f
+  };
+  const float texcoords[] = {
+    0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f,
+    1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f
+  };
+  const float colors[] = {
+    1.0f, 0.2f, 0.2f, 1.0f, 0.2f, 1.0f, 0.2f, 1.0f,
+    0.2f, 0.2f, 1.0f, 1.0f, 1.0f, 0.8f, 0.2f, 1.0f
+  };
+  const uint32_t indices[] = { 0, 1, 2, 0, 2, 3 };
+  const unsigned char texels[] = {
+    220, 80, 40, 255, 40, 180, 220, 255,
+    40, 180, 220, 255, 220, 80, 40, 255
+  };
+  const int litCount = commandCount * 2 / 5;
+  const int texturedCount = commandCount / 5;
+  const int coloredCount = commandCount / 5;
+  const int transparentLitCount =
+    commandCount - litCount - texturedCount - coloredCount;
+  const int columns = static_cast<int>(std::ceil(std::sqrt(
+    static_cast<double>(commandCount))));
+  const int rows = (commandCount + columns - 1) / columns;
+  const float dx = 1.8f / static_cast<float>(std::max(1, columns - 1));
+  const float dy = 1.8f / static_cast<float>(std::max(1, rows - 1));
+
+  SoDrawList drawlist;
+  drawlist.reserve(commandCount);
+  SoLightingData lighting;
+  SoLightData directional;
+  directional.direction.setValue(0.0f, 0.0f, 1.0f);
+  lighting.lights.push_back(directional);
+  const SoLightingHandle lightingHandle = drawlist.addLightingSetup(lighting);
+  for (int i = 0; i < commandCount; ++i) {
+    SoRenderCommand command;
+    command.modelMatrix.setTranslate(SbVec3f(
+      -0.9f + (i % columns) * dx, -0.9f + (i / columns) * dy,
+      i >= litCount + texturedCount + coloredCount
+        ? -static_cast<float>(i % 13) * 0.001f : 0.0f));
+    command.geometry.topology = SO_TOPOLOGY_TRIANGLES;
+    command.geometry.vertexCount = 4;
+    command.geometry.normalCount = 4;
+    command.geometry.indexCount = 6;
+    command.geometry.positions = positions;
+    command.geometry.normals = normals;
+    command.geometry.indices = indices;
+    command.geometry.vertexStride = sizeof(float) * 3;
+    command.material.shadingModel = SO_SHADING_LEGACY_GOURAUD;
+    command.material.diffuse = SbVec4f(0.65f, 0.72f, 0.85f, 1.0f);
+    command.lightingHandle = lightingHandle;
+    if (i < litCount) {
+      command.geometry.resourceKey = 0x4645415455524501ULL;
+    }
+    else if (i < litCount + texturedCount) {
+      command.geometry.resourceKey = 0x4645415455524502ULL;
+      command.geometry.texcoords = texcoords;
+      command.geometry.texcoordStride = sizeof(float) * 4;
+      command.material.texture.pixels = texels;
+      command.material.texture.width = 2;
+      command.material.texture.height = 2;
+      command.material.texture.numComponents = 4;
+      command.material.texture.cacheKey = 0x4645415454580001ULL;
+      command.material.texture.revision = 1;
+    }
+    else if (i < litCount + texturedCount + coloredCount) {
+      command.geometry.resourceKey = 0x4645415455524503ULL;
+      command.geometry.colors = colors;
+    }
+    else {
+      command.geometry.resourceKey = 0x4645415455524504ULL;
+      command.opacityClass = SO_OPACITY_TRANSPARENT;
+      command.material.opacity = 0.55f;
+      command.material.diffuse[3] = 0.55f;
+      command.state.depth.writeEnabled = FALSE;
+      command.state.blend.enabled = TRUE;
+      command.state.blend.srcRGBFactor = SO_BLEND_FACTOR_SRC_ALPHA;
+      command.state.blend.dstRGBFactor =
+        SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+      command.state.blend.srcAlphaFactor = SO_BLEND_FACTOR_ONE;
+      command.state.blend.dstAlphaFactor =
+        SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    }
+    drawlist.addCommand(command);
+  }
+
+  SoRenderParams params;
+  params.viewport = SbViewportRegion(256, 256);
+  params.viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(256, 256));
+  params.viewMatrix.makeIdentity();
+  params.projMatrix.makeIdentity();
+  params.clearColor.setValue(0.0f, 0.0f, 0.0f, 1.0f);
+  params.flags = SO_PARAM_CLEAR_WINDOW | SO_PARAM_CLEAR_DEPTH;
+  SoRenderPlanner planner;
+  SoRenderPlan plan;
+  planner.build(drawlist, params.viewMatrix, plan);
+  SoGLRenderBackend backend;
+  SoRenderBackendInitParams initParams;
+  if (!backend.initialize(initParams)) {
+    unavailable = "retained OpenGL backend initialization failed";
+    return false;
+  }
+  backend.setPhaseTimingEnabled(TRUE);
+  for (int warmup = 0; warmup < 5; ++warmup) {
+    context.bindFramebuffer();
+    backend.render(drawlist, plan, params);
+  }
+  glFinish();
+
+  std::vector<double> cpu, gpu, completion, preparation, state, program, submit;
+  GLuint query = 0;
+  glGenQueries(1, &query);
+  for (int sample = 0; sample < samples; ++sample) {
+    context.bindFramebuffer();
+    const Clock::time_point totalStart = Clock::now();
+    glBeginQuery(GL_TIME_ELAPSED, query);
+    const Clock::time_point cpuStart = Clock::now();
+    backend.render(drawlist, plan, params);
+    cpu.push_back(elapsedMs(cpuStart));
+    const SoRenderStatistics statistics = backend.getRenderStatistics();
+    preparation.push_back(statistics.commandPreparationNanoseconds / 1000000.0);
+    state.push_back(statistics.stateSetupNanoseconds / 1000000.0);
+    program.push_back(statistics.programBindingNanoseconds / 1000000.0);
+    submit.push_back(statistics.drawSubmissionNanoseconds / 1000000.0);
+    glEndQuery(GL_TIME_ELAPSED);
+    GLuint64 nanoseconds = 0;
+    glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
+    completion.push_back(elapsedMs(totalStart));
+    gpu.push_back(static_cast<double>(nanoseconds) / 1000000.0);
+  }
+  glDeleteQueries(1, &query);
+  const SoRenderStatistics statistics = backend.getRenderStatistics();
+  const uint64_t checksum = checksumPixels(context.readPixels());
+  const uint64_t expectedDrawCalls = static_cast<uint64_t>(
+    1 + texturedCount + coloredCount + transparentLitCount);
+  if (statistics.drawCalls != expectedDrawCalls ||
+      statistics.instancedCommands != static_cast<uint64_t>(litCount) ||
+      statistics.instanceRejectedTexture !=
+        static_cast<uint64_t>(texturedCount) ||
+      statistics.instanceRejectedVertexAttributes !=
+        static_cast<uint64_t>(coloredCount) ||
+      statistics.instanceRejectedMaterial !=
+        static_cast<uint64_t>(transparentLitCount) || checksum == 0) {
+    unavailable = "feature-rich workload classification was incorrect";
+    backend.shutdown();
+    return false;
+  }
+  backend.shutdown();
+
+  result.workload = "feature_rich_scene";
+  result.renderer = "DrawList";
+  result.profile = profile == GLTestProfile::Core ? "core" : "compatibility";
+  result.semanticDraws = commandCount;
+  result.samples = samples;
+  result.cpuMedianMs = percentile(cpu, 0.5);
+  result.cpuP95Ms = percentile(cpu, 0.95);
+  result.gpuMedianMs = percentile(gpu, 0.5);
+  result.gpuP95Ms = percentile(gpu, 0.95);
+  result.completionMedianMs = percentile(completion, 0.5);
+  result.completionP95Ms = percentile(completion, 0.95);
+  result.commandPreparationMs = percentile(preparation, 0.5);
+  result.stateSetupMs = percentile(state, 0.5);
+  result.programBindingMs = percentile(program, 0.5);
+  result.drawSubmissionMs = percentile(submit, 0.5);
+  result.renderStatistics = statistics;
+  result.pixelChecksum = checksum;
+  return true;
+}
+
 bool runMixedRetainedScene(GLTestProfile profile, int commandCount, int samples,
                            Measurement & result, std::string & unavailable)
 {
@@ -1070,6 +1259,18 @@ int main(int argc, char ** argv)
   };
   for (size_t i = 0;
        i < sizeof(mixedProfiles) / sizeof(mixedProfiles[0]); ++i) {
+    Measurement featureRich;
+    std::string featureReason;
+    if (runFeatureRichScene(mixedProfiles[i], options.smoke ? 40 : 500,
+                            samples, featureRich, featureReason)) {
+      results.push_back(featureRich);
+    }
+    else {
+      unavailable.push_back(std::string("feature_rich_scene:DrawList ") +
+        (mixedProfiles[i] == GLTestProfile::Core ? "core: " :
+                                                   "compatibility: ") +
+        featureReason);
+    }
     Measurement mixed;
     std::string reason;
     if (runMixedRetainedScene(mixedProfiles[i], options.smoke ? 40 : 500,
