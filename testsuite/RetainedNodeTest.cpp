@@ -78,6 +78,11 @@ runTest()
         action.getCommandPath(1) != NULL &&
         action.getCommandPath(1)->getTail() == secondCube,
         "retained commands did not preserve their producing scene paths", result);
+  root->removeChild(firstCube);
+  check(action.getCommandPath(0) != NULL &&
+        action.getCommandPath(0)->getTail() == firstCube,
+        "scene mutation changed a retained frame's path snapshot", result);
+  root->insertChild(firstCube, 0);
   action.getMutableDrawList().buildPickLUT();
   check(action.getDrawList().getPickLUT().size() >= 2,
         "pick lookup table did not assign object IDs to retained commands", result);

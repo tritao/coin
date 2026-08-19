@@ -271,7 +271,11 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
   const int commandIndex = this->drawlist.getNumCommands();
   this->drawlist.addCommand(std::move(retained));
 
-  SoPath * retainedPath = currentPath ? currentPath->copy() : NULL;
+  // A retained frame owns a snapshot of each command path. Keep the nodes
+  // referenced, but do not audit later scene-graph edits: those edits belong
+  // to a subsequent frame and registering auditors is costly for dense scenes.
+  SoPath * retainedPath = currentPath
+    ? currentPath->copyWithAuditing(0, 0, FALSE) : NULL;
   if (retainedPath) retainedPath->ref();
   if (static_cast<size_t>(commandIndex) >= this->commandPaths.size()) {
     this->commandPaths.resize(static_cast<size_t>(commandIndex) + 1, NULL);
