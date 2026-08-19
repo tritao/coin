@@ -84,7 +84,13 @@ public:
   //! Resolve the closest viewport-local hit against the last explicit update.
   virtual SbBool pickClosest(int x, int y, int radius,
                              SoPickResult & result);
+  virtual SbBool pickClosest(int x, int y, int radius,
+                             SoPickReadbackMode mode,
+                             SoPickResult & result);
   virtual SbBool requestPickClosestAsync(int x, int y, int radius,
+                                         SoAsyncPickRequest & request);
+  virtual SbBool requestPickClosestAsync(int x, int y, int radius,
+                                         SoPickReadbackMode mode,
                                          SoAsyncPickRequest & request);
   virtual SoAsyncPickStatus pollPickClosestAsync(
     const SoAsyncPickRequest & request, SoPickResult & result);

@@ -73,6 +73,10 @@ struct Measurement {
   double mutationP95Ms = 0.0;
   double pickUpdateCpuMedianMs = 0.0;
   double pickUpdateCompletionMedianMs = 0.0;
+  double pickIdOnlyMedianMs = 0.0;
+  double asyncIdSubmitMedianMs = 0.0;
+  double asyncIdReadyMedianMs = 0.0;
+  double asyncIdPollMaxMs = 0.0;
   SoRenderStatistics renderStatistics;
   double pickMedianMs = 0.0;
   double pickP95Ms = 0.0;
@@ -719,6 +723,7 @@ bool runMixedRetainedScene(GLTestProfile profile, int commandCount, int samples,
   SoRenderStatistics statistics = backend.getRenderStatistics();
   std::vector<double> selectionTimes, pickTimes, refreshTimes, mutationTimes;
   std::vector<double> pickUpdateCpuTimes, pickUpdateCompletionTimes;
+  std::vector<double> idOnlyTimes, asyncIdSubmitTimes, asyncIdReadyTimes;
   for (int sample = 0; sample < samples; ++sample) {
     context.bindFramebuffer();
     backend.render(drawlist, plan, params);
@@ -738,6 +743,31 @@ bool runMixedRetainedScene(GLTestProfile profile, int commandCount, int samples,
     backend.updatePickBuffer(drawlist, plan, params);
     backend.pickClosest(128, 128, 2, pick);
     refreshTimes.push_back(elapsedMs(start));
+  }
+  for (int sample = 0; sample < samples; ++sample) {
+    SoPickResult pick;
+    Clock::time_point start = Clock::now();
+    backend.pickClosest(128, 128, 2, SoPickReadbackMode::ID_ONLY, pick);
+    idOnlyTimes.push_back(elapsedMs(start));
+    SoAsyncPickRequest request;
+    start = Clock::now();
+    backend.requestPickClosestAsync(128, 128, 2,
+                                    SoPickReadbackMode::ID_ONLY, request);
+    asyncIdSubmitTimes.push_back(elapsedMs(start));
+    SoAsyncPickStatus status = SoAsyncPickStatus::PENDING;
+    while (status == SoAsyncPickStatus::PENDING) {
+      const Clock::time_point pollStart = Clock::now();
+      status = backend.pollPickClosestAsync(request, pick);
+      result.asyncIdPollMaxMs = std::max(
+        result.asyncIdPollMaxMs, elapsedMs(pollStart));
+      if (status == SoAsyncPickStatus::PENDING) std::this_thread::yield();
+    }
+    if (status != SoAsyncPickStatus::HIT || pick.hasDepth) {
+      unavailable = "ID-only asynchronous pick returned invalid coverage";
+      backend.shutdown();
+      return false;
+    }
+    asyncIdReadyTimes.push_back(elapsedMs(start));
   }
   for (int sample = 0; sample < samples; ++sample) {
     glFinish();
@@ -802,6 +832,9 @@ bool runMixedRetainedScene(GLTestProfile profile, int commandCount, int samples,
   result.pickUpdateCpuMedianMs = percentile(pickUpdateCpuTimes, 0.5);
   result.pickUpdateCompletionMedianMs = percentile(
     pickUpdateCompletionTimes, 0.5);
+  result.pickIdOnlyMedianMs = percentile(idOnlyTimes, 0.5);
+  result.asyncIdSubmitMedianMs = percentile(asyncIdSubmitTimes, 0.5);
+  result.asyncIdReadyMedianMs = percentile(asyncIdReadyTimes, 0.5);
   result.mutationMedianMs = percentile(mutationTimes, 0.5);
   result.mutationP95Ms = percentile(mutationTimes, 0.95);
   result.renderStatistics = statistics;
@@ -861,6 +894,11 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.pickUpdateCpuMedianMs
         << ", \"pick_update_completion_median_ms\": "
         << r.pickUpdateCompletionMedianMs
+        << ", \"pick_id_only_median_ms\": " << r.pickIdOnlyMedianMs
+        << ", \"async_id_submit_median_ms\": "
+        << r.asyncIdSubmitMedianMs
+        << ", \"async_id_ready_median_ms\": " << r.asyncIdReadyMedianMs
+        << ", \"async_id_poll_max_ms\": " << r.asyncIdPollMaxMs
         << ", \"draw_calls\": " << r.renderStatistics.drawCalls
         << ", \"program_binds\": " << r.renderStatistics.programBinds
         << ", \"skipped_program_binds\": "

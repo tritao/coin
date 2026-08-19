@@ -3666,6 +3666,15 @@ SbBool
 SoGLRenderBackend::pickClosest(const int x, const int y, const int radius,
                                SoPickResult & result)
 {
+  return this->pickClosest(x, y, radius,
+                           SoPickReadbackMode::ID_AND_DEPTH, result);
+}
+
+SbBool
+SoGLRenderBackend::pickClosest(const int x, const int y, const int radius,
+                               const SoPickReadbackMode mode,
+                               SoPickResult & result)
+{
   result = SoPickResult();
   if (!this->isInitialized() || !this->pickTarget.ready ||
       radius < 0) return FALSE;
@@ -3687,13 +3696,16 @@ SoGLRenderBackend::pickClosest(const int x, const int y, const int radius,
   const int readHeight = top - bottom + 1;
   const size_t pixelCount = static_cast<size_t>(readWidth) * readHeight;
   std::vector<GLuint> ids(pixelCount, 0);
-  std::vector<GLfloat> depths(pixelCount, 1.0f);
+  const bool includeDepth = mode == SoPickReadbackMode::ID_AND_DEPTH;
+  std::vector<GLfloat> depths(includeDepth ? pixelCount : 0, 1.0f);
   ScopedPixelPackState packState;
   cc_glglue_glBindBuffer(this->glue, GL_PIXEL_PACK_BUFFER, 0);
   glReadPixels(left, bottom, readWidth, readHeight,
                GL_RED_INTEGER, GL_UNSIGNED_INT, ids.data());
-  glReadPixels(left, bottom, readWidth, readHeight,
-               GL_DEPTH_COMPONENT, GL_FLOAT, depths.data());
+  if (includeDepth) {
+    glReadPixels(left, bottom, readWidth, readHeight,
+                 GL_DEPTH_COMPONENT, GL_FLOAT, depths.data());
+  }
 
   GLuint bestId = 0;
   int bestDistance = 0;
@@ -3715,7 +3727,8 @@ SoGLRenderBackend::pickClosest(const int x, const int y, const int radius,
         bestDistance = distance;
         bestPixelX = px;
         bestPixelY = py;
-        bestDepth = depths[static_cast<size_t>(row) * readWidth + column];
+        if (includeDepth)
+          bestDepth = depths[static_cast<size_t>(row) * readWidth + column];
       }
     }
   }
@@ -3734,12 +3747,23 @@ SoGLRenderBackend::pickClosest(const int x, const int y, const int radius,
   result.pixelX = bestPixelX;
   result.pixelY = bestPixelY;
   result.depth = bestDepth;
+  result.hasDepth = includeDepth ? TRUE : FALSE;
   return TRUE;
 }
 
 SbBool
 SoGLRenderBackend::requestPickClosestAsync(const int x, const int y,
                                            const int radius,
+                                           SoAsyncPickRequest & request)
+{
+  return this->requestPickClosestAsync(
+    x, y, radius, SoPickReadbackMode::ID_AND_DEPTH, request);
+}
+
+SbBool
+SoGLRenderBackend::requestPickClosestAsync(const int x, const int y,
+                                           const int radius,
+                                           const SoPickReadbackMode mode,
                                            SoAsyncPickRequest & request)
 {
   request = SoAsyncPickRequest();
@@ -3773,8 +3797,10 @@ SoGLRenderBackend::requestPickClosestAsync(const int x, const int y,
   slot.centerX = x;
   slot.centerY = y;
   slot.active = true;
+  slot.includeDepth = mode == SoPickReadbackMode::ID_AND_DEPTH;
   const size_t pixelCount = static_cast<size_t>(slot.width) * slot.height;
   const size_t planeBytes = pixelCount * sizeof(GLuint);
+  const size_t requiredBytes = planeBytes * (slot.includeDepth ? 2 : 1);
 
   ScopedGLState state(this->glue);
   ScopedPixelPackState packState;
@@ -3783,13 +3809,15 @@ SoGLRenderBackend::requestPickClosestAsync(const int x, const int y,
   glReadBuffer(GL_COLOR_ATTACHMENT0);
   cc_glglue_glBindBuffer(this->glue, GL_PIXEL_PACK_BUFFER, slot.buffer);
   cc_glglue_glBufferData(this->glue, GL_PIXEL_PACK_BUFFER,
-                         static_cast<intptr_t>(planeBytes * 2), nullptr,
+                         static_cast<intptr_t>(requiredBytes), nullptr,
                          GL_STREAM_READ);
   glReadPixels(left, bottom, slot.width, slot.height,
                GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
-  glReadPixels(left, bottom, slot.width, slot.height,
-               GL_DEPTH_COMPONENT, GL_FLOAT,
-               reinterpret_cast<void *>(planeBytes));
+  if (slot.includeDepth) {
+    glReadPixels(left, bottom, slot.width, slot.height,
+                 GL_DEPTH_COMPONENT, GL_FLOAT,
+                 reinterpret_cast<void *>(planeBytes));
+  }
   slot.fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
   if (!slot.fence) {
     slot.active = false;
@@ -3798,6 +3826,7 @@ SoGLRenderBackend::requestPickClosestAsync(const int x, const int y,
   glFlush();
   request.requestId = slot.requestId;
   request.generation = slot.generation;
+  request.mode = mode;
   return TRUE;
 }
 
@@ -3845,7 +3874,8 @@ SoGLRenderBackend::pollPickClosestAsync(const SoAsyncPickRequest & request,
     return SoAsyncPickStatus::FAILED;
   }
   const GLuint * ids = reinterpret_cast<const GLuint *>(mapped);
-  const GLfloat * depths = reinterpret_cast<const GLfloat *>(mapped + planeBytes);
+  const GLfloat * depths = slot->includeDepth
+    ? reinterpret_cast<const GLfloat *>(mapped + planeBytes) : nullptr;
   GLuint bestId = 0;
   int bestDistance = 0;
   size_t bestOffset = 0;
@@ -3869,7 +3899,7 @@ SoGLRenderBackend::pollPickClosestAsync(const SoAsyncPickRequest & request,
       }
     }
   }
-  const float bestDepth = bestId ? depths[bestOffset] : 1.0f;
+  const float bestDepth = bestId && depths ? depths[bestOffset] : 1.0f;
   const GLboolean unmapped = cc_glglue_glUnmapBuffer(
     this->glue, GL_PIXEL_PACK_BUFFER);
   glDeleteSync(slot->fence);
@@ -3892,6 +3922,7 @@ SoGLRenderBackend::pollPickClosestAsync(const SoAsyncPickRequest & request,
   result.pixelX = bestX;
   result.pixelY = bestY;
   result.depth = bestDepth;
+  result.hasDepth = slot->includeDepth ? TRUE : FALSE;
   return SoAsyncPickStatus::HIT;
 }
 

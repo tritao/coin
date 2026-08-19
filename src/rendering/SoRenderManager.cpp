@@ -194,6 +194,7 @@ resolvePickResult(const SoRenderManagerP * manager,
                   const SoRenderParams & params)
 {
   if (!manager->irAction || hit.generation == 0 ||
+      !hit.hasDepth ||
       hit.generation != manager->irAction->getDrawList().getGeneration()) {
     return NULL;
   }

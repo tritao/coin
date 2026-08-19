@@ -130,8 +130,19 @@ runTest()
         hit.instanceId != command.instanceId ||
         hit.objectId != command.objectId ||
         hit.commandIndex != 0 || hit.type != SO_PICK_OBJECT ||
-        hit.elementIndex != -1) {
+        hit.elementIndex != -1 || !hit.hasDepth) {
       std::cerr << "FAIL: center query did not resolve object ID 1"
+                << std::endl;
+      result = 1;
+    }
+
+    SoPickResult identityOnlyHit;
+    if (!backend.pickClosest(32, 32, 0, SoPickReadbackMode::ID_ONLY,
+                             identityOnlyHit) ||
+        identityOnlyHit.id != hit.id ||
+        identityOnlyHit.commandIndex != hit.commandIndex ||
+        identityOnlyHit.hasDepth) {
+      std::cerr << "FAIL: ID-only synchronous pick changed identity"
                 << std::endl;
       result = 1;
     }
@@ -201,6 +212,27 @@ runTest()
       std::cerr << "FAIL: newest asynchronous ring request did not resolve"
                 << std::endl;
       result = 1;
+    }
+
+    SoAsyncPickRequest identityRequest;
+    if (!backend.requestPickClosestAsync(32, 32, 0,
+          SoPickReadbackMode::ID_ONLY, identityRequest) ||
+        identityRequest.mode != SoPickReadbackMode::ID_ONLY) {
+      std::cerr << "FAIL: ID-only asynchronous pick was rejected"
+                << std::endl;
+      result = 1;
+    }
+    else {
+      glFinish();
+      SoPickResult identityHit;
+      if (backend.pollPickClosestAsync(identityRequest, identityHit) !=
+            SoAsyncPickStatus::HIT || identityHit.id != hit.id ||
+          identityHit.commandIndex != hit.commandIndex ||
+          identityHit.hasDepth) {
+        std::cerr << "FAIL: ID-only asynchronous pick changed identity"
+                  << std::endl;
+        result = 1;
+      }
     }
 
     // The ID buffer owns a snapshot of the frame-local LUT.  A query remains

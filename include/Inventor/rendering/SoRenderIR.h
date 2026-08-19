@@ -615,6 +615,12 @@ struct SoPickResult {
   int pixelX = 0;
   int pixelY = 0;
   float depth = 1.0f;
+  SbBool hasDepth = TRUE;
+};
+
+enum class SoPickReadbackMode : uint8_t {
+  ID_ONLY,
+  ID_AND_DEPTH
 };
 
 /*!
@@ -642,6 +648,7 @@ enum class SoAsyncPickStatus : uint8_t {
 struct SoAsyncPickRequest {
   uint64_t requestId = 0;
   uint32_t generation = 0;
+  SoPickReadbackMode mode = SoPickReadbackMode::ID_AND_DEPTH;
 };
 
 struct SoRenderStatistics {

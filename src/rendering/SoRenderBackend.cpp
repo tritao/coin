@@ -41,9 +41,26 @@ SoRenderBackend::pickClosest(int, int, int, SoPickResult &)
 }
 
 SbBool
+SoRenderBackend::pickClosest(int x, int y, int radius,
+                             SoPickReadbackMode mode, SoPickResult & result)
+{
+  return mode == SoPickReadbackMode::ID_AND_DEPTH
+    ? this->pickClosest(x, y, radius, result) : FALSE;
+}
+
+SbBool
 SoRenderBackend::requestPickClosestAsync(int, int, int, SoAsyncPickRequest &)
 {
   return FALSE;
+}
+
+SbBool
+SoRenderBackend::requestPickClosestAsync(int x, int y, int radius,
+                                         SoPickReadbackMode mode,
+                                         SoAsyncPickRequest & request)
+{
+  return mode == SoPickReadbackMode::ID_AND_DEPTH
+    ? this->requestPickClosestAsync(x, y, radius, request) : FALSE;
 }
 
 SoAsyncPickStatus

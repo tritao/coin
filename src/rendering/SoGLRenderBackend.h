@@ -51,7 +51,12 @@ public:
   //! Resolve the closest nonzero ID in a viewport-local pixel-radius query.
   SbBool pickClosest(int x, int y, int radius,
                      SoPickResult & result) override;
+  SbBool pickClosest(int x, int y, int radius, SoPickReadbackMode mode,
+                     SoPickResult & result) override;
   SbBool requestPickClosestAsync(int x, int y, int radius,
+                                 SoAsyncPickRequest & request) override;
+  SbBool requestPickClosestAsync(int x, int y, int radius,
+                                 SoPickReadbackMode mode,
                                  SoAsyncPickRequest & request) override;
   SoAsyncPickStatus pollPickClosestAsync(
     const SoAsyncPickRequest & request, SoPickResult & result) override;
@@ -327,6 +332,7 @@ private:
     int centerX = 0;
     int centerY = 0;
     bool active = false;
+    bool includeDepth = true;
   } asyncPickSlots[3];
   uint64_t nextAsyncPickRequestId = 1;
   size_t nextAsyncPickSlot = 0;
