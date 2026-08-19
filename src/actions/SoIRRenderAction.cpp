@@ -635,28 +635,53 @@ captureEffectiveMaterial(void * data, SoCallbackAction * action,
 }
 
 int
-SoIRRenderAction::updateCommandDiffuseColorsForStatePath(
-  const SoPath * statePath)
+SoIRRenderAction::updateCommandMaterialsForStatePath(
+  const SoPath * statePath, bool opacityMayChange)
 {
   std::vector<size_t> commandIndices;
   this->findCommandsAffectedByStatePath(statePath, commandIndices);
-  int updated = 0;
+  std::vector<MaterialReplay> replacements;
+  replacements.reserve(commandIndices.size());
   for (std::vector<size_t>::const_iterator it = commandIndices.begin();
        it != commandIndices.end(); ++it) {
     const SoPath * commandPath = this->getCommandPath(static_cast<int>(*it));
-    if (!commandPath) continue;
-    SoRenderCommand & command =
-      this->drawlist.getCommand(static_cast<int>(*it));
-    MaterialReplay replay = { command.materialIndex, SoMaterialData() };
+    if (!commandPath) return 0;
+    const SoRenderCommand & command =
+      static_cast<const SoDrawList &>(this->drawlist).getCommand(
+        static_cast<int>(*it));
+    // Vertex and texture alpha may already contain material opacity. Rebuilding
+    // is safer than trying to undo and recompute that composed alpha in place.
+    if (opacityMayChange &&
+        (command.geometry.colors != NULL ||
+         command.material.textureAlphaIncludesOpacity ||
+         command.material.vertexColorAlphaIncludesOpacity)) {
+      return 0;
+    }
+    MaterialReplay replay = {
+      command.materialIndex, SoMaterialData()
+    };
     SoCallbackAction materialAction(this->vpRegion);
     materialAction.addPreTailCallback(captureEffectiveMaterial, &replay);
     materialAction.apply(const_cast<SoPath *>(commandPath));
-    command.material.diffuse[0] = replay.material.diffuse[0];
-    command.material.diffuse[1] = replay.material.diffuse[1];
-    command.material.diffuse[2] = replay.material.diffuse[2];
-    ++updated;
+    replay.material.texture = command.material.texture;
+    replay.material.textureAlphaIncludesOpacity =
+      command.material.textureAlphaIncludesOpacity;
+    replay.material.vertexColorAlphaIncludesOpacity =
+      command.material.vertexColorAlphaIncludesOpacity;
+    replacements.push_back(replay);
   }
-  return updated;
+
+  // Do not alter any retained command until every replay has succeeded.
+  for (size_t i = 0; i < commandIndices.size(); ++i) {
+    SoRenderCommand & command = this->drawlist.getCommand(
+      static_cast<int>(commandIndices[i]));
+    command.material = replacements[i].material;
+    // Remove only blend state synthesized by the previous finalization pass.
+    // Explicit scene-authored blending must survive a material update.
+    if (command.finalizationEnabledBlend) command.state.blend = SoBlendState();
+    SoRenderIR::finalizeCommand(command);
+  }
+  return static_cast<int>(commandIndices.size());
 }
 
 int

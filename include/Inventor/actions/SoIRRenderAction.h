@@ -160,8 +160,9 @@ public:
   void applyRenderStage(SoRenderCommand & command);
   //! Refresh matrices for commands affected by one state-node notification.
   int updateCommandMatricesForStatePath(const SoPath * statePath);
-  //! Refresh effective diffuse colors after one material notification.
-  int updateCommandDiffuseColorsForStatePath(const SoPath * statePath);
+  //! Refresh effective material and material-derived render state.
+  int updateCommandMaterialsForStatePath(const SoPath * statePath,
+                                         bool opacityMayChange);
   //! Transactionally regenerate compatible commands affected by one source.
   int updateCommandGeometryForStatePath(const SoPath * statePath);
 #endif

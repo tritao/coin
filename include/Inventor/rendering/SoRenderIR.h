@@ -781,6 +781,8 @@ struct SoRenderCommand {
   SbMatrix         projMatrix;
 
   SoOpacityClass   opacityClass = SO_OPACITY_OPAQUE;
+  //! True when command finalization synthesized the current blend state.
+  bool             finalizationEnabledBlend = false;
   SoRenderStage    stage = SoRenderStage::Main;
   SoLightingHandle lightingHandle = 0;
   int32_t          materialIndex = 0; //!< Effective Inventor material index.

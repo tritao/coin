@@ -1206,12 +1206,18 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
       rootSensor->getChangedPath());
   }
   else if (canPatchSingleStateChange &&
-           rootSensor->getChangedNode()->isOfType(SoMaterial::getClassTypeId()) &&
-           rootSensor->getChangedField() ==
-             &static_cast<SoMaterial *>(
-               rootSensor->getChangedNode())->diffuseColor) {
-    updated = action->updateCommandDiffuseColorsForStatePath(
-      rootSensor->getChangedPath());
+           rootSensor->getChangedNode()->isOfType(SoMaterial::getClassTypeId())) {
+    SoMaterial * material =
+      static_cast<SoMaterial *>(rootSensor->getChangedNode());
+    SoField * field = rootSensor->getChangedField();
+    const bool supportedMaterialField = field == &material->diffuseColor ||
+      field == &material->ambientColor || field == &material->emissiveColor ||
+      field == &material->specularColor || field == &material->shininess ||
+      field == &material->transparency;
+    if (supportedMaterialField) {
+      updated = action->updateCommandMaterialsForStatePath(
+        rootSensor->getChangedPath(), field == &material->transparency);
+    }
   }
   else if (canPatchSingleStateChange &&
            rootSensor->getChangedNode()->isOfType(

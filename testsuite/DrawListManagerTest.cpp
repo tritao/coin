@@ -360,21 +360,52 @@ runTest()
     manager.render(TRUE, TRUE);
     const SoRenderStatistics transparencyStatistics =
       manager.getRenderStatistics();
+    const std::vector<uint8_t> incrementalTransparencyPixels =
+      context.readPixels();
+    manager.invalidateDrawList();
+    manager.render(TRUE, TRUE);
+    const std::vector<uint8_t> rebuiltTransparencyPixels = context.readPixels();
     if (traversalCount != traversalCountAfterFirstRender + 3 ||
-        transparencyStatistics.drawListRebuilds != 1 ||
-        transparencyStatistics.incrementalCommandUpdates != 0) {
-      std::cerr << "FAIL: transparency change bypassed full state rebuild"
+        transparencyStatistics.drawListRebuilds != 0 ||
+        transparencyStatistics.incrementalCommandUpdates != 1 ||
+        incrementalTransparencyPixels != rebuiltTransparencyPixels) {
+      std::cerr << "FAIL: incremental transparency differs from full rebuild"
+                << std::endl;
+      result = 1;
+    }
+    cubeMaterial->transparency.setValue(0.0f);
+    manager.render(TRUE, TRUE);
+    const SoRenderStatistics opaqueStatistics = manager.getRenderStatistics();
+    const std::vector<uint8_t> incrementalOpaquePixels = context.readPixels();
+    manager.invalidateDrawList();
+    manager.render(TRUE, TRUE);
+    const std::vector<uint8_t> rebuiltOpaquePixels = context.readPixels();
+    if (traversalCount != traversalCountAfterFirstRender + 4 ||
+        opaqueStatistics.drawListRebuilds != 0 ||
+        opaqueStatistics.incrementalCommandUpdates != 1 ||
+        incrementalOpaquePixels != rebuiltOpaquePixels) {
+      std::cerr << "FAIL: incremental opaque transition differs from full rebuild"
+                << std::endl;
+      result = 1;
+    }
+    cubeMaterial->shininess.setValue(0.6f);
+    manager.render(TRUE, TRUE);
+    const SoRenderStatistics shininessStatistics = manager.getRenderStatistics();
+    if (traversalCount != traversalCountAfterFirstRender + 4 ||
+        shininessStatistics.drawListRebuilds != 0 ||
+        shininessStatistics.incrementalCommandUpdates != 1) {
+      std::cerr << "FAIL: isolated shininess did not update retained material"
                 << std::endl;
       result = 1;
     }
     cubeRoot->touch();
     manager.render(TRUE, TRUE);
-    if (traversalCount != traversalCountAfterFirstRender + 4) {
+    if (traversalCount != traversalCountAfterFirstRender + 5) {
       std::cerr << "FAIL: changed scene did not invalidate cached DrawList"
                 << std::endl;
       result = 1;
     }
-    if (callbacks.pre != 8 || callbacks.post != 8) {
+    if (callbacks.pre != 12 || callbacks.post != 12) {
       std::cerr << "FAIL: cached DrawList renders skipped manager callbacks"
                 << std::endl;
       result = 1;

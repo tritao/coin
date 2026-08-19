@@ -1057,7 +1057,7 @@ isMaterialTransparent(const SoMaterialData & material)
   return material.opacity < 0.999f || textureHasTransparency(material.texture);
 }
 
-void
+bool
 ensureMaterialBlendState(SoRenderState & renderState,
                          const SoMaterialData & material)
 {
@@ -1066,7 +1066,7 @@ ensureMaterialBlendState(SoRenderState & renderState,
   // transparency setup. Make that implicit IR contract explicit without
   // replacing an actual non-standard blend state.
   if (renderState.blend.enabled || !isMaterialTransparent(material)) {
-    return;
+    return false;
   }
 
   renderState.blend.enabled = TRUE;
@@ -1076,12 +1076,14 @@ ensureMaterialBlendState(SoRenderState & renderState,
   renderState.blend.dstAlphaFactor = SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
   renderState.blend.rgbEquation = SO_BLEND_EQUATION_ADD;
   renderState.blend.alphaEquation = SO_BLEND_EQUATION_ADD;
+  return true;
 }
 
 void
 finalizeCommand(SoRenderCommand & command)
 {
-  ensureMaterialBlendState(command.state, command.material);
+  command.finalizationEnabledBlend =
+    ensureMaterialBlendState(command.state, command.material);
   bool transparent = isMaterialTransparent(command.material);
   if (!transparent && command.geometry.colors) {
     for (uint32_t i = 0; i < command.geometry.vertexCount; ++i) {
@@ -1094,6 +1096,7 @@ finalizeCommand(SoRenderCommand & command)
   command.opacityClass = transparent
     ? SO_OPACITY_TRANSPARENT : SO_OPACITY_OPAQUE;
   if (transparent && !command.state.blend.enabled) {
+    command.finalizationEnabledBlend = true;
     command.state.blend.enabled = TRUE;
     command.state.blend.srcRGBFactor = SO_BLEND_FACTOR_SRC_ALPHA;
     command.state.blend.dstRGBFactor = SO_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;

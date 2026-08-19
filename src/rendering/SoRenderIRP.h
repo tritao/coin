@@ -87,7 +87,7 @@ void fillMaterialFromState(SoState * state, SoMaterialData & material,
 //! Fill render-state fields from the current Inventor traversal state.
 void fillRenderStateFromState(SoState * state, SoRenderState & renderState);
 //! Complete blend state after material opacity has been captured.
-void ensureMaterialBlendState(SoRenderState & renderState,
+bool ensureMaterialBlendState(SoRenderState & renderState,
                               const SoMaterialData & material);
 //! Extract the current lighting setup, append/deduplicate it, and return its handle.
 SoLightingHandle fillLightingFromState(SoState * state, SoDrawList & drawlist);
