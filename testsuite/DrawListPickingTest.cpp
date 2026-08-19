@@ -149,6 +149,60 @@ runTest()
       result = 1;
     }
 
+    SoAsyncPickRequest asyncRequest;
+    if (!backend.requestPickClosestAsync(32, 32, 0, asyncRequest)) {
+      std::cerr << "FAIL: asynchronous pick request was rejected" << std::endl;
+      result = 1;
+    }
+    else {
+      SoPickResult asyncHit;
+      const SoAsyncPickStatus initial =
+        backend.pollPickClosestAsync(asyncRequest, asyncHit);
+      if (initial != SoAsyncPickStatus::PENDING &&
+          initial != SoAsyncPickStatus::HIT) {
+        std::cerr << "FAIL: asynchronous pick had invalid initial status"
+                  << std::endl;
+        result = 1;
+      }
+      if (initial == SoAsyncPickStatus::PENDING) {
+        glFinish();
+        if (backend.pollPickClosestAsync(asyncRequest, asyncHit) !=
+              SoAsyncPickStatus::HIT) {
+          std::cerr << "FAIL: asynchronous pick did not become ready"
+                    << std::endl;
+          result = 1;
+        }
+      }
+      if (asyncHit.id != 1 || asyncHit.commandIndex != 0) {
+        std::cerr << "FAIL: asynchronous pick resolved the wrong hit"
+                  << std::endl;
+        result = 1;
+      }
+    }
+
+    SoAsyncPickRequest ringRequests[4];
+    for (SoAsyncPickRequest & request : ringRequests) {
+      if (!backend.requestPickClosestAsync(32, 32, 0, request)) {
+        std::cerr << "FAIL: asynchronous pick ring rejected request"
+                  << std::endl;
+        result = 1;
+      }
+    }
+    SoPickResult superseded;
+    if (backend.pollPickClosestAsync(ringRequests[0], superseded) !=
+        SoAsyncPickStatus::STALE) {
+      std::cerr << "FAIL: overwritten asynchronous request was not stale"
+                << std::endl;
+      result = 1;
+    }
+    glFinish();
+    if (backend.pollPickClosestAsync(ringRequests[3], superseded) !=
+          SoAsyncPickStatus::HIT || superseded.id != 1) {
+      std::cerr << "FAIL: newest asynchronous ring request did not resolve"
+                << std::endl;
+      result = 1;
+    }
+
     // The ID buffer owns a snapshot of the frame-local LUT.  A query remains
     // valid after the source DrawList has been destroyed.
     {

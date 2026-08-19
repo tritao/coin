@@ -51,6 +51,11 @@ public:
   //! Resolve the closest nonzero ID in a viewport-local pixel-radius query.
   SbBool pickClosest(int x, int y, int radius,
                      SoPickResult & result) override;
+  SbBool requestPickClosestAsync(int x, int y, int radius,
+                                 SoAsyncPickRequest & request) override;
+  SoAsyncPickStatus pollPickClosestAsync(
+    const SoAsyncPickRequest & request, SoPickResult & result) override;
+  SoRenderStatistics getRenderStatistics() const override;
   SbBool pickVisibleRegion(const SbBox2s & region,
                            SoPickResultList & results) override;
   SbBool pickDepthStack(int x, int y, int radius, int maxLayers,
@@ -135,6 +140,7 @@ private:
       GLint view = -1;
       GLint projection = -1;
       GLint model = -1;
+      GLint instanced = -1;
     } transforms;
     struct Material {
       GLint color = -1;
@@ -283,6 +289,7 @@ private:
 
   struct PickPrograms {
     PickProgram visual;
+    PickProgram opaqueVisual;
     PickProgram line;
     PickProgram triangleLine;
     PickProgram point;
@@ -307,6 +314,77 @@ private:
     bool ready = false;
   } pickTarget;
 
+  struct AsyncPickSlot {
+    GLuint buffer = 0;
+    GLsync fence = nullptr;
+    uint64_t requestId = 0;
+    uint32_t generation = 0;
+    int left = 0;
+    int bottom = 0;
+    int width = 0;
+    int height = 0;
+    int centerX = 0;
+    int centerY = 0;
+    bool active = false;
+  } asyncPickSlots[3];
+  uint64_t nextAsyncPickRequestId = 1;
+  size_t nextAsyncPickSlot = 0;
+
+  struct SubmissionCache {
+    // GL state is grouped by the code responsible for changing it. A group is
+    // invalidated when rendering temporarily bypasses these helpers.
+    struct ProgramState {
+      GLuint handle = 0;
+      bool viewportValid = false;
+      int viewport[4] = {0, 0, 0, 0};
+      bool matricesValid = false;
+      GLuint matrixProgram = 0;
+      SbMat view;
+      SbMat projection;
+    } program;
+
+    struct MaterialState {
+      bool valid = false;
+      GLuint program = 0;
+      SoMaterialData material;
+      SoAlphaTestState alphaTest;
+      SoLightingHandle lightingHandle = 0;
+      bool useVertexColor = false;
+      bool textured = false;
+    } material;
+
+    struct PipelineState {
+      bool depthValid = false;
+      bool depthTest = true;
+      GLenum depthFunction = GL_LEQUAL;
+      bool depthWrite = true;
+      SbVec2f depthRange = SbVec2f(0.0f, 1.0f);
+
+      bool rasterValid = false;
+      bool cull = false;
+      GLenum frontFace = GL_CCW;
+      GLenum polygonMode = GL_FILL;
+      float pointSize = 1.0f;
+      float lineWidth = 1.0f;
+
+      bool blendValid = false;
+      bool blend = false;
+      GLenum blendSrcRGB = GL_ONE;
+      GLenum blendDstRGB = GL_ZERO;
+      GLenum blendSrcAlpha = GL_ONE;
+      GLenum blendDstAlpha = GL_ZERO;
+      GLenum blendEquation = GL_FUNC_ADD;
+
+      bool textureValid = false;
+      GLuint texture = 0;
+
+      bool vertexArrayValid = false;
+      GLuint vertexArray = 0;
+    } pipeline;
+
+    SoRenderStatistics statistics;
+  } submissionCache;
+
   struct CommandFrame {
     SbMat view;
     SbMat projection;
@@ -319,6 +397,7 @@ private:
     const SoRenderCommand & command) const;
   bool ensurePickFramebuffer(const SbVec2s & size);
   void destroyPickFramebuffer();
+  void destroyAsyncPickResources(bool releaseGL);
   void drawPickEntry(const SoDrawList & drawlist,
                      const SoPickLUTEntry & entry,
                      GLuint id,
@@ -340,6 +419,16 @@ private:
                          const SoRenderParams & params,
                          bool selection);
   void beginFrame(const SoRenderParams & params);
+  // Restore the externally visible GL defaults once, after all commands.
+  void restoreSubmissionBaseline();
+  void invalidateSubmissionCache();
+  // Keep instrumentation out of the individual state comparisons.
+  void recordStateChange(bool changed);
+  void bindVertexArray(GLuint vertexArray);
+  void useProgram(GLuint program);
+  void setViewport(int x, int y, int width, int height);
+  void uploadFrameMatrices(GLuint program, const SurfaceUniforms & uniforms,
+                           const SbMat & view, const SbMat & projection);
   void invalidateCache();
   void updateGeometryCache(const SoDrawList & drawlist);
   void updateLineDistances(CachedCommand & entry,
@@ -365,6 +454,12 @@ private:
                    const SbMat & viewMat,
                    const SbMat & projMat,
                    const SoRenderParams & params);
+  bool canInstanceCommand(const SoRenderCommand & command) const;
+  bool canInstanceTogether(const SoRenderCommand & first,
+                           const SoRenderCommand & next) const;
+  void drawInstancedCommands(const SoDrawList & drawlist,
+                             const std::vector<uint32_t> & commandIndices,
+                             const SoRenderParams & params);
   RasterPath selectRasterPath(const CachedCommand & entry,
                               const SoRenderCommand & command,
                               const SoRenderParams & params) const;
@@ -419,6 +514,7 @@ private:
                         const SbVec4f & color,
                         bool useVertexColor,
                         bool textured,
+                        GLuint program,
                         const SurfaceUniforms & uniforms);
   void bindLineShader(const SoRenderCommand & command,
                       const SbMat & viewMat,
@@ -454,6 +550,7 @@ private:
   uint32_t cacheGeneration = 0;
   size_t cachedCommandCount = 0;
   bool haveCacheGeneration = false;
+  GLuint instanceBuffer = 0;
 };
 
 #endif // COIN_SOGLRENDERBACKEND_H

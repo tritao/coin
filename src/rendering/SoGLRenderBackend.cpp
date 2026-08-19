@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <functional>
@@ -35,6 +36,7 @@
 #include <data/shaders/gl/pixel/Fragment.h>
 #include <data/shaders/gl/pixel/Vertex.h>
 #include <data/shaders/gl/picking/Fragment.h>
+#include <data/shaders/gl/picking/OpaqueFragment.h>
 #include <data/shaders/gl/picking/WideLineFragment.h>
 #include <data/shaders/gl/picking/PixelFragment.h>
 #include <data/shaders/gl/selection/Fragment.h>
@@ -50,6 +52,29 @@ static constexpr GLuint NORMAL_ATTRIBUTE = 1;
 static constexpr GLuint COLOR_ATTRIBUTE = 2;
 static constexpr GLuint TEXCOORD_ATTRIBUTE = 3;
 static constexpr GLuint LINE_DISTANCE_ATTRIBUTE = 4;
+static constexpr GLuint INSTANCE_MODEL_ATTRIBUTE = 5;
+
+bool
+sameMaterialUniforms(const SoMaterialData & lhs, const SoMaterialData & rhs)
+{
+  return lhs.diffuse == rhs.diffuse && lhs.ambient == rhs.ambient &&
+    lhs.specular == rhs.specular && lhs.emissive == rhs.emissive &&
+    lhs.shadingModel == rhs.shadingModel && lhs.shininess == rhs.shininess &&
+    lhs.texture.numComponents == rhs.texture.numComponents &&
+    lhs.texture.model == rhs.texture.model &&
+    lhs.texture.blendColor == rhs.texture.blendColor &&
+    lhs.textureAlphaIncludesOpacity == rhs.textureAlphaIncludesOpacity &&
+    lhs.vertexColorAlphaIncludesOpacity ==
+      rhs.vertexColorAlphaIncludesOpacity &&
+    lhs.twoSidedLighting == rhs.twoSidedLighting;
+}
+
+bool
+sameAlphaTest(const SoAlphaTestState & lhs, const SoAlphaTestState & rhs)
+{
+  return lhs.policy == rhs.policy && lhs.function == rhs.function &&
+    lhs.reference == rhs.reference;
+}
 
 GLenum
 textureWrapToGL(const SoTextureWrap wrap)
@@ -606,6 +631,7 @@ SoGLRenderBackend::initialize(const SoRenderBackendInitParams & params)
     this->context = nullptr;
     return FALSE;
   }
+  cc_glglue_glGenBuffers(this->glue, 1, &this->instanceBuffer);
 
   GLfloat lineRange[2] = { 1.0f, 1.0f };
   GLfloat pointRange[2] = { 1.0f, 1.0f };
@@ -701,6 +727,10 @@ SoGLRenderBackend::shutdown()
     return;
   }
   this->invalidateCache();
+  if (this->instanceBuffer) {
+    cc_glglue_glDeleteBuffers(this->glue, 1, &this->instanceBuffer);
+    this->instanceBuffer = 0;
+  }
   if (this->visualProgram.handle) {
     cc_glglue_glDeleteProgram(this->glue, this->visualProgram.handle);
     this->visualProgram.handle = 0;
@@ -730,6 +760,11 @@ SoGLRenderBackend::shutdown()
   if (this->pickPrograms.visual.handle) {
     cc_glglue_glDeleteProgram(this->glue, this->pickPrograms.visual.handle);
     this->pickPrograms.visual.handle = 0;
+  }
+  if (this->pickPrograms.opaqueVisual.handle) {
+    cc_glglue_glDeleteProgram(this->glue,
+                              this->pickPrograms.opaqueVisual.handle);
+    this->pickPrograms.opaqueVisual.handle = 0;
   }
   if (this->pickPrograms.line.handle) {
     cc_glglue_glDeleteProgram(this->glue, this->pickPrograms.line.handle);
@@ -764,6 +799,7 @@ SoGLRenderBackend::shutdown()
   deleteProgram(this->selectionPrograms.point.handle);
   deleteProgram(this->selectionPrograms.trianglePoint.handle);
   deleteProgram(this->selectionPrograms.pixel.handle);
+  this->destroyAsyncPickResources(true);
   this->destroyPickFramebuffer();
   this->pickTarget.lookup.clear();
   this->pickTarget.generation = 0;
@@ -777,6 +813,7 @@ SoGLRenderBackend::shutdown()
 void
 SoGLRenderBackend::discard()
 {
+  this->destroyAsyncPickResources(false);
   this->gpuCache.clear();
   this->commandToCache.clear();
   this->resourceToCache.clear();
@@ -787,6 +824,7 @@ SoGLRenderBackend::discard()
   this->rasterPrograms = RasterPrograms();
   this->pickPrograms = PickPrograms();
   this->selectionPrograms = PickPrograms();
+  this->instanceBuffer = 0;
   this->pickTarget = PickTarget();
   this->glue = nullptr;
   this->context = nullptr;
@@ -801,16 +839,18 @@ SoGLRenderBackend::getOrCreateCache(const SoRenderCommand * command)
   }
 
   const SoGeometryDesc & geometry = command->geometry;
+  const uint64_t geometryResourceKey = geometry.resourceKey != 0
+    ? geometry.resourceKey : geometry.cacheKey;
   const SoTextureData & texture = command->material.texture;
   const bool hasTexture =
     (texture.cacheKey != 0 || texture.pixels != nullptr) &&
     texture.width > 0 && texture.height > 0 &&
     texture.numComponents >= 1 && texture.numComponents <= 4 &&
     geometry.texcoords != nullptr && geometry.vertexCount != 0;
-  const bool persistent = geometry.cacheKey != 0 &&
+  const bool persistent = geometryResourceKey != 0 &&
     (!hasTexture || texture.cacheKey != 0);
   ResourceCacheKey resourceKey;
-  resourceKey.geometry = persistent ? geometry.cacheKey : 0;
+  resourceKey.geometry = persistent ? geometryResourceKey : 0;
   resourceKey.texture = persistent && hasTexture ? texture.cacheKey : 0;
   if (persistent) {
     const auto resource = this->resourceToCache.find(resourceKey);
@@ -1058,11 +1098,13 @@ SoGLRenderBackend::updateCacheDescription(CachedCommand & entry,
   entry.textureComponents = hasTexture ? texture.numComponents : 0;
   entry.textureColorSpace = hasTexture
     ? texture.colorSpace : SO_TEXTURE_COLORSPACE_LEGACY;
-  entry.geometryCacheKey = geometry.cacheKey;
-  entry.geometryRevision = geometry.revision;
+  entry.geometryCacheKey = geometry.resourceKey != 0
+    ? geometry.resourceKey : geometry.cacheKey;
+  entry.geometryRevision = geometry.resourceKey != 0
+    ? geometry.resourceRevision : geometry.revision;
   entry.textureCacheKey = hasTexture ? texture.cacheKey : 0;
   entry.textureRevision = hasTexture ? texture.revision : 0;
-    entry.textureMinFilter = hasTexture ? texture.minFilter
+  entry.textureMinFilter = hasTexture ? texture.minFilter
                                       : SO_TEXTURE_FILTER_NEAREST;
   entry.textureMagFilter = hasTexture ? texture.magFilter
                                       : SO_TEXTURE_FILTER_NEAREST;
@@ -1071,10 +1113,6 @@ SoGLRenderBackend::updateCacheDescription(CachedCommand & entry,
   entry.textureWrapT = hasTexture ? texture.wrapT
                                   : SO_TEXTURE_WRAP_CLAMP_TO_EDGE;
   entry.textureAnisotropic = hasTexture ? texture.anisotropic : false;
-  entry.geometryCacheKey = geometry.cacheKey;
-  entry.geometryRevision = geometry.revision;
-  entry.textureCacheKey = hasTexture ? texture.cacheKey : 0;
-  entry.textureRevision = hasTexture ? texture.revision : 0;
 }
 
 void
@@ -1163,6 +1201,17 @@ SoGLRenderBackend::setupVisualVAO(CachedCommand & entry)
   if (entry.indexBuffer) {
     cc_glglue_glBindBuffer(this->glue, GL_ELEMENT_ARRAY_BUFFER,
                            entry.indexBuffer);
+  }
+  cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER,
+                         this->instanceBuffer);
+  for (GLuint column = 0; column < 4; ++column) {
+    const GLuint attribute = INSTANCE_MODEL_ATTRIBUTE + column;
+    cc_glglue_glEnableVertexAttribArray(this->glue, attribute);
+    cc_glglue_glVertexAttribPointer(
+      this->glue, attribute, 4, GL_FLOAT, GL_FALSE, sizeof(float) * 16,
+      reinterpret_cast<const void *>(
+        static_cast<uintptr_t>(column * sizeof(float) * 4)));
+    glVertexAttribDivisor(attribute, 1);
   }
   this->glue->glBindVertexArray(0);
   cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, 0);
@@ -1481,7 +1530,11 @@ SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
   for (int i = 0; i < drawlist.getNumCommands(); ++i) {
     const SoRenderCommand & command = drawlist.getCommand(i);
     const SoGeometryDesc & geometry = command.geometry;
-    if ((!geometry.positions && geometry.cacheKey == 0) ||
+    const uint64_t geometryResourceKey = geometry.resourceKey != 0
+      ? geometry.resourceKey : geometry.cacheKey;
+    const uint64_t geometryResourceRevision = geometry.resourceKey != 0
+      ? geometry.resourceRevision : geometry.revision;
+    if ((!geometry.positions && geometryResourceKey == 0) ||
         geometry.vertexCount == 0 ||
         geometry.vertexCount > MAX_VERTEX_COUNT) continue;
 
@@ -1490,15 +1543,15 @@ SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
       ? geometry.vertexStride : sizeof(float) * 3;
     const bool lineGeometry = geometry.topology == SO_TOPOLOGY_LINES ||
       geometry.topology == SO_TOPOLOGY_LINE_STRIP;
-    const bool identityMatches = geometry.cacheKey != 0
-      ? entry.geometryCacheKey == geometry.cacheKey &&
-        entry.geometryRevision == geometry.revision
+    const bool identityMatches = geometryResourceKey != 0
+      ? entry.geometryCacheKey == geometryResourceKey &&
+        entry.geometryRevision == geometryResourceRevision
       : entry.positionsKey == geometry.positions &&
         entry.normalsKey == geometry.normals &&
         entry.colorsKey == geometry.colors &&
         entry.texcoordsKey == geometry.texcoords &&
         entry.indicesKey == geometry.indices;
-    const bool lineDistanceMatches = geometry.cacheKey != 0
+    const bool lineDistanceMatches = geometryResourceKey != 0
       ? entry.lineDistanceBuffer != 0 || !lineGeometry
       : entry.lineDistanceKey == (lineGeometry ? geometry.positions : nullptr);
     const bool geometryMatches = entry.positionBuffer != 0 &&
@@ -1598,16 +1651,24 @@ SoGLRenderBackend::bindRasterCommon(const SoDrawList & drawlist,
                                     const SbVec4f & color,
                                     const bool useVertexColor,
                                     const bool textured,
+                                    const GLuint program,
                                     const SurfaceUniforms & uniforms)
 {
   SbMat model;
   command.modelMatrix.getValue(model);
-  this->glue->glUniformMatrix4fv(uniforms.transforms.view, 1, GL_FALSE,
-                                 &viewMat[0][0]);
-  this->glue->glUniformMatrix4fv(uniforms.transforms.projection, 1, GL_FALSE,
-                                 &projMat[0][0]);
+  this->uploadFrameMatrices(program, uniforms, viewMat, projMat);
   this->glue->glUniformMatrix4fv(uniforms.transforms.model, 1, GL_FALSE,
                                  &model[0][0]);
+  SubmissionCache::MaterialState & cached = this->submissionCache.material;
+  const bool materialMatches = cached.valid && cached.program == program &&
+    cached.useVertexColor == useVertexColor && cached.textured == textured &&
+    cached.lightingHandle == command.lightingHandle &&
+    sameMaterialUniforms(cached.material, command.material) &&
+    sameAlphaTest(cached.alphaTest, command.state.alphaTest);
+  if (materialMatches) {
+    ++this->submissionCache.statistics.skippedMaterialUniformBatches;
+    return;
+  }
   this->glue->glUniform4f(uniforms.material.color,
                           color[0], color[1], color[2], color[3]);
   this->glue->glUniform1f(uniforms.material.useVertexColor,
@@ -1655,6 +1716,14 @@ SoGLRenderBackend::bindRasterCommon(const SoDrawList & drawlist,
   this->glue->glUniform1f(uniforms.alphaTest.reference,
                           command.state.alphaTest.reference);
   this->uploadLighting(drawlist, command, uniforms);
+  cached.valid = true;
+  cached.program = program;
+  cached.material = command.material;
+  cached.alphaTest = command.state.alphaTest;
+  cached.lightingHandle = command.lightingHandle;
+  cached.useVertexColor = useVertexColor;
+  cached.textured = textured;
+  ++this->submissionCache.statistics.materialUniformBatches;
 }
 
 void
@@ -1675,9 +1744,10 @@ SoGLRenderBackend::bindPointShader(const SoRenderCommand & command,
   const PointProgram & pointProgram = triangleInput
     ? this->rasterPrograms.trianglePoint
     : this->rasterPrograms.point;
-  cc_glglue_glUseProgram(this->glue, program);
+  this->useProgram(program);
   this->bindRasterCommon(drawlist, command, viewMat, projMat, color,
-                         useVertexColor, textured, pointProgram.surface);
+                         useVertexColor, textured, program,
+                         pointProgram.surface);
   this->glue->glUniform1f(pointProgram.raster.pointSize, pointSize);
   this->glue->glUniform2f(pointProgram.raster.viewportSize,
                           static_cast<float>(viewportSize[0]),
@@ -1710,9 +1780,10 @@ SoGLRenderBackend::bindLineShader(const SoRenderCommand & command,
   const LineProgram & lineProgram = triangleInput
     ? this->rasterPrograms.triangleLine
     : this->rasterPrograms.line;
-  cc_glglue_glUseProgram(this->glue, program);
+  this->useProgram(program);
   this->bindRasterCommon(drawlist, command, viewMat, projMat, color,
-                         useVertexColor, textured, lineProgram.surface);
+                         useVertexColor, textured, program,
+                         lineProgram.surface);
   this->glue->glUniform1f(lineProgram.raster.lineWidth, lineWidth);
   this->glue->glUniform2f(lineProgram.raster.viewportSize,
                           static_cast<float>(viewportSize[0]),
@@ -1742,7 +1813,7 @@ SoGLRenderBackend::bindPixelShader(const SoRenderCommand & command,
                                    const SbVec2s & viewportSize)
 {
   const PixelProgram & pixel = this->rasterPrograms.pixel;
-  cc_glglue_glUseProgram(this->glue, pixel.handle);
+  this->useProgram(pixel.handle);
   SbMat model;
   command.modelMatrix.getValue(model);
   this->glue->glUniformMatrix4fv(pixel.uniforms.view, 1, GL_FALSE,
@@ -1873,6 +1944,10 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
                                const SbMat & projMat,
                                const SoRenderParams & params)
 {
+  using PhaseClock = std::chrono::steady_clock;
+  const bool timing = this->isPhaseTimingEnabled();
+  PhaseClock::time_point phaseStart;
+  if (timing) phaseStart = PhaseClock::now();
   (void) viewMat;
   (void) projMat;
   if (!command.state.raster.visible) return;
@@ -1889,8 +1964,8 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
   if (frame.viewportSize[0] <= 0 || frame.viewportSize[1] <= 0) return;
   RasterPath path = this->selectRasterPath(entry, command, params);
   const SbVec2s & viewportSize = frame.viewportSize;
-  glViewport(frame.viewportOrigin[0], frame.viewportOrigin[1],
-             viewportSize[0], viewportSize[1]);
+  this->setViewport(frame.viewportOrigin[0], frame.viewportOrigin[1],
+                    viewportSize[0], viewportSize[1]);
   if (path.useLineShader &&
       (path.primitive == GL_LINES || path.primitive == GL_LINE_STRIP)) {
     this->updateLineDistances(entry, command, frame.view, frame.projection,
@@ -1899,16 +1974,142 @@ SoGLRenderBackend::drawCommand(const SoDrawList & drawlist,
       command.geometry.indexCount && entry.lineRasterVertexArray != 0;
   }
 
+  const auto finishPhase = [&](uint64_t & nanoseconds) {
+    if (!timing) return;
+    const PhaseClock::time_point now = PhaseClock::now();
+    nanoseconds += static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+        now - phaseStart).count());
+    phaseStart = now;
+  };
+  SoRenderStatistics & statistics = this->submissionCache.statistics;
+  finishPhase(statistics.commandPreparationNanoseconds);
+
   this->applyDepthState(command);
   this->applyRasterState(command, path);
   this->applyBlendState(command);
   GLenum polygonOffsetTarget = GL_POLYGON_OFFSET_FILL;
   const bool polygonOffset = this->applyPolygonOffset(
     command, path, polygonOffsetTarget);
+  finishPhase(statistics.stateSetupNanoseconds);
   this->bindCommandProgram(drawlist, command, path, frame.view, frame.projection,
                            frame.viewportOrigin, viewportSize, entry);
+  finishPhase(statistics.programBindingNanoseconds);
   this->drawGeometry(command, path, entry);
+  finishPhase(statistics.drawSubmissionNanoseconds);
   this->restoreRasterState(path, polygonOffsetTarget, polygonOffset);
+}
+
+bool
+SoGLRenderBackend::canInstanceCommand(const SoRenderCommand & command) const
+{
+  return command.geometry.topology == SO_TOPOLOGY_TRIANGLES &&
+    command.geometry.indices == nullptr && command.geometry.indexCount == 0 &&
+    command.geometry.colors == nullptr &&
+    command.opacityClass == SO_OPACITY_OPAQUE &&
+    !command.state.blend.enabled &&
+    command.state.alphaTest.policy == SO_ALPHA_TEST_POLICY_NONE &&
+    command.state.raster.visible &&
+    command.state.raster.fillMode == SO_RASTER_FILL &&
+    !command.state.raster.viewportOverride &&
+    !command.state.raster.polygonOffsetFilled &&
+    !command.state.raster.polygonOffsetLines &&
+    !command.state.raster.polygonOffsetPoints &&
+    !command.state.useCommandMatrices && !command.pixelRaster.enabled &&
+    command.material.texture.cacheKey == 0 &&
+    command.material.texture.pixels == nullptr;
+}
+
+bool
+SoGLRenderBackend::canInstanceTogether(const SoRenderCommand & first,
+                                       const SoRenderCommand & next) const
+{
+  if (!this->canInstanceCommand(first) || !this->canInstanceCommand(next)) {
+    return false;
+  }
+  const auto firstCache = this->commandToCache.find(&first);
+  const auto nextCache = this->commandToCache.find(&next);
+  if (firstCache == this->commandToCache.end() ||
+      nextCache == this->commandToCache.end() ||
+      firstCache->second != nextCache->second) return false;
+  return first.lightingHandle == next.lightingHandle &&
+    first.material.opacity == next.material.opacity &&
+    sameMaterialUniforms(first.material, next.material) &&
+    sameAlphaTest(first.state.alphaTest, next.state.alphaTest) &&
+    first.state.depth.enabled == next.state.depth.enabled &&
+    first.state.depth.writeEnabled == next.state.depth.writeEnabled &&
+    first.state.depth.func == next.state.depth.func &&
+    first.state.depth.range == next.state.depth.range &&
+    first.state.raster.cullBackFaces == next.state.raster.cullBackFaces &&
+    first.state.raster.frontFaceCCW == next.state.raster.frontFaceCCW;
+}
+
+void
+SoGLRenderBackend::drawInstancedCommands(
+  const SoDrawList & drawlist,
+  const std::vector<uint32_t> & commandIndices,
+  const SoRenderParams & params)
+{
+  using PhaseClock = std::chrono::steady_clock;
+  const bool timing = this->isPhaseTimingEnabled();
+  PhaseClock::time_point phaseStart;
+  if (timing) phaseStart = PhaseClock::now();
+  if (commandIndices.empty()) return;
+  const SoRenderCommand & first = drawlist.getCommand(
+    static_cast<int>(commandIndices.front()));
+  const auto found = this->commandToCache.find(&first);
+  if (found == this->commandToCache.end()) return;
+  CachedCommand & entry = this->gpuCache[found->second];
+  const CommandFrame frame = this->effectiveCommandFrame(first, params, false);
+  const RasterPath path = this->selectRasterPath(entry, first, params);
+
+  std::vector<float> matrices;
+  matrices.reserve(commandIndices.size() * 16);
+  for (const uint32_t index : commandIndices) {
+    SbMat model;
+    drawlist.getCommand(static_cast<int>(index)).modelMatrix.getValue(model);
+    const float * values = &model[0][0];
+    matrices.insert(matrices.end(), values, values + 16);
+  }
+  const auto finishPhase = [&](uint64_t & nanoseconds) {
+    if (!timing) return;
+    const PhaseClock::time_point now = PhaseClock::now();
+    nanoseconds += static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+        now - phaseStart).count());
+    phaseStart = now;
+  };
+  SoRenderStatistics & statistics = this->submissionCache.statistics;
+  finishPhase(statistics.commandPreparationNanoseconds);
+
+  this->setViewport(frame.viewportOrigin[0], frame.viewportOrigin[1],
+                    frame.viewportSize[0], frame.viewportSize[1]);
+  this->applyDepthState(first);
+  this->applyRasterState(first, path);
+  this->applyBlendState(first);
+  finishPhase(statistics.stateSetupNanoseconds);
+  this->bindCommandProgram(drawlist, first, path, frame.view, frame.projection,
+                           frame.viewportOrigin, frame.viewportSize, entry);
+  cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, this->instanceBuffer);
+  cc_glglue_glBufferData(this->glue, GL_ARRAY_BUFFER,
+                         matrices.size() * sizeof(float), matrices.data(),
+                         GL_STREAM_DRAW);
+  this->glue->glUniform1f(this->visualProgram.surface.transforms.instanced,
+                         1.0f);
+  finishPhase(statistics.programBindingNanoseconds);
+  this->bindVertexArray(entry.vertexArray);
+  glDrawArraysInstanced(GL_TRIANGLES, 0,
+                        static_cast<GLsizei>(first.geometry.vertexCount),
+                        static_cast<GLsizei>(commandIndices.size()));
+  this->glue->glUniform1f(this->visualProgram.surface.transforms.instanced,
+                         0.0f);
+  finishPhase(statistics.drawSubmissionNanoseconds);
+
+  ++statistics.drawCalls;
+  ++statistics.instancedBatches;
+  statistics.instancedCommands += commandIndices.size();
+  statistics.drawCallsAvoided += commandIndices.size() - 1;
+  statistics.instanceBytesUploaded += matrices.size() * sizeof(float);
 }
 
 SoGLRenderBackend::RasterPath
@@ -1961,55 +2162,112 @@ SoGLRenderBackend::selectRasterPath(const CachedCommand & entry,
 void
 SoGLRenderBackend::applyDepthState(const SoRenderCommand & command)
 {
-  if (command.state.depth.enabled) {
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(depthFunctionToGL(command.state.depth.func));
+  SubmissionCache::PipelineState & cached = this->submissionCache.pipeline;
+  const bool enabled = command.state.depth.enabled;
+  const GLenum function = depthFunctionToGL(command.state.depth.func);
+  const bool write = command.state.depth.writeEnabled;
+  const SbVec2f & range = command.state.depth.range;
+  if (!cached.depthValid || cached.depthTest != enabled) {
+    enabled ? glEnable(GL_DEPTH_TEST) : glDisable(GL_DEPTH_TEST);
+    cached.depthTest = enabled;
+    this->recordStateChange(true);
   }
-  else {
-    glDisable(GL_DEPTH_TEST);
+  else this->recordStateChange(false);
+  if (!cached.depthValid || cached.depthFunction != function) {
+    glDepthFunc(function);
+    cached.depthFunction = function;
+    this->recordStateChange(true);
   }
-  glDepthMask(command.state.depth.writeEnabled ? GL_TRUE : GL_FALSE);
-  glDepthRange(command.state.depth.range[0], command.state.depth.range[1]);
+  else this->recordStateChange(false);
+  if (!cached.depthValid || cached.depthWrite != write) {
+    glDepthMask(write ? GL_TRUE : GL_FALSE);
+    cached.depthWrite = write;
+    this->recordStateChange(true);
+  }
+  else this->recordStateChange(false);
+  if (!cached.depthValid || cached.depthRange != range) {
+    glDepthRange(range[0], range[1]);
+    cached.depthRange = range;
+    this->recordStateChange(true);
+  }
+  else this->recordStateChange(false);
+  cached.depthValid = true;
 }
 
 void
 SoGLRenderBackend::applyRasterState(const SoRenderCommand & command,
                                     const RasterPath & path)
 {
+  SubmissionCache::PipelineState & cached = this->submissionCache.pipeline;
   const bool triangleFallback = path.lineTriangleInput ||
     path.pointTriangleInput;
-  if (command.state.raster.cullBackFaces && !triangleFallback) {
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
-  }
-  else {
-    glDisable(GL_CULL_FACE);
-  }
-  glFrontFace(command.state.raster.frontFaceCCW ? GL_CCW : GL_CW);
+  const bool cull = command.state.raster.cullBackFaces && !triangleFallback;
+  const GLenum frontFace = command.state.raster.frontFaceCCW ? GL_CCW : GL_CW;
   const bool triangleTopology = path.primitive == GL_TRIANGLES ||
     path.primitive == GL_TRIANGLE_STRIP;
+  GLenum polygonMode = GL_FILL;
   if (!path.useLineShader && command.state.raster.fillMode == SO_RASTER_LINES &&
       !path.pointTriangleInput && triangleTopology) {
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    polygonMode = GL_LINE;
   }
   else if (!path.usePointShader &&
            command.state.raster.fillMode == SO_RASTER_POINTS &&
            !path.lineTriangleInput && triangleTopology) {
-    glPolygonMode(GL_FRONT_AND_BACK, GL_POINT);
+    polygonMode = GL_POINT;
   }
-  if (!path.usePointShader && path.pointPrimitive) glPointSize(path.pointSize);
-  if (!path.useLineShader && path.linePrimitive) glLineWidth(path.lineWidth);
+  const float pointSize = !path.usePointShader && path.pointPrimitive
+    ? path.pointSize : 1.0f;
+  const float lineWidth = !path.useLineShader && path.linePrimitive
+    ? path.lineWidth : 1.0f;
+  if (!cached.rasterValid || cached.cull != cull) {
+    cull ? glEnable(GL_CULL_FACE) : glDisable(GL_CULL_FACE);
+    if (cull) glCullFace(GL_BACK);
+    cached.cull = cull;
+    this->recordStateChange(true);
+  }
+  else this->recordStateChange(false);
+  if (!cached.rasterValid || cached.frontFace != frontFace) {
+    glFrontFace(frontFace);
+    cached.frontFace = frontFace;
+    this->recordStateChange(true);
+  }
+  else this->recordStateChange(false);
+  if (!cached.rasterValid || cached.polygonMode != polygonMode) {
+    glPolygonMode(GL_FRONT_AND_BACK, polygonMode);
+    cached.polygonMode = polygonMode;
+    this->recordStateChange(true);
+  }
+  else this->recordStateChange(false);
+  if (!cached.rasterValid || cached.pointSize != pointSize) {
+    glPointSize(pointSize);
+    cached.pointSize = pointSize;
+    this->recordStateChange(true);
+  }
+  else this->recordStateChange(false);
+  if (!cached.rasterValid || cached.lineWidth != lineWidth) {
+    glLineWidth(lineWidth);
+    cached.lineWidth = lineWidth;
+    this->recordStateChange(true);
+  }
+  else this->recordStateChange(false);
+  cached.rasterValid = true;
 }
 
 void
 SoGLRenderBackend::applyBlendState(const SoRenderCommand & command)
 {
+  SubmissionCache::PipelineState & cached = this->submissionCache.pipeline;
   const bool blending = command.state.blend.enabled;
+  if (!cached.blendValid || cached.blend != blending) {
+    blending ? glEnable(GL_BLEND) : glDisable(GL_BLEND);
+    cached.blend = blending;
+    this->recordStateChange(true);
+  }
+  else this->recordStateChange(false);
   if (!blending) {
-    glDisable(GL_BLEND);
+    cached.blendValid = true;
     return;
   }
-  glEnable(GL_BLEND);
   if (isDualSourceBlendFactor(command.state.blend.srcRGBFactor) ||
       isDualSourceBlendFactor(command.state.blend.dstRGBFactor) ||
       isDualSourceBlendFactor(command.state.blend.srcAlphaFactor) ||
@@ -2022,16 +2280,33 @@ SoGLRenderBackend::applyBlendState(const SoRenderCommand & command)
         "using primary-source factors for execution.");
     });
   }
-  cc_glglue_glBlendFuncSeparate(
-    this->glue, blendFactorToGL(command.state.blend.srcRGBFactor),
-    blendFactorToGL(command.state.blend.dstRGBFactor),
-    blendFactorToGL(command.state.blend.srcAlphaFactor),
-    blendFactorToGL(command.state.blend.dstAlphaFactor));
+  const GLenum srcRGB = blendFactorToGL(command.state.blend.srcRGBFactor);
+  const GLenum dstRGB = blendFactorToGL(command.state.blend.dstRGBFactor);
+  const GLenum srcAlpha = blendFactorToGL(command.state.blend.srcAlphaFactor);
+  const GLenum dstAlpha = blendFactorToGL(command.state.blend.dstAlphaFactor);
+  if (!cached.blendValid || cached.blendSrcRGB != srcRGB ||
+      cached.blendDstRGB != dstRGB || cached.blendSrcAlpha != srcAlpha ||
+      cached.blendDstAlpha != dstAlpha) {
+    cc_glglue_glBlendFuncSeparate(this->glue, srcRGB, dstRGB,
+                                  srcAlpha, dstAlpha);
+    cached.blendSrcRGB = srcRGB;
+    cached.blendDstRGB = dstRGB;
+    cached.blendSrcAlpha = srcAlpha;
+    cached.blendDstAlpha = dstAlpha;
+    this->recordStateChange(true);
+  }
+  else this->recordStateChange(false);
   if (cc_glglue_has_blendequation(this->glue) &&
       command.state.blend.rgbEquation == command.state.blend.alphaEquation) {
-    cc_glglue_glBlendEquation(
-      this->glue, blendEquationToGL(command.state.blend.rgbEquation));
+    const GLenum equation = blendEquationToGL(command.state.blend.rgbEquation);
+    if (!cached.blendValid || cached.blendEquation != equation) {
+      cc_glglue_glBlendEquation(this->glue, equation);
+      cached.blendEquation = equation;
+      this->recordStateChange(true);
+    }
+    else this->recordStateChange(false);
   }
+  cached.blendValid = true;
 }
 
 bool
@@ -2066,10 +2341,16 @@ SoGLRenderBackend::bindCommandProgram(const SoDrawList & drawlist,
                                       const SbVec2s & viewportSize,
                                       const CachedCommand & entry)
 {
-  if (path.textured) {
+  SubmissionCache::PipelineState & cached = this->submissionCache.pipeline;
+  const GLuint texture = path.textured ? entry.texture : 0;
+  if (!cached.textureValid || cached.texture != texture) {
     cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
-    cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, entry.texture);
+    cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, texture);
+    cached.texture = texture;
+    cached.textureValid = true;
+    this->recordStateChange(true);
   }
+  else this->recordStateChange(false);
   const SbVec4f & color = command.material.diffuse;
   if (path.pixelRaster) {
     this->bindPixelShader(command, viewMat, projMat,
@@ -2090,9 +2371,9 @@ SoGLRenderBackend::bindCommandProgram(const SoDrawList & drawlist,
   }
   else {
     const VisualProgram & program = this->selectSurfaceProgram(command);
-    cc_glglue_glUseProgram(this->glue, program.handle);
+    this->useProgram(program.handle);
     this->bindRasterCommon(drawlist, command, viewMat, projMat, color,
-                           entry.colorBuffer != 0, path.textured,
+                           entry.colorBuffer != 0, path.textured, program.handle,
                            program.surface);
   }
 }
@@ -2102,9 +2383,10 @@ SoGLRenderBackend::drawGeometry(const SoRenderCommand & command,
                                 const RasterPath & path,
                                 const CachedCommand & entry)
 {
-  this->glue->glBindVertexArray(path.expandedLineStream
-                                ? entry.lineRasterVertexArray
-                                : entry.vertexArray);
+  ++this->submissionCache.statistics.drawCalls;
+  this->bindVertexArray(path.expandedLineStream
+                        ? entry.lineRasterVertexArray
+                        : entry.vertexArray);
   if (path.expandedLineStream) {
     cc_glglue_glDrawArrays(this->glue, path.primitive, 0,
                            static_cast<GLsizei>(entry.lineRasterVertexCount));
@@ -2118,7 +2400,6 @@ SoGLRenderBackend::drawGeometry(const SoRenderCommand & command,
     cc_glglue_glDrawArrays(this->glue, path.primitive, 0,
                            static_cast<GLsizei>(command.geometry.vertexCount));
   }
-  this->glue->glBindVertexArray(0);
 }
 
 void
@@ -2127,20 +2408,15 @@ SoGLRenderBackend::restoreRasterState(const RasterPath & path,
                                       const bool polygonOffsetEnabled)
 {
   if (path.pixelRaster || path.usePointShader || path.useLineShader) {
-    cc_glglue_glUseProgram(this->glue, this->visualProgram.handle);
+    this->useProgram(this->visualProgram.handle);
   }
-  if (path.textured) cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, 0);
   if (polygonOffsetEnabled) glDisable(polygonOffsetTarget);
-  if (!path.filledPrimitive) glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-  glDepthRange(0.0, 1.0);
-  glFrontFace(GL_CCW);
-  if (!path.usePointShader) glPointSize(1.0f);
-  if (!path.useLineShader) glLineWidth(1.0f);
 }
 
 void
 SoGLRenderBackend::beginFrame(const SoRenderParams & params)
 {
+  this->submissionCache = SubmissionCache();
   // Establish a deterministic baseline. These values are not interpretations
   // of retained Coin state; semantic depth/blend/raster execution is layered
   // above this executor.
@@ -2148,7 +2424,9 @@ SoGLRenderBackend::beginFrame(const SoRenderParams & params)
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LEQUAL);
   glDepthMask(GL_TRUE);
+  glDepthRange(0.0, 1.0);
   glDisable(GL_CULL_FACE);
+  glFrontFace(GL_CCW);
   glDisable(GL_SCISSOR_TEST);
   glDisable(GL_POLYGON_OFFSET_FILL);
   glDisable(GL_POLYGON_OFFSET_LINE);
@@ -2156,6 +2434,19 @@ SoGLRenderBackend::beginFrame(const SoRenderParams & params)
   glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
   glPointSize(1.0f);
   glLineWidth(1.0f);
+  cc_glglue_glBlendFuncSeparate(this->glue, GL_ONE, GL_ZERO,
+                                GL_ONE, GL_ZERO);
+  if (cc_glglue_has_blendequation(this->glue)) {
+    cc_glglue_glBlendEquation(this->glue, GL_FUNC_ADD);
+  }
+  cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
+  cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, 0);
+  this->glue->glBindVertexArray(0);
+  this->submissionCache.pipeline.depthValid = true;
+  this->submissionCache.pipeline.rasterValid = true;
+  this->submissionCache.pipeline.blendValid = true;
+  this->submissionCache.pipeline.textureValid = true;
+  this->submissionCache.pipeline.vertexArrayValid = true;
 
   if (params.flags & SO_PARAM_CLEAR_WINDOW) {
     const SbColor4f & color = params.clearColor;
@@ -2176,8 +2467,124 @@ SoGLRenderBackend::beginFrame(const SoRenderParams & params)
   }
   if (clearMask) glClear(clearMask);
 
-  applyViewport(params);
-  cc_glglue_glUseProgram(this->glue, this->visualProgram.handle);
+  const SbVec2s origin = params.viewport.getViewportOriginPixels();
+  const SbVec2s size = params.viewport.getViewportSizePixels();
+  this->setViewport(origin[0], origin[1], size[0], size[1]);
+  this->useProgram(this->visualProgram.handle);
+}
+
+void
+SoGLRenderBackend::restoreSubmissionBaseline()
+{
+  cc_glglue_glActiveTexture(this->glue, GL_TEXTURE0);
+  cc_glglue_glBindTexture(this->glue, GL_TEXTURE_2D, 0);
+  this->glue->glBindVertexArray(0);
+  glDisable(GL_BLEND);
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LEQUAL);
+  glDepthMask(GL_TRUE);
+  glDepthRange(0.0, 1.0);
+  glDisable(GL_CULL_FACE);
+  glFrontFace(GL_CCW);
+  glDisable(GL_POLYGON_OFFSET_FILL);
+  glDisable(GL_POLYGON_OFFSET_LINE);
+  glDisable(GL_POLYGON_OFFSET_POINT);
+  glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+  glPointSize(1.0f);
+  glLineWidth(1.0f);
+  cc_glglue_glUseProgram(this->glue, 0);
+  this->invalidateSubmissionCache();
+}
+
+void
+SoGLRenderBackend::recordStateChange(const bool changed)
+{
+  if (changed) ++this->submissionCache.statistics.stateChanges;
+  else ++this->submissionCache.statistics.skippedStateChanges;
+}
+
+void
+SoGLRenderBackend::bindVertexArray(const GLuint vertexArray)
+{
+  SubmissionCache::PipelineState & cached = this->submissionCache.pipeline;
+  if (cached.vertexArrayValid && cached.vertexArray == vertexArray) {
+    ++this->submissionCache.statistics.skippedVertexArrayBinds;
+    return;
+  }
+  this->glue->glBindVertexArray(vertexArray);
+  cached.vertexArray = vertexArray;
+  cached.vertexArrayValid = true;
+  ++this->submissionCache.statistics.vertexArrayBinds;
+}
+
+void
+SoGLRenderBackend::invalidateSubmissionCache()
+{
+  this->submissionCache.program.handle = 0;
+  this->submissionCache.program.viewportValid = false;
+  this->submissionCache.program.matricesValid = false;
+  this->submissionCache.material.valid = false;
+  this->submissionCache.pipeline.depthValid = false;
+  this->submissionCache.pipeline.rasterValid = false;
+  this->submissionCache.pipeline.blendValid = false;
+  this->submissionCache.pipeline.textureValid = false;
+  this->submissionCache.pipeline.vertexArrayValid = false;
+}
+
+void
+SoGLRenderBackend::useProgram(const GLuint program)
+{
+  SubmissionCache::ProgramState & cached = this->submissionCache.program;
+  if (cached.handle == program) {
+    ++this->submissionCache.statistics.skippedProgramBinds;
+    return;
+  }
+  cc_glglue_glUseProgram(this->glue, program);
+  cached.handle = program;
+  ++this->submissionCache.statistics.programBinds;
+}
+
+void
+SoGLRenderBackend::setViewport(const int x, const int y,
+                               const int width, const int height)
+{
+  const int requested[4] = {x, y, width, height};
+  SubmissionCache::ProgramState & cached = this->submissionCache.program;
+  if (cached.viewportValid &&
+      std::memcmp(cached.viewport, requested,
+                  sizeof(requested)) == 0) {
+    ++this->submissionCache.statistics.skippedViewportChanges;
+    return;
+  }
+  glViewport(x, y, width, height);
+  std::memcpy(cached.viewport, requested, sizeof(requested));
+  cached.viewportValid = true;
+  ++this->submissionCache.statistics.viewportChanges;
+}
+
+void
+SoGLRenderBackend::uploadFrameMatrices(const GLuint program,
+                                       const SurfaceUniforms & uniforms,
+                                       const SbMat & view,
+                                       const SbMat & projection)
+{
+  SubmissionCache::ProgramState & cached = this->submissionCache.program;
+  if (cached.matricesValid && cached.matrixProgram == program &&
+      std::memcmp(cached.view, view, sizeof(SbMat)) == 0 &&
+      std::memcmp(cached.projection, projection,
+                  sizeof(SbMat)) == 0) {
+    this->submissionCache.statistics.skippedFrameMatrixUploads += 2;
+    return;
+  }
+  this->glue->glUniformMatrix4fv(uniforms.transforms.view, 1, GL_FALSE,
+                                 &view[0][0]);
+  this->glue->glUniformMatrix4fv(uniforms.transforms.projection, 1, GL_FALSE,
+                                 &projection[0][0]);
+  std::memcpy(cached.view, view, sizeof(SbMat));
+  std::memcpy(cached.projection, projection, sizeof(SbMat));
+  cached.matrixProgram = program;
+  cached.matricesValid = true;
+  this->submissionCache.statistics.frameMatrixUploads += 2;
 }
 
 const SoGLRenderBackend::VisualProgram &
@@ -2222,6 +2629,9 @@ SoGLRenderBackend::createShaders()
   this->pickPrograms.visual.handle = linkProgram(
     this->glue, coin_gl_visual_vertex_shadersource,
     coin_gl_picking_fragment_shadersource);
+  this->pickPrograms.opaqueVisual.handle = linkProgram(
+    this->glue, coin_gl_visual_vertex_shadersource,
+    coin_gl_picking_opaque_fragment_shadersource);
   this->pickPrograms.line.handle = linkProgram(
     this->glue, coin_gl_wide_line_vertex_shadersource,
     coin_gl_picking_wide_line_fragment_shadersource,
@@ -2272,6 +2682,7 @@ SoGLRenderBackend::createShaders()
     this->rasterPrograms.trianglePoint.handle,
     this->rasterPrograms.pixel.handle,
     this->pickPrograms.visual.handle,
+    this->pickPrograms.opaqueVisual.handle,
     this->pickPrograms.line.handle,
     this->pickPrograms.triangleLine.handle,
     this->pickPrograms.point.handle,
@@ -2296,6 +2707,7 @@ SoGLRenderBackend::createShaders()
       this->rasterPrograms.trianglePoint.handle = 0;
       this->rasterPrograms.pixel.handle = 0;
       this->pickPrograms.visual.handle = 0;
+      this->pickPrograms.opaqueVisual.handle = 0;
       this->pickPrograms.line.handle = 0;
       this->pickPrograms.triangleLine.handle = 0;
       this->pickPrograms.point.handle = 0;
@@ -2319,6 +2731,7 @@ SoGLRenderBackend::createShaders()
     surface.transforms.view = uniform(program, "u_view");
     surface.transforms.projection = uniform(program, "u_proj");
     surface.transforms.model = uniform(program, "u_model");
+    surface.transforms.instanced = uniform(program, "u_instanced");
     surface.material.color = uniform(program, "u_color");
     surface.material.useVertexColor = uniform(program, "u_useVertexColor");
     surface.material.shadingModel = uniform(program, "u_shadingModel");
@@ -2454,6 +2867,7 @@ SoGLRenderBackend::createShaders()
     u.peelEnabled = uniform(program.handle, "u_peelEnabled");
   };
   cachePickUniforms(this->pickPrograms.visual);
+  cachePickUniforms(this->pickPrograms.opaqueVisual);
   cachePickUniforms(this->pickPrograms.line);
   cachePickUniforms(this->pickPrograms.triangleLine);
   cachePickUniforms(this->pickPrograms.point);
@@ -2496,6 +2910,20 @@ SoGLRenderBackend::destroyPickFramebuffer()
   this->pickTarget.depthTextures[1] = 0;
   this->pickTarget.activeDepth = 0;
   this->pickTarget.size = SbVec2s(0, 0);
+}
+
+void
+SoGLRenderBackend::destroyAsyncPickResources(const bool releaseGL)
+{
+  for (AsyncPickSlot & slot : this->asyncPickSlots) {
+    if (releaseGL && slot.fence) glDeleteSync(slot.fence);
+    if (releaseGL && slot.buffer) {
+      cc_glglue_glDeleteBuffers(this->glue, 1, &slot.buffer);
+    }
+    slot = AsyncPickSlot();
+  }
+  this->nextAsyncPickRequestId = 1;
+  this->nextAsyncPickSlot = 0;
 }
 
 bool
@@ -2673,7 +3101,15 @@ SoGLRenderBackend::drawCoverageEntry(const SoDrawList & drawlist,
 
   GLuint program = programSet->visual.handle;
   const PickProgram::Uniforms * locations = &programSet->visual.uniforms;
-  if (pixelRaster) {
+  const bool simpleOpaquePick = !selection && !pixelRaster && !textured &&
+    !cache.colorBuffer && command.opacityClass == SO_OPACITY_OPAQUE &&
+    command.state.alphaTest.policy == SO_ALPHA_TEST_POLICY_NONE &&
+    !useLineShader && !usePointShader;
+  if (simpleOpaquePick) {
+    program = this->pickPrograms.opaqueVisual.handle;
+    locations = &this->pickPrograms.opaqueVisual.uniforms;
+  }
+  else if (pixelRaster) {
     program = programSet->pixel.handle;
     locations = &programSet->pixel.uniforms;
   }
@@ -2974,18 +3410,23 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
   SbMat frameProjection;
   params.viewMatrix.getValue(frameView);
   params.projMatrix.getValue(frameProjection);
+  const uint32_t commandCount = static_cast<uint32_t>(drawlist.getNumCommands());
+  std::vector<std::vector<size_t> > lookupByCommand(commandCount);
+  for (size_t i = 0; i < this->pickTarget.lookup.size(); ++i) {
+    const int commandIndex = this->pickTarget.lookup[i].commandIndex;
+    if (commandIndex >= 0 &&
+        static_cast<uint32_t>(commandIndex) < commandCount) {
+      lookupByCommand[static_cast<size_t>(commandIndex)].push_back(i);
+    }
+  }
   auto drawPickCommand = [&](const uint32_t commandIndex) {
-    for (size_t i = 0; i < this->pickTarget.lookup.size(); ++i) {
-      const int lookupCommandIndex = this->pickTarget.lookup[i].commandIndex;
-      if (lookupCommandIndex < 0 ||
-          static_cast<uint32_t>(lookupCommandIndex) != commandIndex) continue;
+    for (const size_t i : lookupByCommand[commandIndex]) {
       this->drawPickEntry(drawlist, this->pickTarget.lookup[i],
                           static_cast<GLuint>(i + 1),
                           frameView, frameProjection, params);
     }
   };
 
-  const uint32_t commandCount = static_cast<uint32_t>(drawlist.getNumCommands());
   const uint32_t eventCount = static_cast<uint32_t>(
     drawlist.getDepthClearEvents().size());
   for (int i = 0; i < plan.getNumOperations(); ++i) {
@@ -3091,6 +3532,170 @@ SoGLRenderBackend::pickClosest(const int x, const int y, const int radius,
 }
 
 SbBool
+SoGLRenderBackend::requestPickClosestAsync(const int x, const int y,
+                                           const int radius,
+                                           SoAsyncPickRequest & request)
+{
+  request = SoAsyncPickRequest();
+  if (!this->isInitialized() || !this->pickTarget.ready || radius < 0) {
+    return FALSE;
+  }
+  const int targetWidth = this->pickTarget.size[0];
+  const int targetHeight = this->pickTarget.size[1];
+  const int left = std::max(0, x - radius);
+  const int bottom = std::max(0, y - radius);
+  const int right = std::min(targetWidth - 1, x + radius);
+  const int top = std::min(targetHeight - 1, y + radius);
+  if (left > right || bottom > top) return FALSE;
+
+  AsyncPickSlot & slot =
+    this->asyncPickSlots[this->nextAsyncPickSlot++ % 3];
+  if (slot.fence) {
+    glDeleteSync(slot.fence);
+    slot.fence = nullptr;
+  }
+  if (!slot.buffer) cc_glglue_glGenBuffers(this->glue, 1, &slot.buffer);
+  if (!slot.buffer) return FALSE;
+
+  slot.requestId = this->nextAsyncPickRequestId++;
+  if (slot.requestId == 0) slot.requestId = this->nextAsyncPickRequestId++;
+  slot.generation = this->pickTarget.generation;
+  slot.left = left;
+  slot.bottom = bottom;
+  slot.width = right - left + 1;
+  slot.height = top - bottom + 1;
+  slot.centerX = x;
+  slot.centerY = y;
+  slot.active = true;
+  const size_t pixelCount = static_cast<size_t>(slot.width) * slot.height;
+  const size_t planeBytes = pixelCount * sizeof(GLuint);
+
+  ScopedGLState state(this->glue);
+  ScopedPixelPackState packState;
+  cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
+                              this->pickTarget.framebuffer);
+  glReadBuffer(GL_COLOR_ATTACHMENT0);
+  cc_glglue_glBindBuffer(this->glue, GL_PIXEL_PACK_BUFFER, slot.buffer);
+  cc_glglue_glBufferData(this->glue, GL_PIXEL_PACK_BUFFER,
+                         static_cast<intptr_t>(planeBytes * 2), nullptr,
+                         GL_STREAM_READ);
+  glReadPixels(left, bottom, slot.width, slot.height,
+               GL_RED_INTEGER, GL_UNSIGNED_INT, nullptr);
+  glReadPixels(left, bottom, slot.width, slot.height,
+               GL_DEPTH_COMPONENT, GL_FLOAT,
+               reinterpret_cast<void *>(planeBytes));
+  slot.fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+  if (!slot.fence) {
+    slot.active = false;
+    return FALSE;
+  }
+  glFlush();
+  request.requestId = slot.requestId;
+  request.generation = slot.generation;
+  return TRUE;
+}
+
+SoAsyncPickStatus
+SoGLRenderBackend::pollPickClosestAsync(const SoAsyncPickRequest & request,
+                                        SoPickResult & result)
+{
+  result = SoPickResult();
+  if (!this->isInitialized() || request.requestId == 0) {
+    return SoAsyncPickStatus::FAILED;
+  }
+  if (!this->pickTarget.ready ||
+      request.generation != this->pickTarget.generation) {
+    return SoAsyncPickStatus::STALE;
+  }
+  AsyncPickSlot * slot = nullptr;
+  for (AsyncPickSlot & candidate : this->asyncPickSlots) {
+    if (candidate.active && candidate.requestId == request.requestId) {
+      slot = &candidate;
+      break;
+    }
+  }
+  if (!slot || slot->generation != request.generation) {
+    return SoAsyncPickStatus::STALE;
+  }
+  const GLenum wait = glClientWaitSync(slot->fence, 0, 0);
+  if (wait == GL_TIMEOUT_EXPIRED) return SoAsyncPickStatus::PENDING;
+  if (wait == GL_WAIT_FAILED) {
+    glDeleteSync(slot->fence);
+    slot->fence = nullptr;
+    slot->active = false;
+    return SoAsyncPickStatus::FAILED;
+  }
+
+  const size_t pixelCount = static_cast<size_t>(slot->width) * slot->height;
+  const size_t planeBytes = pixelCount * sizeof(GLuint);
+  ScopedGLState state(this->glue);
+  cc_glglue_glBindBuffer(this->glue, GL_PIXEL_PACK_BUFFER, slot->buffer);
+  const unsigned char * mapped = static_cast<const unsigned char *>(
+    cc_glglue_glMapBuffer(this->glue, GL_PIXEL_PACK_BUFFER, GL_READ_ONLY));
+  if (!mapped) {
+    glDeleteSync(slot->fence);
+    slot->fence = nullptr;
+    slot->active = false;
+    return SoAsyncPickStatus::FAILED;
+  }
+  const GLuint * ids = reinterpret_cast<const GLuint *>(mapped);
+  const GLfloat * depths = reinterpret_cast<const GLfloat *>(mapped + planeBytes);
+  GLuint bestId = 0;
+  int bestDistance = 0;
+  size_t bestOffset = 0;
+  int bestX = 0;
+  int bestY = 0;
+  for (int row = 0; row < slot->height; ++row) {
+    for (int column = 0; column < slot->width; ++column) {
+      const size_t offset = static_cast<size_t>(row) * slot->width + column;
+      if (!ids[offset]) continue;
+      const int px = slot->left + column;
+      const int py = slot->bottom + row;
+      const int dx = px - slot->centerX;
+      const int dy = py - slot->centerY;
+      const int distance = dx * dx + dy * dy;
+      if (!bestId || distance < bestDistance) {
+        bestId = ids[offset];
+        bestDistance = distance;
+        bestOffset = offset;
+        bestX = px;
+        bestY = py;
+      }
+    }
+  }
+  const float bestDepth = bestId ? depths[bestOffset] : 1.0f;
+  const GLboolean unmapped = cc_glglue_glUnmapBuffer(
+    this->glue, GL_PIXEL_PACK_BUFFER);
+  glDeleteSync(slot->fence);
+  slot->fence = nullptr;
+  slot->active = false;
+  if (!unmapped) return SoAsyncPickStatus::FAILED;
+  if (!bestId) return SoAsyncPickStatus::MISS;
+  if (bestId > this->pickTarget.lookup.size()) {
+    return SoAsyncPickStatus::FAILED;
+  }
+  const SoPickLUTEntry & entry = this->pickTarget.lookup[bestId - 1];
+  result.id = bestId;
+  result.generation = slot->generation;
+  result.commandIndex = entry.commandIndex;
+  result.nodeId = entry.nodeId;
+  result.instanceId = entry.instanceId;
+  result.objectId = entry.objectId;
+  result.type = entry.type;
+  result.elementIndex = entry.elementIndex;
+  result.pixelX = bestX;
+  result.pixelY = bestY;
+  result.depth = bestDepth;
+  return SoAsyncPickStatus::HIT;
+}
+
+SoRenderStatistics
+SoGLRenderBackend::getRenderStatistics() const
+{
+  return this->submissionCache.statistics;
+}
+
+SbBool
 SoGLRenderBackend::pickVisibleRegion(const SbBox2s & region,
                                      SoPickResultList & results)
 {
@@ -3191,6 +3796,14 @@ SoGLRenderBackend::pickDepthStack(const int x, const int y, const int radius,
   const SoRenderParams & params = this->pickTarget.params;
   const uint32_t commandCount = static_cast<uint32_t>(
     drawlist.getNumCommands());
+  std::vector<std::vector<size_t> > lookupByCommand(commandCount);
+  for (size_t i = 0; i < this->pickTarget.lookup.size(); ++i) {
+    const int commandIndex = this->pickTarget.lookup[i].commandIndex;
+    if (commandIndex >= 0 &&
+        static_cast<uint32_t>(commandIndex) < commandCount) {
+      lookupByCommand[static_cast<size_t>(commandIndex)].push_back(i);
+    }
+  }
 
   // A depth clear starts a new visual depth segment only where that clear
   // applies. At a local-viewport cursor, later segments supersede earlier
@@ -3308,12 +3921,8 @@ SoGLRenderBackend::pickDepthStack(const int x, const int y, const int radius,
     params.viewMatrix.getValue(frameView);
     params.projMatrix.getValue(frameProjection);
     auto drawPickCommand = [&](const uint32_t commandIndex) {
-      for (size_t i = 0; i < this->pickTarget.lookup.size(); ++i) {
+      for (const size_t i : lookupByCommand[commandIndex]) {
         const SoPickLUTEntry & entry = this->pickTarget.lookup[i];
-        if (entry.commandIndex < 0 ||
-            static_cast<uint32_t>(entry.commandIndex) != commandIndex) {
-          continue;
-        }
         this->drawPickEntry(drawlist, entry, static_cast<GLuint>(i + 1),
                             frameView, frameProjection, params);
       }
@@ -3448,6 +4057,9 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
   for (const SoSelectionTarget & target : selection.highlighted) {
     drawTarget(target);
   }
+  // Coverage rendering binds its own programs and viewports directly.
+  // Force subsequent visual commands to re-establish cached submission state.
+  this->invalidateSubmissionCache();
   return TRUE;
 }
 
@@ -3501,8 +4113,32 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
         this->emitError("render plan references a missing DrawList command");
         return FALSE;
       }
+      const SoRenderCommand & first = drawlist.getCommand(
+        static_cast<int>(operation.commandIndex));
+      std::vector<uint32_t> instanceCommands;
+      if (this->canInstanceCommand(first)) {
+        instanceCommands.push_back(operation.commandIndex);
+        for (int nextOperation = i + 1;
+             nextOperation < plan.getNumOperations(); ++nextOperation) {
+          const SoRenderOperation & next = plan.getOperation(nextOperation);
+          if (next.type != SoRenderOperationType::DRAW ||
+              next.commandIndex >= commandCount) break;
+          const SoRenderCommand & nextCommand = drawlist.getCommand(
+            static_cast<int>(next.commandIndex));
+          if (!this->canInstanceTogether(first, nextCommand)) break;
+          instanceCommands.push_back(next.commandIndex);
+        }
+      }
+      if (instanceCommands.size() > 1) {
+        this->drawInstancedCommands(drawlist, instanceCommands, params);
+        for (const uint32_t commandIndex : instanceCommands) {
+          queueTargets(commandIndex);
+        }
+        i += static_cast<int>(instanceCommands.size()) - 1;
+        continue;
+      }
       this->drawCommand(drawlist,
-                        drawlist.getCommand(static_cast<int>(operation.commandIndex)),
+                        first,
                         view, projection, params);
       queueTargets(operation.commandIndex);
     }
@@ -3519,6 +4155,6 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
         params, false);
     }
   }
-  cc_glglue_glUseProgram(this->glue, 0);
+  this->restoreSubmissionBaseline();
   return TRUE;
 }

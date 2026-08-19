@@ -36,6 +36,7 @@
 #include <Inventor/SbColor4f.h>
 #include <Inventor/SbBox2s.h>
 #include <Inventor/SbVec2s.h>
+#include <Inventor/rendering/SoRenderIR.h>
 
 #include <cstdint>
 #if COIN_HAVE_LEGACY_GL_RENDERER
@@ -265,6 +266,16 @@ public:
 
   /*! Return the closest renderer-neutral scene hit. The caller owns result. */
   SbBool pickClosest(int x, int y, int radius, SoPickedPoint *& result);
+  /*! Submit a nonblocking closest-hit readback for hover interaction. */
+  SbBool requestPickClosestAsync(int x, int y, int radius,
+                                 SoAsyncPickRequest & request);
+  /*! Poll a hover request without waiting. The caller owns a HIT result. */
+  SoAsyncPickStatus pollPickClosestAsync(
+    const SoAsyncPickRequest & request, SoPickedPoint *& result);
+  SoRenderStatistics getRenderStatistics() const;
+  //! Enable intrusive per-command CPU phase timing for diagnostics.
+  void setRenderPhaseTimingEnabled(SbBool enabled);
+  SbBool isRenderPhaseTimingEnabled() const;
   /*! Return front-to-back renderer-neutral scene hits around a cursor. */
   SbBool pickDepthStack(int x, int y, int radius, int maxLayers,
                         SoPickedPointList & results, int maxHits = 32);

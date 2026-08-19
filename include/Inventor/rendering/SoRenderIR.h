@@ -107,6 +107,12 @@ struct SoGeometryDesc {
   uint64_t            cacheKey = 0;
   uint64_t            revision = 0;
 
+  // Commands may have different retained identities while referencing
+  // byte-identical geometry. A nonzero resource key permits that GPU storage
+  // to be shared without changing command, picking, or selection identity.
+  uint64_t            resourceKey = 0;
+  uint64_t            resourceRevision = 0;
+
   // Cheap local-space bounds retained for planning. Producers may leave this
   // unset when the backend should use its conservative origin fallback.
   SbVec3f             boundsCenter = SbVec3f(0.0f, 0.0f, 0.0f);
@@ -623,6 +629,43 @@ struct SoPickResultList {
   uint32_t generation = 0;
   std::vector<SoPickResult> hits;
   SbBool truncated = FALSE;
+};
+
+enum class SoAsyncPickStatus : uint8_t {
+  PENDING,
+  HIT,
+  MISS,
+  STALE,
+  FAILED
+};
+
+struct SoAsyncPickRequest {
+  uint64_t requestId = 0;
+  uint32_t generation = 0;
+};
+
+struct SoRenderStatistics {
+  uint64_t drawCalls = 0;
+  uint64_t programBinds = 0;
+  uint64_t skippedProgramBinds = 0;
+  uint64_t viewportChanges = 0;
+  uint64_t skippedViewportChanges = 0;
+  uint64_t frameMatrixUploads = 0;
+  uint64_t skippedFrameMatrixUploads = 0;
+  uint64_t materialUniformBatches = 0;
+  uint64_t skippedMaterialUniformBatches = 0;
+  uint64_t stateChanges = 0;
+  uint64_t skippedStateChanges = 0;
+  uint64_t vertexArrayBinds = 0;
+  uint64_t skippedVertexArrayBinds = 0;
+  uint64_t commandPreparationNanoseconds = 0;
+  uint64_t stateSetupNanoseconds = 0;
+  uint64_t programBindingNanoseconds = 0;
+  uint64_t drawSubmissionNanoseconds = 0;
+  uint64_t instancedBatches = 0;
+  uint64_t instancedCommands = 0;
+  uint64_t drawCallsAvoided = 0;
+  uint64_t instanceBytesUploaded = 0;
 };
 
 /*!

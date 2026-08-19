@@ -84,6 +84,14 @@ public:
   //! Resolve the closest viewport-local hit against the last explicit update.
   virtual SbBool pickClosest(int x, int y, int radius,
                              SoPickResult & result);
+  virtual SbBool requestPickClosestAsync(int x, int y, int radius,
+                                         SoAsyncPickRequest & request);
+  virtual SoAsyncPickStatus pollPickClosestAsync(
+    const SoAsyncPickRequest & request, SoPickResult & result);
+  virtual SoRenderStatistics getRenderStatistics() const;
+  //! Enable intrusive per-command CPU phase timing for diagnostics.
+  void setPhaseTimingEnabled(SbBool enabled);
+  SbBool isPhaseTimingEnabled() const;
   //! Resolve and deduplicate the visible IDs in a viewport-local region.
   virtual SbBool pickVisibleRegion(const SbBox2s & region,
                                    SoPickResultList & results);
@@ -114,6 +122,7 @@ protected:
 
 private:
   SbBool                    initialized;
+  SbBool                    phaseTimingEnabled;
   SoRenderBackendInitParams initParams;
 };
 

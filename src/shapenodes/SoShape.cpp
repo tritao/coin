@@ -68,6 +68,7 @@ class SoVBO;
 #include <Inventor/SbPlane.h>
 #include <Inventor/SbTime.h>
 #include <Inventor/SoPickedPoint.h>
+#include <Inventor/SoPath.h>
 #include <Inventor/SoPrimitiveVertex.h>
 #include <Inventor/actions/SoCallbackAction.h>
 #if COIN_BUILD_LEGACY_GL_RENDERER
@@ -157,6 +158,89 @@ class SoVBO;
 
 namespace {
 
+constexpr uint64_t IR_CACHE_HASH_OFFSET = 1469598103934665603ULL;
+constexpr uint64_t IR_CACHE_HASH_PRIME = 1099511628211ULL;
+
+uint64_t
+mixIRCacheHash(uint64_t hash, uint64_t value)
+{
+  hash ^= value;
+  hash *= IR_CACHE_HASH_PRIME;
+  return hash;
+}
+
+uint64_t
+hashIRGeometryBytes(uint64_t hash, const void * data, const size_t bytes)
+{
+  const unsigned char * input = static_cast<const unsigned char *>(data);
+  for (size_t i = 0; i < bytes; ++i) {
+    hash = mixIRCacheHash(hash, input[i]);
+  }
+  return hash;
+}
+
+uint64_t
+makeIRGeometryResourceKey(const SoGeometryDesc & geometry)
+{
+  uint64_t hash = mixIRCacheHash(IR_CACHE_HASH_OFFSET, geometry.topology);
+  hash = mixIRCacheHash(hash, geometry.vertexCount);
+  hash = mixIRCacheHash(hash, geometry.normalCount);
+  hash = mixIRCacheHash(hash, geometry.indexCount);
+  if (geometry.positions) {
+    hash = hashIRGeometryBytes(hash, geometry.positions,
+      static_cast<size_t>(geometry.vertexCount) * 3 * sizeof(float));
+  }
+  if (geometry.normals) {
+    hash = hashIRGeometryBytes(hash, geometry.normals,
+      static_cast<size_t>(geometry.normalCount) * 3 * sizeof(float));
+  }
+  if (geometry.texcoords) {
+    hash = hashIRGeometryBytes(hash, geometry.texcoords,
+      static_cast<size_t>(geometry.vertexCount) * 4 * sizeof(float));
+  }
+  if (geometry.colors) {
+    hash = hashIRGeometryBytes(hash, geometry.colors,
+      static_cast<size_t>(geometry.vertexCount) * 4 * sizeof(float));
+  }
+  if (geometry.indices) {
+    hash = hashIRGeometryBytes(hash, geometry.indices,
+      static_cast<size_t>(geometry.indexCount) * sizeof(uint32_t));
+  }
+  return hash == 0 ? 1 : hash;
+}
+
+void
+makeIRGeometryIdentity(SoIRRenderAction * action,
+                       const SoShape * shape,
+                       uint64_t & cacheKey,
+                       uint64_t & revision)
+{
+  cacheKey = IR_CACHE_HASH_OFFSET;
+  revision = IR_CACHE_HASH_OFFSET;
+  const SoPath * path = action ? action->getCurPath() : NULL;
+  if (path) {
+    for (int i = 0; i < path->getLength(); ++i) {
+      const SoNode * node = path->getNode(i);
+      cacheKey = mixIRCacheHash(cacheKey,
+        static_cast<uint64_t>(reinterpret_cast<uintptr_t>(node)));
+      cacheKey = mixIRCacheHash(cacheKey,
+        static_cast<uint64_t>(static_cast<uint32_t>(path->getIndex(i))));
+      revision = mixIRCacheHash(revision,
+        node ? static_cast<uint64_t>(node->getNodeId()) : 0);
+      revision = mixIRCacheHash(revision,
+        static_cast<uint64_t>(static_cast<uint32_t>(path->getIndex(i))));
+    }
+  }
+  else {
+    cacheKey = mixIRCacheHash(cacheKey,
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(shape)));
+    revision = mixIRCacheHash(revision,
+      shape ? static_cast<uint64_t>(shape->getNodeId()) : 0);
+  }
+  if (cacheKey == 0) cacheKey = 1;
+  if (revision == 0) revision = 1;
+}
+
 struct SoIRVertex {
   SbVec3f position;
   SbVec3f normal;
@@ -189,7 +273,12 @@ struct SoIRPrimitiveRange {
 class SoIRPrimitiveAssembler : public SoIRRenderAction::PrimitiveCollector {
 public:
   SoIRPrimitiveAssembler(SoIRRenderAction * action, SoShape * shape)
-    : action(action), shape(shape), topology(SO_TOPOLOGY_COUNT) {}
+    : action(action), shape(shape), topology(SO_TOPOLOGY_COUNT)
+  {
+    makeIRGeometryIdentity(action, shape,
+                           this->geometryCacheKey,
+                           this->geometryRevision);
+  }
 
   void onTriangle(const SoPrimitiveVertex * v1,
                   const SoPrimitiveVertex * v2,
@@ -348,9 +437,13 @@ private:
                     const SoGeometryDesc & sourceGeometry,
                     const std::vector<SoIRBatch> & batches)
   {
-    for (const SoIRBatch & batch : batches) {
+    for (size_t batchIndex = 0; batchIndex < batches.size(); ++batchIndex) {
+      const SoIRBatch & batch = batches[batchIndex];
       SoRenderCommand command = {};
       command.geometry = sourceGeometry;
+      command.geometry.cacheKey = mixIRCacheHash(
+        this->geometryCacheKey, static_cast<uint64_t>(batchIndex + 1));
+      command.geometry.revision = this->geometryRevision;
       command.geometry.vertexCount = static_cast<uint32_t>(batch.count);
       command.geometry.normalCount = command.geometry.vertexCount;
       command.geometry.positions = sourceGeometry.positions + batch.first * 3;
@@ -358,6 +451,9 @@ private:
       command.geometry.texcoords = sourceGeometry.texcoords + batch.first * 4;
       command.geometry.colors = sourceGeometry.colors
         ? sourceGeometry.colors + batch.first * 4 : nullptr;
+      command.geometry.resourceKey = makeIRGeometryResourceKey(
+        command.geometry);
+      command.geometry.resourceRevision = command.geometry.resourceKey;
 
       SoRenderIR::fillCommandStateFromAction(
         this->action, command, std::max(batch.materialIndex, 0));
@@ -475,6 +571,8 @@ private:
   SoIRRenderAction * action;
   SoShape * shape;
   SoPrimitiveTopology topology;
+  uint64_t geometryCacheKey = 0;
+  uint64_t geometryRevision = 0;
   std::vector<SoIRVertex> vertices;
   std::vector<SoIRPrimitiveRange> primitiveRanges;
 };

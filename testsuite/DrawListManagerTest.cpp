@@ -12,6 +12,7 @@
 #include <Inventor/elements/SoProjectionMatrixElement.h>
 #include <Inventor/elements/SoViewingMatrixElement.h>
 #include <Inventor/nodes/SoCamera.h>
+#include <Inventor/nodes/SoCallback.h>
 #include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoCube.h>
 #include <Inventor/nodes/SoDrawStyle.h>
@@ -72,6 +73,11 @@ void preRender(void * data, SoRenderManager *)
 void postRender(void * data, SoRenderManager *)
 {
   ++static_cast<CallbackCounts *>(data)->post;
+}
+
+void countTraversal(void * data, SoAction *)
+{
+  ++*static_cast<int *>(data);
 }
 
 int countNonBlack(GLTestContext & context)
@@ -182,9 +188,13 @@ runTest()
   SbViewportRegion testViewport(SbVec2s(32, 32));
   testViewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(32, 32));
 
+  int traversalCount = 0;
   SoSeparator * cubeRoot = new SoSeparator;
+  SoCallback * traversalCounter = new SoCallback;
+  traversalCounter->setCallback(countTraversal, &traversalCount);
   SoTranslation * cubeTranslation = new SoTranslation;
   cubeTranslation->translation.setValue(0.0f, 0.0f, -3.0f);
+  cubeRoot->addChild(traversalCounter);
   cubeRoot->addChild(cubeTranslation);
   cubeRoot->addChild(new SoCube);
   cubeRoot->ref();
@@ -277,6 +287,7 @@ runTest()
     manager.addPreRenderCallback(preRender, &callbacks);
     manager.addPostRenderCallback(postRender, &callbacks);
     manager.render(TRUE, TRUE);
+    const int traversalCountAfterFirstRender = traversalCount;
     const SoRenderManager::RenderResult & renderResult = manager.getLastRenderResult();
     if (!renderResult.rendered ||
         renderResult.requestedPipeline != SoRenderManager::RenderPipeline::DRAW_LIST ||
@@ -289,6 +300,24 @@ runTest()
     }
     if (callbacks.pre != 1 || callbacks.post != 1) {
       std::cerr << "FAIL: DrawList manager callbacks were not paired exactly once" << std::endl;
+      result = 1;
+    }
+    manager.render(TRUE, TRUE);
+    if (traversalCount != traversalCountAfterFirstRender) {
+      std::cerr << "FAIL: unchanged DrawList render repeated scene traversal"
+                << std::endl;
+      result = 1;
+    }
+    cubeRoot->touch();
+    manager.render(TRUE, TRUE);
+    if (traversalCount != traversalCountAfterFirstRender + 1) {
+      std::cerr << "FAIL: changed scene did not invalidate cached DrawList"
+                << std::endl;
+      result = 1;
+    }
+    if (callbacks.pre != 3 || callbacks.post != 3) {
+      std::cerr << "FAIL: cached DrawList renders skipped manager callbacks"
+                << std::endl;
       result = 1;
     }
     if (countNonBlack(context) == 0) {
@@ -308,6 +337,30 @@ runTest()
       result = 1;
     }
     delete closest;
+
+    SoAsyncPickRequest hoverRequest;
+    if (!manager.requestPickClosestAsync(16, 16, 0, hoverRequest)) {
+      std::cerr << "FAIL: manager rejected asynchronous hover pick"
+                << std::endl;
+      result = 1;
+    }
+    else {
+      SoPickedPoint * hover = NULL;
+      SoAsyncPickStatus hoverStatus =
+        manager.pollPickClosestAsync(hoverRequest, hover);
+      if (hoverStatus == SoAsyncPickStatus::PENDING) {
+        glFinish();
+        hoverStatus = manager.pollPickClosestAsync(hoverRequest, hover);
+      }
+      if (hoverStatus != SoAsyncPickStatus::HIT || !hover ||
+          hover->getPath()->getTail()->getTypeId() !=
+            SoCube::getClassTypeId()) {
+        std::cerr << "FAIL: manager asynchronous hover pick was incorrect"
+                  << std::endl;
+        result = 1;
+      }
+      delete hover;
+    }
 
     SoPickedPointList stack;
     if (!manager.pickDepthStack(16, 16, 0, 8, stack) ||
@@ -512,6 +565,13 @@ runTest()
   lostContextManager->setCamera(camera);
   lostContextManager->setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
   lostContextManager->render(TRUE, TRUE);
+  SoAsyncPickRequest lostContextRequest;
+  if (!lostContextManager->requestPickClosestAsync(
+        16, 16, 0, lostContextRequest)) {
+    std::cerr << "FAIL: lost-context setup could not queue async pick"
+              << std::endl;
+    result = 1;
+  }
   context.shutdown();
   delete lostContextManager;
 

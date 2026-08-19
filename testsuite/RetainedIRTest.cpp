@@ -88,6 +88,56 @@ runTest()
                 << std::endl;
       result = 1;
     }
+    if (commandA.geometry.cacheKey == 0 ||
+        commandB.geometry.cacheKey == 0 ||
+        commandA.geometry.cacheKey == commandB.geometry.cacheKey ||
+        commandA.geometry.revision == 0 ||
+        commandB.geometry.revision == 0) {
+      std::cerr << "FAIL: retained geometry cache identity conflated DAG occurrences"
+                << std::endl;
+      result = 1;
+    }
+    if (commandA.geometry.resourceKey == 0 ||
+        commandA.geometry.resourceKey != commandB.geometry.resourceKey) {
+      std::cerr << "FAIL: identical DAG geometry did not share resource identity"
+                << std::endl;
+      result = 1;
+    }
+    const uint64_t keyA = commandA.geometry.cacheKey;
+    const uint64_t keyB = commandB.geometry.cacheKey;
+    const uint64_t revisionA = commandA.geometry.revision;
+    const uint64_t revisionB = commandB.geometry.revision;
+    const uint64_t resourceKey = commandA.geometry.resourceKey;
+    action.apply(dagRoot);
+    const SoRenderCommand & repeatedA = action.getDrawList().getCommand(0);
+    const SoRenderCommand & repeatedB = action.getDrawList().getCommand(1);
+    if (repeatedA.geometry.cacheKey != keyA ||
+        repeatedB.geometry.cacheKey != keyB ||
+        repeatedA.geometry.revision != revisionA ||
+        repeatedB.geometry.revision != revisionB ||
+        repeatedA.geometry.resourceKey != resourceKey ||
+        repeatedB.geometry.resourceKey != resourceKey) {
+      std::cerr << "FAIL: unchanged retained geometry identity was unstable"
+                << std::endl;
+      result = 1;
+    }
+    coordinatesA->point.set1Value(0, SbVec3f(-2.0f, -1.0f, 0.0f));
+    action.apply(dagRoot);
+    const SoRenderCommand & changedA = action.getDrawList().getCommand(0);
+    const SoRenderCommand & changedB = action.getDrawList().getCommand(1);
+    if (changedA.geometry.cacheKey != keyA ||
+        changedB.geometry.cacheKey != keyB ||
+        (changedA.geometry.revision == revisionA &&
+         changedB.geometry.revision == revisionB)) {
+      std::cerr << "FAIL: retained geometry mutation did not update revision"
+                << std::endl;
+      result = 1;
+    }
+    if (changedA.geometry.resourceKey == changedB.geometry.resourceKey) {
+      std::cerr << "FAIL: distinct geometry content shared resource identity"
+                << std::endl;
+      result = 1;
+    }
   }
   dagRoot->unref();
   action.apply(root);

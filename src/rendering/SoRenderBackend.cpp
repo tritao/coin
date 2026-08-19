@@ -9,7 +9,7 @@
 #include <cassert>
 
 SoRenderBackend::SoRenderBackend()
-  : initialized(FALSE), initParams()
+  : initialized(FALSE), phaseTimingEnabled(FALSE), initParams()
 {
 }
 
@@ -38,6 +38,37 @@ SbBool
 SoRenderBackend::pickClosest(int, int, int, SoPickResult &)
 {
   return FALSE;
+}
+
+SbBool
+SoRenderBackend::requestPickClosestAsync(int, int, int, SoAsyncPickRequest &)
+{
+  return FALSE;
+}
+
+SoAsyncPickStatus
+SoRenderBackend::pollPickClosestAsync(const SoAsyncPickRequest &,
+                                      SoPickResult &)
+{
+  return SoAsyncPickStatus::FAILED;
+}
+
+SoRenderStatistics
+SoRenderBackend::getRenderStatistics() const
+{
+  return SoRenderStatistics();
+}
+
+void
+SoRenderBackend::setPhaseTimingEnabled(const SbBool enabled)
+{
+  this->phaseTimingEnabled = enabled;
+}
+
+SbBool
+SoRenderBackend::isPhaseTimingEnabled() const
+{
+  return this->phaseTimingEnabled;
 }
 
 SbBool
