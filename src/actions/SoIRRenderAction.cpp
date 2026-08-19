@@ -74,6 +74,44 @@ SO_ACTION_SOURCE(SoIRRenderAction);
 
 class SoIRRenderActionP {
 public:
+  struct PathRecord {
+    size_t first = 0;
+    size_t length = 0;
+  };
+
+  // An open-addressed table avoids one allocation per retained node. Keeping
+  // it at most half full bounds probe length and lets later frames reuse it.
+  bool retainPathNode(SoNode * node)
+  {
+    if (!node) return false;
+    if (this->ownedPathNodeTable.empty()) {
+      this->ownedPathNodeTable.resize(16, NULL);
+      this->pathStatistics.estimatedStorageBytes +=
+        this->ownedPathNodeTable.size() * sizeof(SoNode *);
+    }
+    if ((this->ownedPathNodes.size() + 1) * 2 >
+        this->ownedPathNodeTable.size()) {
+      const std::vector<SoNode *> previous =
+        std::move(this->ownedPathNodeTable);
+      this->ownedPathNodeTable.assign(previous.size() * 2, NULL);
+      this->pathStatistics.estimatedStorageBytes +=
+        previous.size() * sizeof(SoNode *);
+      for (SoNode * owned : previous) {
+        if (owned) this->insertPathNode(owned);
+      }
+    }
+    if (!this->insertPathNode(node)) return false;
+    node->ref();
+    this->ownedPathNodes.push_back(node);
+    return true;
+  }
+
+  void resetPathNodeTable()
+  {
+    std::fill(this->ownedPathNodeTable.begin(),
+              this->ownedPathNodeTable.end(), nullptr);
+  }
+
   struct TextureStorage {
     const unsigned char * source = nullptr;
     size_t bytes = 0;
@@ -95,9 +133,27 @@ public:
   SoInstanceId nextInstanceId = 1;
   SoInstanceId lastPathInstanceId = 0;
   SoIRRenderAction::PathStatistics pathStatistics;
+  std::vector<PathRecord> commandPathRecords;
+  std::vector<SoNode *> pathNodes;
+  std::vector<int> pathIndices;
+  std::vector<SoNode *> ownedPathNodes;
+  std::vector<SoNode *> ownedPathNodeTable;
   SoRenderStage renderStage = SoRenderStage::Main;
   SoIRRenderContext renderContextOverride;
   bool hasRenderContextOverride = false;
+
+private:
+  bool insertPathNode(SoNode * node)
+  {
+    const size_t mask = this->ownedPathNodeTable.size() - 1;
+    size_t slot = (reinterpret_cast<uintptr_t>(node) >> 4) & mask;
+    while (this->ownedPathNodeTable[slot]) {
+      if (this->ownedPathNodeTable[slot] == node) return false;
+      slot = (slot + 1) & mask;
+    }
+    this->ownedPathNodeTable[slot] = node;
+    return true;
+  }
 };
 
 #define PRIVATE(obj) (obj->pimpl)
@@ -244,9 +300,7 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
       ++statistics.reusedPaths;
     }
     const uint64_t length = static_cast<uint64_t>(currentPath->getFullLength());
-    statistics.nodeReferences += length;
-    statistics.estimatedStorageBytes += sizeof(SoPath) +
-      length * (sizeof(SoNode *) + sizeof(int));
+    statistics.nodeEntries += length;
   }
 
   if (!retained.geometry.hasBounds && retained.geometry.positions &&
@@ -289,16 +343,27 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
   const int commandIndex = this->drawlist.getNumCommands();
   this->drawlist.addCommand(std::move(retained));
 
-  // A retained frame owns a snapshot of each command path. Keep the nodes
-  // referenced, but do not audit later scene-graph edits: those edits belong
-  // to a subsequent frame and registering auditors is costly for dense scenes.
-  SoPath * retainedPath = currentPath
-    ? currentPath->copyWithAuditing(0, 0, FALSE) : NULL;
-  if (retainedPath) retainedPath->ref();
-  if (static_cast<size_t>(commandIndex) >= this->commandPaths.size()) {
-    this->commandPaths.resize(static_cast<size_t>(commandIndex) + 1, NULL);
+  SoIRRenderActionP::PathRecord pathRecord;
+  if (currentPath) {
+    pathRecord.first = PRIVATE(this)->pathNodes.size();
+    pathRecord.length = static_cast<size_t>(currentPath->getFullLength());
+    void ** nodeArray = currentPath->nodes.getArrayPtr();
+    const int * indexArray = currentPath->indices.getArrayPtr();
+    for (size_t i = 0; i < pathRecord.length; ++i) {
+      SoNode * node = static_cast<SoNode *>(nodeArray[i]);
+      PRIVATE(this)->pathNodes.push_back(node);
+      PRIVATE(this)->pathIndices.push_back(indexArray[i]);
+      if (PRIVATE(this)->retainPathNode(node)) {
+        ++PRIVATE(this)->pathStatistics.nodeReferences;
+        PRIVATE(this)->pathStatistics.estimatedStorageBytes += sizeof(node);
+      }
+    }
+    PRIVATE(this)->pathStatistics.estimatedStorageBytes +=
+      sizeof(pathRecord) + pathRecord.length * (sizeof(SoNode *) + sizeof(int));
   }
-  this->commandPaths[static_cast<size_t>(commandIndex)] = retainedPath;
+  PRIVATE(this)->commandPathRecords.push_back(pathRecord);
+  assert(PRIVATE(this)->commandPathRecords.size() ==
+         static_cast<size_t>(commandIndex) + 1);
 }
 
 void
@@ -314,10 +379,29 @@ const SoPath *
 SoIRRenderAction::getCommandPath(int commandIndex) const
 {
   if (commandIndex < 0 ||
-      static_cast<size_t>(commandIndex) >= this->commandPaths.size()) {
+      static_cast<size_t>(commandIndex) >=
+        PRIVATE(this)->commandPathRecords.size()) {
     return NULL;
   }
-  return this->commandPaths[static_cast<size_t>(commandIndex)];
+  const size_t index = static_cast<size_t>(commandIndex);
+  if (index >= this->commandPaths.size()) {
+    this->commandPaths.resize(index + 1, NULL);
+  }
+  if (this->commandPaths[index]) return this->commandPaths[index];
+
+  const SoIRRenderActionP::PathRecord & record =
+    PRIVATE(this)->commandPathRecords[index];
+  if (record.length == 0) return NULL;
+  SoPath * path = new SoPath(static_cast<int>(record.length));
+  path->auditPath(FALSE);
+  for (size_t i = 0; i < record.length; ++i) {
+    const size_t entry = record.first + i;
+    path->append(PRIVATE(this)->pathNodes[entry],
+                 PRIVATE(this)->pathIndices[entry]);
+  }
+  path->ref();
+  this->commandPaths[index] = path;
+  return path;
 }
 
 const SoIRRenderAction::PathStatistics &
@@ -603,6 +687,8 @@ SoIRRenderAction::resetFrameResources()
   PRIVATE(this)->nextInstanceId = 1;
   PRIVATE(this)->lastPathInstanceId = 0;
   PRIVATE(this)->pathStatistics = PathStatistics();
+  PRIVATE(this)->pathStatistics.estimatedStorageBytes =
+    PRIVATE(this)->ownedPathNodeTable.size() * sizeof(SoNode *);
 }
 
 void
@@ -612,6 +698,14 @@ SoIRRenderAction::clearCommandPaths()
     if (path && SoDB::isInitialized()) path->unref();
   }
   this->commandPaths.clear();
+  for (SoNode * node : PRIVATE(this)->ownedPathNodes) {
+    if (node && SoDB::isInitialized()) node->unref();
+  }
+  PRIVATE(this)->commandPathRecords.clear();
+  PRIVATE(this)->pathNodes.clear();
+  PRIVATE(this)->pathIndices.clear();
+  PRIVATE(this)->ownedPathNodes.clear();
+  PRIVATE(this)->resetPathNodeTable();
   PRIVATE(this)->renderStage = SoRenderStage::Main;
   PRIVATE(this)->hasRenderContextOverride = false;
   PRIVATE(this)->renderContextOverride = SoIRRenderContext();

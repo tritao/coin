@@ -49,7 +49,8 @@ public:
     uint64_t commands = 0;
     uint64_t uniquePaths = 0;
     uint64_t reusedPaths = 0;
-    uint64_t nodeReferences = 0;
+    uint64_t nodeEntries = 0;    //!< Nodes listed across all paths.
+    uint64_t nodeReferences = 0; //!< Distinct nodes owned by the frame.
     uint64_t estimatedStorageBytes = 0;
   };
 
@@ -210,7 +211,7 @@ private:
   CameraPolicy     cameraPolicy = CameraPolicy::USE_CONFIGURED_CAMERA;
   float            devicePixelRatio = 1.0f;
   SoDrawList       drawlist;
-  std::vector<SoPath *> commandPaths;
+  mutable std::vector<SoPath *> commandPaths;
   SoIRRenderActionP * pimpl;
   bool unsupportedRendering = false;
   const SoNode * unsupportedNode = nullptr;

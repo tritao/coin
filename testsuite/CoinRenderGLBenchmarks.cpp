@@ -1248,6 +1248,8 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.retainedUniquePaths
         << ", \"retained_reused_paths\": "
         << r.renderStatistics.retainedReusedPaths
+        << ", \"retained_path_node_entries\": "
+        << r.renderStatistics.retainedPathNodeEntries
         << ", \"retained_path_node_references\": "
         << r.renderStatistics.retainedPathNodeReferences
         << ", \"retained_path_storage_bytes\": "

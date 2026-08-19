@@ -2548,6 +2548,7 @@ SoRenderManager::getRenderStatistics() const
     statistics.retainedPathCommands = paths.commands;
     statistics.retainedUniquePaths = paths.uniquePaths;
     statistics.retainedReusedPaths = paths.reusedPaths;
+    statistics.retainedPathNodeEntries = paths.nodeEntries;
     statistics.retainedPathNodeReferences = paths.nodeReferences;
     statistics.retainedPathStorageBytes = paths.estimatedStorageBytes;
   }

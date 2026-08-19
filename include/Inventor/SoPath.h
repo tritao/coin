@@ -105,8 +105,6 @@ protected:
   void auditPath(const SbBool flag);
 
 private:
-  SoPath * copyWithAuditing(const int startfromnodeindex, int numnodes,
-                        SbBool audit) const;
   static void cleanupClass(void);
   static void * createInstance(void);
   void append(SoNode * const node, const int index);
