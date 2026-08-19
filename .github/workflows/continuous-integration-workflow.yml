@@ -28,9 +28,9 @@ jobs:
           submodules: recursive
       - name: Create build directory and run CMake
         run: |
-          sudo apt-get -y update
+          scripts/install-dependencies.sh gl
           sudo apt-get -y install freeglut3-dev libegl1-mesa-dev
-          cmake -S . -B cmake_build_dir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake_install_dir -DCOIN_BUILD_LEGACY_GL_RENDERER=ON -DCOIN_BUILD_TESTS=ON -DCOIN_STRICT_WARNINGS=ON
+          cmake -S . -B cmake_build_dir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake_install_dir -DCOIN_BUILD_LEGACY_GL_RENDERER=ON -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_GL_TESTS=ON -DCOIN_STRICT_WARNINGS=ON
       - name: Build project
         run: cmake --build cmake_build_dir --target install --config Release --parallel
       - name: Check installed package
@@ -66,6 +66,28 @@ jobs:
       - name: Build core GL glue
         run: cmake --build cmake_build_dir --target glue --config Release --parallel
 
+  ubuntu-core-profile-runtime:
+    name: Ubuntu CI (core-profile runtime)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: Create build directory and run CMake
+        run: |
+          scripts/install-dependencies.sh gl
+          sudo apt-get -y install freeglut3-dev libegl1-mesa-dev xvfb
+          cmake -S . -B cmake_build_dir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCOIN_BUILD_LEGACY_GL_RENDERER=ON -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_GL_TESTS=ON -DCOIN_BUILD_EXAMPLES=OFF -DCOIN_BUILD_DOCUMENTATION=OFF
+      - name: Build OpenGL tests
+        run: cmake --build cmake_build_dir --target EGLBindingTest GLSLRuntimeTest --config Release --parallel
+      - name: Run generic core-profile tests
+        run: xvfb-run -a ctest -C Release -L gl-core --output-on-failure
+        working-directory: cmake_build_dir
+      - name: Run EGL tests
+        run: ctest -C Release -L requires-egl --output-on-failure
+        working-directory: cmake_build_dir
+
   windows-build:
     name: Windows CI (Legacy renderer enabled)
     runs-on: windows-2022
@@ -74,10 +96,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           submodules: recursive
+      - name: Install test dependencies
+        shell: bash
+        run: scripts/install-dependencies.sh gl
       - name: Create build directory and run CMake
         shell: cmd
         run: |
-          cmake -S . -B cmake_build_dir -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake_install_dir -DCOIN_BUILD_LEGACY_GL_RENDERER=ON -DCOIN_BUILD_TESTS=ON
+          cmake -S . -B cmake_build_dir -G "Visual Studio 17 2022" -A x64 -DCMAKE_TOOLCHAIN_FILE="%VCPKG_INSTALLATION_ROOT%/scripts/buildsystems/vcpkg.cmake" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake_install_dir -DCOIN_BUILD_LEGACY_GL_RENDERER=ON -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_GL_TESTS=ON
       - name: Build project
         run: cmake --build cmake_build_dir --target INSTALL --config Release --parallel 2
       - name: Run tests
@@ -98,9 +123,11 @@ jobs:
         uses: actions/checkout@v6
         with:
           submodules: recursive
+      - name: Install test dependencies
+        run: scripts/install-dependencies.sh gl
       - name: Create build directory and run CMake
         run: |
-          cmake -S . -B cmake_build_dir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake_install_dir -DCMAKE_CXX_STANDARD=11 -DCOIN_BUILD_LEGACY_GL_RENDERER=ON -DCOIN_BUILD_TESTS=ON
+          cmake -S . -B cmake_build_dir -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=cmake_install_dir -DCMAKE_CXX_STANDARD=11 -DCOIN_BUILD_LEGACY_GL_RENDERER=ON -DCOIN_BUILD_TESTS=ON -DCOIN_BUILD_GL_TESTS=ON
       - name: Build project
         run: cmake --build cmake_build_dir --target install --config Release --parallel
       - name: Run tests

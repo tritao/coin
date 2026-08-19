@@ -15,3 +15,11 @@ coin.el
 ChangeLog.sh
     - automatically generate ChangeLog entries from cvs commit
       log-messages
+
+install-dependencies.sh
+    - installs development and CI dependencies using apt on Debian/Ubuntu,
+      Homebrew on macOS, or an existing vcpkg installation on Windows.
+      Run `scripts/install-dependencies.sh gl` before configuring with
+      `-DCOIN_BUILD_GL_TESTS=ON`. The script does not install a package
+      manager; Windows users must set VCPKG_ROOT or
+      VCPKG_INSTALLATION_ROOT.
