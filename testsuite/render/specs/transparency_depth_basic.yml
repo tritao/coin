@@ -5,6 +5,3 @@ viewport:
   background: [0.08, 0.08, 0.08, 1.0]
 
 baseline: ../baselines/gl/transparency_depth_basic.png
-
-baselines:
-  drawlist: ../baselines/gl/drawlist/transparency_depth_basic.png

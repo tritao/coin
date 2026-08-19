@@ -143,6 +143,8 @@ private:
 
   bool createShaders();
   bool createVisualProgram();
+  const VisualProgram & selectSurfaceProgram(
+    const SoRenderCommand & command) const;
   void beginFrame(const SoRenderParams & params);
   void invalidateCache();
   void updateGeometryCache(const SoDrawList & drawlist);

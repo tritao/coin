@@ -1024,6 +1024,8 @@ SoGLRenderBackend::bindVisualCommand(const SoDrawList & drawlist,
                                      const SbMat & projMat,
                                      const SoRenderParams & params)
 {
+  const VisualProgram & program = this->selectSurfaceProgram(command);
+  cc_glglue_glUseProgram(this->glue, program.handle);
   applyViewport(params);
   this->bindTransforms(command, viewMat, projMat);
   this->bindMaterial(command, entry);
@@ -1091,6 +1093,20 @@ bool
 SoGLRenderBackend::createShaders()
 {
   return this->createVisualProgram();
+}
+
+const SoGLRenderBackend::VisualProgram &
+SoGLRenderBackend::selectSurfaceProgram(const SoRenderCommand & command) const
+{
+  // Centralize the mapping from retained material semantics to an executor
+  // implementation. Both current models use the retained Inventor lighting
+  // evaluation program, with u_shadingModel selecting its defined behavior.
+  switch (command.material.shadingModel) {
+  case SO_SHADING_UNLIT:
+  case SO_SHADING_LEGACY_GOURAUD:
+  default:
+    return this->visualProgram;
+  }
 }
 
 bool

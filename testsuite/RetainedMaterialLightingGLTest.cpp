@@ -333,6 +333,40 @@ bool testTexturedLightingComposition(RenderFixture & fixture)
                "textured geometry bypassed retained lighting");
 }
 
+bool testShadingModelSelection(RenderFixture & fixture)
+{
+  SoRenderCommand command = baseCommand(quadPositions);
+  command.material.diffuse = SbVec4f(1, 1, 1, 1);
+  command.material.ambient = SbVec4f(0, 0, 0, 1);
+  command.material.specular = SbVec4f(0, 0, 0, 1);
+  command.material.emissive = SbVec4f(0, 0, 0, 1);
+
+  SoLightingData lighting;
+  lighting.ambient.setValue(0, 0, 0);
+  SoDrawList drawlist;
+  command.lightingHandle = drawlist.addLightingSetup(lighting);
+  command.material.shadingModel = SO_SHADING_UNLIT;
+  drawlist.addCommand(command);
+  const std::vector<uint8_t> unlit = fixture.render(
+    drawlist, SbVec4f(0, 0, 0, 1));
+  const uint8_t * unlitPixel = pixelAt(unlit, 32, 32);
+  if (!check(unlitPixel[0] > 220 && unlitPixel[1] > 220 &&
+             unlitPixel[2] > 220,
+             "UNLIT did not select unlit surface evaluation")) {
+    return false;
+  }
+
+  drawlist.clear();
+  command.lightingHandle = drawlist.addLightingSetup(lighting);
+  command.material.shadingModel = SO_SHADING_LEGACY_GOURAUD;
+  drawlist.addCommand(command);
+  const std::vector<uint8_t> lit = fixture.render(
+    drawlist, SbVec4f(0, 0, 0, 1));
+  const uint8_t * litPixel = pixelAt(lit, 32, 32);
+  return check(litPixel[0] < 10 && litPixel[1] < 10 && litPixel[2] < 10,
+               "LEGACY_GOURAUD did not select Inventor lighting evaluation");
+}
+
 bool testEmissiveIsIndependent(RenderFixture & fixture)
 {
   SoRenderCommand command = baseCommand(quadPositions);
@@ -545,6 +579,7 @@ static int runTest()
   if (!testTextureWrap(fixture)) result = 1;
   if (!testTextureAlphaOnce(fixture)) result = 1;
   if (!testTextureModels(fixture)) result = 1;
+  if (!testShadingModelSelection(fixture)) result = 1;
   if (!testTexturedLightingComposition(fixture)) result = 1;
   if (!testEmissiveIsIndependent(fixture)) result = 1;
   if (!testTwoSidedLightingUsesFacing(fixture)) result = 1;
