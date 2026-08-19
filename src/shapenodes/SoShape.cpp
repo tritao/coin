@@ -259,7 +259,40 @@ struct SoIRBatch {
 };
 
 struct SoIRMaterialBatchPlan {
-  std::vector<SoIRBatch> batches;
+  // Most shapes use one material batch. Store it directly and allocate only
+  // when material changes require additional commands.
+  void addBatch(const SoIRBatch & batch)
+  {
+    if (!this->hasInlineBatch) {
+      this->inlineBatch = batch;
+      this->hasInlineBatch = true;
+    }
+    else {
+      this->additionalBatches.push_back(batch);
+    }
+  }
+
+  size_t size() const
+  {
+    return this->hasInlineBatch ? 1 + this->additionalBatches.size() : 0;
+  }
+
+  bool empty() const { return !this->hasInlineBatch; }
+
+  SoIRBatch & back()
+  {
+    return this->additionalBatches.empty()
+      ? this->inlineBatch : this->additionalBatches.back();
+  }
+
+  const SoIRBatch & operator[](size_t index) const
+  {
+    return index == 0 ? this->inlineBatch : this->additionalBatches[index - 1];
+  }
+
+  SoIRBatch inlineBatch = SoIRBatch(0, 0, -1);
+  std::vector<SoIRBatch> additionalBatches;
+  bool hasInlineBatch = false;
   bool needsVertexColors = false;
 };
 
@@ -336,16 +369,15 @@ private:
 
     SoState * state = this->action->getState();
     SoGeometryDesc geometry = {};
-    std::vector<SoIRBatch> batches;
-    this->fillGeometry(state, geometry, batches);
-    this->emitCommands(state, geometry, batches);
+    SoIRMaterialBatchPlan plan;
+    this->fillGeometry(state, geometry, plan);
+    this->emitCommands(state, geometry, plan);
     this->vertices.clear();
   }
 
   SoIRMaterialBatchPlan buildMaterialBatches(SoState * state)
   {
     SoIRMaterialBatchPlan plan;
-    plan.batches.reserve(1);
     const size_t count = this->vertices.size();
     const size_t primitiveWidth = this->topology == SO_TOPOLOGY_TRIANGLES ? 3
       : this->topology == SO_TOPOLOGY_LINES ? 2 : 1;
@@ -363,7 +395,7 @@ private:
       materialBinding == SoMaterialBindingElement::PER_VERTEX_INDEXED;
 
     if (!hasExplicitMaterialIndices) {
-      plan.batches.push_back(SoIRBatch(0, count, 0));
+      plan.addBatch(SoIRBatch(0, count, 0));
     }
     for (size_t first = 0; hasExplicitMaterialIndices && first < count;) {
       const size_t primitiveCount = std::min(primitiveWidth, count - first);
@@ -374,17 +406,17 @@ private:
           break;
         }
       }
-      if (plan.batches.empty() ||
-          plan.batches.back().materialIndex != materialIndex) {
-        plan.batches.push_back(SoIRBatch(first, primitiveCount, materialIndex));
+      if (plan.empty() || plan.back().materialIndex != materialIndex) {
+        plan.addBatch(SoIRBatch(first, primitiveCount, materialIndex));
       }
       else {
-        plan.batches.back().count += primitiveCount;
+        plan.back().count += primitiveCount;
       }
       first += primitiveCount;
     }
     plan.needsVertexColors = hasPerVertexMaterials;
-    for (const SoIRBatch & batch : plan.batches) {
+    for (size_t i = 0; i < plan.size(); ++i) {
+      const SoIRBatch & batch = plan[i];
       if (batch.materialIndex < 0) {
         plan.needsVertexColors = true;
         break;
@@ -395,7 +427,7 @@ private:
 
   void fillGeometry(SoState * state,
                     SoGeometryDesc & geometry,
-                    std::vector<SoIRBatch> & batches)
+                    SoIRMaterialBatchPlan & plan)
   {
     const size_t count = this->vertices.size();
     geometry.topology = this->topology;
@@ -410,8 +442,7 @@ private:
       this->action->allocateGeometryStorage(sizeof(float) * 3 * count));
     float * texcoords = static_cast<float *>(
       this->action->allocateGeometryStorage(sizeof(float) * 4 * count));
-    const SoIRMaterialBatchPlan plan = this->buildMaterialBatches(state);
-    batches = std::move(plan.batches);
+    plan = this->buildMaterialBatches(state);
 
     float * colors = nullptr;
     if (plan.needsVertexColors) {
@@ -450,10 +481,10 @@ private:
 
   void emitCommands(SoState * state,
                     const SoGeometryDesc & sourceGeometry,
-                    const std::vector<SoIRBatch> & batches)
+                    const SoIRMaterialBatchPlan & plan)
   {
-    for (size_t batchIndex = 0; batchIndex < batches.size(); ++batchIndex) {
-      const SoIRBatch & batch = batches[batchIndex];
+    for (size_t batchIndex = 0; batchIndex < plan.size(); ++batchIndex) {
+      const SoIRBatch & batch = plan[batchIndex];
       SoRenderCommand command = {};
       command.geometry = sourceGeometry;
       command.geometry.cacheKey = mixIRCacheHash(
