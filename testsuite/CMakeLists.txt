@@ -91,18 +91,20 @@ if (USE_PTHREAD)
 endif()
 add_test(NAME CoinTests COMMAND CoinTests)
 
+add_library(CoinPrivateTestHeaders INTERFACE)
+target_compile_definitions(CoinPrivateTestHeaders INTERFACE COIN_INTERNAL)
+target_include_directories(CoinPrivateTestHeaders INTERFACE ${PROJECT_SOURCE_DIR}/src)
+
 function(coin_add_egl_test)
 	cmake_parse_arguments(ARG "" "NAME" "SOURCES;LABELS" ${ARGN})
 	if(NOT ARG_NAME OR NOT ARG_SOURCES)
 		message(FATAL_ERROR "coin_add_egl_test requires NAME and SOURCES")
 	endif()
 	add_executable(${ARG_NAME} ${ARG_SOURCES})
-	target_link_libraries(${ARG_NAME} PRIVATE Coin OpenGL::EGL)
+	target_link_libraries(${ARG_NAME} PRIVATE
+		CoinPrivateTestHeaders Coin OpenGL::EGL)
 	target_compile_definitions(${ARG_NAME} PRIVATE
-		COIN_INTERNAL
 		COIN_TEST_SKIP_RETURN_CODE=${COIN_TEST_SKIP_RETURN_CODE})
-	target_include_directories(${ARG_NAME} PRIVATE
-		${PROJECT_SOURCE_DIR}/src)
 	add_test(NAME ${ARG_NAME} COMMAND ${ARG_NAME})
 	set(test_labels "egl")
 	if(ARG_LABELS)
@@ -112,6 +114,87 @@ function(coin_add_egl_test)
 		SKIP_RETURN_CODE ${COIN_TEST_SKIP_RETURN_CODE}
 		LABELS "${test_labels}")
 endfunction()
+
+set(COIN_BUILD_GL_TESTS "AUTO" CACHE STRING
+	"Build generic GLFW OpenGL integration tests (AUTO, ON, or OFF).")
+set_property(CACHE COIN_BUILD_GL_TESTS PROPERTY STRINGS AUTO ON OFF)
+string(TOUPPER "${COIN_BUILD_GL_TESTS}" _coin_build_gl_tests)
+if(NOT _coin_build_gl_tests STREQUAL "AUTO" AND
+	NOT _coin_build_gl_tests STREQUAL "ON" AND
+	NOT _coin_build_gl_tests STREQUAL "OFF")
+	message(FATAL_ERROR "COIN_BUILD_GL_TESTS must be AUTO, ON, or OFF")
+endif()
+
+set(COIN_BUILD_GL_TESTS_EFFECTIVE OFF)
+set(COIN_TEST_GLFW_TARGET "")
+if(NOT _coin_build_gl_tests STREQUAL "OFF")
+	if(NOT TARGET glfw AND NOT TARGET glfw3::glfw)
+		find_package(glfw3 3.3 QUIET)
+	endif()
+	if(TARGET glfw)
+		set(COIN_TEST_GLFW_TARGET glfw)
+	elseif(TARGET glfw3::glfw)
+		set(COIN_TEST_GLFW_TARGET glfw3::glfw)
+	endif()
+
+	if(COIN_TEST_GLFW_TARGET)
+		set(COIN_BUILD_GL_TESTS_EFFECTIVE ON)
+	elseif(_coin_build_gl_tests STREQUAL "ON")
+		message(FATAL_ERROR
+			"COIN_BUILD_GL_TESTS=ON requires GLFW 3.3 or newer")
+	else()
+		message(STATUS "GLFW not found; generic OpenGL tests are disabled")
+	endif()
+endif()
+
+if(COIN_BUILD_GL_TESTS_EFFECTIVE)
+	if(TARGET OpenGL::GL)
+		set(COIN_TEST_OPENGL_TARGET OpenGL::GL)
+	else()
+		set(COIN_TEST_OPENGL_TARGET ${OPENGL_gl_LIBRARY})
+	endif()
+
+	add_library(CoinGLTestSupport STATIC
+		support/GLTestContext.cpp
+		support/GLTestFramebuffer.cpp)
+	target_include_directories(CoinGLTestSupport PUBLIC
+		${CMAKE_CURRENT_SOURCE_DIR}/support)
+	target_compile_definitions(CoinGLTestSupport PUBLIC GLFW_INCLUDE_NONE)
+	target_link_libraries(CoinGLTestSupport
+		PUBLIC ${COIN_TEST_GLFW_TARGET}
+		PRIVATE Coin ${COIN_TEST_OPENGL_TARGET})
+
+	function(coin_add_gl_test)
+		cmake_parse_arguments(ARG "INTERNAL" "NAME;PROFILE" "SOURCES;LABELS" ${ARGN})
+		if(NOT ARG_NAME OR NOT ARG_PROFILE OR NOT ARG_SOURCES)
+			message(FATAL_ERROR "coin_add_gl_test requires NAME, PROFILE, and SOURCES")
+		endif()
+		if(NOT ARG_PROFILE STREQUAL "core" AND
+			NOT ARG_PROFILE STREQUAL "compat")
+			message(FATAL_ERROR
+				"coin_add_gl_test PROFILE must be core or compat")
+		endif()
+
+		add_executable(${ARG_NAME} ${ARG_SOURCES})
+		target_link_libraries(${ARG_NAME} PRIVATE CoinGLTestSupport Coin)
+		if(ARG_INTERNAL)
+			target_link_libraries(${ARG_NAME} PRIVATE CoinPrivateTestHeaders)
+		endif()
+		target_compile_definitions(${ARG_NAME} PRIVATE
+			COIN_TEST_SKIP_RETURN_CODE=${COIN_TEST_SKIP_RETURN_CODE})
+		add_test(NAME ${ARG_NAME} COMMAND ${ARG_NAME})
+		set(test_labels "gl-${ARG_PROFILE}")
+		if(ARG_LABELS)
+			list(APPEND test_labels ${ARG_LABELS})
+		endif()
+		set_tests_properties(${ARG_NAME} PROPERTIES
+			SKIP_RETURN_CODE ${COIN_TEST_SKIP_RETURN_CODE}
+			LABELS "${test_labels}")
+	endfunction()
+
+	coin_add_gl_test(NAME GLSLRuntimeTest PROFILE core INTERNAL
+		SOURCES GLSLRuntimeTest.cpp)
+endif()
 
 if(HAVE_EGL AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
 	coin_add_egl_test(NAME EGLBindingTest SOURCES EGLBindingTest.cpp

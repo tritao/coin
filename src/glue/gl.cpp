@@ -1117,6 +1117,7 @@ glglue_resolve_symbols(cc_glglue * w)
 
   w->glBlendEquation = NULL;
   w->glBlendEquationEXT = NULL;
+  w->glBlendEquationSeparate = NULL;
 
 #if defined(GL_VERSION_1_4)
   if (cc_glglue_glversion_matches_at_least(w, 1, 4, 0)) {
@@ -1138,6 +1139,21 @@ glglue_resolve_symbols(cc_glglue * w)
     w->glBlendEquationEXT = (COIN_PFNGLBLENDEQUATIONPROC)PROC(w, glBlendEquationEXT);
   }
 #endif /* GL_EXT_blend_minmax */
+
+#if defined(GL_VERSION_2_0)
+  if (cc_glglue_glversion_matches_at_least(w, 2, 0, 0)) {
+    w->glBlendEquationSeparate =
+      (COIN_PFNGLBLENDEQUATIONSEPARATEPROC)PROC(w, glBlendEquationSeparate);
+  }
+#endif /* GL_VERSION_2_0 */
+
+#if defined(GL_EXT_blend_equation_separate)
+  if ((w->glBlendEquationSeparate == NULL) &&
+      cc_glglue_glext_supported(w, "GL_EXT_blend_equation_separate")) {
+    w->glBlendEquationSeparate =
+      (COIN_PFNGLBLENDEQUATIONSEPARATEPROC)PROC(w, glBlendEquationSeparateEXT);
+  }
+#endif /* GL_EXT_blend_equation_separate */
 
   w->glBlendFuncSeparate = NULL;
 #if defined(GL_VERSION_1_4)
@@ -3300,6 +3316,23 @@ cc_glglue_glBlendEquation(const cc_glglue * glue, GLenum mode)
 
   if (glue->glBlendEquation) glue->glBlendEquation(mode);
   else glue->glBlendEquationEXT(mode);
+}
+
+void
+cc_glglue_glBlendEquationSeparate(const cc_glglue * glue,
+                                   GLenum modeRGB, GLenum modeAlpha)
+{
+  assert(glue->glBlendEquationSeparate);
+  if (glue->glBlendEquationSeparate) {
+    glue->glBlendEquationSeparate(modeRGB, modeAlpha);
+  }
+}
+
+SbBool
+cc_glglue_has_blendequationseparate(const cc_glglue * glue)
+{
+  if (!glglue_allow_newer_opengl(glue)) return FALSE;
+  return glue->glBlendEquationSeparate != NULL;
 }
 
 SbBool

@@ -51,7 +51,7 @@
 #endif
 
 /* Reject mixed API headers while compiling Coin's core-profile build. */
-#if defined(COIN_INTERNAL) && defined(COIN_BUILD_LEGACY_GL_RENDERER) && \
+#if defined(COIN_BUILDING_COIN) && defined(COIN_BUILD_LEGACY_GL_RENDERER) && \
     !COIN_BUILD_LEGACY_GL_RENDERER
 # if defined(__gl_h_) || defined(__GL_H__)
 #  error "Legacy <GL/gl.h> detected before core headers. Use core headers only."
@@ -62,7 +62,7 @@
 # endif
 #endif
 
-#if defined(COIN_INTERNAL) && defined(COIN_BUILD_LEGACY_GL_RENDERER) && \
+#if defined(COIN_BUILDING_COIN) && defined(COIN_BUILD_LEGACY_GL_RENDERER) && \
     !COIN_BUILD_LEGACY_GL_RENDERER
 # if defined(__APPLE__)
 #  include <OpenGL/gl3.h>
@@ -73,7 +73,7 @@
 #  include "glue/khronos/GL/glcorearb.h"
 # endif
 
-#elif defined(COIN_INTERNAL) && defined(_WIN32)
+#elif defined(COIN_BUILDING_COIN) && defined(_WIN32)
 #  include <windows.h>
 #  include <GL/gl.h>
 #  include "glue/khronos/GL/glext.h"
