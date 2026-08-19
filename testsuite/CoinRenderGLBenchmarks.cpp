@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -56,7 +57,14 @@ struct Options {
   bool smoke = false;
   int samples = 0;
   int rebuildOnly = 0;
+  int incrementalOnly = 0;
   std::string output;
+};
+
+struct SceneMutationHandles {
+  std::vector<SoTranslation *> transforms;
+  std::vector<SoMaterial *> materials;
+  std::vector<SoCoordinate3 *> coordinates;
 };
 
 struct Measurement {
@@ -124,7 +132,8 @@ const char * workloadName(WorkloadKind kind)
 }
 
 SoSeparator * makeScene(WorkloadKind kind, int drawCount,
-                        SoOrthographicCamera *& camera)
+                        SoOrthographicCamera *& camera,
+                        SceneMutationHandles * mutations = nullptr)
 {
   SoSeparator * root = new SoSeparator;
   root->ref();
@@ -221,6 +230,7 @@ SoSeparator * makeScene(WorkloadKind kind, int drawCount,
          ? -static_cast<float>(i) * 0.001f : 0.0f);
     translation->translation.setValue(x, y, z);
     draw->addChild(translation);
+    if (mutations) mutations->transforms.push_back(translation);
 
     if (kind == WorkloadKind::FeatureRich) {
       const int group = i < drawCount * 2 / 5 ? 0
@@ -250,10 +260,12 @@ SoSeparator * makeScene(WorkloadKind kind, int drawCount,
                                       0.3f + value * 0.5f);
       if (kind == WorkloadKind::Transparency) material->transparency = 0.35f;
       draw->addChild(material);
+      if (mutations) mutations->materials.push_back(material);
     }
     if (kind != WorkloadKind::FeatureRich) {
       SoCoordinate3 * coordinates = new SoCoordinate3;
       coordinates->point.setValues(0, 3, triangle);
+      if (mutations) mutations->coordinates.push_back(coordinates);
       SoFaceSet * face = new SoFaceSet;
       face->numVertices.set1Value(0, 3);
       draw->addChild(coordinates);
@@ -1154,6 +1166,102 @@ bool runMixedRetainedScene(GLTestProfile profile, int commandCount, int samples,
   return true;
 }
 
+bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
+                                   int samples,
+                                   std::vector<Measurement> & results,
+                                   std::string & unavailable)
+{
+  GLTestContextConfig config;
+  config.profile = profile;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 256;
+  config.height = 256;
+  GLTestContext context;
+  if (!context.initialize(config)) {
+    unavailable = "requested OpenGL context is unavailable";
+    return false;
+  }
+
+  SceneMutationHandles mutations;
+  SoOrthographicCamera * camera = NULL;
+  SoSeparator * scene = makeScene(
+    WorkloadKind::MaterialChurn, drawCount, camera, &mutations);
+  if (mutations.transforms.size() != static_cast<size_t>(drawCount) ||
+      mutations.materials.size() != static_cast<size_t>(drawCount) ||
+      mutations.coordinates.size() != static_cast<size_t>(drawCount)) {
+    unavailable = "mutation scene did not expose one target per occurrence";
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+
+  SbViewportRegion viewport(SbVec2s(256, 256));
+  viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(256, 256));
+  SoRenderManager manager;
+  manager.setViewportRegion(viewport);
+  manager.setSceneGraph(scene);
+  manager.setCamera(camera);
+  manager.setLightingMode(SoRenderManager::UNLIT);
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+  manager.setRenderPhaseTimingEnabled(TRUE);
+  for (int warmup = 0; warmup < 3; ++warmup) {
+    context.bindFramebuffer();
+    manager.render(TRUE, TRUE);
+  }
+  glFinish();
+
+  const auto measure = [&](const char * name,
+                           const std::function<void(int)> & mutate) {
+    std::vector<double> cpuTimes;
+    std::vector<double> constructionTimes;
+    for (int sample = 0; sample < samples; ++sample) {
+      mutate(sample);
+      context.bindFramebuffer();
+      const Clock::time_point start = Clock::now();
+      manager.render(TRUE, TRUE);
+      cpuTimes.push_back(elapsedMs(start));
+      constructionTimes.push_back(
+        manager.getRenderStatistics().drawListConstructionNanoseconds /
+        1000000.0);
+    }
+    Measurement result;
+    result.workload = std::string(name) + "_" + std::to_string(drawCount);
+    result.renderer = "DrawList";
+    result.profile = profile == GLTestProfile::Core
+      ? "core" : "compatibility";
+    result.semanticDraws = drawCount;
+    result.samples = samples;
+    result.cpuMedianMs = percentile(cpuTimes, 0.5);
+    result.cpuP95Ms = percentile(cpuTimes, 0.95);
+    result.drawListConstructionMs = percentile(constructionTimes, 0.5);
+    result.renderStatistics = manager.getRenderStatistics();
+    result.pixelChecksum = checksumPixels(context.readPixels());
+    results.push_back(result);
+  };
+
+  measure("incremental_unchanged", [](int) {});
+  measure("incremental_transform_1", [&](int sample) {
+    mutations.transforms[0]->translation.setValue(
+      0.001f * static_cast<float>((sample & 1) ? 1 : -1), 0.0f, 0.0f);
+  });
+  measure("incremental_material_1", [&](int sample) {
+    mutations.materials[0]->diffuseColor.set1Value(
+      0, SbColor((sample & 1) ? 0.7f : 0.2f, 0.4f, 0.6f));
+  });
+  measure("incremental_geometry_1", [&](int sample) {
+    mutations.coordinates[0]->point.set1Value(
+      0, SbVec3f((sample & 1) ? -0.40f : -0.44f, -0.42f, 0.0f));
+  });
+
+  manager.releaseRenderBackendResources();
+  manager.setCamera(NULL);
+  manager.setSceneGraph(NULL);
+  camera->unref();
+  scene->unref();
+  return true;
+}
+
 Options parseOptions(int argc, char ** argv)
 {
   Options options;
@@ -1163,10 +1271,13 @@ Options parseOptions(int argc, char ** argv)
     else if (arg == "--samples" && i + 1 < argc) options.samples = std::atoi(argv[++i]);
     else if (arg == "--rebuild-only" && i + 1 < argc)
       options.rebuildOnly = std::atoi(argv[++i]);
+    else if (arg == "--incremental-only" && i + 1 < argc)
+      options.incrementalOnly = std::atoi(argv[++i]);
     else if (arg == "--output" && i + 1 < argc) options.output = argv[++i];
     else {
       std::cerr << "Usage: CoinRenderGLBenchmarks [--smoke] [--samples N] "
-                   "[--rebuild-only N] [--output FILE]\n";
+                   "[--rebuild-only N] [--incremental-only N] "
+                   "[--output FILE]\n";
       std::exit(2);
     }
   }
@@ -1254,6 +1365,8 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.retainedPathNodeReferences
         << ", \"retained_path_storage_bytes\": "
         << r.renderStatistics.retainedPathStorageBytes
+        << ", \"incremental_command_updates\": "
+        << r.renderStatistics.incrementalCommandUpdates
         << ", \"instanced_batches\": "
         << r.renderStatistics.instancedBatches
         << ", \"instanced_commands\": "
@@ -1338,6 +1451,24 @@ int main(int argc, char ** argv)
   };
   std::vector<Measurement> results;
   std::vector<std::string> unavailable;
+  if (options.incrementalOnly > 0) {
+    std::string reason;
+    if (!runIncrementalMutationScaling(
+          GLTestProfile::Core, options.incrementalOnly, samples,
+          results, reason)) {
+      unavailable.push_back("incremental_mutation_scaling:DrawList core: " +
+                            reason);
+    }
+    const std::string document = toJson(results, unavailable, options);
+    if (options.output.empty()) std::cout << document;
+    else {
+      std::ofstream output(options.output.c_str());
+      if (!output) return 1;
+      output << document;
+    }
+    SoDB::finish();
+    return results.empty() ? 77 : 0;
+  }
   if (options.rebuildOnly > 0) {
     Measurement rebuild;
     std::string reason;
