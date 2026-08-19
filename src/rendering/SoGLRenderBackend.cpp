@@ -70,6 +70,23 @@ sameMaterialUniforms(const SoMaterialData & lhs, const SoMaterialData & rhs)
 }
 
 bool
+sameInstancedUnlitMaterial(const SoMaterialData & lhs,
+                           const SoMaterialData & rhs)
+{
+  return lhs.shadingModel == SO_SHADING_UNLIT &&
+    rhs.shadingModel == SO_SHADING_UNLIT &&
+    lhs.ambient == rhs.ambient && lhs.specular == rhs.specular &&
+    lhs.emissive == rhs.emissive && lhs.shininess == rhs.shininess &&
+    lhs.texture.numComponents == rhs.texture.numComponents &&
+    lhs.texture.model == rhs.texture.model &&
+    lhs.texture.blendColor == rhs.texture.blendColor &&
+    lhs.textureAlphaIncludesOpacity == rhs.textureAlphaIncludesOpacity &&
+    lhs.vertexColorAlphaIncludesOpacity ==
+      rhs.vertexColorAlphaIncludesOpacity &&
+    lhs.twoSidedLighting == rhs.twoSidedLighting;
+}
+
+bool
 sameAlphaTest(const SoAlphaTestState & lhs, const SoAlphaTestState & rhs)
 {
   return lhs.policy == rhs.policy && lhs.function == rhs.function &&
@@ -1208,11 +1225,17 @@ SoGLRenderBackend::setupVisualVAO(CachedCommand & entry)
     const GLuint attribute = INSTANCE_MODEL_ATTRIBUTE + column;
     cc_glglue_glEnableVertexAttribArray(this->glue, attribute);
     cc_glglue_glVertexAttribPointer(
-      this->glue, attribute, 4, GL_FLOAT, GL_FALSE, sizeof(float) * 16,
+      this->glue, attribute, 4, GL_FLOAT, GL_FALSE, sizeof(float) * 20,
       reinterpret_cast<const void *>(
         static_cast<uintptr_t>(column * sizeof(float) * 4)));
     glVertexAttribDivisor(attribute, 1);
   }
+  const GLuint colorAttribute = INSTANCE_MODEL_ATTRIBUTE + 4;
+  cc_glglue_glEnableVertexAttribArray(this->glue, colorAttribute);
+  cc_glglue_glVertexAttribPointer(
+    this->glue, colorAttribute, 4, GL_FLOAT, GL_FALSE, sizeof(float) * 20,
+    reinterpret_cast<const void *>(sizeof(float) * 16));
+  glVertexAttribDivisor(colorAttribute, 1);
   this->glue->glBindVertexArray(0);
   cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, 0);
   cc_glglue_glBindBuffer(this->glue, GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -2007,6 +2030,8 @@ SoGLRenderBackend::canInstanceCommand(const SoRenderCommand & command) const
     command.geometry.indices == nullptr && command.geometry.indexCount == 0 &&
     command.geometry.colors == nullptr &&
     command.opacityClass == SO_OPACITY_OPAQUE &&
+    command.material.opacity == 1.0f &&
+    command.material.diffuse[3] == 1.0f &&
     !command.state.blend.enabled &&
     command.state.alphaTest.policy == SO_ALPHA_TEST_POLICY_NONE &&
     command.state.raster.visible &&
@@ -2032,9 +2057,11 @@ SoGLRenderBackend::canInstanceTogether(const SoRenderCommand & first,
   if (firstCache == this->commandToCache.end() ||
       nextCache == this->commandToCache.end() ||
       firstCache->second != nextCache->second) return false;
-  return first.lightingHandle == next.lightingHandle &&
-    first.material.opacity == next.material.opacity &&
-    sameMaterialUniforms(first.material, next.material) &&
+  const bool materialMatches = sameMaterialUniforms(first.material,
+                                                     next.material) ||
+    sameInstancedUnlitMaterial(first.material, next.material);
+  return materialMatches &&
+    first.lightingHandle == next.lightingHandle &&
     sameAlphaTest(first.state.alphaTest, next.state.alphaTest) &&
     first.state.depth.enabled == next.state.depth.enabled &&
     first.state.depth.writeEnabled == next.state.depth.writeEnabled &&
@@ -2063,13 +2090,16 @@ SoGLRenderBackend::drawInstancedCommands(
   const CommandFrame frame = this->effectiveCommandFrame(first, params, false);
   const RasterPath path = this->selectRasterPath(entry, first, params);
 
-  std::vector<float> matrices;
-  matrices.reserve(commandIndices.size() * 16);
+  std::vector<float> instanceData;
+  instanceData.reserve(commandIndices.size() * 20);
   for (const uint32_t index : commandIndices) {
     SbMat model;
     drawlist.getCommand(static_cast<int>(index)).modelMatrix.getValue(model);
     const float * values = &model[0][0];
-    matrices.insert(matrices.end(), values, values + 16);
+    instanceData.insert(instanceData.end(), values, values + 16);
+    const SbVec4f & color = drawlist.getCommand(
+      static_cast<int>(index)).material.diffuse;
+    instanceData.insert(instanceData.end(), &color[0], &color[0] + 4);
   }
   const auto finishPhase = [&](uint64_t & nanoseconds) {
     if (!timing) return;
@@ -2092,7 +2122,8 @@ SoGLRenderBackend::drawInstancedCommands(
                            frame.viewportOrigin, frame.viewportSize, entry);
   cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, this->instanceBuffer);
   cc_glglue_glBufferData(this->glue, GL_ARRAY_BUFFER,
-                         matrices.size() * sizeof(float), matrices.data(),
+                         instanceData.size() * sizeof(float),
+                         instanceData.data(),
                          GL_STREAM_DRAW);
   this->glue->glUniform1f(this->visualProgram.surface.transforms.instanced,
                          1.0f);
@@ -2109,7 +2140,7 @@ SoGLRenderBackend::drawInstancedCommands(
   ++statistics.instancedBatches;
   statistics.instancedCommands += commandIndices.size();
   statistics.drawCallsAvoided += commandIndices.size() - 1;
-  statistics.instanceBytesUploaded += matrices.size() * sizeof(float);
+  statistics.instanceBytesUploaded += instanceData.size() * sizeof(float);
 }
 
 SoGLRenderBackend::RasterPath

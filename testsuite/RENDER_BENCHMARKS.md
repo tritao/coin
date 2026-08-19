@@ -47,7 +47,9 @@ not semantic pipeline state.
 Instanced runs report batches, absorbed commands, avoided draw calls, and
 transient instance bytes. The initial batching contract is deliberately
 limited to adjacent opaque, untextured, non-indexed triangle commands with
-identical geometry, material, lighting, depth, and raster state.
+identical geometry, lighting, depth, and raster state. Unlit batches may vary
+their diffuse color, which is uploaded as per-instance data; other material
+differences retain the ordinary command path.
 Retained runs additionally enable opt-in per-command CPU phase timing for
 command preparation, state setup, program/uniform binding, and draw submission.
 Normal rendering leaves this intrusive timing disabled.

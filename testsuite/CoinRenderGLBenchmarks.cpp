@@ -274,6 +274,26 @@ bool runVariant(GLTestProfile profile,
   }
   glDeleteQueries(1, &query);
   const SoRenderStatistics renderStatistics = manager.getRenderStatistics();
+  if (pipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
+    const bool expectsInstancing = workload != WorkloadKind::Transparency;
+    if (expectsInstancing &&
+        (renderStatistics.instancedCommands !=
+           static_cast<uint64_t>(drawCount) ||
+         renderStatistics.drawCalls != 1)) {
+      std::cerr << "FAIL: " << renderer << ' ' << workloadName(workload)
+                << " did not collapse compatible commands into one batch\n";
+      camera->unref();
+      scene->unref();
+      return false;
+    }
+    if (!expectsInstancing && renderStatistics.instancedBatches != 0) {
+      std::cerr << "FAIL: " << renderer << ' ' << workloadName(workload)
+                << " instanced commands across an unsupported boundary\n";
+      camera->unref();
+      scene->unref();
+      return false;
+    }
+  }
 
   std::vector<double> pick;
   double coldPick = 0.0;

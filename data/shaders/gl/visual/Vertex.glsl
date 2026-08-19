@@ -12,6 +12,7 @@ layout(location = 5) in vec4 a_instanceModel0;
 layout(location = 6) in vec4 a_instanceModel1;
 layout(location = 7) in vec4 a_instanceModel2;
 layout(location = 8) in vec4 a_instanceModel3;
+layout(location = 9) in vec4 a_instanceColor;
 
 uniform float u_instanced;
 
@@ -21,7 +22,8 @@ out vec2 v_texcoord;
 
 void main()
 {
-  v_color = coin_surface_vertex_color(a_color);
+  v_color = u_instanced > 0.5
+    ? a_instanceColor : coin_surface_vertex_color(a_color);
   v_texcoord = a_texcoord;
 
   mat4 instanceModel = mat4(a_instanceModel0, a_instanceModel1,
