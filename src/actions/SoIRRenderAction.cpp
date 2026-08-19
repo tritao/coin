@@ -552,6 +552,10 @@ SoIRRenderAction::findCommandsAffectedByStatePath(
   const size_t statePathOffset = 1;
   const size_t prefixLength =
     static_cast<size_t>(statePath->getFullLength() - 1) - statePathOffset;
+  // The applied scene root is not part of recorded command paths. Replaying a
+  // root-level state sibling would therefore omit that state; use a full frame
+  // rebuild until retained paths carry the applied root explicitly.
+  if (prefixLength == 0) return;
   void ** prefixNodes = statePath->nodes.getArrayPtr();
   const int * prefixIndices = statePath->indices.getArrayPtr();
   const int changedChildIndex =
@@ -618,6 +622,96 @@ SoIRRenderAction::updateCommandDiffuseColorsForStatePath(
     ++updated;
   }
   return updated;
+}
+
+int
+SoIRRenderAction::updateSingleCommandGeometryForStatePath(
+  const SoPath * statePath)
+{
+  std::vector<size_t> commandIndices;
+  this->findCommandsAffectedByStatePath(statePath, commandIndices);
+  if (commandIndices.size() != 1) return 0;
+
+  const size_t commandIndex = commandIndices.front();
+  const SoPath * commandPath = this->getCommandPath(
+    static_cast<int>(commandIndex));
+  if (!commandPath) return 0;
+
+  const int originalCommandCount = this->drawlist.getNumCommands();
+  const size_t originalRecordCount =
+    PRIVATE(this)->commandPathRecords.size();
+  const size_t originalNodeCount = PRIVATE(this)->pathNodes.size();
+  const PathStatistics originalStatistics = PRIVATE(this)->pathStatistics;
+  const bool originalUnsupported = this->unsupportedRendering;
+  const SoNode * originalUnsupportedNode = this->unsupportedNode;
+  const char * originalUnsupportedReason = this->unsupportedReason;
+  const SoIRBuffer::Checkpoint geometryCheckpoint =
+    PRIVATE(this)->geometryPool.checkpoint();
+
+  this->traverseAdditionalPath(const_cast<SoPath *>(commandPath));
+  bool replacedOneCommand =
+    this->drawlist.getNumCommands() == originalCommandCount + 1 &&
+    PRIVATE(this)->commandPathRecords.size() == originalRecordCount + 1 &&
+    !this->unsupportedRendering;
+  if (replacedOneCommand) {
+    SoRenderCommand & original =
+      this->drawlist.getCommand(static_cast<int>(commandIndex));
+    const SoRenderCommand & replacement =
+      this->drawlist.getCommand(originalCommandCount);
+    const SoGeometryDesc & source = replacement.geometry;
+    const SoGeometryDesc & destination = original.geometry;
+    replacedOneCommand = source.topology == destination.topology &&
+      source.vertexCount == destination.vertexCount &&
+      source.normalCount == destination.normalCount &&
+      source.indexCount == destination.indexCount &&
+      source.vertexStride == destination.vertexStride &&
+      source.vertexStride == 3 * sizeof(float) &&
+      source.texcoordStride == destination.texcoordStride &&
+      source.texcoordStride == 4 * sizeof(float) &&
+      (source.positions != NULL) == (destination.positions != NULL) &&
+      (source.normals != NULL) == (destination.normals != NULL) &&
+      (source.texcoords != NULL) == (destination.texcoords != NULL) &&
+      (source.colors != NULL) == (destination.colors != NULL) &&
+      (source.indices != NULL) == (destination.indices != NULL) &&
+      replacement.material.texture.numComponents == 0;
+    if (replacedOneCommand) {
+      if (source.positions) std::memcpy(
+        const_cast<float *>(destination.positions), source.positions,
+        static_cast<size_t>(source.vertexCount) * 3 * sizeof(float));
+      if (source.normals) std::memcpy(
+        const_cast<float *>(destination.normals), source.normals,
+        static_cast<size_t>(source.normalCount) * 3 * sizeof(float));
+      if (source.texcoords) std::memcpy(
+        const_cast<float *>(destination.texcoords), source.texcoords,
+        static_cast<size_t>(source.vertexCount) * 4 * sizeof(float));
+      if (source.colors) std::memcpy(
+        const_cast<float *>(destination.colors), source.colors,
+        static_cast<size_t>(source.vertexCount) * 4 * sizeof(float));
+      if (source.indices) std::memcpy(
+        const_cast<uint32_t *>(destination.indices), source.indices,
+        static_cast<size_t>(source.indexCount) * sizeof(uint32_t));
+      SoRenderCommand retainedReplacement = replacement;
+      retainedReplacement.geometry.positions = destination.positions;
+      retainedReplacement.geometry.normals = destination.normals;
+      retainedReplacement.geometry.texcoords = destination.texcoords;
+      retainedReplacement.geometry.colors = destination.colors;
+      retainedReplacement.geometry.indices = destination.indices;
+      original = std::move(retainedReplacement);
+    }
+  }
+
+  // The compatible payload was copied into the original command's storage.
+  // Discard the temporary command, path metadata, and scratch allocations.
+  this->drawlist.truncate(originalCommandCount);
+  PRIVATE(this)->commandPathRecords.resize(originalRecordCount);
+  PRIVATE(this)->pathNodes.resize(originalNodeCount);
+  PRIVATE(this)->pathIndices.resize(originalNodeCount);
+  PRIVATE(this)->pathStatistics = originalStatistics;
+  PRIVATE(this)->geometryPool.rewind(geometryCheckpoint);
+  this->unsupportedRendering = originalUnsupported;
+  this->unsupportedNode = originalUnsupportedNode;
+  this->unsupportedReason = originalUnsupportedReason;
+  return replacedOneCommand ? 1 : 0;
 }
 
 void

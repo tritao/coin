@@ -159,6 +159,8 @@ public:
   int updateCommandMatricesForStatePath(const SoPath * statePath);
   //! Refresh effective diffuse colors after one material notification.
   int updateCommandDiffuseColorsForStatePath(const SoPath * statePath);
+  //! Regenerate geometry when one source maps to exactly one command.
+  int updateSingleCommandGeometryForStatePath(const SoPath * statePath);
 #endif
 
 

@@ -275,6 +275,27 @@ SoIRBuffer::allocate(size_t bytes, size_t alignment)
   return ptr;
 }
 
+SoIRBuffer::Checkpoint
+SoIRBuffer::checkpoint() const
+{
+  Checkpoint result;
+  result.chunkCount = this->chunks.size();
+  result.totalAllocated = this->totalAllocated;
+  result.cursors.reserve(result.chunkCount);
+  for (const auto & chunk : this->chunks) result.cursors.push_back(chunk->cursor);
+  return result;
+}
+
+void
+SoIRBuffer::rewind(const Checkpoint & checkpoint)
+{
+  this->chunks.resize(checkpoint.chunkCount);
+  for (size_t i = 0; i < checkpoint.cursors.size(); ++i) {
+    this->chunks[i]->cursor = checkpoint.cursors[i];
+  }
+  this->totalAllocated = checkpoint.totalAllocated;
+}
+
 SoDrawList::SoDrawList()
 {
 }

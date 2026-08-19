@@ -68,6 +68,7 @@
 #include <Inventor/system/gl.h>
 #include <Inventor/nodes/SoInfo.h>
 #include <Inventor/nodes/SoCamera.h>
+#include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoTranslation.h>
 #include <Inventor/SoPath.h>
@@ -1210,6 +1211,15 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
              &static_cast<SoMaterial *>(
                rootSensor->getChangedNode())->diffuseColor) {
     updated = action->updateCommandDiffuseColorsForStatePath(
+      rootSensor->getChangedPath());
+  }
+  else if (canPatchSingleStateChange &&
+           rootSensor->getChangedNode()->isOfType(
+             SoCoordinate3::getClassTypeId()) &&
+           rootSensor->getChangedField() ==
+             &static_cast<SoCoordinate3 *>(
+               rootSensor->getChangedNode())->point) {
+    updated = action->updateSingleCommandGeometryForStatePath(
       rootSensor->getChangedPath());
   }
   if (updated > 0) {

@@ -17,6 +17,7 @@
 #include <Inventor/nodes/SoCube.h>
 #include <Inventor/nodes/SoDrawStyle.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
+#include <Inventor/nodes/SoFaceSet.h>
 #include <Inventor/nodes/SoLineSet.h>
 #include <Inventor/nodes/SoPointLight.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
@@ -195,10 +196,12 @@ runTest()
   SoTranslation * cubeTranslation = new SoTranslation;
   cubeTranslation->translation.setValue(0.0f, 0.0f, -3.0f);
   SoMaterial * cubeMaterial = new SoMaterial;
+  SoSeparator * cubeOccurrence = new SoSeparator;
   cubeRoot->addChild(traversalCounter);
-  cubeRoot->addChild(cubeTranslation);
-  cubeRoot->addChild(cubeMaterial);
-  cubeRoot->addChild(new SoCube);
+  cubeOccurrence->addChild(cubeTranslation);
+  cubeOccurrence->addChild(cubeMaterial);
+  cubeOccurrence->addChild(new SoCube);
+  cubeRoot->addChild(cubeOccurrence);
   cubeRoot->ref();
 
   SoPerspectiveCamera * camera = new SoPerspectiveCamera;
@@ -518,6 +521,70 @@ runTest()
       testViewport.getViewportSizePixels()) {
     std::cerr << "FAIL: cropped camera did not produce an effective viewport" << std::endl;
     result = 1;
+  }
+
+  // A private coordinate source can regenerate one retained command. Shared
+  // sources remain a full-rebuild case until multi-command replacement is
+  // transactional.
+  {
+    const SbVec3f triangle[] = {
+      SbVec3f(-0.8f, -0.8f, 0.0f), SbVec3f(0.8f, -0.8f, 0.0f),
+      SbVec3f(0.0f, 0.8f, 0.0f)
+    };
+    SoSeparator * geometryRoot = new SoSeparator;
+    geometryRoot->ref();
+    SoSeparator * geometryOccurrence = new SoSeparator;
+    SoCoordinate3 * coordinates = new SoCoordinate3;
+    coordinates->point.setValues(0, 3, triangle);
+    geometryOccurrence->addChild(coordinates);
+    geometryOccurrence->addChild(new SoFaceSet);
+    geometryRoot->addChild(geometryOccurrence);
+
+    SoRenderManager geometryManager;
+    geometryManager.setViewportRegion(testViewport);
+    geometryManager.setSceneGraph(geometryRoot);
+    geometryManager.setCamera(camera);
+    geometryManager.setRenderPipeline(
+      SoRenderManager::RenderPipeline::DRAW_LIST);
+    geometryManager.render(TRUE, TRUE);
+    coordinates->point.set1Value(0, SbVec3f(-0.6f, -0.8f, 0.0f));
+    geometryManager.render(TRUE, TRUE);
+    const SoRenderStatistics firstGeometryStatistics =
+      geometryManager.getRenderStatistics();
+    coordinates->point.set1Value(0, SbVec3f(-0.5f, -0.8f, 0.0f));
+    geometryManager.render(TRUE, TRUE);
+    const SoRenderStatistics geometryStatistics =
+      geometryManager.getRenderStatistics();
+    const std::vector<uint8_t> incrementalGeometryPixels = context.readPixels();
+    geometryManager.invalidateDrawList();
+    geometryManager.render(TRUE, TRUE);
+    const std::vector<uint8_t> rebuiltGeometryPixels = context.readPixels();
+    if (firstGeometryStatistics.drawListRebuilds != 0 ||
+        firstGeometryStatistics.incrementalCommandUpdates != 1 ||
+        geometryStatistics.drawListRebuilds != 0 ||
+        geometryStatistics.incrementalCommandUpdates != 1 ||
+        incrementalGeometryPixels != rebuiltGeometryPixels) {
+      std::cerr << "FAIL: incremental geometry differs from full rebuild"
+                << " (rebuilds=" << geometryStatistics.drawListRebuilds
+                << ", updates=" << geometryStatistics.incrementalCommandUpdates
+                << ')' << std::endl;
+      result = 1;
+    }
+
+    geometryOccurrence->addChild(new SoFaceSet);
+    geometryManager.render(TRUE, TRUE);
+    coordinates->point.set1Value(0, SbVec3f(-0.7f, -0.8f, 0.0f));
+    geometryManager.render(TRUE, TRUE);
+    const SoRenderStatistics sharedGeometryStatistics =
+      geometryManager.getRenderStatistics();
+    if (sharedGeometryStatistics.drawListRebuilds != 1 ||
+        sharedGeometryStatistics.incrementalCommandUpdates != 0) {
+      std::cerr << "FAIL: shared coordinate source bypassed full rebuild"
+                << std::endl;
+      result = 1;
+    }
+    geometryManager.setSceneGraph(NULL);
+    geometryRoot->unref();
   }
 
   // The manager must forward that effective viewport to the backend. Make
