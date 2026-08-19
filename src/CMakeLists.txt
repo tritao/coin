@@ -16,7 +16,7 @@
     )
 configure_file(setup.h.cmake.in setup.h)
 
-add_compile_options(-DHAVE_CONFIG_H -DCOIN_INTERNAL -DCOIN_DEBUG=$<CONFIG:Debug>)
+add_compile_options(-DHAVE_CONFIG_H -DCOIN_INTERNAL -DCOIN_BUILDING_COIN -DCOIN_DEBUG=$<CONFIG:Debug>)
 
 include_directories(BEFORE
   "${PROJECT_BINARY_DIR}/include"
