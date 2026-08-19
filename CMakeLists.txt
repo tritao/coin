@@ -94,6 +94,8 @@ include(CoinCMakeUtilities)
 
 option(COIN_BUILD_SHARED_LIBS "Build shared library when ON (default), static when OFF." ON)
 option(COIN_BUILD_TESTS "Build unit tests when ON (default), skips them when OFF." ON)
+option(COIN_BUILD_BENCHMARKS
+  "Build deterministic renderer benchmarks and stress tests with COIN_BUILD_TESTS." OFF)
 option(COIN_FETCH_TEST_DEPENDENCIES
   "Fetch missing test-only dependencies from pinned upstream sources." OFF)
 option(COIN_BUILD_VISUAL_TESTS "Enable visual regression test tooling and CLI helpers." OFF)
@@ -184,6 +186,7 @@ cmake_dependent_option(COIN_DEBUG_CHECK_THREAD "Enable thread check in several c
 report_prepare(
   COIN_BUILD_SHARED_LIBS
   COIN_BUILD_TESTS
+  COIN_BUILD_BENCHMARKS
   COIN_FETCH_TEST_DEPENDENCIES
   COIN_BUILD_VISUAL_TESTS
   COIN_BUILD_DOCUMENTATION
