@@ -1254,6 +1254,30 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
       0, SbVec3f((sample & 1) ? -0.40f : -0.44f, -0.42f, 0.0f));
   });
 
+  const int sharedCommandCount = std::min(drawCount, 1000);
+  SoSeparator * sharedBranch = new SoSeparator;
+  SoCoordinate3 * sharedCoordinates = new SoCoordinate3;
+  const SbVec3f sharedTriangle[] = {
+    SbVec3f(-0.42f, -0.42f, 0.0f), SbVec3f(0.42f, -0.42f, 0.0f),
+    SbVec3f(0.0f, 0.42f, 0.0f)
+  };
+  sharedCoordinates->point.setValues(0, 3, sharedTriangle);
+  sharedBranch->addChild(sharedCoordinates);
+  for (int i = 0; i < sharedCommandCount; ++i) {
+    SoFaceSet * face = new SoFaceSet;
+    face->numVertices.set1Value(0, 3);
+    sharedBranch->addChild(face);
+  }
+  scene->addChild(sharedBranch);
+  context.bindFramebuffer();
+  manager.render(TRUE, TRUE);
+  const std::string sharedName = "incremental_geometry_shared_" +
+    std::to_string(sharedCommandCount) + "_of";
+  measure(sharedName.c_str(), [&](int sample) {
+    sharedCoordinates->point.set1Value(
+      0, SbVec3f((sample & 1) ? -0.40f : -0.44f, -0.42f, 0.0f));
+  });
+
   manager.releaseRenderBackendResources();
   manager.setCamera(NULL);
   manager.setSceneGraph(NULL);
@@ -1365,6 +1389,12 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.retainedPathNodeReferences
         << ", \"retained_path_storage_bytes\": "
         << r.renderStatistics.retainedPathStorageBytes
+        << ", \"retained_dependency_branches\": "
+        << r.renderStatistics.retainedDependencyBranches
+        << ", \"retained_dependency_command_references\": "
+        << r.renderStatistics.retainedDependencyCommandReferences
+        << ", \"retained_dependency_storage_bytes\": "
+        << r.renderStatistics.retainedDependencyStorageBytes
         << ", \"incremental_command_updates\": "
         << r.renderStatistics.incrementalCommandUpdates
         << ", \"instanced_batches\": "
