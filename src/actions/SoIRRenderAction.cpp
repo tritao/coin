@@ -691,6 +691,7 @@ SoIRRenderAction::updateCommandGeometryForStatePath(
   std::vector<size_t> commandIndices;
   this->findCommandsAffectedByStatePath(statePath, commandIndices);
   if (commandIndices.empty()) return 0;
+  std::sort(commandIndices.begin(), commandIndices.end());
 
   const int originalCommandCount = this->drawlist.getNumCommands();
   const size_t originalRecordCount =
@@ -705,16 +706,37 @@ SoIRRenderAction::updateCommandGeometryForStatePath(
 
   PRIVATE(this)->recordBranchDependencies = false;
   bool replacementShapeMatches = true;
-  for (std::vector<size_t>::const_iterator it = commandIndices.begin();
-       replacementShapeMatches && it != commandIndices.end(); ++it) {
-    const SoPath * commandPath = this->getCommandPath(static_cast<int>(*it));
-    if (!commandPath) {
-      replacementShapeMatches = false;
-      break;
+  const int changedChildIndex = statePath->getIndex(
+    statePath->getFullLength() - 1);
+  if (changedChildIndex == 0) {
+    const SoPath * firstCommandPath = this->getCommandPath(
+      static_cast<int>(commandIndices.front()));
+    const int branchPathLength = statePath->getFullLength() - 2;
+    if (firstCommandPath && branchPathLength > 0 &&
+        firstCommandPath->getFullLength() > branchPathLength) {
+      SoPath * branchPath = firstCommandPath->copy(0, branchPathLength);
+      branchPath->ref();
+      // Traversing the common branch reconstructs its ancestor state once and
+      // then visits every affected shape in normal scene-graph order.
+      this->traverseAdditionalPath(branchPath);
+      branchPath->unref();
+      replacementShapeMatches = this->drawlist.getNumCommands() ==
+        originalCommandCount + static_cast<int>(commandIndices.size());
     }
-    const int before = this->drawlist.getNumCommands();
-    this->traverseAdditionalPath(const_cast<SoPath *>(commandPath));
-    replacementShapeMatches = this->drawlist.getNumCommands() == before + 1;
+    else replacementShapeMatches = false;
+  }
+  else {
+    for (std::vector<size_t>::const_iterator it = commandIndices.begin();
+         replacementShapeMatches && it != commandIndices.end(); ++it) {
+      const SoPath * commandPath = this->getCommandPath(static_cast<int>(*it));
+      if (!commandPath) {
+        replacementShapeMatches = false;
+        break;
+      }
+      const int before = this->drawlist.getNumCommands();
+      this->traverseAdditionalPath(const_cast<SoPath *>(commandPath));
+      replacementShapeMatches = this->drawlist.getNumCommands() == before + 1;
+    }
   }
   PRIVATE(this)->recordBranchDependencies = true;
   bool replacementsCompatible = replacementShapeMatches &&

@@ -276,6 +276,67 @@ runTest()
   cameraRoot->unref();
 
   int result = 0;
+  // A shared state node should update every dependent retained command in one
+  // incremental render, including commands below nested ancestor paths.
+  SoSeparator * sharedGeometryRoot = new SoSeparator;
+  SoSeparator * sharedGeometryContainer = new SoSeparator;
+  SoSeparator * sharedGeometryBranch = new SoSeparator;
+  SoCoordinate3 * sharedCoordinates = new SoCoordinate3;
+  const SbVec3f initialTriangle[] = {
+    SbVec3f(-0.4f, -0.4f, 0.0f), SbVec3f(0.4f, -0.4f, 0.0f),
+    SbVec3f(0.0f, 0.4f, 0.0f)
+  };
+  sharedCoordinates->point.setValues(0, 3, initialTriangle);
+  sharedGeometryBranch->addChild(sharedCoordinates);
+  for (int i = 0; i < 3; ++i) {
+    SoSeparator * occurrence = new SoSeparator;
+    SoTranslation * offset = new SoTranslation;
+    offset->translation.setValue(
+      0.6f * static_cast<float>(i - 1), 0.0f, 0.0f);
+    SoFaceSet * face = new SoFaceSet;
+    face->numVertices.set1Value(0, 3);
+    occurrence->addChild(offset);
+    occurrence->addChild(face);
+    sharedGeometryBranch->addChild(occurrence);
+  }
+  sharedGeometryContainer->addChild(sharedGeometryBranch);
+  sharedGeometryRoot->addChild(sharedGeometryContainer);
+  sharedGeometryRoot->ref();
+  {
+    SoRenderManager sharedManager;
+    sharedManager.setViewportRegion(testViewport);
+    sharedManager.setSceneGraph(sharedGeometryRoot);
+    sharedManager.setCamera(camera);
+    sharedManager.setLightingMode(SoRenderManager::UNLIT);
+    sharedManager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+    sharedManager.render(TRUE, TRUE);
+    const std::vector<uint8_t> initialPixels = context.readPixels();
+    sharedCoordinates->point.set1Value(0, SbVec3f(-0.3f, -0.4f, 0.0f));
+    sharedManager.render(TRUE, TRUE);
+    const SoRenderStatistics sharedStatistics =
+      sharedManager.getRenderStatistics();
+    const std::vector<uint8_t> incrementalPixels = context.readPixels();
+    size_t differingFromInitial = 0;
+    for (size_t i = 0; i < incrementalPixels.size(); ++i) {
+      if (incrementalPixels[i] != initialPixels[i]) ++differingFromInitial;
+    }
+    if (sharedStatistics.drawListRebuilds != 0 ||
+        sharedStatistics.incrementalCommandUpdates != 3 ||
+        differingFromInitial == 0) {
+      std::cerr << "FAIL: shared state did not update all retained geometries"
+                << " (rebuilds=" << sharedStatistics.drawListRebuilds
+                << ", updated="
+                << sharedStatistics.incrementalCommandUpdates
+                << ", changed bytes=" << differingFromInitial << ")"
+                << std::endl;
+      result = 1;
+    }
+    sharedManager.releaseRenderBackendResources();
+    sharedManager.setCamera(NULL);
+    sharedManager.setSceneGraph(NULL);
+  }
+  sharedGeometryRoot->unref();
+
   {
     SoRenderManager manager;
     manager.setViewportRegion(testViewport);
