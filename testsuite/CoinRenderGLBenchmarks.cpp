@@ -535,7 +535,7 @@ bool runIndexedInstances(GLTestProfile profile, int instanceCount, int samples,
   }
   glDeleteQueries(1, &query);
 
-  const SoRenderStatistics statistics = backend.getRenderStatistics();
+  SoRenderStatistics statistics = backend.getRenderStatistics();
   const uint64_t pixelChecksum = checksumPixels(context.readPixels());
   const bool expectedBatch = instanceCount > 1;
   if (statistics.drawCalls != 1 ||
@@ -716,7 +716,7 @@ bool runMixedRetainedScene(GLTestProfile profile, int commandCount, int samples,
     gpu.push_back(static_cast<double>(nanoseconds) / 1000000.0);
   }
   glDeleteQueries(1, &query);
-  const SoRenderStatistics statistics = backend.getRenderStatistics();
+  SoRenderStatistics statistics = backend.getRenderStatistics();
   std::vector<double> selectionTimes, pickTimes, refreshTimes, mutationTimes;
   std::vector<double> pickUpdateCpuTimes, pickUpdateCompletionTimes;
   for (int sample = 0; sample < samples; ++sample) {
@@ -748,6 +748,10 @@ bool runMixedRetainedScene(GLTestProfile profile, int commandCount, int samples,
     glFinish();
     pickUpdateCompletionTimes.push_back(elapsedMs(completionStart));
   }
+  const SoRenderStatistics pickStatistics = backend.getRenderStatistics();
+  statistics.pickDrawCalls = pickStatistics.pickDrawCalls;
+  statistics.pickInstancedBatches = pickStatistics.pickInstancedBatches;
+  statistics.pickInstancedEntries = pickStatistics.pickInstancedEntries;
   for (int sample = 0; sample < samples; ++sample) {
     const uint64_t revision = static_cast<uint64_t>(sample + 2);
     for (int command = 0; command < drawlist.getNumCommands(); ++command) {
@@ -766,6 +770,9 @@ bool runMixedRetainedScene(GLTestProfile profile, int commandCount, int samples,
   if (statistics.drawCalls <= 1 ||
       statistics.drawCalls >= static_cast<uint64_t>(commandCount) ||
       statistics.instancedBatches <= 1 || statistics.maxInstanceBatchSize < 5 ||
+      statistics.pickDrawCalls >= static_cast<uint64_t>(commandCount) ||
+      statistics.pickInstancedBatches <= 1 ||
+      statistics.pickInstancedEntries == 0 ||
       checksum == 0) {
     unavailable = "mixed workload did not retain expected batch fragmentation";
     backend.shutdown();
@@ -896,6 +903,12 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.instanceBatches65Plus
         << ", \"max_instance_batch_size\": "
         << r.renderStatistics.maxInstanceBatchSize
+        << ", \"pick_draw_calls\": "
+        << r.renderStatistics.pickDrawCalls
+        << ", \"pick_instanced_batches\": "
+        << r.renderStatistics.pickInstancedBatches
+        << ", \"pick_instanced_entries\": "
+        << r.renderStatistics.pickInstancedEntries
         << ", \"command_preparation_ms\": "
         << r.commandPreparationMs
         << ", \"state_setup_ms\": "

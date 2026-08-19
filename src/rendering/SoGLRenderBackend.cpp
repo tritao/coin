@@ -53,6 +53,13 @@ static constexpr GLuint COLOR_ATTRIBUTE = 2;
 static constexpr GLuint TEXCOORD_ATTRIBUTE = 3;
 static constexpr GLuint LINE_DISTANCE_ATTRIBUTE = 4;
 static constexpr GLuint INSTANCE_MODEL_ATTRIBUTE = 5;
+static constexpr GLuint INSTANCE_PICK_ID_ATTRIBUTE = 10;
+
+struct InstanceRecord {
+  float model[16];
+  float color[4];
+  uint32_t pickId;
+};
 
 bool
 sameMaterialUniforms(const SoMaterialData & lhs, const SoMaterialData & rhs)
@@ -1237,7 +1244,7 @@ SoGLRenderBackend::setupVisualVAO(CachedCommand & entry)
     const GLuint attribute = INSTANCE_MODEL_ATTRIBUTE + column;
     cc_glglue_glEnableVertexAttribArray(this->glue, attribute);
     cc_glglue_glVertexAttribPointer(
-      this->glue, attribute, 4, GL_FLOAT, GL_FALSE, sizeof(float) * 20,
+      this->glue, attribute, 4, GL_FLOAT, GL_FALSE, sizeof(InstanceRecord),
       reinterpret_cast<const void *>(
         static_cast<uintptr_t>(column * sizeof(float) * 4)));
     glVertexAttribDivisor(attribute, 1);
@@ -1245,9 +1252,15 @@ SoGLRenderBackend::setupVisualVAO(CachedCommand & entry)
   const GLuint colorAttribute = INSTANCE_MODEL_ATTRIBUTE + 4;
   cc_glglue_glEnableVertexAttribArray(this->glue, colorAttribute);
   cc_glglue_glVertexAttribPointer(
-    this->glue, colorAttribute, 4, GL_FLOAT, GL_FALSE, sizeof(float) * 20,
+    this->glue, colorAttribute, 4, GL_FLOAT, GL_FALSE, sizeof(InstanceRecord),
     reinterpret_cast<const void *>(sizeof(float) * 16));
   glVertexAttribDivisor(colorAttribute, 1);
+  cc_glglue_glEnableVertexAttribArray(this->glue,
+                                      INSTANCE_PICK_ID_ATTRIBUTE);
+  glVertexAttribIPointer(
+    INSTANCE_PICK_ID_ATTRIBUTE, 1, GL_UNSIGNED_INT, sizeof(InstanceRecord),
+    reinterpret_cast<const void *>(offsetof(InstanceRecord, pickId)));
+  glVertexAttribDivisor(INSTANCE_PICK_ID_ATTRIBUTE, 1);
   this->glue->glBindVertexArray(0);
   cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, 0);
   cc_glglue_glBindBuffer(this->glue, GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -2113,16 +2126,18 @@ SoGLRenderBackend::drawInstancedCommands(
   const CommandFrame frame = this->effectiveCommandFrame(first, params, false);
   const RasterPath path = this->selectRasterPath(entry, first, params);
 
-  std::vector<float> instanceData;
-  instanceData.reserve(commandIndices.size() * 20);
+  std::vector<InstanceRecord> instanceData;
+  instanceData.reserve(commandIndices.size());
   for (const uint32_t index : commandIndices) {
+    InstanceRecord record = {};
     SbMat model;
     drawlist.getCommand(static_cast<int>(index)).modelMatrix.getValue(model);
     const float * values = &model[0][0];
-    instanceData.insert(instanceData.end(), values, values + 16);
+    std::copy(values, values + 16, record.model);
     const SbVec4f & color = drawlist.getCommand(
       static_cast<int>(index)).material.diffuse;
-    instanceData.insert(instanceData.end(), &color[0], &color[0] + 4);
+    std::copy(&color[0], &color[0] + 4, record.color);
+    instanceData.push_back(record);
   }
   const auto finishPhase = [&](uint64_t & nanoseconds) {
     if (!timing) return;
@@ -2145,7 +2160,7 @@ SoGLRenderBackend::drawInstancedCommands(
                            frame.viewportOrigin, frame.viewportSize, entry);
   cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, this->instanceBuffer);
   cc_glglue_glBufferData(this->glue, GL_ARRAY_BUFFER,
-                         instanceData.size() * sizeof(float),
+                         instanceData.size() * sizeof(InstanceRecord),
                          instanceData.data(),
                          GL_STREAM_DRAW);
   this->glue->glUniform1f(this->visualProgram.surface.transforms.instanced,
@@ -2171,7 +2186,8 @@ SoGLRenderBackend::drawInstancedCommands(
   ++statistics.instancedBatches;
   statistics.instancedCommands += commandIndices.size();
   statistics.drawCallsAvoided += commandIndices.size() - 1;
-  statistics.instanceBytesUploaded += instanceData.size() * sizeof(float);
+  statistics.instanceBytesUploaded +=
+    instanceData.size() * sizeof(InstanceRecord);
   const uint64_t batchSize = static_cast<uint64_t>(commandIndices.size());
   if (batchSize <= 4) ++statistics.instanceBatches2To4;
   else if (batchSize <= 16) ++statistics.instanceBatches5To16;
@@ -2919,6 +2935,7 @@ SoGLRenderBackend::createShaders()
     u.alphaTestFunction = uniform(program.handle, "u_alphaTestFunction");
     u.alphaTestReference = uniform(program.handle, "u_alphaTestReference");
     u.pickId = uniform(program.handle, "u_pickId");
+    u.instanced = uniform(program.handle, "u_instanced");
     u.vpSize = uniform(program.handle, "u_vpSize");
     u.lineWidth = uniform(program.handle, "u_lineWidth");
     u.pointSize = uniform(program.handle, "u_pointSize");
@@ -3067,6 +3084,80 @@ SoGLRenderBackend::ensurePickFramebuffer(const SbVec2s & size)
   }
 
   return complete;
+}
+
+void
+SoGLRenderBackend::drawInstancedPickCommands(
+  const SoDrawList & drawlist,
+  const std::vector<uint32_t> & commandIndices,
+  const std::vector<GLuint> & pickIds,
+  const SoRenderParams & params)
+{
+  if (commandIndices.size() < 2 || commandIndices.size() != pickIds.size()) {
+    return;
+  }
+  const SoRenderCommand & first = drawlist.getCommand(
+    static_cast<int>(commandIndices.front()));
+  const auto cacheIt = this->commandToCache.find(&first);
+  if (cacheIt == this->commandToCache.end()) return;
+  const CachedCommand & cache = this->gpuCache[cacheIt->second];
+  if (!cache.vertexArray) return;
+
+  std::vector<InstanceRecord> records;
+  records.reserve(commandIndices.size());
+  for (size_t i = 0; i < commandIndices.size(); ++i) {
+    InstanceRecord record = {};
+    SbMat model;
+    drawlist.getCommand(static_cast<int>(commandIndices[i])).modelMatrix
+      .getValue(model);
+    std::copy(&model[0][0], &model[0][0] + 16, record.model);
+    record.color[0] = record.color[1] = record.color[2] = record.color[3] = 1.0f;
+    record.pickId = pickIds[i];
+    records.push_back(record);
+  }
+
+  const CommandFrame frame = this->effectiveCommandFrame(first, params, true);
+  glViewport(frame.viewportOrigin[0], frame.viewportOrigin[1],
+             frame.viewportSize[0], frame.viewportSize[1]);
+  cc_glglue_glUseProgram(this->glue,
+                         this->pickPrograms.opaqueVisual.handle);
+  const PickProgram::Uniforms & uniforms =
+    this->pickPrograms.opaqueVisual.uniforms;
+  this->glue->glUniformMatrix4fv(uniforms.view, 1, GL_FALSE,
+                                 &frame.view[0][0]);
+  this->glue->glUniformMatrix4fv(uniforms.proj, 1, GL_FALSE,
+                                 &frame.projection[0][0]);
+  this->glue->glUniform1f(uniforms.instanced, 1.0f);
+  if (uniforms.peelEnabled >= 0)
+    this->glue->glUniform1i(uniforms.peelEnabled, 0);
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(depthFunctionToGL(first.state.depth.func));
+  glDepthMask(GL_TRUE);
+  glDepthRange(first.state.depth.range[0], first.state.depth.range[1]);
+  if (first.state.raster.cullBackFaces) {
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+  }
+  else glDisable(GL_CULL_FACE);
+  glFrontFace(first.state.raster.frontFaceCCW ? GL_CCW : GL_CW);
+  cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, this->instanceBuffer);
+  cc_glglue_glBufferData(this->glue, GL_ARRAY_BUFFER,
+                         records.size() * sizeof(InstanceRecord),
+                         records.data(), GL_STREAM_DRAW);
+  this->glue->glBindVertexArray(cache.vertexArray);
+  const GLsizei count = static_cast<GLsizei>(records.size());
+  if (first.geometry.indices && first.geometry.indexCount) {
+    glDrawElementsInstanced(
+      GL_TRIANGLES, static_cast<GLsizei>(first.geometry.indexCount),
+      GL_UNSIGNED_INT, nullptr, count);
+  }
+  else {
+    glDrawArraysInstanced(GL_TRIANGLES, 0,
+                          static_cast<GLsizei>(first.geometry.vertexCount),
+                          count);
+  }
+  this->glue->glUniform1f(uniforms.instanced, 0.0f);
+  this->glue->glBindVertexArray(0);
 }
 
 void
@@ -3448,6 +3539,9 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
   }
   this->pickTarget.ready = false;
   this->pickTarget.lookup.clear();
+  this->submissionCache.statistics.pickDrawCalls = 0;
+  this->submissionCache.statistics.pickInstancedBatches = 0;
+  this->submissionCache.statistics.pickInstancedEntries = 0;
   ScopedGLState state(this->glue);
   drawlist.buildPickLUT();
   this->pickTarget.lookup = drawlist.getPickLUT();
@@ -3493,6 +3587,7 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
       this->drawPickEntry(drawlist, this->pickTarget.lookup[i],
                           static_cast<GLuint>(i + 1),
                           frameView, frameProjection, params);
+      ++this->submissionCache.statistics.pickDrawCalls;
     }
   };
 
@@ -3505,7 +3600,49 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
         this->emitError("pick plan references a missing DrawList command");
         return FALSE;
       }
-      drawPickCommand(operation.commandIndex);
+      const SoRenderCommand & first = drawlist.getCommand(
+        static_cast<int>(operation.commandIndex));
+      std::vector<uint32_t> instanceCommands;
+      std::vector<GLuint> instanceIds;
+      if (this->canInstanceCommand(first) && first.state.depth.enabled &&
+          lookupByCommand[operation.commandIndex].size() == 1) {
+        const size_t lookupIndex =
+          lookupByCommand[operation.commandIndex].front();
+        const SoPickLUTEntry & entry = this->pickTarget.lookup[lookupIndex];
+        if (entry.type == SO_PICK_OBJECT && entry.elementIndex == -1) {
+          instanceCommands.push_back(operation.commandIndex);
+          instanceIds.push_back(static_cast<GLuint>(lookupIndex + 1));
+          for (int nextOperation = i + 1;
+               nextOperation < plan.getNumOperations(); ++nextOperation) {
+            const SoRenderOperation & next = plan.getOperation(nextOperation);
+            if (next.type != SoRenderOperationType::DRAW ||
+                next.commandIndex >= commandCount ||
+                lookupByCommand[next.commandIndex].size() != 1) break;
+            const SoRenderCommand & nextCommand = drawlist.getCommand(
+              static_cast<int>(next.commandIndex));
+            const size_t nextLookup =
+              lookupByCommand[next.commandIndex].front();
+            const SoPickLUTEntry & nextEntry =
+              this->pickTarget.lookup[nextLookup];
+            if (!nextCommand.state.depth.enabled ||
+                nextEntry.type != SO_PICK_OBJECT ||
+                nextEntry.elementIndex != -1 ||
+                !this->canInstanceTogether(first, nextCommand)) break;
+            instanceCommands.push_back(next.commandIndex);
+            instanceIds.push_back(static_cast<GLuint>(nextLookup + 1));
+          }
+        }
+      }
+      if (instanceCommands.size() > 1) {
+        this->drawInstancedPickCommands(drawlist, instanceCommands,
+                                        instanceIds, params);
+        ++this->submissionCache.statistics.pickDrawCalls;
+        ++this->submissionCache.statistics.pickInstancedBatches;
+        this->submissionCache.statistics.pickInstancedEntries +=
+          instanceCommands.size();
+        i += static_cast<int>(instanceCommands.size()) - 1;
+      }
+      else drawPickCommand(operation.commandIndex);
     }
     else if (operation.type == SoRenderOperationType::CLEAR_DEPTH) {
       if (operation.depthClearEventIndex >= eventCount) {

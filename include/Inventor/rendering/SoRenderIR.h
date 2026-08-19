@@ -671,6 +671,9 @@ struct SoRenderStatistics {
   uint64_t instanceBatches17To64 = 0;
   uint64_t instanceBatches65Plus = 0;
   uint64_t maxInstanceBatchSize = 0;
+  uint64_t pickDrawCalls = 0;
+  uint64_t pickInstancedBatches = 0;
+  uint64_t pickInstancedEntries = 0;
 };
 
 /*!

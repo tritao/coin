@@ -13,18 +13,21 @@ layout(location = 6) in vec4 a_instanceModel1;
 layout(location = 7) in vec4 a_instanceModel2;
 layout(location = 8) in vec4 a_instanceModel3;
 layout(location = 9) in vec4 a_instanceColor;
+layout(location = 10) in uint a_instancePickId;
 
 uniform float u_instanced;
 
 out vec4 v_color;
 out vec3 v_litColor;
 out vec2 v_texcoord;
+flat out uint v_pickId;
 
 void main()
 {
   v_color = u_instanced > 0.5
     ? a_instanceColor : coin_surface_vertex_color(a_color);
   v_texcoord = a_texcoord;
+  v_pickId = a_instancePickId;
 
   mat4 instanceModel = mat4(a_instanceModel0, a_instanceModel1,
                             a_instanceModel2, a_instanceModel3);
