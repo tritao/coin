@@ -2542,6 +2542,15 @@ SoRenderManager::getRenderStatistics() const
   statistics.planConstructionNanoseconds =
     PRIVATE(this)->planConstructionNanoseconds;
   statistics.drawListRebuilds = PRIVATE(this)->drawListRebuilds;
+  if (PRIVATE(this)->irAction) {
+    const SoIRRenderAction::PathStatistics & paths =
+      PRIVATE(this)->irAction->getPathStatistics();
+    statistics.retainedPathCommands = paths.commands;
+    statistics.retainedUniquePaths = paths.uniquePaths;
+    statistics.retainedReusedPaths = paths.reusedPaths;
+    statistics.retainedPathNodeReferences = paths.nodeReferences;
+    statistics.retainedPathStorageBytes = paths.estimatedStorageBytes;
+  }
   return statistics;
 }
 

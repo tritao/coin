@@ -716,6 +716,12 @@ struct SoRenderStatistics {
   uint64_t drawListConstructionNanoseconds = 0;
   uint64_t planConstructionNanoseconds = 0;
   uint64_t drawListRebuilds = 0;
+  // Path snapshot costs produced while constructing the retained frame.
+  uint64_t retainedPathCommands = 0;
+  uint64_t retainedUniquePaths = 0;
+  uint64_t retainedReusedPaths = 0;
+  uint64_t retainedPathNodeReferences = 0;
+  uint64_t retainedPathStorageBytes = 0;
 };
 
 /*!

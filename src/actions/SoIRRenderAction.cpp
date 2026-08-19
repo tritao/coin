@@ -93,6 +93,8 @@ public:
   std::vector<int> instancePathIndices;
   SoInstanceId currentInstanceId = 0;
   SoInstanceId nextInstanceId = 1;
+  SoInstanceId lastPathInstanceId = 0;
+  SoIRRenderAction::PathStatistics pathStatistics;
   SoRenderStage renderStage = SoRenderStage::Main;
   SoIRRenderContext renderContextOverride;
   bool hasRenderContextOverride = false;
@@ -230,6 +232,22 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
     }
     retained.instanceId = PRIVATE(this)->currentInstanceId;
   }
+  if (currentPath) {
+    SoIRRenderAction::PathStatistics & statistics =
+      PRIVATE(this)->pathStatistics;
+    ++statistics.commands;
+    if (retained.instanceId != PRIVATE(this)->lastPathInstanceId) {
+      ++statistics.uniquePaths;
+      PRIVATE(this)->lastPathInstanceId = retained.instanceId;
+    }
+    else {
+      ++statistics.reusedPaths;
+    }
+    const uint64_t length = static_cast<uint64_t>(currentPath->getFullLength());
+    statistics.nodeReferences += length;
+    statistics.estimatedStorageBytes += sizeof(SoPath) +
+      length * (sizeof(SoNode *) + sizeof(int));
+  }
 
   if (!retained.geometry.hasBounds && retained.geometry.positions &&
       retained.geometry.vertexCount > 0) {
@@ -300,6 +318,12 @@ SoIRRenderAction::getCommandPath(int commandIndex) const
     return NULL;
   }
   return this->commandPaths[static_cast<size_t>(commandIndex)];
+}
+
+const SoIRRenderAction::PathStatistics &
+SoIRRenderAction::getPathStatistics(void) const
+{
+  return PRIVATE(this)->pathStatistics;
 }
 
 void
@@ -577,6 +601,8 @@ SoIRRenderAction::resetFrameResources()
   PRIVATE(this)->instancePathIndices.clear();
   PRIVATE(this)->currentInstanceId = 0;
   PRIVATE(this)->nextInstanceId = 1;
+  PRIVATE(this)->lastPathInstanceId = 0;
+  PRIVATE(this)->pathStatistics = PathStatistics();
 }
 
 void

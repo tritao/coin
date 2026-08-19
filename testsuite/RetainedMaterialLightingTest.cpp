@@ -470,6 +470,17 @@ runTest()
                 << " did not produce two material batches" << std::endl;
       result = 1;
     }
+    const SoIRRenderAction::PathStatistics & pathStatistics =
+      batchAction.getPathStatistics();
+    if (pathStatistics.commands != static_cast<uint64_t>(expectedCommands) ||
+        pathStatistics.uniquePaths != 1 ||
+        pathStatistics.reusedPaths !=
+          static_cast<uint64_t>(expectedCommands - 1)) {
+      std::cerr << "FAIL: " << bindingCase.name
+                << " reported inconsistent retained path statistics"
+                << std::endl;
+      result = 1;
+    }
     for (int i = 0; i < batchAction.getDrawList().getNumCommands(); ++i) {
       const SoRenderCommand & command = batchAction.getDrawList().getCommand(i);
       if (command.geometry.colors) {

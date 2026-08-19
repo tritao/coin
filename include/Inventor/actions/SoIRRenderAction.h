@@ -44,6 +44,15 @@ class COIN_DLL_API SoIRRenderAction : public SoAction {
   SO_ACTION_HEADER(SoIRRenderAction);
 
 public:
+  //! Frame-local command-path ownership and reuse totals.
+  struct PathStatistics {
+    uint64_t commands = 0;
+    uint64_t uniquePaths = 0;
+    uint64_t reusedPaths = 0;
+    uint64_t nodeReferences = 0;
+    uint64_t estimatedStorageBytes = 0;
+  };
+
   /*! Camera state policy used when starting a root traversal. */
   enum class CameraPolicy {
     //! Initialize the traversal from the camera configured on this action.
@@ -124,6 +133,8 @@ public:
   //! The pointer is borrowed and remains valid until the next apply/beginFrame
   //! on this action or until the action is destroyed.
   const SoPath * getCommandPath(int commandIndex) const;
+  //! Return path ownership totals for the current retained frame.
+  const PathStatistics & getPathStatistics(void) const;
 
   //! Append a root without clearing the current retained frame.
   void traverseAdditionalRoot(
