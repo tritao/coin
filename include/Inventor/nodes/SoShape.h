@@ -88,6 +88,9 @@ protected:
   virtual ~SoShape();
 
   float getComplexityValue(SoAction * action);
+  // Shapes may bypass generatePrimitives() when they can emit equivalent
+  // retained data directly. Returning FALSE selects the generic path.
+  virtual SbBool generateRetainedPrimitives(SoIRRenderAction * action);
   virtual void generatePrimitives(SoAction * action) =  0;
 #if COIN_HAVE_LEGACY_GL_RENDERER
   virtual SbBool shouldGLRender(SoGLRenderAction * action);

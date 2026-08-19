@@ -79,6 +79,7 @@ class SoVBO;
 #include <Inventor/misc/SoState.h>
 #include <Inventor/SoPrimitiveVertex.h>
 #include <Inventor/actions/SoGLRenderAction.h>
+#include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/system/gl.h>
 #if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLCoordinateElement.h>
@@ -794,6 +795,73 @@ SoFaceSet::getPrimitiveCount(SoGetPrimitiveCountAction *action)
 }
 
 // doc from parent
+SbBool
+SoFaceSet::generateRetainedPrimitives(SoIRRenderAction * action)
+{
+  // Direct emission avoids the temporary SoPrimitiveVertex and detail objects
+  // built by generatePrimitives(). Non-triangular faces still need that path's
+  // tessellation and therefore deliberately fall back.
+  const int faceCount = this->numVertices.getNum();
+  if (faceCount == 0 || (faceCount == 1 && this->numVertices[0] == 0)) {
+    return TRUE;
+  }
+  const int32_t * faceSizes = this->numVertices.getValues(0);
+  for (int face = 0; face < faceCount; ++face) {
+    if (faceSizes[face] != 3) return FALSE;
+  }
+  if (this->startIndex.getValue() < 0) return FALSE;
+
+  SoIRRenderAction::PrimitiveCollector * collector =
+    action->getActivePrimitiveCollector();
+  if (!collector) return FALSE;
+  SoState * state = action->getState();
+  const SoCoordinateElement * coordinates;
+  const SbVec3f * normals;
+  SbBool needNormals = TRUE;
+  SoVertexShape::getVertexData(state, coordinates, normals, needNormals);
+  const Binding materialBinding = this->findMaterialBinding(state);
+  const Binding normalBinding = this->findNormalBinding(state);
+
+  SoNormalCache * normalCache = NULL;
+  if (needNormals && normals == NULL) {
+    normalCache = this->generateAndReadLockNormalCache(state);
+    normals = normalCache->getNormals();
+  }
+  if (!normals) {
+    if (normalCache) this->readUnlockNormalCache();
+    return FALSE;
+  }
+
+  SoTextureCoordinateBundle textureBundle(action, FALSE, FALSE);
+  const SbBool useTextures = textureBundle.needCoordinates();
+  int coordinateIndex = this->startIndex.getValue();
+  int normalIndex = 0;
+  int materialIndex = 0;
+  int textureIndex = 0;
+  for (int face = 0; face < faceCount; ++face) {
+    SoIRRenderAction::PrimitiveCollector::VertexData vertices[3];
+    for (int vertex = 0; vertex < 3; ++vertex, ++coordinateIndex) {
+      vertices[vertex].point = coordinates->get3(coordinateIndex);
+      vertices[vertex].normal = normals[
+        normalBinding == OVERALL ? 0 : normalIndex];
+      vertices[vertex].materialIndex =
+        materialBinding == OVERALL ? 0 : materialIndex;
+      if (useTextures) {
+        vertices[vertex].texcoord = textureBundle.isFunction()
+          ? textureBundle.get(vertices[vertex].point, vertices[vertex].normal)
+          : textureBundle.get(textureIndex++);
+      }
+      if (normalBinding == PER_VERTEX) ++normalIndex;
+      if (materialBinding == PER_VERTEX) ++materialIndex;
+    }
+    collector->onTriangleData(vertices[0], vertices[1], vertices[2], face);
+    if (normalBinding == PER_FACE) ++normalIndex;
+    if (materialBinding == PER_FACE) ++materialIndex;
+  }
+  if (normalCache) this->readUnlockNormalCache();
+  return TRUE;
+}
+
 void
 SoFaceSet::generatePrimitives(SoAction *action)
 {

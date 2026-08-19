@@ -63,6 +63,14 @@ public:
   */
   class PrimitiveCollector {
   public:
+    //! Primitive attributes needed by the retained renderer.
+    struct VertexData {
+      SbVec3f point;
+      SbVec3f normal;
+      // Match SoPrimitiveVertex so both emission paths hash identically.
+      SbVec4f texcoord = SbVec4f(0.0f, 0.0f, 0.0f, 1.0f);
+      int materialIndex = 0;
+    };
     virtual ~PrimitiveCollector() {}
     virtual void onTriangle(const SoPrimitiveVertex * v1,
                             const SoPrimitiveVertex * v2,
@@ -70,6 +78,11 @@ public:
     virtual void onLine(const SoPrimitiveVertex * v1,
                         const SoPrimitiveVertex * v2) = 0;
     virtual void onPoint(const SoPrimitiveVertex * v) = 0;
+    //! Receive an already resolved triangle and its picking identity.
+    virtual void onTriangleData(const VertexData & v1,
+                                const VertexData & v2,
+                                const VertexData & v3,
+                                int faceIndex) = 0;
   };
 
   static void initClass(void);

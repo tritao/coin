@@ -313,6 +313,17 @@ public:
     this->appendRange(first, 1, SO_PICK_VERTEX, this->pointIndex(v));
   }
 
+  void onTriangleData(const VertexData & v1, const VertexData & v2,
+                      const VertexData & v3, int faceIndex) override
+  {
+    this->setTopology(SO_TOPOLOGY_TRIANGLES);
+    const size_t first = this->vertices.size();
+    this->append(v1);
+    this->append(v2);
+    this->append(v3);
+    this->appendRange(first, 3, SO_PICK_FACE, faceIndex);
+  }
+
   void finalize()
   {
     this->flushRun();
@@ -518,6 +529,16 @@ private:
     copy.normal = vertex->getNormal();
     copy.texcoord = vertex->getTextureCoords();
     copy.materialIndex = materialIndex;
+    this->vertices.push_back(copy);
+  }
+
+  void append(const VertexData & vertex)
+  {
+    SoIRVertex copy;
+    copy.position = vertex.point;
+    copy.normal = vertex.normal;
+    copy.texcoord = vertex.texcoord;
+    copy.materialIndex = vertex.materialIndex;
     this->vertices.push_back(copy);
   }
 
@@ -937,11 +958,19 @@ SoShape::IRRender(SoIRRenderAction * action)
 
   SoIRPrimitiveAssembler assembler(action, this);
   action->pushPrimitiveCollector(&assembler);
-  this->generatePrimitives(action);
+  if (!this->generateRetainedPrimitives(action)) {
+    this->generatePrimitives(action);
+  }
   action->popPrimitiveCollector(&assembler);
   assembler.finalize();
 
   if (vertexProperty) state->pop();
+}
+
+SbBool
+SoShape::generateRetainedPrimitives(SoIRRenderAction *)
+{
+  return FALSE;
 }
 
 // Doc in parent.
