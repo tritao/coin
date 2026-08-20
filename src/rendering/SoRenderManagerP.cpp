@@ -390,9 +390,32 @@ SoRenderManagerRootSensor::resetNotification(void)
   this->unschedule();
   this->changedNode = NULL;
   this->changedField = NULL;
-  if (this->changedPath) this->changedPath->unref();
+  for (size_t i = 0; i < this->changedPaths.size(); ++i) {
+    if (this->changedPaths[i]) this->changedPaths[i]->unref();
+  }
   this->changedPath = NULL;
   this->notificationCount = 0;
+  this->changedNodes.clear();
+  this->changedFields.clear();
+  this->changedPaths.clear();
+}
+
+SoNode *
+SoRenderManagerRootSensor::getChangedNode(unsigned int index) const
+{
+  return index < this->changedNodes.size() ? this->changedNodes[index] : NULL;
+}
+
+SoField *
+SoRenderManagerRootSensor::getChangedField(unsigned int index) const
+{
+  return index < this->changedFields.size() ? this->changedFields[index] : NULL;
+}
+
+const SoPath *
+SoRenderManagerRootSensor::getChangedPath(unsigned int index) const
+{
+  return index < this->changedPaths.size() ? this->changedPaths[index] : NULL;
 }
 
 SoRenderManagerRootSensor::SoRenderManagerRootSensor(SoSensorCB * func,
@@ -411,11 +434,16 @@ void
 SoRenderManagerRootSensor::notify(SoNotList * l)
 {
   ++this->notificationCount;
+  // Retain enough detail for ordinary batched edits without allowing a
+  // notification storm to grow this diagnostic/patch queue without bound.
+  if (this->notificationCount > MAX_RETAINED_NOTIFICATIONS) {
+    inherited::notify(l);
+    return;
+  }
   this->changedField = l->getLastField();
   SoNotRec * changed = l->getFirstRecAtNode();
   this->changedNode = changed
     ? static_cast<SoNode *>(changed->getBase()) : NULL;
-  if (this->changedPath) this->changedPath->unref();
   this->changedPath = NULL;
   if (this->changedNode) {
     const SoNotRec * record = l->getLastRec();
@@ -433,6 +461,23 @@ SoRenderManagerRootSensor::notify(SoNotList * l)
           static_cast<SoNode *>(record->getBase()));
       }
     }
+  }
+  bool duplicate = false;
+  for (size_t i = 0; i < this->changedPaths.size(); ++i) {
+    const bool samePath = this->changedPath && this->changedPaths[i] &&
+      *this->changedPath == *this->changedPaths[i];
+    if (this->changedNode == this->changedNodes[i] &&
+        this->changedField == this->changedFields[i] && samePath) {
+      this->changedPath->unref();
+      this->changedPath = this->changedPaths[i];
+      duplicate = true;
+      break;
+    }
+  }
+  if (!duplicate) {
+    this->changedNodes.push_back(this->changedNode);
+    this->changedFields.push_back(this->changedField);
+    this->changedPaths.push_back(this->changedPath);
   }
   if (SoRenderManagerRootSensor::debug()) {
     l->print();

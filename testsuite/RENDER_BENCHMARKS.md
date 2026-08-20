@@ -172,10 +172,12 @@ Normal rendering leaves this intrusive timing disabled.
 deterministic edit sequence to an `N`-command scene. Unchanged frames and
 single placement, material, transparency, and geometry edits must avoid a full
 DrawList rebuild. A stable one-child visibility switch updates its retained
-commands in place while preserving command identity. Child insertion/removal
-currently requires one safe structural rebuild; its measurement asserts the
-resulting command count and plan rebuild explicitly. This keeps broad
-invalidation visible as a supported baseline for later improvements.
+commands in place while preserving command identity. The visibility workload
+also changes batches of 10, 100, and 1,000 switches when the scene is large
+enough, exposing both notification and command-update scaling. Duplicate switch
+notifications are coalesced; mixed, unsupported, and structural edits still
+fall back to a safe rebuild. Child insertion/removal remains the structural
+control and explicitly asserts the resulting command count and plan rebuild.
 
 The `shared_assembly_{expanded,sources,recipe}` workloads render the same
 deterministic collection of reusable part definitions and transformed

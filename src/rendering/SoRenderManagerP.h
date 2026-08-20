@@ -186,19 +186,18 @@ public:
 
 // *************************************************************************
 
-// This class inherits SoNodeSensor and overrides its notify() method
-// to provide a means of debugging notifications on the root node.
+// This class inherits SoNodeSensor and overrides its notify() method to retain
+// the bounded set of changed paths used by incremental DrawList updates. It
+// also provides a means of debugging notifications on the root node.
 //
 // Good for debugging cases when there are continuous redraws due to
 // scene graph changes we have no clue as to the source of.
 //
-// A sensor of this class is only made if the below debugging envvar
-// is set. Otherwise, and ordinary SoNodeSensor is used instead.
-
 class SoRenderManagerRootSensor : public SoNodeSensor {
   typedef SoNodeSensor inherited;
 
 public:
+  enum { MAX_RETAINED_NOTIFICATIONS = 4096 };
   SoRenderManagerRootSensor(SoSensorCB * func, void * data);
   virtual ~SoRenderManagerRootSensor();
 
@@ -207,6 +206,12 @@ public:
   SoField * getChangedField(void) const { return this->changedField; }
   const SoPath * getChangedPath(void) const { return this->changedPath; }
   unsigned int getNotificationCount(void) const { return this->notificationCount; }
+  unsigned int getRetainedNotificationCount(void) const {
+    return static_cast<unsigned int>(this->changedPaths.size());
+  }
+  SoNode * getChangedNode(unsigned int index) const;
+  SoField * getChangedField(unsigned int index) const;
+  const SoPath * getChangedPath(unsigned int index) const;
   void resetNotification(void);
   static SbBool debug(void);
 
@@ -216,6 +221,9 @@ private:
   SoField * changedField;
   SoPath * changedPath;
   unsigned int notificationCount;
+  std::vector<SoNode *> changedNodes;
+  std::vector<SoField *> changedFields;
+  std::vector<SoPath *> changedPaths;
 };
 
 // *************************************************************************

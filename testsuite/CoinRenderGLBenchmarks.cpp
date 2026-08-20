@@ -1183,7 +1183,7 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
   }
   glFinish();
 
-  const auto measure = [&](const char * name,
+  const auto measure = [&](const char * name, uint64_t expectedUpdates,
                            const std::function<void(int)> & mutate) {
     std::vector<double> cpuTimes;
     std::vector<double> constructionTimes;
@@ -1201,7 +1201,6 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
         std::exit(1);
       }
       const bool unchanged = std::string(name) == "incremental_unchanged";
-      const uint64_t expectedUpdates = unchanged ? 0 : 1;
       if (statistics.incrementalCommandUpdates != expectedUpdates ||
           statistics.retainedCommands != static_cast<uint64_t>(drawCount)) {
         std::cerr << "FAIL: " << name
@@ -1236,28 +1235,44 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
     results.push_back(result);
   };
 
-  measure("incremental_unchanged", [](int) {});
-  measure("incremental_transform_1", [&](int sample) {
+  measure("incremental_unchanged", 0, [](int) {});
+  measure("incremental_transform_1", 1, [&](int sample) {
     mutations.transforms[0]->translation.setValue(
       0.001f * static_cast<float>((sample & 1) ? 1 : -1), 0.0f, 0.0f);
   });
-  measure("incremental_material_1", [&](int sample) {
+  measure("incremental_material_1", 1, [&](int sample) {
     mutations.materials[0]->diffuseColor.set1Value(
       0, SbColor((sample & 1) ? 0.7f : 0.2f, 0.4f, 0.6f));
   });
-  measure("incremental_transparency_1", [&](int sample) {
+  measure("incremental_transparency_1", 1, [&](int sample) {
     mutations.materials[0]->transparency.set1Value(
       0, (sample & 1) ? 0.25f : 0.0f);
   });
-  measure("incremental_geometry_1", [&](int sample) {
+  measure("incremental_geometry_1", 1, [&](int sample) {
     mutations.coordinates[0]->point.set1Value(
       0, SbVec3f((sample & 1) ? -0.40f : -0.44f, -0.42f, 0.0f));
   });
 
   SoSwitch * visibility = mutations.visibilitySwitches[0];
-  measure("incremental_visibility_1", [&](int sample) {
+  measure("incremental_visibility_1", 1, [&](int sample) {
     visibility->whichChild = (sample & 1) ? SO_SWITCH_ALL : SO_SWITCH_NONE;
   });
+  const int visibilityBatchSizes[] = { 10, 100, 1000 };
+  for (size_t batchIndex = 0;
+       batchIndex < sizeof(visibilityBatchSizes) / sizeof(visibilityBatchSizes[0]);
+       ++batchIndex) {
+    const int batchSize = visibilityBatchSizes[batchIndex];
+    if (batchSize > drawCount) continue;
+    const std::string name =
+      "incremental_visibility_" + std::to_string(batchSize);
+    measure(name.c_str(), static_cast<uint64_t>(batchSize), [&](int sample) {
+      const int whichChild = (sample & 1) ? SO_SWITCH_ALL : SO_SWITCH_NONE;
+      for (int i = 0; i < batchSize; ++i) {
+        mutations.visibilitySwitches[static_cast<size_t>(i)]->whichChild =
+          whichChild;
+      }
+    });
+  }
 
   const auto measureInvalidating =
     [&](const char * name, const std::function<void(int)> & mutate,

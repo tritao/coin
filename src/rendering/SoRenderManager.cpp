@@ -1241,57 +1241,76 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   PRIVATE(this)->incrementalCommandUpdates = 0;
   SoRenderManagerRootSensor * rootSensor =
     static_cast<SoRenderManagerRootSensor *>(PRIVATE(this)->rootsensor);
-  const bool canPatchSingleStateChange = rootSensor &&
+  const unsigned int retainedNotificationCount = rootSensor
+    ? rootSensor->getRetainedNotificationCount() : 0;
+  const bool canPatchStateChanges = rootSensor &&
     PRIVATE(this)->drawListValid && !PRIVATE(this)->drawListDirty &&
     sceneRevisionChanged &&
-    rootSensor->getNotificationCount() == 1 &&
-    rootSensor->getChangedNode() && rootSensor->getChangedPath() &&
+    retainedNotificationCount > 0 &&
+    rootSensor->getNotificationCount() <=
+      SoRenderManagerRootSensor::MAX_RETAINED_NOTIFICATIONS &&
     PRIVATE(this)->afterMainSceneCallbacks.empty() &&
     PRIVATE(this)->drawListCameraRevision == cameraRevision &&
     PRIVATE(this)->drawListBackgroundRevision == backgroundRevision &&
     PRIVATE(this)->drawListForegroundRevision == foregroundRevision;
-  int updated = 0;
-  if (canPatchSingleStateChange &&
-      rootSensor->getChangedNode()->isOfType(SoTranslation::getClassTypeId()) &&
-      rootSensor->getChangedField() ==
-        &static_cast<SoTranslation *>(rootSensor->getChangedNode())->translation) {
-    updated = action->updateCommandMatricesForStatePath(
-      rootSensor->getChangedPath());
-  }
-  else if (canPatchSingleStateChange &&
-           rootSensor->getChangedNode()->isOfType(SoMaterial::getClassTypeId())) {
-    SoMaterial * material =
-      static_cast<SoMaterial *>(rootSensor->getChangedNode());
-    SoField * field = rootSensor->getChangedField();
-    const bool supportedMaterialField = field == &material->diffuseColor ||
-      field == &material->ambientColor || field == &material->emissiveColor ||
-      field == &material->specularColor || field == &material->shininess ||
-      field == &material->transparency;
-    if (supportedMaterialField) {
-      updated = action->updateCommandMaterialsForStatePath(
-        rootSensor->getChangedPath(), field == &material->transparency);
-    }
-  }
-  else if (canPatchSingleStateChange &&
-           rootSensor->getChangedNode()->isOfType(
-             SoCoordinate3::getClassTypeId()) &&
-           rootSensor->getChangedField() ==
-             &static_cast<SoCoordinate3 *>(
-               rootSensor->getChangedNode())->point) {
-    updated = action->updateCommandGeometryForStatePath(
-      rootSensor->getChangedPath());
-  }
-  else if (canPatchSingleStateChange &&
-           rootSensor->getChangedNode()->isOfType(SoSwitch::getClassTypeId())) {
-    SoSwitch * switchNode =
-      static_cast<SoSwitch *>(rootSensor->getChangedNode());
+  const auto patchSwitch = [action](SoNode * node, SoField * field,
+                                    const SoPath * path) {
+    if (!node || !path || !node->isOfType(SoSwitch::getClassTypeId())) return 0;
+    SoSwitch * switchNode = static_cast<SoSwitch *>(node);
     const int whichChild = switchNode->whichChild.getValue();
-    if (rootSensor->getChangedField() == &switchNode->whichChild &&
+    if (field == &switchNode->whichChild &&
         switchNode->getNumChildren() == 1 &&
         (whichChild == SO_SWITCH_ALL || whichChild == SO_SWITCH_NONE ||
          whichChild == 0)) {
-      updated = action->updateCommandVisibilityForSwitchPath(
-        rootSensor->getChangedPath(), whichChild != SO_SWITCH_NONE);
+      return action->updateCommandVisibilityForSwitchPath(
+        path, whichChild != SO_SWITCH_NONE);
+    }
+    return 0;
+  };
+  int updated = 0;
+  if (canPatchStateChanges && rootSensor->getNotificationCount() > 1) {
+    for (unsigned int i = 0; i < retainedNotificationCount; ++i) {
+      const int patched = patchSwitch(rootSensor->getChangedNode(i),
+                                      rootSensor->getChangedField(i),
+                                      rootSensor->getChangedPath(i));
+      if (patched == 0) {
+        updated = 0;
+        break;
+      }
+      updated += patched;
+    }
+  }
+  else if (canPatchStateChanges && rootSensor->getNotificationCount() == 1 &&
+           rootSensor->getChangedNode() &&
+           rootSensor->getChangedPath()) {
+    SoNode * changedNode = rootSensor->getChangedNode();
+    SoField * changedField = rootSensor->getChangedField();
+    const SoPath * changedPath = rootSensor->getChangedPath();
+    if (changedNode->isOfType(SoTranslation::getClassTypeId()) &&
+        changedField ==
+          &static_cast<SoTranslation *>(changedNode)->translation) {
+      updated = action->updateCommandMatricesForStatePath(changedPath);
+    }
+    else if (changedNode->isOfType(SoMaterial::getClassTypeId())) {
+      SoMaterial * material = static_cast<SoMaterial *>(changedNode);
+      const bool supportedMaterialField =
+        changedField == &material->diffuseColor ||
+        changedField == &material->ambientColor ||
+        changedField == &material->emissiveColor ||
+        changedField == &material->specularColor ||
+        changedField == &material->shininess ||
+        changedField == &material->transparency;
+      if (supportedMaterialField) {
+        updated = action->updateCommandMaterialsForStatePath(
+          changedPath, changedField == &material->transparency);
+      }
+    }
+    else if (changedNode->isOfType(SoCoordinate3::getClassTypeId()) &&
+             changedField == &static_cast<SoCoordinate3 *>(changedNode)->point) {
+      updated = action->updateCommandGeometryForStatePath(changedPath);
+    }
+    else {
+      updated = patchSwitch(changedNode, changedField, changedPath);
     }
   }
   if (updated > 0) {

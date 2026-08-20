@@ -382,11 +382,20 @@ runTest()
     const SoRenderStatistics shownStatistics =
       visibilityManager.getRenderStatistics();
     const std::vector<uint8_t> shownPixels = context.readPixels();
+    visibilitySwitch->whichChild = SO_SWITCH_NONE;
+    visibilitySwitch->whichChild = SO_SWITCH_ALL;
+    visibilityManager.render(TRUE, TRUE);
+    const SoRenderStatistics coalescedStatistics =
+      visibilityManager.getRenderStatistics();
+    const std::vector<uint8_t> coalescedPixels = context.readPixels();
     if (hiddenStatistics.drawListRebuilds != 0 ||
         hiddenStatistics.incrementalCommandUpdates != 2 ||
         shownStatistics.drawListRebuilds != 0 ||
         shownStatistics.incrementalCommandUpdates != 2 ||
-        hiddenPixels != 0 || shownPixels != visiblePixels) {
+        coalescedStatistics.drawListRebuilds != 0 ||
+        coalescedStatistics.incrementalCommandUpdates != 2 ||
+        hiddenPixels != 0 || shownPixels != visiblePixels ||
+        coalescedPixels != visiblePixels) {
       std::cerr << "FAIL: one-child switch did not preserve retained visibility"
                 << " (hide rebuilds=" << hiddenStatistics.drawListRebuilds
                 << ", hide updates=" << hiddenStatistics.incrementalCommandUpdates
