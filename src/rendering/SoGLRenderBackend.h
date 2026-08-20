@@ -367,8 +367,7 @@ private:
     uint32_t sourcePrimitiveCount = 0;
   };
   std::vector<SelectionBatchScratch> selectionBatches;
-  std::unordered_map<size_t, std::vector<size_t> >
-    selectionBatchesByCompatibility;
+  std::unordered_map<size_t, std::vector<size_t> > selectionBatchesByGeometry;
   size_t selectionBatchCount = 0;
 
   struct SubmissionCache {
@@ -528,8 +527,6 @@ private:
     const SoRenderCommand & command) const;
   InstanceCompatibility classifyInstanceCompatibility(
     const SoRenderCommand & first, const SoRenderCommand & next) const;
-  bool hasCompatibleInstanceState(const SoRenderCommand & first,
-                                  const SoRenderCommand & next) const;
   void drawInstancedCommands(const SoDrawList & drawlist,
                              const std::vector<uint32_t> & commandIndices,
                              const SoRenderParams & params);

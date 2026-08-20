@@ -161,11 +161,6 @@ frame-local, but backend-owned scratch vectors and geometry buckets retain
 their capacity. Each curve requires capacity growth during its cold sample and
 zero growth in subsequent stable or churned samples.
 
-Planning uses a compact retained-geometry and selection-mode key to find likely
-batches, followed by exact material and render-state comparison. It avoids
-repeating command-cache and eligibility lookups without caching compatibility
-across frames, where material mutations would otherwise require invalidation.
-
 The curves report total CPU and GPU selection time, selection planning time,
 planned batches, explicit and instanced entries, candidate count, projected
 primitive amplification, rejected batches, scratch-capacity growth events, and
