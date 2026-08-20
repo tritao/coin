@@ -236,6 +236,23 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		set_tests_properties(CoinRenderGLBenchmarksSmoke PROPERTIES
 			SKIP_RETURN_CODE 77
 			LABELS "benchmark;benchmark-gl;benchmark-render")
+		add_executable(CoinRenderWorkloadViewer CoinRenderWorkloadViewer.cpp)
+		target_sources(CoinRenderWorkloadViewer PRIVATE
+			support/RenderWorkloadViewerController.cpp)
+		target_link_libraries(CoinRenderWorkloadViewer
+			CoinRenderWorkloadSupport CoinGLTestSupport
+			CoinTestInternals Coin ${COIN_TARGET_LINK_LIBRARIES})
+		target_include_directories(CoinRenderWorkloadViewer PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR}/support
+			${PROJECT_SOURCE_DIR}/src
+			${PROJECT_SOURCE_DIR}/include
+			${PROJECT_BINARY_DIR}/include
+			${COIN_TARGET_INCLUDE_DIRECTORIES})
+		add_test(NAME CoinRenderWorkloadViewerSmoke
+			COMMAND CoinRenderWorkloadViewer --smoke)
+		set_tests_properties(CoinRenderWorkloadViewerSmoke PROPERTIES
+			SKIP_RETURN_CODE 77
+			LABELS "benchmark;benchmark-gl;benchmark-render;viewer-smoke")
 	endif()
 endif()
 
