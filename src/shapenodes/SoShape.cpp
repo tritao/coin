@@ -466,17 +466,14 @@ private:
           static_cast<uint32_t>(expectedPrimitiveCount * verticesPerPrimitive))) {
       return FALSE;
     }
-    const int primitiveCount = static_cast<int>(
-      resource->geometry.vertexCount / verticesPerPrimitive);
     this->geometryRecipeKey = sourceId;
     this->geometryCacheKey = sourceId;
     this->geometryRevision = revision;
     this->topology = topology;
-    for (int primitive = 0; primitive < primitiveCount; ++primitive) {
-      this->appendRange(
-        static_cast<size_t>(primitive) * verticesPerPrimitive,
-        verticesPerPrimitive, pickType, primitive);
-    }
+    // Reused sources have uniform sequential ranges. Record that compactly;
+    // emitCommands() materializes the command-owned metadata only once.
+    this->reusedPrimitiveWidth = verticesPerPrimitive;
+    this->reusedPickType = pickType;
     this->reusedGeometry = resource->geometry;
     this->reusedVertexCount = resource->geometry.vertexCount;
     return TRUE;
@@ -667,27 +664,41 @@ private:
       const size_t batchEnd = batch.first + batch.count;
       const size_t primitiveWidth = this->topology == SO_TOPOLOGY_TRIANGLES
         ? 3 : (this->topology == SO_TOPOLOGY_LINES ? 2 : 1);
-      command.pick.elementRanges.reserve(batch.count / primitiveWidth);
-      bool completePickRanges = true;
-      for (size_t rangeIndex = 0;
-           rangeIndex < this->primitiveRanges.size();
-           ++rangeIndex) {
-        const SoIRPrimitiveRange & range =
-          this->primitiveRanges[rangeIndex];
-        if (range.first < batch.first || range.first >= batchEnd) continue;
-        if (!range.valid || range.first + range.count > batchEnd) {
-          completePickRanges = false;
-          break;
-        }
-        SoRenderElementRange pickRange;
-        pickRange.type = range.type;
-        pickRange.elementIndex = range.elementIndex;
-        pickRange.drawStart = static_cast<uint32_t>(range.first - batch.first);
-        pickRange.drawCount = static_cast<uint32_t>(range.count);
-        command.pick.elementRanges.push_back(pickRange);
-      }
       const size_t expectedRanges = primitiveWidth == 0 ? 0
         : batch.count / primitiveWidth;
+      command.pick.elementRanges.reserve(expectedRanges);
+      bool completePickRanges = true;
+      if (this->reusedPrimitiveWidth != 0) {
+        const size_t firstPrimitive = batch.first / reusedPrimitiveWidth;
+        for (size_t primitive = 0; primitive < expectedRanges; ++primitive) {
+          SoRenderElementRange pickRange;
+          pickRange.type = this->reusedPickType;
+          pickRange.elementIndex = static_cast<int>(firstPrimitive + primitive);
+          pickRange.drawStart = static_cast<uint32_t>(
+            primitive * reusedPrimitiveWidth);
+          pickRange.drawCount = static_cast<uint32_t>(reusedPrimitiveWidth);
+          command.pick.elementRanges.push_back(pickRange);
+        }
+      }
+      else {
+        for (size_t rangeIndex = 0;
+             rangeIndex < this->primitiveRanges.size();
+             ++rangeIndex) {
+          const SoIRPrimitiveRange & range =
+            this->primitiveRanges[rangeIndex];
+          if (range.first < batch.first || range.first >= batchEnd) continue;
+          if (!range.valid || range.first + range.count > batchEnd) {
+            completePickRanges = false;
+            break;
+          }
+          SoRenderElementRange pickRange;
+          pickRange.type = range.type;
+          pickRange.elementIndex = range.elementIndex;
+          pickRange.drawStart = static_cast<uint32_t>(range.first - batch.first);
+          pickRange.drawCount = static_cast<uint32_t>(range.count);
+          command.pick.elementRanges.push_back(pickRange);
+        }
+      }
       if (!completePickRanges ||
           command.pick.elementRanges.size() != expectedRanges) {
         command.pick.elementRanges.clear();
@@ -789,6 +800,8 @@ private:
   uint64_t geometryRecipeKey = 0;
   SoGeometryDesc reusedGeometry;
   size_t reusedVertexCount = 0;
+  int reusedPrimitiveWidth = 0;
+  SoPickElementType reusedPickType = SO_PICK_OBJECT;
   // Most retained shapes emit one triangle, so these buffers normally remain
   // inline while still growing for larger or mixed-topology shapes.
   SbInlineVector<SoIRVertex, 4> vertices;
