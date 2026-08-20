@@ -979,6 +979,8 @@ SoGLRenderBackend::shutdown()
   this->pickTarget.generation = 0;
   this->pickTarget.ready = false;
   this->clearSelectionScratch();
+  this->instanceCommandScratch.clear();
+  this->instanceCommandScratch.shrink_to_fit();
   this->glue = nullptr;
   this->context = nullptr;
   this->setInitialized(FALSE);
@@ -1000,6 +1002,8 @@ SoGLRenderBackend::discard()
   this->pickPrograms = PickPrograms();
   this->selectionPrograms = PickPrograms();
   this->clearSelectionScratch();
+  this->instanceCommandScratch.clear();
+  this->instanceCommandScratch.shrink_to_fit();
   this->instanceBuffer = 0;
   this->pickTarget = PickTarget();
   this->glue = nullptr;
@@ -4904,7 +4908,9 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
       }
       const SoRenderCommand & first = drawlist.getCommand(
         static_cast<int>(operation.commandIndex));
-      std::vector<uint32_t> instanceCommands;
+      std::vector<uint32_t> & instanceCommands =
+        this->instanceCommandScratch;
+      instanceCommands.clear();
       const InstanceCommandClass commandClass =
         this->classifyInstanceCommand(first);
       if (commandClass == InstanceCommandClass::ELIGIBLE) {

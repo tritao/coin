@@ -383,6 +383,8 @@ private:
     bool cacheValid = false;
   } selectionPasses[2];
   std::vector<InstanceRecord> selectionInstanceRecords;
+  // Reused while discovering consecutive commands that can share one draw.
+  std::vector<uint32_t> instanceCommandScratch;
 
   struct SubmissionCache {
     // GL state is grouped by the code responsible for changing it. A group is
