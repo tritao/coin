@@ -2099,6 +2099,7 @@ bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
   SoDrawList drawlist;
   drawlist.reserve(commandCount);
   SoSelectionState selection;
+  selection.revision = 1;
   for (int commandIndex = 0; commandIndex < commandCount; ++commandIndex) {
     SoRenderCommand command;
     command.geometry.topology = SO_TOPOLOGY_TRIANGLES;
@@ -2164,6 +2165,7 @@ bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
       std::rotate(selection.selected.begin(),
                   selection.selected.begin() + rotation,
                   selection.selected.end());
+      ++selection.revision;
     }
     glBeginQuery(GL_TIME_ELAPSED, query);
     const Clock::time_point start = Clock::now();
@@ -2189,6 +2191,12 @@ bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
   const bool valid = pixelChecksum != 0 &&
     coldScratchGrowths > 0 &&
     (samples < 2 || statistics.selectionScratchCapacityGrowths == 0) &&
+    (samples < 2 || (selectionChurn
+      ? statistics.selectionPlanCacheMisses == 1 &&
+          statistics.selectionPlanCacheHits == 0
+      : statistics.selectionPlanCacheHits == 1 &&
+          statistics.selectionPlanCacheMisses == 0 &&
+          statistics.selectionPlanReusedEntries == commandCount)) &&
     statistics.selectedOverlayEntries == commandCount &&
     (shouldBatch
       ? statistics.selectionInstancedEntries == commandCount &&
@@ -2407,6 +2415,12 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.selectionScratchCapacityGrowths
         << ", \"selection_scratch_capacity_bytes\": "
         << r.renderStatistics.selectionScratchCapacityBytes
+        << ", \"selection_plan_cache_hits\": "
+        << r.renderStatistics.selectionPlanCacheHits
+        << ", \"selection_plan_cache_misses\": "
+        << r.renderStatistics.selectionPlanCacheMisses
+        << ", \"selection_plan_reused_entries\": "
+        << r.renderStatistics.selectionPlanReusedEntries
         << ", \"selection_primitive_candidates\": "
         << r.renderStatistics.selectionPrimitiveCandidates
         << ", \"selection_primitive_batches_rejected\": "

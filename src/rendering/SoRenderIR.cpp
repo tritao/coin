@@ -310,6 +310,7 @@ SoDrawList::clear()
   this->selection = SoSelectionState();
   this->pickLUT.clear();
   this->generation++;
+  this->commandContentRevision++;
   this->pickLUTGeneration = 0;
 }
 
@@ -317,6 +318,7 @@ void
 SoDrawList::truncate(int count)
 {
   if (count < static_cast<int>(this->commands.size())) {
+    this->commandContentRevision++;
     this->commands.resize(static_cast<size_t>(count));
     auto trimTargets = [count](std::vector<SoSelectionTarget> & targets) {
       targets.erase(
@@ -348,6 +350,7 @@ SoDrawList::reserve(int count)
 void
 SoDrawList::addCommand(const SoRenderCommand & cmd)
 {
+  this->commandContentRevision++;
   this->commands.push_back(cmd);
   this->pickLUT.clear();
   this->pickLUTGeneration = 0;
@@ -356,6 +359,7 @@ SoDrawList::addCommand(const SoRenderCommand & cmd)
 void
 SoDrawList::addCommand(SoRenderCommand && cmd)
 {
+  this->commandContentRevision++;
   this->commands.push_back(std::move(cmd));
   this->pickLUT.clear();
   this->pickLUTGeneration = 0;
@@ -364,6 +368,7 @@ SoDrawList::addCommand(SoRenderCommand && cmd)
 SoRenderCommand &
 SoDrawList::emplaceCommand()
 {
+  this->commandContentRevision++;
   this->pickLUT.clear();
   this->pickLUTGeneration = 0;
   this->commands.emplace_back();
@@ -391,6 +396,7 @@ SoDrawList::getGeometryResource(SoGeometryHandle handle)
       static_cast<size_t>(handle) > this->geometryResources.size()) {
     return nullptr;
   }
+  this->commandContentRevision++;
   return &this->geometryResources[static_cast<size_t>(handle - 1)];
 }
 
@@ -422,6 +428,7 @@ void
 SoDrawList::truncateGeometryResources(int count)
 {
   if (count >= 0 && count < static_cast<int>(this->geometryResources.size())) {
+    this->commandContentRevision++;
     this->geometryResources.resize(static_cast<size_t>(count));
   }
 }
@@ -444,6 +451,7 @@ SoDrawList::getNumCommands() const
 SoRenderCommand &
 SoDrawList::getCommand(int i)
 {
+  this->commandContentRevision++;
   this->pickLUT.clear();
   this->pickLUTGeneration = 0;
   return this->commands[static_cast<size_t>(i)];
@@ -540,6 +548,7 @@ SoDrawList::resolvePickId(uint32_t id) const
 SoRenderCommand *
 SoDrawList::begin()
 {
+  this->commandContentRevision++;
   this->pickLUT.clear();
   this->pickLUTGeneration = 0;
   return this->commands.empty() ? nullptr : this->commands.data();

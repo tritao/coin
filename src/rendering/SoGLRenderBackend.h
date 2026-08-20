@@ -366,9 +366,17 @@ private:
     bool primitiveSelection = false;
     uint32_t sourcePrimitiveCount = 0;
   };
-  std::vector<SelectionBatchScratch> selectionBatches;
-  std::unordered_map<size_t, std::vector<size_t> > selectionBatchesByGeometry;
-  size_t selectionBatchCount = 0;
+  struct SelectionPassScratch {
+    std::vector<SelectionBatchScratch> batches;
+    std::unordered_map<size_t, std::vector<size_t> > batchesByGeometry;
+    size_t batchCount = 0;
+    const SoDrawList * drawlist = nullptr;
+    uint32_t drawlistGeneration = 0;
+    uint64_t commandContentRevision = 0;
+    uint64_t selectionRevision = 0;
+    size_t targetCount = 0;
+    bool cacheValid = false;
+  } selectionPasses[2];
 
   struct SubmissionCache {
     // GL state is grouped by the code responsible for changing it. A group is

@@ -161,6 +161,17 @@ frame-local, but backend-owned scratch vectors and geometry buckets retain
 their capacity. Each curve requires capacity growth during its cold sample and
 zero growth in subsequent stable or churned samples.
 
+`SoSelectionState::revision` enables opt-in plan reuse. Revision zero always
+rebuilds. A nonzero unchanged revision reuses batch membership and primitive
+IDs while refreshing colors and reading current command transforms during
+submission. Callers increment the revision when target identity, order, or
+element type changes. The backend also requires the same DrawList identity,
+frame generation, and command-content revision; mutable command or geometry
+access therefore invalidates a cached plan even if selection itself is stable.
+Cache hits, misses, and reused entries are reported separately. The stable
+curves require a warm hit, while `_churn` increments the revision and requires
+a miss on every measured frame.
+
 The curves report total CPU and GPU selection time, selection planning time,
 planned batches, explicit and instanced entries, candidate count, projected
 primitive amplification, rejected batches, scratch-capacity growth events, and

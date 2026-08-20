@@ -772,6 +772,7 @@ runTest()
     drawlist.addCommand(middleSelectionCommand);
     drawlist.addCommand(rightSelectionCommand);
     SoSelectionState interleavedSelection;
+    interleavedSelection.revision = 42;
     leftTarget.commandIndex = 0;
     interleavedSelection.selected.push_back(leftTarget);
     SoSelectionTarget middleTarget = leftTarget;
@@ -798,8 +799,20 @@ runTest()
     }
     if (!render(backend, drawlist, params) ||
         !backend.renderSelection(drawlist, interleavedSelection, params) ||
-        backend.getRenderStatistics().selectionScratchCapacityGrowths != 0) {
+        backend.getRenderStatistics().selectionScratchCapacityGrowths != 0 ||
+        backend.getRenderStatistics().selectionPlanCacheHits != 1) {
       std::cerr << "FAIL: warm selection planning grew scratch capacity"
+                << std::endl;
+      result = 1;
+    }
+    drawlist.getCommand(0).material.ambient = SbVec4f(
+      0.2f, 0.1f, 0.0f, 1.0f);
+    if (!render(backend, drawlist, params) ||
+        !backend.renderSelection(drawlist, interleavedSelection, params) ||
+        backend.getRenderStatistics().selectionPlanCacheMisses != 1 ||
+        backend.getRenderStatistics().selectionPlanCacheHits != 0 ||
+        backend.getRenderStatistics().selectionOverlayDrawCalls != 3) {
+      std::cerr << "FAIL: command mutation reused a stale selection plan"
                 << std::endl;
       result = 1;
     }

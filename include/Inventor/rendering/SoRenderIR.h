@@ -748,6 +748,11 @@ struct SoRenderStatistics {
   // no growth after their high-water mark has been observed.
   uint64_t selectionScratchCapacityGrowths = 0;
   uint64_t selectionScratchCapacityBytes = 0;
+  // Nonzero selection revisions may reuse batch membership while transforms
+  // and colors remain frame-local submission data.
+  uint64_t selectionPlanCacheHits = 0;
+  uint64_t selectionPlanCacheMisses = 0;
+  uint64_t selectionPlanReusedEntries = 0;
   // Primitive-selector batches redraw the source geometry for every instance.
   // These counters expose the candidate entries, projected primitive work,
   // and batches redirected to explicit range draws by the amplification cap.
@@ -800,6 +805,9 @@ struct SoSelectionTarget {
   \brief Frame-level selected and highlighted retained targets.
 */
 struct SoSelectionState {
+  //! Optional caller-managed revision. Zero disables selection-plan caching.
+  //! Change this value whenever target identity, order, or type changes.
+  uint64_t revision = 0;
   std::vector<SoSelectionTarget> selected;
   std::vector<SoSelectionTarget> highlighted;
 };
@@ -867,6 +875,8 @@ public:
 
   //! Return the generation number incremented when clear() starts a new frame.
   uint32_t getGeneration() const { return generation; }
+  //! Changes whenever mutable command access may have altered batch semantics.
+  uint64_t getCommandContentRevision() const { return commandContentRevision; }
 
   void addCommand(const SoRenderCommand & cmd);
   void addCommand(SoRenderCommand && cmd);
@@ -937,6 +947,7 @@ private:
   SoSelectionState selection;
   mutable std::vector<SoPickLUTEntry> pickLUT;
   uint32_t generation = 0;
+  uint64_t commandContentRevision = 0;
   mutable uint32_t pickLUTGeneration = 0;
 };
 

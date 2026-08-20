@@ -884,11 +884,14 @@ SoGLRenderBackend::invalidateCache()
 void
 SoGLRenderBackend::clearSelectionScratch()
 {
-  this->selectionBatches.clear();
-  this->selectionBatches.shrink_to_fit();
-  this->selectionBatchesByGeometry.clear();
-  this->selectionBatchesByGeometry.rehash(0);
-  this->selectionBatchCount = 0;
+  for (SelectionPassScratch & pass : this->selectionPasses) {
+    pass.batches.clear();
+    pass.batches.shrink_to_fit();
+    pass.batchesByGeometry.clear();
+    pass.batchesByGeometry.rehash(0);
+    pass.batchCount = 0;
+    pass.cacheValid = false;
+  }
 }
 
 void
@@ -4616,138 +4619,170 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
 
   const auto drawTargets = [&](const std::vector<SoSelectionTarget> & targets,
                                const bool highlighted) {
+    if (targets.empty()) return;
     const auto planningStart = std::chrono::steady_clock::now();
+    SelectionPassScratch & pass = this->selectionPasses[highlighted ? 1 : 0];
     uint64_t & entryCount = highlighted
       ? this->submissionCache.statistics.highlightedOverlayEntries
       : this->submissionCache.statistics.selectedOverlayEntries;
     // Selected and highlighted overlays are separate passes. Within either
     // pass, group compatible targets in first-seen order so interleaved
     // geometry recovers the same batches as the main render plan.
-    for (SelectionBatchScratch & batch : this->selectionBatches) {
-      batch.instances.clear();
+    const bool cacheEnabled = selection.revision != 0;
+    const bool cacheHit = cacheEnabled && pass.cacheValid &&
+      pass.drawlist == &drawlist &&
+      pass.drawlistGeneration == drawlist.getGeneration() &&
+      pass.commandContentRevision == drawlist.getCommandContentRevision() &&
+      pass.selectionRevision == selection.revision &&
+      pass.targetCount == targets.size();
+    if (cacheHit) {
+      ++this->submissionCache.statistics.selectionPlanCacheHits;
+      this->submissionCache.statistics.selectionPlanReusedEntries +=
+        targets.size();
+      // Colors remain frame-local even though target membership is reused.
+      for (size_t batchIndex = 0; batchIndex < pass.batchCount; ++batchIndex) {
+        for (SelectionInstanceScratch & instance :
+             pass.batches[batchIndex].instances) {
+          instance.color = targets[instance.targetIndex].color;
+        }
+      }
     }
-    for (auto & item : this->selectionBatchesByGeometry) {
-      item.second.clear();
-    }
-    this->selectionBatchCount = 0;
-    const auto acquireBatch = [&]() {
-      const size_t batchIndex = this->selectionBatchCount++;
-      if (batchIndex == this->selectionBatches.size()) {
-        const size_t oldCapacity = this->selectionBatches.capacity();
-        this->selectionBatches.emplace_back();
-        if (this->selectionBatches.capacity() != oldCapacity) {
+    else {
+      if (cacheEnabled) {
+        ++this->submissionCache.statistics.selectionPlanCacheMisses;
+      }
+      for (SelectionBatchScratch & batch : pass.batches) {
+        batch.instances.clear();
+      }
+      for (auto & item : pass.batchesByGeometry) {
+        item.second.clear();
+      }
+      pass.batchCount = 0;
+      const auto acquireBatch = [&]() {
+        const size_t batchIndex = pass.batchCount++;
+        if (batchIndex == pass.batches.size()) {
+          const size_t oldCapacity = pass.batches.capacity();
+          pass.batches.emplace_back();
+          if (pass.batches.capacity() != oldCapacity) {
+            ++this->submissionCache.statistics
+              .selectionScratchCapacityGrowths;
+          }
+        }
+        SelectionBatchScratch & batch = pass.batches[batchIndex];
+        batch.primitiveSelection = false;
+        batch.sourcePrimitiveCount = 0;
+        return batchIndex;
+      };
+      const auto appendInstance = [&](SelectionBatchScratch & batch,
+                                      const size_t targetIndex,
+                                      const uint32_t commandIndex,
+                                      const SbColor4f & color,
+                                      const uint32_t primitiveId) {
+        const size_t oldCapacity = batch.instances.capacity();
+        SelectionInstanceScratch instance;
+        instance.targetIndex = targetIndex;
+        instance.commandIndex = commandIndex;
+        instance.color = color;
+        instance.primitiveId = primitiveId;
+        batch.instances.push_back(instance);
+        if (batch.instances.capacity() != oldCapacity) {
           ++this->submissionCache.statistics.selectionScratchCapacityGrowths;
         }
-      }
-      SelectionBatchScratch & batch = this->selectionBatches[batchIndex];
-      batch.primitiveSelection = false;
-      batch.sourcePrimitiveCount = 0;
-      return batchIndex;
-    };
-    const auto appendInstance = [&](SelectionBatchScratch & batch,
-                                    const size_t targetIndex,
-                                    const uint32_t commandIndex,
-                                    const SbColor4f & color,
-                                    const uint32_t primitiveId) {
-      const size_t oldCapacity = batch.instances.capacity();
-      SelectionInstanceScratch instance;
-      instance.targetIndex = targetIndex;
-      instance.commandIndex = commandIndex;
-      instance.color = color;
-      instance.primitiveId = primitiveId;
-      batch.instances.push_back(instance);
-      if (batch.instances.capacity() != oldCapacity) {
-        ++this->submissionCache.statistics.selectionScratchCapacityGrowths;
-      }
-    };
-    for (size_t targetIndex = 0; targetIndex < targets.size(); ++targetIndex) {
-      const SoSelectionTarget & target = targets[targetIndex];
-      if (target.commandIndex < 0 ||
-          target.commandIndex >= drawlist.getNumCommands()) {
-        SelectionBatchScratch & batch =
-          this->selectionBatches[acquireBatch()];
-        appendInstance(batch, targetIndex, 0, target.color, 0);
-        continue;
-      }
-      const SoRenderCommand & command = drawlist.getCommand(
-        target.commandIndex);
-      const bool wholeCommand = target.type == SO_PICK_OBJECT &&
-        target.elementIndex < 0;
-      uint32_t primitiveId = 0;
-      const bool primitiveSelection = !wholeCommand &&
-        selectionPrimitiveId(command, target, primitiveId);
-      const auto cacheIt = this->commandToCache.find(&command);
-      if (!this->canInstanceCommand(command) ||
-          (!wholeCommand && !primitiveSelection) ||
-          cacheIt == this->commandToCache.end()) {
-        SelectionBatchScratch & batch =
-          this->selectionBatches[acquireBatch()];
-        appendInstance(batch, targetIndex,
-                       static_cast<uint32_t>(target.commandIndex),
-                       target.color, primitiveId);
-        continue;
-      }
-
-      const size_t geometryIndex = cacheIt->second;
-      auto geometryIt = this->selectionBatchesByGeometry.find(geometryIndex);
-      if (geometryIt == this->selectionBatchesByGeometry.end()) {
-        geometryIt = this->selectionBatchesByGeometry.emplace(
-          geometryIndex, std::vector<size_t>()).first;
-        ++this->submissionCache.statistics.selectionScratchCapacityGrowths;
-      }
-      std::vector<size_t> & geometryBatches = geometryIt->second;
-      size_t batchIndex = this->selectionBatchCount;
-      for (const size_t candidate : geometryBatches) {
-        SelectionBatchScratch & batch = this->selectionBatches[candidate];
-        const SoRenderCommand & first = drawlist.getCommand(
-          static_cast<int>(batch.instances.front().commandIndex));
-        if (batch.primitiveSelection == primitiveSelection &&
-            this->canInstanceTogether(first, command)) {
-          batchIndex = candidate;
-          break;
+      };
+      for (size_t targetIndex = 0; targetIndex < targets.size(); ++targetIndex) {
+        const SoSelectionTarget & target = targets[targetIndex];
+        if (target.commandIndex < 0 ||
+            target.commandIndex >= drawlist.getNumCommands()) {
+          SelectionBatchScratch & batch = pass.batches[acquireBatch()];
+          appendInstance(batch, targetIndex, 0, target.color, 0);
+          continue;
         }
-      }
-      if (batchIndex == this->selectionBatchCount) {
-        batchIndex = acquireBatch();
-        SelectionBatchScratch & batch = this->selectionBatches[batchIndex];
-        batch.primitiveSelection = primitiveSelection;
-        batch.sourcePrimitiveCount = primitiveSelection
-          ? commandPrimitiveCount(command) : 0;
-        const size_t oldCapacity = geometryBatches.capacity();
-        geometryBatches.push_back(batchIndex);
-        if (geometryBatches.capacity() != oldCapacity) {
+        const SoRenderCommand & command = drawlist.getCommand(
+          target.commandIndex);
+        const bool wholeCommand = target.type == SO_PICK_OBJECT &&
+          target.elementIndex < 0;
+        uint32_t primitiveId = 0;
+        const bool primitiveSelection = !wholeCommand &&
+          selectionPrimitiveId(command, target, primitiveId);
+        const auto cacheIt = this->commandToCache.find(&command);
+        if (!this->canInstanceCommand(command) ||
+            (!wholeCommand && !primitiveSelection) ||
+            cacheIt == this->commandToCache.end()) {
+          SelectionBatchScratch & batch = pass.batches[acquireBatch()];
+          appendInstance(batch, targetIndex,
+                         static_cast<uint32_t>(target.commandIndex),
+                         target.color, primitiveId);
+          continue;
+        }
+
+        const size_t geometryIndex = cacheIt->second;
+        auto geometryIt = pass.batchesByGeometry.find(geometryIndex);
+        if (geometryIt == pass.batchesByGeometry.end()) {
+          geometryIt = pass.batchesByGeometry.emplace(
+            geometryIndex, std::vector<size_t>()).first;
           ++this->submissionCache.statistics.selectionScratchCapacityGrowths;
         }
+        std::vector<size_t> & geometryBatches = geometryIt->second;
+        size_t batchIndex = pass.batchCount;
+        for (const size_t candidate : geometryBatches) {
+          SelectionBatchScratch & batch = pass.batches[candidate];
+          const SoRenderCommand & first = drawlist.getCommand(
+            static_cast<int>(batch.instances.front().commandIndex));
+          if (batch.primitiveSelection == primitiveSelection &&
+              this->canInstanceTogether(first, command)) {
+            batchIndex = candidate;
+            break;
+          }
+        }
+        if (batchIndex == pass.batchCount) {
+          batchIndex = acquireBatch();
+          SelectionBatchScratch & batch = pass.batches[batchIndex];
+          batch.primitiveSelection = primitiveSelection;
+          batch.sourcePrimitiveCount = primitiveSelection
+            ? commandPrimitiveCount(command) : 0;
+          const size_t oldCapacity = geometryBatches.capacity();
+          geometryBatches.push_back(batchIndex);
+          if (geometryBatches.capacity() != oldCapacity) {
+            ++this->submissionCache.statistics
+              .selectionScratchCapacityGrowths;
+          }
+        }
+        appendInstance(pass.batches[batchIndex], targetIndex,
+                       static_cast<uint32_t>(target.commandIndex), target.color,
+                       primitiveId);
       }
-      appendInstance(this->selectionBatches[batchIndex], targetIndex,
-                     static_cast<uint32_t>(target.commandIndex), target.color,
-                     primitiveId);
+      pass.drawlist = &drawlist;
+      pass.drawlistGeneration = drawlist.getGeneration();
+      pass.commandContentRevision = drawlist.getCommandContentRevision();
+      pass.selectionRevision = selection.revision;
+      pass.targetCount = targets.size();
+      pass.cacheValid = cacheEnabled;
     }
 
-    uint64_t scratchBytes = this->selectionBatches.capacity() *
+    uint64_t scratchBytes = pass.batches.capacity() *
       sizeof(SelectionBatchScratch);
-    for (const SelectionBatchScratch & batch : this->selectionBatches) {
+    for (const SelectionBatchScratch & batch : pass.batches) {
       scratchBytes += batch.instances.capacity() *
         sizeof(SelectionInstanceScratch);
     }
-    scratchBytes += this->selectionBatchesByGeometry.bucket_count() *
+    scratchBytes += pass.batchesByGeometry.bucket_count() *
       sizeof(void *);
-    for (const auto & item : this->selectionBatchesByGeometry) {
+    for (const auto & item : pass.batchesByGeometry) {
       scratchBytes += item.second.capacity() * sizeof(size_t);
     }
     this->submissionCache.statistics.selectionScratchCapacityBytes =
       std::max(this->submissionCache.statistics.selectionScratchCapacityBytes,
                scratchBytes);
     this->submissionCache.statistics.selectionPlannedBatches +=
-      this->selectionBatchCount;
+      pass.batchCount;
     this->submissionCache.statistics.selectionPlanningNanoseconds +=
       static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
         std::chrono::steady_clock::now() - planningStart).count());
 
     for (size_t batchIndex = 0;
-         batchIndex < this->selectionBatchCount; ++batchIndex) {
+         batchIndex < pass.batchCount; ++batchIndex) {
       const SelectionBatchScratch & batch =
-        this->selectionBatches[batchIndex];
+        pass.batches[batchIndex];
       const bool batchCandidate = batch.instances.size() > 1;
       uint64_t primitiveAmplification = 0;
       if (batchCandidate && batch.primitiveSelection) {
