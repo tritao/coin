@@ -41,6 +41,7 @@
 #endif // !SO_END_FACE_INDEX
 
 class SoIndexedFaceSetP;
+class SoIRRenderAction;
 
 class COIN_DLL_API SoIndexedFaceSet : public SoIndexedShape {
   typedef SoIndexedShape inherited;
@@ -64,6 +65,7 @@ public:
 protected:
   virtual ~SoIndexedFaceSet();
 
+  SbBool generateRetainedPrimitives(SoIRRenderAction * action) override;
   void generatePrimitives(SoAction * action) override;
 
 private:

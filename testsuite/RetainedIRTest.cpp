@@ -3,8 +3,11 @@
 #include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoFaceSet.h>
+#include <Inventor/nodes/SoIndexedFaceSet.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoMaterialBinding.h>
+#include <Inventor/nodes/SoNormal.h>
+#include <Inventor/nodes/SoNormalBinding.h>
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoShaderProgram.h>
 
@@ -222,6 +225,45 @@ runTest()
     result = 1;
   }
   recipeRoot->unref();
+
+  SoSeparator * indexedRecipeRoot = new SoSeparator;
+  indexedRecipeRoot->ref();
+  SoCoordinate3 * indexedCoordinates = new SoCoordinate3;
+  indexedCoordinates->point.setValues(0, 3, triangle);
+  SoNormal * indexedNormals = new SoNormal;
+  indexedNormals->vector.set1Value(0, SbVec3f(0.0f, 0.0f, 1.0f));
+  SoNormalBinding * indexedNormalBinding = new SoNormalBinding;
+  indexedNormalBinding->value = SoNormalBinding::OVERALL;
+  SoIndexedFaceSet * indexedFace = new SoIndexedFaceSet;
+  const int32_t indexedTriangle[] = { 0, 1, 2, -1 };
+  indexedFace->coordIndex.setValues(0, 4, indexedTriangle);
+  indexedRecipeRoot->addChild(indexedCoordinates);
+  indexedRecipeRoot->addChild(indexedNormals);
+  indexedRecipeRoot->addChild(indexedNormalBinding);
+  indexedRecipeRoot->addChild(indexedFace);
+  indexedRecipeRoot->addChild(indexedFace);
+  action.apply(indexedRecipeRoot);
+  if (action.getDrawList().getNumCommands() != 2 ||
+      action.getDrawList().getNumGeometryResources() != 1 ||
+      action.getDrawList().getCommand(0).geometryHandle !=
+        action.getDrawList().getCommand(1).geometryHandle) {
+    std::cerr << "FAIL: repeated indexed geometry did not share one resource"
+              << std::endl;
+    result = 1;
+  }
+  const uint64_t indexedRevision =
+    action.getDrawList().getCommand(0).geometry.revision;
+  indexedCoordinates->point.set1Value(0, SbVec3f(-1.25f, -1.0f, 0.0f));
+  action.apply(indexedRecipeRoot);
+  if (action.getDrawList().getNumGeometryResources() != 1 ||
+      action.getDrawList().getCommand(0).geometry.revision == indexedRevision ||
+      action.getDrawList().getCommand(0).geometryHandle !=
+        action.getDrawList().getCommand(1).geometryHandle) {
+    std::cerr << "FAIL: retained indexed geometry source mutation was stale"
+              << std::endl;
+    result = 1;
+  }
+  indexedRecipeRoot->unref();
   action.apply(root);
 
   SoRenderCommand command;

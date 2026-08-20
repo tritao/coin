@@ -113,6 +113,10 @@ public:
                                           uint64_t revision,
                                           int faceCount)
     { return FALSE; }
+    //! Reuse a previously registered triangle source without rescanning it.
+    virtual SbBool reuseRetainedTriangles(uint64_t sourceId,
+                                          uint64_t revision)
+    { return FALSE; }
   };
 
   static void initClass(void);

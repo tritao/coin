@@ -399,24 +399,13 @@ public:
     this->geometryRecipeKey = sourceId;
     this->geometryCacheKey = sourceId;
     this->geometryRevision = revision;
-    const SoGeometryHandle handle =
-      this->action->findGeometrySource(
-        mixIRCacheHash(sourceId, static_cast<uint64_t>(1)), revision);
-    if (handle == SO_INVALID_GEOMETRY_HANDLE) return FALSE;
-    const SoGeometryResource * resource =
-      this->action->getDrawList().getGeometryResource(handle);
-    if (!resource || faceCount <= 0 ||
-        resource->geometry.vertexCount != static_cast<uint32_t>(faceCount * 3)) {
-      return FALSE;
-    }
-    this->topology = SO_TOPOLOGY_TRIANGLES;
-    for (int face = 0; face < faceCount; ++face) {
-      this->appendRange(static_cast<size_t>(face) * 3, 3,
-                        SO_PICK_FACE, face);
-    }
-    this->reusedGeometry = resource->geometry;
-    this->reusedVertexCount = static_cast<size_t>(faceCount) * 3;
-    return TRUE;
+    return this->reuseTriangleGeometry(sourceId, revision, faceCount);
+  }
+
+  SbBool reuseRetainedTriangles(uint64_t sourceId,
+                                uint64_t revision) override
+  {
+    return this->reuseTriangleGeometry(sourceId, revision, 0);
   }
 
   void finalize()
@@ -431,6 +420,34 @@ public:
   }
 
 private:
+  SbBool reuseTriangleGeometry(uint64_t sourceId, uint64_t revision,
+                               int expectedFaceCount)
+  {
+    const SoGeometryHandle handle = this->action->findGeometrySource(
+      mixIRCacheHash(sourceId, static_cast<uint64_t>(1)), revision);
+    if (handle == SO_INVALID_GEOMETRY_HANDLE) return FALSE;
+    const SoGeometryResource * resource =
+      this->action->getDrawList().getGeometryResource(handle);
+    if (!resource || resource->geometry.vertexCount == 0 ||
+        resource->geometry.vertexCount % 3 != 0 ||
+        (expectedFaceCount > 0 && resource->geometry.vertexCount !=
+          static_cast<uint32_t>(expectedFaceCount * 3))) {
+      return FALSE;
+    }
+    const int faceCount = static_cast<int>(resource->geometry.vertexCount / 3);
+    this->geometryRecipeKey = sourceId;
+    this->geometryCacheKey = sourceId;
+    this->geometryRevision = revision;
+    this->topology = SO_TOPOLOGY_TRIANGLES;
+    for (int face = 0; face < faceCount; ++face) {
+      this->appendRange(static_cast<size_t>(face) * 3, 3,
+                        SO_PICK_FACE, face);
+    }
+    this->reusedGeometry = resource->geometry;
+    this->reusedVertexCount = resource->geometry.vertexCount;
+    return TRUE;
+  }
+
   void flushRun()
   {
     if (this->vertices.empty()) return;
