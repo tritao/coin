@@ -1,4 +1,5 @@
 #include "support/GLTestContext.h"
+#include "support/RenderWorkloads.h"
 
 #include <Inventor/SoDB.h>
 #include <Inventor/SoPickedPoint.h>
@@ -33,9 +34,8 @@
 
 namespace {
 
+using namespace coin_test;
 using Clock = std::chrono::steady_clock;
-
-enum class WorkloadKind { ManyDraws, MaterialChurn, Transparency, DensePicking };
 
 struct Options {
   bool smoke = false;
@@ -83,81 +83,6 @@ double percentile(std::vector<double> values, double fraction)
   return values[index];
 }
 
-const char * workloadName(WorkloadKind kind)
-{
-  switch (kind) {
-  case WorkloadKind::ManyDraws: return "many_small_draws";
-  case WorkloadKind::MaterialChurn: return "many_material_changes";
-  case WorkloadKind::Transparency: return "transparent_sorting";
-  case WorkloadKind::DensePicking: return "single_pick_dense_scene";
-  }
-  return "unknown";
-}
-
-SoSeparator * makeScene(WorkloadKind kind, int drawCount,
-                        SoOrthographicCamera *& camera)
-{
-  SoSeparator * root = new SoSeparator;
-  root->ref();
-  root->renderCaching = SoSeparator::OFF;
-  camera = new SoOrthographicCamera;
-  camera->ref();
-  camera->position.setValue(0.0f, 0.0f, 10.0f);
-  camera->height = 24.0f;
-  camera->nearDistance = 0.1f;
-  camera->farDistance = 100.0f;
-  camera->focalDistance = 10.0f;
-  SoLightModel * lightModel = new SoLightModel;
-  lightModel->model = SoLightModel::BASE_COLOR;
-  root->addChild(lightModel);
-  SoMaterial * defaultMaterial = new SoMaterial;
-  defaultMaterial->diffuseColor.setValue(0.3f, 0.7f, 1.0f);
-  root->addChild(defaultMaterial);
-
-  const SbVec3f triangle[] = {
-    SbVec3f(-0.42f, -0.42f, 0.0f),
-    SbVec3f(0.42f, -0.42f, 0.0f),
-    SbVec3f(0.0f, 0.42f, 0.0f)
-  };
-  const int columns = static_cast<int>(std::ceil(std::sqrt(
-    static_cast<double>(drawCount))));
-  const int rows = (drawCount + columns - 1) / columns;
-  for (int i = 0; i < drawCount; ++i) {
-    SoSeparator * draw = new SoSeparator;
-    draw->renderCaching = SoSeparator::OFF;
-    SoTranslation * translation = new SoTranslation;
-    const float x = kind == WorkloadKind::DensePicking ? 0.0f :
-      (static_cast<float>(i % columns) -
-       static_cast<float>(columns - 1) * 0.5f) * 1.05f;
-    const float y = kind == WorkloadKind::DensePicking ? 0.0f :
-      (static_cast<float>(i / columns) -
-       static_cast<float>(rows - 1) * 0.5f) * 1.05f;
-    const float z = kind == WorkloadKind::Transparency
-      ? -static_cast<float>(i % 32) * 0.01f
-      : (kind == WorkloadKind::DensePicking
-         ? -static_cast<float>(i) * 0.001f : 0.0f);
-    translation->translation.setValue(x, y, z);
-    draw->addChild(translation);
-
-    if (kind != WorkloadKind::ManyDraws) {
-      SoMaterial * material = new SoMaterial;
-      const float value = static_cast<float>((i * 17) % 101) / 100.0f;
-      material->diffuseColor.setValue(0.2f + value * 0.8f,
-                                      0.9f - value * 0.7f,
-                                      0.3f + value * 0.5f);
-      if (kind == WorkloadKind::Transparency) material->transparency = 0.35f;
-      draw->addChild(material);
-    }
-    SoCoordinate3 * coordinates = new SoCoordinate3;
-    coordinates->point.setValues(0, 3, triangle);
-    SoFaceSet * face = new SoFaceSet;
-    face->numVertices.set1Value(0, 3);
-    draw->addChild(coordinates);
-    draw->addChild(face);
-    root->addChild(draw);
-  }
-  return root;
-}
 
 uint64_t checksumPixels(const std::vector<uint8_t> & pixels)
 {

@@ -406,9 +406,18 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 			LABELS legacygl)
 	endif()
 	if(COIN_BUILD_BENCHMARKS)
+		add_library(CoinRenderWorkloadSupport STATIC
+			support/RenderWorkloads.cpp)
+		target_link_libraries(CoinRenderWorkloadSupport PRIVATE Coin)
+		target_include_directories(CoinRenderWorkloadSupport PUBLIC
+			${CMAKE_CURRENT_SOURCE_DIR}/support
+			${PROJECT_SOURCE_DIR}/include
+			${PROJECT_BINARY_DIR}/include
+			${COIN_TARGET_INCLUDE_DIRECTORIES})
 		add_executable(CoinRenderGLBenchmarks CoinRenderGLBenchmarks.cpp)
 		target_link_libraries(CoinRenderGLBenchmarks PRIVATE
-			CoinGLTestSupport CoinPrivateTestHeaders Coin
+			CoinRenderWorkloadSupport CoinGLTestSupport
+			CoinPrivateTestHeaders Coin
 			${COIN_TARGET_LINK_LIBRARIES})
 		target_include_directories(CoinRenderGLBenchmarks PRIVATE
 			${CMAKE_CURRENT_SOURCE_DIR}/support
