@@ -1470,8 +1470,37 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   const SoRenderPlan & plan = resolveRetainedRenderPlan(
     PRIVATE(this), drawlist, params.viewMatrix);
 
+  const SoSelectionState & managerSelection = PRIVATE(this)->selectionState;
+  const SoSelectionState & producerSelection = drawlist.getSelectionState();
+  const bool managerHasSelection = !managerSelection.selected.empty() ||
+    !managerSelection.highlighted.empty();
+  const bool producerHasSelection = !producerSelection.selected.empty() ||
+    !producerSelection.highlighted.empty();
+  SoSelectionState combinedSelection;
+  const SoSelectionState * effectiveSelection = &managerSelection;
+  if (!managerHasSelection && producerHasSelection) {
+    effectiveSelection = &producerSelection;
+  }
+  else if (managerHasSelection && producerHasSelection) {
+    combinedSelection = managerSelection;
+    combinedSelection.selected.insert(combinedSelection.selected.end(),
+      producerSelection.selected.begin(), producerSelection.selected.end());
+    combinedSelection.highlighted.insert(combinedSelection.highlighted.end(),
+      producerSelection.highlighted.begin(),
+      producerSelection.highlighted.end());
+    // A zero revision disables selection-plan reuse. Preserve that contract
+    // unless both independently owned inputs provide stable revisions.
+    combinedSelection.revision = managerSelection.revision != 0 &&
+        producerSelection.revision != 0
+      ? managerSelection.revision ^
+        (producerSelection.revision + UINT64_C(0x9e3779b97f4a7c15) +
+         (managerSelection.revision << 6) +
+         (managerSelection.revision >> 2))
+      : 0;
+    effectiveSelection = &combinedSelection;
+  }
   PRIVATE(this)->renderBackend->render(
-    drawlist, plan, params, &PRIVATE(this)->selectionState);
+    drawlist, plan, params, effectiveSelection);
   if (rebuildDrawList) {
     PRIVATE(this)->pickTargetDirty = TRUE;
     PRIVATE(this)->pickTargetGeneration = 0;
