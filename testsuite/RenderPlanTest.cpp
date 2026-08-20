@@ -66,6 +66,35 @@ main()
           drawlist.getCommand(2).objectId == thirdId,
           "planning modified the retained DrawList");
 
+  SoDrawList groupedDrawList;
+  SoRenderCommand surfaceA1;
+  SoRenderCommand edge;
+  SoRenderCommand surfaceB;
+  SoRenderCommand surfaceA2;
+  surfaceA1.geometry.topology = SO_TOPOLOGY_TRIANGLES;
+  surfaceA1.geometry.resourceKey = 10;
+  surfaceA2.geometry = surfaceA1.geometry;
+  surfaceB.geometry.topology = SO_TOPOLOGY_TRIANGLES;
+  surfaceB.geometry.resourceKey = 20;
+  edge.geometry.topology = SO_TOPOLOGY_LINES;
+  edge.geometry.resourceKey = 5;
+  groupedDrawList.addCommand(surfaceA1);
+  groupedDrawList.addCommand(edge);
+  groupedDrawList.addCommand(surfaceB);
+  groupedDrawList.addCommand(surfaceA2);
+  planner.build(groupedDrawList, frameViewMatrix, plan);
+  std::vector<uint32_t> groupedDraws;
+  for (int i = 0; i < plan.getNumOperations(); ++i) {
+    if (plan.getOperation(i).type == SoRenderOperationType::DRAW) {
+      groupedDraws.push_back(plan.getOperation(i).commandIndex);
+    }
+  }
+  result = check(groupedDraws.size() == 4 && groupedDraws[0] == 0 &&
+                 groupedDraws[1] == 3 && groupedDraws[2] == 2 &&
+                 groupedDraws[3] == 1,
+                 "planner did not group opaque surfaces before edges") &&
+    result;
+
   drawlist.truncate(2);
   planner.build(drawlist, frameViewMatrix, plan);
   result = check(drawOperationCount(plan) == 2,

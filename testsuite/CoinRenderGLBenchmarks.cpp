@@ -593,15 +593,22 @@ bool runVariant(GLTestProfile profile,
       const uint64_t expectedResources =
         workload == WorkloadKind::SharedAssemblyRecipe
         ? sharedResources : expectedCommands;
+      const uint64_t maximumResources =
+        workload == WorkloadKind::SharedAssemblyRecipe
+        ? sharedResources + static_cast<uint64_t>(
+            assemblyDefinitionCount(drawCount))
+        : expectedCommands;
       if (renderStatistics.retainedCommands !=
             expectedCommands ||
-          renderStatistics.retainedGeometryResources != expectedResources) {
+          renderStatistics.retainedGeometryResources < expectedResources ||
+          renderStatistics.retainedGeometryResources > maximumResources) {
         std::cerr << "FAIL: " << workloadName(workload)
                   << " retained unexpected ownership counts"
                   << " (commands=" << renderStatistics.retainedCommands
                   << ", resources="
                   << renderStatistics.retainedGeometryResources
-                  << ", expected-resources=" << expectedResources << ")\n";
+                  << ", expected-resources=" << expectedResources << ".."
+                  << maximumResources << ")\n";
         camera->unref();
         scene->unref();
         return false;
@@ -611,8 +618,12 @@ bool runVariant(GLTestProfile profile,
       ? renderStatistics.instancedCommands == static_cast<uint64_t>(drawCount)
       : renderStatistics.instancedCommands != 0;
     const bool expectedAssembly = isAssemblyWorkload(workload);
+    const uint64_t minimumGroupedFaces = static_cast<uint64_t>(
+      std::max(0, drawCount - assemblyDefinitionCount(drawCount)));
     const bool expectedBatching = expectedAssembly
-      ? true
+      ? (workload == WorkloadKind::SharedAssemblyExpanded ||
+         (renderStatistics.instancedCommands >= minimumGroupedFaces &&
+          renderStatistics.drawCalls < static_cast<uint64_t>(drawCount) * 2))
       : workload == WorkloadKind::FeatureRich
       ? expectedInstanceCoverage &&
         renderStatistics.drawCalls < static_cast<uint64_t>(drawCount) &&

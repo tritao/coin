@@ -17,6 +17,9 @@ SoRenderPlanner::build(const SoDrawList & drawlist,
     uint32_t commandIndex = 0;
     SoOpacityClass opacity = SO_OPACITY_OPAQUE;
     float depth = 0.0f;
+    bool groupableOpaqueSurface = false;
+    uint64_t geometryKey = 0;
+    SoLightingHandle lightingHandle = 0;
   };
 
   const auto depthOf = [&drawlist, &frameViewMatrix](const uint32_t commandIndex) {
@@ -52,6 +55,28 @@ SoRenderPlanner::build(const SoDrawList & drawlist,
       planned.commandIndex = commandIndex;
       planned.opacity = command.opacityClass;
       planned.depth = depthOf(commandIndex);
+      const SoGeometryDesc & geometry =
+        drawlist.getCommandGeometry(command);
+      const SoTextureData & texture = command.material.texture;
+      const bool textured = texture.cacheKey != 0 || texture.pixels != NULL;
+      planned.geometryKey = geometry.resourceKey;
+      planned.lightingHandle = command.lightingHandle;
+      planned.groupableOpaqueSurface =
+        planned.opacity == SO_OPACITY_OPAQUE && planned.geometryKey != 0 &&
+        geometry.topology == SO_TOPOLOGY_TRIANGLES &&
+        command.material.shadingModel == SO_SHADING_UNLIT && !textured &&
+        command.material.opacity == 1.0f &&
+        command.material.diffuse[3] == 1.0f &&
+        !command.state.blend.enabled && command.state.depth.enabled &&
+        command.state.depth.writeEnabled &&
+        command.state.alphaTest.policy == SO_ALPHA_TEST_POLICY_NONE &&
+        command.state.raster.visible &&
+        command.state.raster.fillMode == SO_RASTER_FILL &&
+        !command.state.raster.viewportOverride &&
+        !command.state.raster.polygonOffsetFilled &&
+        !command.state.raster.polygonOffsetLines &&
+        !command.state.raster.polygonOffsetPoints &&
+        !command.state.useCommandMatrices && !command.pixelRaster.enabled;
       commands.push_back(planned);
     }
     std::stable_sort(commands.begin(), commands.end(),
@@ -61,6 +86,17 @@ SoRenderPlanner::build(const SoDrawList & drawlist,
         }
         if (lhs.opacity == SO_OPACITY_OPAQUE) return false;
         return lhs.depth > rhs.depth;
+      });
+    std::stable_sort(commands.begin(), commands.end(),
+      [](const PlannedCommand & lhs, const PlannedCommand & rhs) {
+        if (lhs.groupableOpaqueSurface != rhs.groupableOpaqueSurface) {
+          return lhs.groupableOpaqueSurface;
+        }
+        if (!lhs.groupableOpaqueSurface) return false;
+        if (lhs.geometryKey != rhs.geometryKey) {
+          return lhs.geometryKey < rhs.geometryKey;
+        }
+        return lhs.lightingHandle < rhs.lightingHandle;
       });
     for (const PlannedCommand & command : commands) {
       SoRenderOperation draw;

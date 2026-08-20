@@ -89,7 +89,12 @@ Each definition contains indexed triangles and a separate indexed edge shape.
 Faces and edges have independent material branches and therefore produce two
 commands per occurrence. Their natural face/edge interleaving also exposes
 batch fragmentation: shared resources do not imply adjacent commands that can
-be instanced together.
+be instanced together. The render planner therefore places ordinary unlit,
+opaque, depth-writing surfaces into geometry-resource order before opaque
+edges and points. Stages and depth segments remain hard barriers, while
+transparent commands retain back-to-front depth order. This turns shared face
+definitions into adjacent instance batches without moving ordering-sensitive
+commands into the surface pass.
 
 Use `--assembly-only N` to run only these three scenes with `N` occurrences.
 The normal benchmark uses 500 occurrences and smoke mode uses 24. Each scene
