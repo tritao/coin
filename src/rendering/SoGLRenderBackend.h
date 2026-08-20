@@ -417,6 +417,15 @@ private:
     SbVec2s viewportSize;
   };
 
+  struct PickBatch {
+    std::vector<uint32_t> commandIndices;
+    std::vector<GLuint> pickIds;
+    bool primitivePickIds = false;
+
+    bool replacesIndividualDraws() const
+    { return primitivePickIds || commandIndices.size() > 1; }
+  };
+
   bool createShaders();
   const VisualProgram & selectSurfaceProgram(
     const SoRenderCommand & command) const;
@@ -434,6 +443,12 @@ private:
                                  const std::vector<GLuint> & pickIds,
                                  const SoRenderParams & params,
                                  bool primitivePickIds = false);
+  PickBatch collectPickBatch(
+    const SoDrawList & drawlist,
+    const std::vector<uint32_t> & candidates,
+    size_t firstCandidate,
+    const std::vector<SoPickLUTEntry> & lookup,
+    const std::vector<std::vector<size_t> > & lookupByCommand) const;
   void drawSelectionEntry(const SoDrawList & drawlist,
                           const SoPickLUTEntry & entry,
                           const SbColor4f & color,

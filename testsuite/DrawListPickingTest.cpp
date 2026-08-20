@@ -631,6 +631,41 @@ runTest()
         std::cerr << "FAIL: indexed face range did not resolve" << std::endl;
         result = 1;
       }
+      const SoRenderStatistics faceStatistics =
+        backend.getRenderStatistics();
+      if (faceStatistics.pickDrawCalls != 1 ||
+          faceStatistics.pickInstancedEntries != 1) {
+        std::cerr << "FAIL: contiguous face mapping did not use primitive ID"
+                  << std::endl;
+        result = 1;
+      }
+    }
+
+    // A partial mapping cannot derive its lookup ID from gl_PrimitiveID and
+    // must retain the explicit range draw.
+    const uint32_t partialIndices[] = { 0, 1, 2, 0, 1, 2 };
+    SoRenderCommand partialRangeCommand = faceCommand;
+    partialRangeCommand.geometry.indices = partialIndices;
+    partialRangeCommand.geometry.indexCount = 6;
+    partialRangeCommand.pick.elementRanges[0].drawStart = 3;
+    drawlist.clear();
+    drawlist.addCommand(partialRangeCommand);
+    if (!updatePickBuffer(backend, drawlist, params)) {
+      std::cerr << "FAIL: partial-range pick buffer update failed" << std::endl;
+      result = 1;
+    }
+    else {
+      SoPickResult partialHit;
+      const SoRenderStatistics partialStatistics =
+        backend.getRenderStatistics();
+      if (!backend.pick(32, 32, 0, partialHit) ||
+          partialHit.elementIndex != 2 ||
+          partialStatistics.pickDrawCalls != 1 ||
+          partialStatistics.pickInstancedEntries != 0) {
+        std::cerr << "FAIL: partial face mapping did not use range fallback"
+                  << std::endl;
+        result = 1;
+      }
     }
 
     // An explicitly empty or out-of-bounds range is invalid; it must not
