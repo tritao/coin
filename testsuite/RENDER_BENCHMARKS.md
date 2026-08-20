@@ -180,7 +180,8 @@ and visibility curves reach 1,000 edits; material replay is measured at 10 and
 fallback. Transform and material batches are checked against a forced rebuild.
 Duplicate notifications are coalesced, and commands affected by multiple
 changed state nodes are replayed once per batch. Transparency, mixed,
-unsupported, and structural batches also fall back safely. Child
+unsupported, shared-node, and structural batches also fall back safely. Parent
+occurrence checks are cached until the DrawList is rebuilt. Child
 insertion/removal remains the structural control and explicitly asserts the
 resulting command count and plan rebuild.
 

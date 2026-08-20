@@ -38,6 +38,7 @@
 #endif // HAVE_CONFIG_H
 
 #include <vector>
+#include <unordered_map>
 
 #ifdef COIN_THREADSAFE
 #include <Inventor/threads/SbMutex.h>
@@ -138,6 +139,7 @@ public:
   SbBool renderPlanValid;
   uint64_t drawListRebuilds;
   uint64_t incrementalCommandUpdates;
+  std::unordered_map<SoNode *, SbBool> incrementalUniqueParentCache;
   SoSelectionState selectionState;
   uint32_t renderBackendContextId;
   SbBool drawListCallbackScope;

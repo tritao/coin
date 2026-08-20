@@ -69,11 +69,13 @@
 #include <Inventor/nodes/SoInfo.h>
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoCoordinate3.h>
+#include <Inventor/nodes/SoGroup.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoSwitch.h>
 #include <Inventor/nodes/SoTranslation.h>
 #include <Inventor/SoPath.h>
 #include <Inventor/SoPickedPoint.h>
+#include <Inventor/lists/SoAuditorList.h>
 #include <Inventor/lists/SoPickedPointList.h>
 #include <Inventor/details/SoDetail.h>
 #include <Inventor/details/SoFaceDetail.h>
@@ -120,6 +122,138 @@ namespace {
 // Material replay uses one callback traversal per affected command. Beyond
 // this bounded working set, rebuilding is both simpler and typically cheaper.
 const unsigned int MAX_INCREMENTAL_MATERIAL_NOTIFICATIONS = 256;
+
+enum class RetainedBatchKind {
+  UNSUPPORTED,
+  SWITCH,
+  TRANSLATION,
+  MATERIAL
+};
+
+bool
+hasOneParentOccurrence(
+  SoNode * node, std::unordered_map<SoNode *, SbBool> & cache)
+{
+  if (!node) return false;
+  const std::unordered_map<SoNode *, SbBool>::const_iterator cached =
+    cache.find(node);
+  if (cached != cache.end()) return cached->second != FALSE;
+  const SoAuditorList & auditors = node->getAuditors();
+  unsigned int occurrences = 0;
+  for (int auditorIndex = 0; auditorIndex < auditors.getLength();
+       ++auditorIndex) {
+    if (auditors.getType(auditorIndex) != SoNotRec::PARENT) continue;
+    SoNode * parentNode = static_cast<SoNode *>(
+      auditors.getObject(auditorIndex));
+    if (!parentNode->isOfType(SoGroup::getClassTypeId())) {
+      cache[node] = FALSE;
+      return false;
+    }
+    SoGroup * parent = static_cast<SoGroup *>(parentNode);
+    for (int childIndex = 0; childIndex < parent->getNumChildren();
+         ++childIndex) {
+      if (parent->getChild(childIndex) == node && ++occurrences > 1) {
+        cache[node] = FALSE;
+        return false;
+      }
+    }
+  }
+  const SbBool unique = occurrences == 1;
+  cache[node] = unique;
+  return unique != FALSE;
+}
+
+bool
+isStableSwitchChange(SoNode * node, SoField * field)
+{
+  if (!node || !node->isOfType(SoSwitch::getClassTypeId())) return false;
+  SoSwitch * switchNode = static_cast<SoSwitch *>(node);
+  const int whichChild = switchNode->whichChild.getValue();
+  return field == &switchNode->whichChild &&
+    switchNode->getNumChildren() == 1 &&
+    (whichChild == SO_SWITCH_ALL || whichChild == SO_SWITCH_NONE ||
+     whichChild == 0);
+}
+
+bool
+isNonOpacityMaterialChange(SoNode * node, SoField * field)
+{
+  if (!node || !node->isOfType(SoMaterial::getClassTypeId())) return false;
+  SoMaterial * material = static_cast<SoMaterial *>(node);
+  return field == &material->diffuseColor ||
+    field == &material->ambientColor ||
+    field == &material->emissiveColor ||
+    field == &material->specularColor ||
+    field == &material->shininess;
+}
+
+RetainedBatchKind
+classifyRetainedBatch(const SoRenderManagerRootSensor * sensor,
+                      const unsigned int retainedCount,
+                      std::unordered_map<SoNode *, SbBool> & parentCache)
+{
+  RetainedBatchKind batchKind = RetainedBatchKind::UNSUPPORTED;
+  for (unsigned int i = 0; i < retainedCount; ++i) {
+    SoNode * node = sensor->getChangedNode(i);
+    SoField * field = sensor->getChangedField(i);
+    RetainedBatchKind changeKind = RetainedBatchKind::UNSUPPORTED;
+    if (!hasOneParentOccurrence(node, parentCache)) {
+      return RetainedBatchKind::UNSUPPORTED;
+    }
+    if (isStableSwitchChange(node, field)) {
+      changeKind = RetainedBatchKind::SWITCH;
+    }
+    else if (node && node->isOfType(SoTranslation::getClassTypeId()) &&
+             field == &static_cast<SoTranslation *>(node)->translation) {
+      changeKind = RetainedBatchKind::TRANSLATION;
+    }
+    else if (retainedCount <= MAX_INCREMENTAL_MATERIAL_NOTIFICATIONS &&
+             isNonOpacityMaterialChange(node, field)) {
+      changeKind = RetainedBatchKind::MATERIAL;
+    }
+    if (changeKind == RetainedBatchKind::UNSUPPORTED ||
+        (batchKind != RetainedBatchKind::UNSUPPORTED &&
+         batchKind != changeKind)) {
+      return RetainedBatchKind::UNSUPPORTED;
+    }
+    batchKind = changeKind;
+  }
+  return batchKind;
+}
+
+int
+patchRetainedBatch(SoIRRenderAction * action,
+                   const SoRenderManagerRootSensor * sensor,
+                   const unsigned int retainedCount,
+                   std::unordered_map<SoNode *, SbBool> & parentCache)
+{
+  const RetainedBatchKind batchKind =
+    classifyRetainedBatch(sensor, retainedCount, parentCache);
+  if (batchKind == RetainedBatchKind::UNSUPPORTED) return 0;
+
+  if (batchKind == RetainedBatchKind::TRANSLATION ||
+      batchKind == RetainedBatchKind::MATERIAL) {
+    std::vector<const SoPath *> changedPaths;
+    changedPaths.reserve(retainedCount);
+    for (unsigned int i = 0; i < retainedCount; ++i) {
+      changedPaths.push_back(sensor->getChangedPath(i));
+    }
+    return batchKind == RetainedBatchKind::TRANSLATION
+      ? action->updateCommandMatricesForStatePaths(changedPaths)
+      : action->updateCommandMaterialsForStatePaths(changedPaths);
+  }
+
+  int updated = 0;
+  for (unsigned int i = 0; i < retainedCount; ++i) {
+    SoSwitch * switchNode = static_cast<SoSwitch *>(sensor->getChangedNode(i));
+    const int patched = action->updateCommandVisibilityForSwitchPath(
+      sensor->getChangedPath(i),
+      switchNode->whichChild.getValue() != SO_SWITCH_NONE);
+    if (patched == 0) return 0;
+    updated += patched;
+  }
+  return updated;
+}
 
 SbBool
 backendContextIsCurrent(const SoRenderManagerP * manager)
@@ -1257,99 +1391,18 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
     PRIVATE(this)->drawListCameraRevision == cameraRevision &&
     PRIVATE(this)->drawListBackgroundRevision == backgroundRevision &&
     PRIVATE(this)->drawListForegroundRevision == foregroundRevision;
-  const auto patchSwitch = [action](SoNode * node, SoField * field,
-                                    const SoPath * path) {
-    if (!node || !path || !node->isOfType(SoSwitch::getClassTypeId())) return 0;
-    SoSwitch * switchNode = static_cast<SoSwitch *>(node);
-    const int whichChild = switchNode->whichChild.getValue();
-    if (field == &switchNode->whichChild &&
-        switchNode->getNumChildren() == 1 &&
-        (whichChild == SO_SWITCH_ALL || whichChild == SO_SWITCH_NONE ||
-         whichChild == 0)) {
-      return action->updateCommandVisibilityForSwitchPath(
-        path, whichChild != SO_SWITCH_NONE);
-    }
-    return 0;
-  };
   int updated = 0;
   if (canPatchStateChanges && rootSensor->getNotificationCount() > 1) {
-    enum BatchKind {
-      UNSUPPORTED_BATCH,
-      SWITCH_BATCH,
-      TRANSLATION_BATCH,
-      MATERIAL_BATCH
-    };
-    BatchKind batchKind = UNSUPPORTED_BATCH;
-    for (unsigned int i = 0; i < retainedNotificationCount; ++i) {
-      SoNode * node = rootSensor->getChangedNode(i);
-      SoField * field = rootSensor->getChangedField(i);
-      BatchKind changeKind = UNSUPPORTED_BATCH;
-      if (node && node->isOfType(SoSwitch::getClassTypeId())) {
-        SoSwitch * switchNode = static_cast<SoSwitch *>(node);
-        const int whichChild = switchNode->whichChild.getValue();
-        if (field == &switchNode->whichChild &&
-            switchNode->getNumChildren() == 1 &&
-            (whichChild == SO_SWITCH_ALL || whichChild == SO_SWITCH_NONE ||
-             whichChild == 0)) {
-          changeKind = SWITCH_BATCH;
-        }
-      }
-      else if (node && node->isOfType(SoTranslation::getClassTypeId()) &&
-               field == &static_cast<SoTranslation *>(node)->translation) {
-        changeKind = TRANSLATION_BATCH;
-      }
-      else if (node && node->isOfType(SoMaterial::getClassTypeId())) {
-        SoMaterial * material = static_cast<SoMaterial *>(node);
-        if (retainedNotificationCount <=
-              MAX_INCREMENTAL_MATERIAL_NOTIFICATIONS &&
-            (field == &material->diffuseColor ||
-            field == &material->ambientColor ||
-            field == &material->emissiveColor ||
-            field == &material->specularColor ||
-            field == &material->shininess)) {
-          changeKind = MATERIAL_BATCH;
-        }
-      }
-      if (changeKind == UNSUPPORTED_BATCH ||
-          (batchKind != UNSUPPORTED_BATCH && batchKind != changeKind)) {
-        batchKind = UNSUPPORTED_BATCH;
-        break;
-      }
-      batchKind = changeKind;
-    }
-    if (batchKind == TRANSLATION_BATCH) {
-      std::vector<const SoPath *> changedPaths;
-      changedPaths.reserve(retainedNotificationCount);
-      for (unsigned int i = 0; i < retainedNotificationCount; ++i) {
-        changedPaths.push_back(rootSensor->getChangedPath(i));
-      }
-      updated = action->updateCommandMatricesForStatePaths(changedPaths);
-      if (updated == 0) batchKind = UNSUPPORTED_BATCH;
-    }
-    else if (batchKind == MATERIAL_BATCH) {
-      std::vector<const SoPath *> changedPaths;
-      changedPaths.reserve(retainedNotificationCount);
-      for (unsigned int i = 0; i < retainedNotificationCount; ++i) {
-        changedPaths.push_back(rootSensor->getChangedPath(i));
-      }
-      updated = action->updateCommandMaterialsForStatePaths(changedPaths);
-      if (updated == 0) batchKind = UNSUPPORTED_BATCH;
-    }
-    else {
-      for (unsigned int i = 0;
-           batchKind == SWITCH_BATCH && i < retainedNotificationCount; ++i) {
-        const int patched = patchSwitch(rootSensor->getChangedNode(i),
-                                        rootSensor->getChangedField(i),
-                                        rootSensor->getChangedPath(i));
-        if (patched == 0) batchKind = UNSUPPORTED_BATCH;
-        else updated += patched;
-      }
-    }
-    if (batchKind == UNSUPPORTED_BATCH) updated = 0;
+    updated = patchRetainedBatch(action, rootSensor,
+                                 retainedNotificationCount,
+                                 PRIVATE(this)->incrementalUniqueParentCache);
   }
   else if (canPatchStateChanges && rootSensor->getNotificationCount() == 1 &&
            rootSensor->getChangedNode() &&
-           rootSensor->getChangedPath()) {
+           rootSensor->getChangedPath() &&
+           hasOneParentOccurrence(
+             rootSensor->getChangedNode(),
+             PRIVATE(this)->incrementalUniqueParentCache)) {
     SoNode * changedNode = rootSensor->getChangedNode();
     SoField * changedField = rootSensor->getChangedField();
     const SoPath * changedPath = rootSensor->getChangedPath();
@@ -1377,7 +1430,12 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
       updated = action->updateCommandGeometryForStatePath(changedPath);
     }
     else {
-      updated = patchSwitch(changedNode, changedField, changedPath);
+      if (isStableSwitchChange(changedNode, changedField)) {
+        SoSwitch * switchNode = static_cast<SoSwitch *>(changedNode);
+        updated = action->updateCommandVisibilityForSwitchPath(
+          changedPath,
+          switchNode->whichChild.getValue() != SO_SWITCH_NONE);
+      }
     }
   }
   if (updated > 0) {
@@ -1407,7 +1465,10 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
         RenderPhaseClock::now() - updateStart).count());
   }
 
-  if (rebuildDrawList) action->beginFrame();
+  if (rebuildDrawList) {
+    PRIVATE(this)->incrementalUniqueParentCache.clear();
+    action->beginFrame();
+  }
 
   const auto applyTraversalState = [this, renderMode](SoState * traversalState) {
     SoNode * stateNode = PRIVATE(this)->dummynode;

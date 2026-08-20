@@ -278,6 +278,9 @@ private:
 #if defined(COIN_INTERNAL)
   void findCommandsAffectedByStatePath(
     const SoPath * statePath, std::vector<size_t> & commandIndices) const;
+  void findCommandsAffectedByStatePaths(
+    const std::vector<const SoPath *> & statePaths,
+    std::vector<size_t> & commandIndices) const;
   void traverseAdditionalPathInternal(
     SoPath * path, const SoIRRenderContext * context);
   const SoIRRenderContext * getRenderContextOverride() const;

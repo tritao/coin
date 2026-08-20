@@ -913,26 +913,17 @@ int
 SoIRRenderAction::updateCommandMatricesForStatePaths(
   const std::vector<const SoPath *> & statePaths)
 {
-  std::vector<uint8_t> affected(
-    static_cast<size_t>(this->drawlist.getNumCommands()), 0);
-  std::vector<size_t> found;
-  for (std::vector<const SoPath *>::const_iterator path = statePaths.begin();
-       path != statePaths.end(); ++path) {
-    this->findCommandsAffectedByStatePath(*path, found);
-    for (std::vector<size_t>::const_iterator command = found.begin();
-         command != found.end(); ++command) {
-      affected[*command] = 1;
-    }
-  }
+  std::vector<size_t> commandIndices;
+  this->findCommandsAffectedByStatePaths(statePaths, commandIndices);
   SoGetMatrixAction matrixAction(this->vpRegion);
   int updated = 0;
-  for (size_t commandIndex = 0; commandIndex < affected.size(); ++commandIndex) {
-    if (!affected[commandIndex]) continue;
+  for (std::vector<size_t>::const_iterator commandIndex = commandIndices.begin();
+       commandIndex != commandIndices.end(); ++commandIndex) {
     const SoPath * commandPath =
-      this->getCommandPath(static_cast<int>(commandIndex));
+      this->getCommandPath(static_cast<int>(*commandIndex));
     if (!commandPath) continue;
     matrixAction.apply(const_cast<SoPath *>(commandPath));
-    this->drawlist.getCommand(static_cast<int>(commandIndex)).modelMatrix =
+    this->drawlist.getCommand(static_cast<int>(*commandIndex)).modelMatrix =
       matrixAction.getMatrix();
     ++updated;
   }
@@ -985,6 +976,28 @@ SoIRRenderAction::findCommandsAffectedByStatePath(
           prefixIndices[statePathOffset + i];
     }
     if (matches) commandIndices.push_back(commandIndex);
+  }
+}
+
+void
+SoIRRenderAction::findCommandsAffectedByStatePaths(
+  const std::vector<const SoPath *> & statePaths,
+  std::vector<size_t> & commandIndices) const
+{
+  std::vector<uint8_t> affected(
+    static_cast<size_t>(this->drawlist.getNumCommands()), 0);
+  std::vector<size_t> found;
+  for (std::vector<const SoPath *>::const_iterator path = statePaths.begin();
+       path != statePaths.end(); ++path) {
+    this->findCommandsAffectedByStatePath(*path, found);
+    for (std::vector<size_t>::const_iterator command = found.begin();
+         command != found.end(); ++command) {
+      affected[*command] = 1;
+    }
+  }
+  commandIndices.clear();
+  for (size_t commandIndex = 0; commandIndex < affected.size(); ++commandIndex) {
+    if (affected[commandIndex]) commandIndices.push_back(commandIndex);
   }
 }
 
@@ -1086,22 +1099,8 @@ int
 SoIRRenderAction::updateCommandMaterialsForStatePaths(
   const std::vector<const SoPath *> & statePaths)
 {
-  std::vector<uint8_t> affected(
-    static_cast<size_t>(this->drawlist.getNumCommands()), 0);
-  std::vector<size_t> found;
-  for (std::vector<const SoPath *>::const_iterator path = statePaths.begin();
-       path != statePaths.end(); ++path) {
-    this->findCommandsAffectedByStatePath(*path, found);
-    for (std::vector<size_t>::const_iterator command = found.begin();
-         command != found.end(); ++command) {
-      affected[*command] = 1;
-    }
-  }
-
   std::vector<size_t> commandIndices;
-  for (size_t commandIndex = 0; commandIndex < affected.size(); ++commandIndex) {
-    if (affected[commandIndex]) commandIndices.push_back(commandIndex);
-  }
+  this->findCommandsAffectedByStatePaths(statePaths, commandIndices);
   std::vector<MaterialReplay> replacements;
   replacements.reserve(commandIndices.size());
   for (std::vector<size_t>::const_iterator commandIndex = commandIndices.begin();

@@ -414,6 +414,105 @@ runTest()
   }
   visibilityRoot->unref();
 
+  // Material replay is bounded: ordinary batches update retained commands,
+  // while larger batches use the cheaper full traversal.
+  SoSeparator * materialBatchRoot = new SoSeparator;
+  std::vector<SoMaterial *> materialBatchNodes;
+  for (int i = 0; i < 257; ++i) {
+    SoSeparator * occurrence = new SoSeparator;
+    SoMaterial * material = new SoMaterial;
+    occurrence->addChild(material);
+    occurrence->addChild(new SoCube);
+    materialBatchRoot->addChild(occurrence);
+    materialBatchNodes.push_back(material);
+  }
+  materialBatchRoot->ref();
+  {
+    SoRenderManager materialBatchManager;
+    materialBatchManager.setViewportRegion(testViewport);
+    materialBatchManager.setSceneGraph(materialBatchRoot);
+    materialBatchManager.setCamera(camera);
+    materialBatchManager.setLightingMode(SoRenderManager::UNLIT);
+    materialBatchManager.setRenderPipeline(
+      SoRenderManager::RenderPipeline::DRAW_LIST);
+    materialBatchManager.render(TRUE, TRUE);
+    for (int i = 0; i < 256; ++i) {
+      materialBatchNodes[static_cast<size_t>(i)]->diffuseColor.setValue(
+        0.2f, 0.4f, 0.6f);
+    }
+    materialBatchManager.render(TRUE, TRUE);
+    const SoRenderStatistics boundedStatistics =
+      materialBatchManager.getRenderStatistics();
+    for (int i = 0; i < 257; ++i) {
+      materialBatchNodes[static_cast<size_t>(i)]->diffuseColor.setValue(
+        0.6f, 0.4f, 0.2f);
+    }
+    materialBatchManager.render(TRUE, TRUE);
+    const SoRenderStatistics fallbackStatistics =
+      materialBatchManager.getRenderStatistics();
+    if (boundedStatistics.drawListRebuilds != 0 ||
+        boundedStatistics.incrementalCommandUpdates != 256 ||
+        fallbackStatistics.drawListRebuilds != 1 ||
+        fallbackStatistics.incrementalCommandUpdates != 0) {
+      std::cerr << "FAIL: material batch boundary did not preserve its policy"
+                << std::endl;
+      result = 1;
+    }
+    materialBatchManager.releaseRenderBackendResources();
+    materialBatchManager.setCamera(NULL);
+    materialBatchManager.setSceneGraph(NULL);
+  }
+  materialBatchRoot->unref();
+
+  // Coin reports one occurrence path for a shared state node. Rebuild rather
+  // than leaving the other retained occurrences stale.
+  SoSeparator * sharedMaterialRoot = new SoSeparator;
+  SoMaterial * sharedMaterial = new SoMaterial;
+  for (int i = 0; i < 3; ++i) {
+    SoSeparator * occurrence = new SoSeparator;
+    SoTranslation * offset = new SoTranslation;
+    offset->translation.setValue(0.7f * static_cast<float>(i - 1),
+                                 0.0f, -3.0f);
+    occurrence->addChild(offset);
+    occurrence->addChild(sharedMaterial);
+    occurrence->addChild(new SoCube);
+    sharedMaterialRoot->addChild(occurrence);
+  }
+  sharedMaterialRoot->ref();
+  {
+    SoRenderManager sharedMaterialManager;
+    sharedMaterialManager.setViewportRegion(testViewport);
+    sharedMaterialManager.setSceneGraph(sharedMaterialRoot);
+    sharedMaterialManager.setCamera(camera);
+    sharedMaterialManager.setLightingMode(SoRenderManager::UNLIT);
+    sharedMaterialManager.setRenderPipeline(
+      SoRenderManager::RenderPipeline::DRAW_LIST);
+    sharedMaterialManager.render(TRUE, TRUE);
+    sharedMaterial->diffuseColor.setValue(0.2f, 0.7f, 0.4f);
+    sharedMaterialManager.render(TRUE, TRUE);
+    const SoRenderStatistics incrementalStatistics =
+      sharedMaterialManager.getRenderStatistics();
+    const std::vector<uint8_t> incrementalPixels = context.readPixels();
+    sharedMaterialManager.invalidateDrawList();
+    sharedMaterialManager.render(TRUE, TRUE);
+    const std::vector<uint8_t> rebuiltPixels = context.readPixels();
+    if (incrementalStatistics.drawListRebuilds != 1 ||
+        incrementalStatistics.incrementalCommandUpdates != 0 ||
+        incrementalPixels != rebuiltPixels) {
+      std::cerr << "FAIL: shared material did not use the safe rebuild path"
+                << " (rebuilds=" << incrementalStatistics.drawListRebuilds
+                << ", updates="
+                << incrementalStatistics.incrementalCommandUpdates
+                << ", pixels=" << (incrementalPixels == rebuiltPixels) << ")"
+                << std::endl;
+      result = 1;
+    }
+    sharedMaterialManager.releaseRenderBackendResources();
+    sharedMaterialManager.setCamera(NULL);
+    sharedMaterialManager.setSceneGraph(NULL);
+  }
+  sharedMaterialRoot->unref();
+
   // Choosing between children changes scene structure and must retain the
   // existing full-rebuild behavior.
   SoSeparator * multiSwitchRoot = new SoSeparator;
@@ -536,6 +635,17 @@ runTest()
                 << std::endl;
       result = 1;
     }
+    cubeMaterial->diffuseColor.setValue(0.3f, 0.5f, 0.7f);
+    cubeMaterial->diffuseColor.setValue(0.4f, 0.6f, 0.8f);
+    manager.render(TRUE, TRUE);
+    const SoRenderStatistics repeatedMaterialStatistics =
+      manager.getRenderStatistics();
+    if (repeatedMaterialStatistics.drawListRebuilds != 0 ||
+        repeatedMaterialStatistics.incrementalCommandUpdates != 1) {
+      std::cerr << "FAIL: repeated material notification was not coalesced"
+                << std::endl;
+      result = 1;
+    }
     cubeMaterial->transparency.setValue(0.2f);
     manager.render(TRUE, TRUE);
     const SoRenderStatistics transparencyStatistics =
@@ -585,7 +695,7 @@ runTest()
                 << std::endl;
       result = 1;
     }
-    if (callbacks.pre != 13 || callbacks.post != 13) {
+    if (callbacks.pre != 14 || callbacks.post != 14) {
       std::cerr << "FAIL: cached DrawList renders skipped manager callbacks"
                 << std::endl;
       result = 1;
