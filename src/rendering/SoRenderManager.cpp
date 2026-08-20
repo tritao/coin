@@ -2642,6 +2642,12 @@ SoRenderManager::getRenderStatistics() const
     statistics.geometryRecipeHashLookups = paths.geometryRecipeHashLookups;
     statistics.geometryRecipeCandidatesScanned =
       paths.geometryRecipeCandidatesScanned;
+    statistics.geometrySourceLookupAttempts =
+      paths.geometrySourceLookupAttempts;
+    statistics.geometrySourceCacheHits = paths.geometrySourceCacheHits;
+    statistics.geometrySourceHashLookups = paths.geometrySourceHashLookups;
+    statistics.geometrySourceCandidatesScanned =
+      paths.geometrySourceCandidatesScanned;
     statistics.drawListCommandPathIdentityNanoseconds =
       paths.commandPathIdentityNanoseconds;
     statistics.drawListCommandStateNanoseconds =

@@ -2108,6 +2108,14 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.geometryRecipeHashLookups
         << ", \"geometry_recipe_candidates_scanned\": "
         << r.renderStatistics.geometryRecipeCandidatesScanned
+        << ", \"geometry_source_lookup_attempts\": "
+        << r.renderStatistics.geometrySourceLookupAttempts
+        << ", \"geometry_source_cache_hits\": "
+        << r.renderStatistics.geometrySourceCacheHits
+        << ", \"geometry_source_hash_lookups\": "
+        << r.renderStatistics.geometrySourceHashLookups
+        << ", \"geometry_source_candidates_scanned\": "
+        << r.renderStatistics.geometrySourceCandidatesScanned
         << ", \"incremental_command_updates\": "
         << r.renderStatistics.incrementalCommandUpdates
         << ", \"instanced_batches\": "

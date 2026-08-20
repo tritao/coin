@@ -59,6 +59,10 @@ public:
     uint64_t geometryRecipeCacheHits = 0;
     uint64_t geometryRecipeHashLookups = 0;
     uint64_t geometryRecipeCandidatesScanned = 0;
+    uint64_t geometrySourceLookupAttempts = 0;
+    uint64_t geometrySourceCacheHits = 0;
+    uint64_t geometrySourceHashLookups = 0;
+    uint64_t geometrySourceCandidatesScanned = 0;
     uint64_t commandPathIdentityNanoseconds = 0;
     uint64_t commandStateNanoseconds = 0;
     uint64_t geometryResourceNanoseconds = 0;

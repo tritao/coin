@@ -85,6 +85,12 @@ public:
     SoGeometryHandle handle = SO_INVALID_GEOMETRY_HANDLE;
   };
 
+  struct GeometrySourceCacheEntry {
+    uint64_t sourceId = 0;
+    uint64_t revision = 0;
+    SoGeometryHandle handle = SO_INVALID_GEOMETRY_HANDLE;
+  };
+
   struct PathRecord {
     size_t first = 0;
     size_t length = 0;
@@ -206,26 +212,38 @@ public:
   size_t branchDependencyCount = 0;
   std::vector<DependencyLink> branchDependencyLinks;
   std::unordered_multimap<uint64_t, SoGeometryHandle> geometryRecipes;
-  // Repeated instances revisit a small working set of recipe/resource pairs.
-  // This allocation-free front cache avoids hashing the common case; entries
-  // are always identity-checked and collisions use the authoritative map.
+  // Repeated instances revisit a small working set of geometry identities.
+  // These allocation-free front caches avoid hashing the common command and
+  // source lookups. Entries are identity-checked; collisions use the map.
   std::array<GeometryRecipeCacheEntry, 256> geometryRecipeCache{};
+  std::array<GeometrySourceCacheEntry, 256> geometrySourceCache{};
   bool recordBranchDependencies = true;
   bool commandTimingEnabled = false;
   SoRenderStage renderStage = SoRenderStage::Main;
   SoIRRenderContext renderContextOverride;
   bool hasRenderContextOverride = false;
 
-  size_t geometryRecipeCacheSlot(uint64_t recipeKey,
-                                 uint64_t resourceKey) const
+  static uint64_t mixGeometryCacheKey(uint64_t first, uint64_t second)
   {
-    uint64_t mixed = recipeKey + UINT64_C(0x9e3779b97f4a7c15);
-    mixed ^= resourceKey + UINT64_C(0x9e3779b97f4a7c15) +
+    uint64_t mixed = first + UINT64_C(0x9e3779b97f4a7c15);
+    mixed ^= second + UINT64_C(0x9e3779b97f4a7c15) +
       (mixed << 6) + (mixed >> 2);
     mixed = (mixed ^ (mixed >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
     mixed = (mixed ^ (mixed >> 27)) * UINT64_C(0x94d049bb133111eb);
-    mixed ^= mixed >> 31;
+    return mixed ^ (mixed >> 31);
+  }
+
+  size_t geometryRecipeCacheSlot(uint64_t recipeKey,
+                                 uint64_t resourceKey) const
+  {
+    const uint64_t mixed = mixGeometryCacheKey(recipeKey, resourceKey);
     return static_cast<size_t>(mixed) & (this->geometryRecipeCache.size() - 1);
+  }
+
+  size_t geometrySourceCacheSlot(uint64_t sourceId, uint64_t revision) const
+  {
+    const uint64_t mixed = mixGeometryCacheKey(sourceId, revision);
+    return static_cast<size_t>(mixed) & (this->geometrySourceCache.size() - 1);
   }
 
 private:
@@ -523,6 +541,13 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
     cached.recipeKey = retained.geometry.recipeKey;
     cached.resourceKey = retained.geometry.resourceKey;
     cached.handle = retained.geometryHandle;
+    const size_t sourceSlot = PRIVATE(this)->geometrySourceCacheSlot(
+      retained.geometry.recipeKey, retained.geometry.revision);
+    SoIRRenderActionP::GeometrySourceCacheEntry & source =
+      PRIVATE(this)->geometrySourceCache[sourceSlot];
+    source.sourceId = retained.geometry.recipeKey;
+    source.revision = retained.geometry.revision;
+    source.handle = retained.geometryHandle;
   }
   finishPhase(PRIVATE(this)->pathStatistics.geometryResourceNanoseconds);
   const int commandIndex = this->drawlist.getNumCommands();
@@ -632,13 +657,30 @@ SoGeometryHandle
 SoIRRenderAction::findGeometrySource(const uint64_t sourceId,
                                      const uint64_t revision) const
 {
+  SoIRRenderAction::PathStatistics & statistics =
+    PRIVATE(this)->pathStatistics;
+  ++statistics.geometrySourceLookupAttempts;
+  const size_t cacheSlot = PRIVATE(this)->geometrySourceCacheSlot(
+    sourceId, revision);
+  const SoIRRenderActionP::GeometrySourceCacheEntry & cached =
+    PRIVATE(this)->geometrySourceCache[cacheSlot];
+  if (cached.sourceId == sourceId && cached.revision == revision) {
+    const SoGeometryResource * resource =
+      this->drawlist.getGeometryResource(cached.handle);
+    if (resource && resource->revision == revision) {
+      ++statistics.geometrySourceCacheHits;
+      return cached.handle;
+    }
+  }
+  ++statistics.geometrySourceHashLookups;
   const std::pair<
     std::unordered_multimap<uint64_t, SoGeometryHandle>::const_iterator,
     std::unordered_multimap<uint64_t, SoGeometryHandle>::const_iterator>
     candidates = PRIVATE(this)->geometryRecipes.equal_range(sourceId);
   for (std::unordered_multimap<uint64_t, SoGeometryHandle>::const_iterator
-         candidate = candidates.first; candidate != candidates.second;
+       candidate = candidates.first; candidate != candidates.second;
        ++candidate) {
+    ++statistics.geometrySourceCandidatesScanned;
     const SoGeometryResource * resource =
       this->drawlist.getGeometryResource(candidate->second);
     if (resource && resource->revision == revision) return candidate->second;
@@ -1289,6 +1331,8 @@ SoIRRenderAction::resetFrameResources()
   PRIVATE(this)->geometryRecipes.clear();
   PRIVATE(this)->geometryRecipeCache.fill(
     SoIRRenderActionP::GeometryRecipeCacheEntry());
+  PRIVATE(this)->geometrySourceCache.fill(
+    SoIRRenderActionP::GeometrySourceCacheEntry());
   PRIVATE(this)->pathStatistics.estimatedStorageBytes =
     PRIVATE(this)->ownedPathNodeTable.size() * sizeof(SoNode *);
 }
