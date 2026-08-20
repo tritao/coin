@@ -132,9 +132,16 @@ resources.
 Selection results report overlay draws, instanced batches and entries, and
 separate selected/highlighted entry counts. Compatible whole-command overlays
 carry frame-local color and transform in instance records. Subelement targets,
-specialized raster paths, and incompatible coverage retain explicit draws.
+whose ranges map to one triangle or line primitive additionally carry a
+per-instance primitive selector; the fragment stage rejects the other
+primitives in that instance. Partial multi-primitive ranges, specialized
+raster paths, and incompatible coverage retain explicit draws.
 The 1%, 10%, churn, and preselection workloads bound overlay draws by target
 count while requiring every requested target to be represented.
+
+`shared_assembly_subelement_selection` selects individual faces and edges
+across 10% of occurrences. It requires all requested elements to participate
+in selection batches, visible overlay coverage, and zero DrawList rebuilds.
 
 Picking statistics are intentionally reported alongside hover latency. For
 contiguous triangle, line, and point subelement ranges, the picking shader uses

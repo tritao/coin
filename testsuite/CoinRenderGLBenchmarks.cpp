@@ -1905,7 +1905,8 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
   results.push_back(hover);
 
   const auto measureSelection = [&](const char * name, int selectedCount,
-                                    bool highlighted, bool churn) {
+                                    bool highlighted, bool churn,
+                                    bool subelement = false) {
     std::vector<double> times;
     for (int sample = 0; sample < samples; ++sample) {
       SoSelectionState selection;
@@ -1915,6 +1916,10 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
         for (int commandOffset = 0; commandOffset < 2; ++commandOffset) {
           SoSelectionTarget target;
           target.commandIndex = occurrence * 2 + commandOffset;
+          if (subelement) {
+            target.type = commandOffset == 0 ? SO_PICK_FACE : SO_PICK_EDGE;
+            target.elementIndex = selected % 8;
+          }
           target.color = highlighted
             ? SbColor4f(0.2f, 0.8f, 1.0f, 0.75f)
             : SbColor4f(1.0f, 0.8f, 0.0f, 0.65f);
@@ -1941,7 +1946,9 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
               static_cast<uint64_t>(selectedCount * 2) ||
           (!highlighted && selectedCount >= occurrenceCount / 10 &&
            occurrenceCount >= 100 &&
-           statistics.selectionInstancedEntries == 0)) {
+           statistics.selectionInstancedEntries == 0) ||
+          (subelement && statistics.selectionInstancedEntries !=
+            static_cast<uint64_t>(selectedCount * 2))) {
         unavailable = std::string(name) +
           " changed retained assembly structure";
         return false;
@@ -1981,6 +1988,8 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
     "shared_assembly_selection_10_percent", tenPercent, false, false);
   if (valid) valid = measureSelection(
     "shared_assembly_selection_churn", tenPercent, false, true);
+  if (valid) valid = measureSelection(
+    "shared_assembly_subelement_selection", tenPercent, false, true, true);
   if (valid) valid = measureSelection(
     "shared_assembly_preselection", 1, true, true);
 

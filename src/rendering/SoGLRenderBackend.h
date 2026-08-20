@@ -459,7 +459,9 @@ private:
     const SoDrawList & drawlist,
     const std::vector<uint32_t> & commandIndices,
     const std::vector<SbColor4f> & colors,
-    const SoRenderParams & params);
+    const std::vector<uint32_t> & primitiveIds,
+    const SoRenderParams & params,
+    bool primitiveSelection);
   void drawCoverageEntry(const SoDrawList & drawlist,
                          const SoPickLUTEntry & entry,
                          GLuint id,

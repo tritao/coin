@@ -4,15 +4,18 @@
  * selection color; selection is interaction state, not scene identity. */
 #include "../material/FragmentEvaluation.glsl"
 uniform vec4 u_selectionColor;
+uniform float u_primitivePickIds;
 
 in vec4 v_color;
 in vec3 v_litColor;
 in vec2 v_texcoord;
+flat in uint v_pickId;
 
 out vec4 fragColor;
 
 void main()
 {
+  if (u_primitivePickIds > 0.5 && uint(gl_PrimitiveID) != v_pickId) discard;
   vec4 coverage = coin_surface_fragment_color(v_color, v_litColor, v_texcoord);
   if (!coin_material_alpha_test_pass(coverage.a, u_alphaTestFunction,
                                      u_alphaTestReference)) discard;

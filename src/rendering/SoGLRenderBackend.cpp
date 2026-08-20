@@ -89,6 +89,33 @@ hasPrimitivePickMapping(const SoRenderCommand & command,
 }
 
 bool
+selectionPrimitiveId(const SoRenderCommand & command,
+                     const SoSelectionTarget & target,
+                     uint32_t & primitiveId)
+{
+  uint32_t primitiveWidth = 0;
+  if (command.geometry.topology == SO_TOPOLOGY_TRIANGLES) primitiveWidth = 3;
+  else if (command.geometry.topology == SO_TOPOLOGY_LINES) primitiveWidth = 2;
+  else return false;
+  const bool indexed = command.geometry.indices && command.geometry.indexCount;
+  const uint32_t drawLimit = indexed ? command.geometry.indexCount
+                                     : command.geometry.vertexCount;
+  for (const SoRenderElementRange & range : command.pick.elementRanges) {
+    if (range.type != target.type ||
+        range.elementIndex != target.elementIndex ||
+        range.drawCount != primitiveWidth ||
+        range.drawStart % primitiveWidth != 0 ||
+        range.drawStart >= drawLimit ||
+        primitiveWidth > drawLimit - range.drawStart) {
+      continue;
+    }
+    primitiveId = range.drawStart / primitiveWidth;
+    return true;
+  }
+  return false;
+}
+
+bool
 sameMaterialUniforms(const SoMaterialData & lhs, const SoMaterialData & rhs)
 {
   return lhs.diffuse == rhs.diffuse && lhs.ambient == rhs.ambient &&
@@ -3362,9 +3389,12 @@ SoGLRenderBackend::drawInstancedSelectionCommands(
   const SoDrawList & drawlist,
   const std::vector<uint32_t> & commandIndices,
   const std::vector<SbColor4f> & colors,
-  const SoRenderParams & params)
+  const std::vector<uint32_t> & primitiveIds,
+  const SoRenderParams & params,
+  const bool primitiveSelection)
 {
-  if (commandIndices.size() < 2 || commandIndices.size() != colors.size()) {
+  if (commandIndices.size() < 2 || commandIndices.size() != colors.size() ||
+      commandIndices.size() != primitiveIds.size()) {
     return;
   }
   const SoRenderCommand & first = drawlist.getCommand(
@@ -3385,6 +3415,7 @@ SoGLRenderBackend::drawInstancedSelectionCommands(
     for (int component = 0; component < 4; ++component) {
       record.color[component] = colors[i][component];
     }
+    record.pickId = primitiveIds[i];
     records.push_back(record);
   }
 
@@ -3399,6 +3430,10 @@ SoGLRenderBackend::drawInstancedSelectionCommands(
   this->glue->glUniformMatrix4fv(uniforms.proj, 1, GL_FALSE,
                                  &frame.projection[0][0]);
   this->glue->glUniform1f(uniforms.instanced, 1.0f);
+  if (uniforms.primitivePickIds >= 0) {
+    this->glue->glUniform1f(uniforms.primitivePickIds,
+                            primitiveSelection ? 1.0f : 0.0f);
+  }
   this->glue->glUniform1f(uniforms.useVertexColor, 0.0f);
   this->glue->glUniform1f(uniforms.textureEnabled, 0.0f);
   this->glue->glUniform1i(uniforms.alphaTestFunction, 0);
@@ -3429,6 +3464,9 @@ SoGLRenderBackend::drawInstancedSelectionCommands(
                           instanceCount);
   }
   this->glue->glUniform1f(uniforms.instanced, 0.0f);
+  if (uniforms.primitivePickIds >= 0) {
+    this->glue->glUniform1f(uniforms.primitivePickIds, 0.0f);
+  }
   this->glue->glBindVertexArray(0);
 }
 
@@ -4550,35 +4588,49 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
       const SoSelectionTarget & firstTarget = targets[offset];
       std::vector<uint32_t> commandIndices;
       std::vector<SbColor4f> colors;
+      std::vector<uint32_t> primitiveIds;
+      bool primitiveBatch = false;
       if (firstTarget.commandIndex >= 0 &&
-          firstTarget.commandIndex < drawlist.getNumCommands() &&
-          firstTarget.type == SO_PICK_OBJECT &&
-          firstTarget.elementIndex < 0) {
+          firstTarget.commandIndex < drawlist.getNumCommands()) {
         const SoRenderCommand & first = drawlist.getCommand(
           firstTarget.commandIndex);
-        if (this->canInstanceCommand(first)) {
+        const bool wholeCommand = firstTarget.type == SO_PICK_OBJECT &&
+          firstTarget.elementIndex < 0;
+        uint32_t firstPrimitive = 0;
+        const bool primitiveSelection = !wholeCommand &&
+          selectionPrimitiveId(first, firstTarget, firstPrimitive);
+        if (this->canInstanceCommand(first) &&
+            (wholeCommand || primitiveSelection)) {
+          primitiveBatch = primitiveSelection;
           commandIndices.push_back(
             static_cast<uint32_t>(firstTarget.commandIndex));
           colors.push_back(firstTarget.color);
+          primitiveIds.push_back(firstPrimitive);
           for (size_t nextOffset = offset + 1;
                nextOffset < targets.size(); ++nextOffset) {
             const SoSelectionTarget & nextTarget = targets[nextOffset];
             if (nextTarget.commandIndex < 0 ||
-                nextTarget.commandIndex >= drawlist.getNumCommands() ||
-                nextTarget.type != SO_PICK_OBJECT ||
-                nextTarget.elementIndex >= 0) break;
+                nextTarget.commandIndex >= drawlist.getNumCommands()) break;
             const SoRenderCommand & next = drawlist.getCommand(
               nextTarget.commandIndex);
+            uint32_t nextPrimitive = 0;
+            const bool compatibleSelection = wholeCommand
+              ? nextTarget.type == SO_PICK_OBJECT &&
+                nextTarget.elementIndex < 0
+              : selectionPrimitiveId(next, nextTarget, nextPrimitive);
+            if (!compatibleSelection) break;
             if (!this->canInstanceTogether(first, next)) break;
             commandIndices.push_back(
               static_cast<uint32_t>(nextTarget.commandIndex));
             colors.push_back(nextTarget.color);
+            primitiveIds.push_back(nextPrimitive);
           }
         }
       }
       if (commandIndices.size() > 1) {
         this->drawInstancedSelectionCommands(drawlist, commandIndices,
-                                             colors, params);
+                                             colors, primitiveIds, params,
+                                             primitiveBatch);
         ++this->submissionCache.statistics.selectionOverlayDrawCalls;
         ++this->submissionCache.statistics.selectionInstancedBatches;
         this->submissionCache.statistics.selectionInstancedEntries +=
