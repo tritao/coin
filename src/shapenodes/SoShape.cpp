@@ -393,19 +393,47 @@ public:
     this->appendRange(first, 3, SO_PICK_FACE, faceIndex);
   }
 
+  void onLineData(const VertexData & v1, const VertexData & v2,
+                  int lineIndex) override
+  {
+    this->setTopology(SO_TOPOLOGY_LINES);
+    const size_t first = this->vertices.size();
+    this->append(v1);
+    this->append(v2);
+    this->appendRange(first, 2, SO_PICK_EDGE, lineIndex);
+  }
+
   SbBool beginRetainedTriangles(uint64_t sourceId, uint64_t revision,
                                 int faceCount) override
   {
     this->geometryRecipeKey = sourceId;
     this->geometryCacheKey = sourceId;
     this->geometryRevision = revision;
-    return this->reuseTriangleGeometry(sourceId, revision, faceCount);
+    return this->reuseGeometry(sourceId, revision, faceCount,
+                               SO_TOPOLOGY_TRIANGLES, SO_PICK_FACE, 3);
   }
 
   SbBool reuseRetainedTriangles(uint64_t sourceId,
                                 uint64_t revision) override
   {
-    return this->reuseTriangleGeometry(sourceId, revision, 0);
+    return this->reuseGeometry(sourceId, revision, 0,
+                               SO_TOPOLOGY_TRIANGLES, SO_PICK_FACE, 3);
+  }
+
+  SbBool beginRetainedLines(uint64_t sourceId, uint64_t revision,
+                            int segmentCount) override
+  {
+    this->geometryRecipeKey = sourceId;
+    this->geometryCacheKey = sourceId;
+    this->geometryRevision = revision;
+    return this->reuseGeometry(sourceId, revision, segmentCount,
+                               SO_TOPOLOGY_LINES, SO_PICK_EDGE, 2);
+  }
+
+  SbBool reuseRetainedLines(uint64_t sourceId, uint64_t revision) override
+  {
+    return this->reuseGeometry(sourceId, revision, 0,
+                               SO_TOPOLOGY_LINES, SO_PICK_EDGE, 2);
   }
 
   void finalize()
@@ -420,28 +448,34 @@ public:
   }
 
 private:
-  SbBool reuseTriangleGeometry(uint64_t sourceId, uint64_t revision,
-                               int expectedFaceCount)
+  SbBool reuseGeometry(uint64_t sourceId, uint64_t revision,
+                       int expectedPrimitiveCount,
+                       SoPrimitiveTopology topology,
+                       SoPickElementType pickType,
+                       int verticesPerPrimitive)
   {
     const SoGeometryHandle handle = this->action->findGeometrySource(
       mixIRCacheHash(sourceId, static_cast<uint64_t>(1)), revision);
     if (handle == SO_INVALID_GEOMETRY_HANDLE) return FALSE;
     const SoGeometryResource * resource =
       this->action->getDrawList().getGeometryResource(handle);
-    if (!resource || resource->geometry.vertexCount == 0 ||
-        resource->geometry.vertexCount % 3 != 0 ||
-        (expectedFaceCount > 0 && resource->geometry.vertexCount !=
-          static_cast<uint32_t>(expectedFaceCount * 3))) {
+    if (!resource || resource->geometry.topology != topology ||
+        resource->geometry.vertexCount == 0 ||
+        resource->geometry.vertexCount % verticesPerPrimitive != 0 ||
+        (expectedPrimitiveCount > 0 && resource->geometry.vertexCount !=
+          static_cast<uint32_t>(expectedPrimitiveCount * verticesPerPrimitive))) {
       return FALSE;
     }
-    const int faceCount = static_cast<int>(resource->geometry.vertexCount / 3);
+    const int primitiveCount = static_cast<int>(
+      resource->geometry.vertexCount / verticesPerPrimitive);
     this->geometryRecipeKey = sourceId;
     this->geometryCacheKey = sourceId;
     this->geometryRevision = revision;
-    this->topology = SO_TOPOLOGY_TRIANGLES;
-    for (int face = 0; face < faceCount; ++face) {
-      this->appendRange(static_cast<size_t>(face) * 3, 3,
-                        SO_PICK_FACE, face);
+    this->topology = topology;
+    for (int primitive = 0; primitive < primitiveCount; ++primitive) {
+      this->appendRange(
+        static_cast<size_t>(primitive) * verticesPerPrimitive,
+        verticesPerPrimitive, pickType, primitive);
     }
     this->reusedGeometry = resource->geometry;
     this->reusedVertexCount = resource->geometry.vertexCount;

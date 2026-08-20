@@ -77,9 +77,11 @@ class SoVBO;
 #include <Inventor/bundles/SoMaterialBundle.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoGetBoundingBoxAction.h>
+#include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/system/gl.h>
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
 #include <Inventor/elements/SoNormalBindingElement.h>
+#include <Inventor/elements/SoNormalElement.h>
 #include <Inventor/elements/SoMaterialBindingElement.h>
 #include <Inventor/elements/SoCoordinateElement.h>
 #if COIN_BUILD_LEGACY_GL_RENDERER
@@ -490,6 +492,125 @@ SoIndexedLineSet::getPrimitiveCount(SoGetPrimitiveCountAction *action)
     if (cnt >= 2) add += cnt-1;
     action->addNumLines(add);
   }
+}
+
+// doc from parent
+SbBool
+SoIndexedLineSet::generateRetainedPrimitives(SoIRRenderAction * action)
+{
+  if (this->coordIndex.getNum() < 2) return TRUE;
+  SoIRRenderAction::PrimitiveCollector * collector =
+    action->getActivePrimitiveCollector();
+  if (!collector) return FALSE;
+
+  SoState * state = action->getState();
+  const SbBool hasVertexProperty = this->vertexProperty.getValue() != NULL;
+  if (hasVertexProperty) {
+    state->push();
+    this->vertexProperty.getValue()->doAction(action);
+  }
+
+  const Binding materialBinding = this->findMaterialBinding(state);
+  Binding normalBinding = this->findNormalBinding(state);
+  const SoCoordinateElement * coordinates;
+  const SbVec3f * normals;
+  const int32_t * coordinateIndices;
+  const int32_t * normalIndices;
+  const int32_t * textureIndices;
+  const int32_t * materialIndices;
+  int numIndices;
+  SbBool sendNormals = TRUE;
+  SbBool normalCacheUsed;
+  this->getVertexData(state, coordinates, normals, coordinateIndices,
+                      normalIndices, textureIndices, materialIndices,
+                      numIndices, sendNormals, normalCacheUsed);
+  if (!normals) normalBinding = OVERALL;
+
+  SoTextureCoordinateBundle textureBundle(action, FALSE, FALSE);
+  const SbBool supported =
+    materialBinding == OVERALL &&
+    !textureBundle.needCoordinates() &&
+    !normalCacheUsed &&
+    (normalBinding == OVERALL || normalBinding == PER_VERTEX_INDEXED);
+  if (!supported) {
+    if (normalCacheUsed) this->readUnlockNormalCache();
+    if (hasVertexProperty) state->pop();
+    return FALSE;
+  }
+  if (normalBinding == PER_VERTEX_INDEXED && normalIndices == NULL) {
+    normalIndices = coordinateIndices;
+  }
+
+  const auto mixIdentity = [](uint64_t hash, uint64_t value) {
+    hash ^= value + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
+    return hash;
+  };
+  uint64_t sourceId = mixIdentity(
+    static_cast<uint64_t>(reinterpret_cast<uintptr_t>(this)),
+    static_cast<uint64_t>(reinterpret_cast<uintptr_t>(coordinateIndices)));
+  sourceId = mixIdentity(sourceId,
+    static_cast<uint64_t>(reinterpret_cast<uintptr_t>(normalIndices)));
+  sourceId = mixIdentity(sourceId,
+    static_cast<uint64_t>(reinterpret_cast<uintptr_t>(normals)));
+  sourceId = mixIdentity(sourceId, static_cast<uint64_t>(numIndices));
+  sourceId = mixIdentity(sourceId, static_cast<uint64_t>(normalBinding));
+  if (sourceId == 0) sourceId = 1;
+
+  uint64_t revision = mixIdentity(
+    static_cast<uint64_t>(this->getNodeId()),
+    static_cast<uint64_t>(coordinates->getNodeId()));
+  revision = mixIdentity(revision,
+    static_cast<uint64_t>(SoNormalElement::getInstance(state)->getNodeId()));
+  if (revision == 0) revision = 1;
+
+  if (collector->reuseRetainedLines(sourceId, revision)) {
+    if (hasVertexProperty) state->pop();
+    return TRUE;
+  }
+
+  // Independent segments have unambiguous sequential edge identities. Line
+  // strips retain generatePrimitives()' established expansion semantics.
+  int segmentCount = 0;
+  int cursor = 0;
+  while (cursor < numIndices) {
+    if (cursor + 1 >= numIndices || coordinateIndices[cursor] < 0 ||
+        coordinateIndices[cursor + 1] < 0) {
+      if (hasVertexProperty) state->pop();
+      return FALSE;
+    }
+    cursor += 2;
+    ++segmentCount;
+    if (cursor < numIndices) {
+      if (coordinateIndices[cursor] >= 0) {
+        if (hasVertexProperty) state->pop();
+        return FALSE;
+      }
+      ++cursor;
+    }
+  }
+
+  if (collector->beginRetainedLines(sourceId, revision, segmentCount)) {
+    if (hasVertexProperty) state->pop();
+    return TRUE;
+  }
+
+  const SbVec3f defaultNormal(0.0f, 0.0f, 1.0f);
+  cursor = 0;
+  for (int segment = 0; segment < segmentCount; ++segment) {
+    SoIRRenderAction::PrimitiveCollector::VertexData vertices[2];
+    for (int vertex = 0; vertex < 2; ++vertex, ++cursor) {
+      vertices[vertex].point = coordinates->get3(coordinateIndices[cursor]);
+      vertices[vertex].normal = normals
+        ? normals[normalBinding == OVERALL ? 0 : normalIndices[cursor]]
+        : defaultNormal;
+      vertices[vertex].materialIndex = 0;
+    }
+    collector->onLineData(vertices[0], vertices[1], segment);
+    if (cursor < numIndices && coordinateIndices[cursor] < 0) ++cursor;
+  }
+
+  if (hasVertexProperty) state->pop();
+  return TRUE;
 }
 
 // doc from parent

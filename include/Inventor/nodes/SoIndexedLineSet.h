@@ -41,6 +41,7 @@
 #endif // !SO_END_LINE_INDEX
 
 class SoIndexedLineSetP;
+class SoIRRenderAction;
 
 class COIN_DLL_API SoIndexedLineSet : public SoIndexedShape {
   typedef SoIndexedShape inherited;
@@ -60,6 +61,7 @@ public:
 protected:
   virtual ~SoIndexedLineSet();
   void notify(SoNotList * list) override;
+  SbBool generateRetainedPrimitives(SoIRRenderAction * action) override;
 
 private:
   void generatePrimitives(SoAction * action) override;

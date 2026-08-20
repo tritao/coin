@@ -108,6 +108,10 @@ public:
                                 const VertexData & v2,
                                 const VertexData & v3,
                                 int faceIndex) = 0;
+    //! Receive an already resolved line segment and its picking identity.
+    virtual void onLineData(const VertexData & v1,
+                            const VertexData & v2,
+                            int lineIndex) = 0;
     //! Reuse or register an explicit non-textured triangle geometry source.
     virtual SbBool beginRetainedTriangles(uint64_t sourceId,
                                           uint64_t revision,
@@ -116,6 +120,14 @@ public:
     //! Reuse a previously registered triangle source without rescanning it.
     virtual SbBool reuseRetainedTriangles(uint64_t sourceId,
                                           uint64_t revision)
+    { return FALSE; }
+    //! Reuse or register an explicit non-textured line-segment source.
+    virtual SbBool beginRetainedLines(uint64_t sourceId,
+                                      uint64_t revision,
+                                      int segmentCount)
+    { return FALSE; }
+    virtual SbBool reuseRetainedLines(uint64_t sourceId,
+                                      uint64_t revision)
     { return FALSE; }
   };
 

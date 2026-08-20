@@ -276,7 +276,7 @@ void populateAssemblyScene(SoSeparator * root, WorkloadKind kind,
   }
 
   SoNormalBinding * normalBinding = new SoNormalBinding;
-  normalBinding->value = SoNormalBinding::PER_VERTEX;
+  normalBinding->value = SoNormalBinding::PER_VERTEX_INDEXED;
   root->addChild(normalBinding);
   std::vector<SoSeparator *> definitionBranches(
     static_cast<size_t>(definitionCount));

@@ -4,6 +4,7 @@
 #include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoFaceSet.h>
 #include <Inventor/nodes/SoIndexedFaceSet.h>
+#include <Inventor/nodes/SoIndexedLineSet.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoMaterialBinding.h>
 #include <Inventor/nodes/SoNormal.h>
@@ -264,6 +265,51 @@ runTest()
     result = 1;
   }
   indexedRecipeRoot->unref();
+
+  SoSeparator * indexedLineRoot = new SoSeparator;
+  indexedLineRoot->ref();
+  SoCoordinate3 * indexedLineCoordinates = new SoCoordinate3;
+  indexedLineCoordinates->point.setValues(0, 3, triangle);
+  SoIndexedLineSet * indexedLine = new SoIndexedLineSet;
+  const int32_t indexedSegments[] = { 0, 1, -1, 1, 2, -1 };
+  indexedLine->coordIndex.setValues(0, 6, indexedSegments);
+  indexedLineRoot->addChild(indexedLineCoordinates);
+  indexedLineRoot->addChild(indexedLine);
+  indexedLineRoot->addChild(indexedLine);
+  action.apply(indexedLineRoot);
+  SbBool validIndexedLineReuse =
+    action.getDrawList().getNumCommands() == 2 &&
+    action.getDrawList().getNumGeometryResources() == 1;
+  if (validIndexedLineReuse) {
+    const SoRenderCommand & repeatedLineCommand =
+      action.getDrawList().getCommand(1);
+    validIndexedLineReuse =
+      action.getDrawList().getCommand(0).geometryHandle ==
+        repeatedLineCommand.geometryHandle &&
+      repeatedLineCommand.pick.elementRanges.size() == 2 &&
+      repeatedLineCommand.pick.elementRanges[0].type == SO_PICK_EDGE &&
+      repeatedLineCommand.pick.elementRanges[0].elementIndex == 0 &&
+      repeatedLineCommand.pick.elementRanges[1].elementIndex == 1;
+  }
+  if (!validIndexedLineReuse) {
+    std::cerr << "FAIL: repeated indexed lines did not share one resource"
+              << std::endl;
+    result = 1;
+  }
+  const uint64_t indexedLineRevision =
+    action.getDrawList().getCommand(0).geometry.revision;
+  indexedLineCoordinates->point.set1Value(0, SbVec3f(-1.1f, -1.0f, 0.0f));
+  action.apply(indexedLineRoot);
+  if (action.getDrawList().getNumGeometryResources() != 1 ||
+      action.getDrawList().getCommand(0).geometry.revision ==
+        indexedLineRevision ||
+      action.getDrawList().getCommand(0).geometryHandle !=
+        action.getDrawList().getCommand(1).geometryHandle) {
+    std::cerr << "FAIL: retained indexed line source mutation was stale"
+              << std::endl;
+    result = 1;
+  }
+  indexedLineRoot->unref();
   action.apply(root);
 
   SoRenderCommand command;
