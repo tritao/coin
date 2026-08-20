@@ -55,6 +55,10 @@ public:
     uint64_t dependencyBranches = 0;
     uint64_t dependencyCommandReferences = 0;
     uint64_t dependencyEstimatedStorageBytes = 0;
+    uint64_t geometryRecipeLookupAttempts = 0;
+    uint64_t geometryRecipeCacheHits = 0;
+    uint64_t geometryRecipeHashLookups = 0;
+    uint64_t geometryRecipeCandidatesScanned = 0;
     uint64_t commandPathIdentityNanoseconds = 0;
     uint64_t commandStateNanoseconds = 0;
     uint64_t geometryResourceNanoseconds = 0;

@@ -2636,6 +2636,12 @@ SoRenderManager::getRenderStatistics() const
       paths.dependencyCommandReferences;
     statistics.retainedDependencyStorageBytes =
       paths.dependencyEstimatedStorageBytes;
+    statistics.geometryRecipeLookupAttempts =
+      paths.geometryRecipeLookupAttempts;
+    statistics.geometryRecipeCacheHits = paths.geometryRecipeCacheHits;
+    statistics.geometryRecipeHashLookups = paths.geometryRecipeHashLookups;
+    statistics.geometryRecipeCandidatesScanned =
+      paths.geometryRecipeCandidatesScanned;
     statistics.drawListCommandPathIdentityNanoseconds =
       paths.commandPathIdentityNanoseconds;
     statistics.drawListCommandStateNanoseconds =

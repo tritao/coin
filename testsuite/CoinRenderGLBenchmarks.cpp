@@ -2100,6 +2100,14 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.retainedDependencyCommandReferences
         << ", \"retained_dependency_storage_bytes\": "
         << r.renderStatistics.retainedDependencyStorageBytes
+        << ", \"geometry_recipe_lookup_attempts\": "
+        << r.renderStatistics.geometryRecipeLookupAttempts
+        << ", \"geometry_recipe_cache_hits\": "
+        << r.renderStatistics.geometryRecipeCacheHits
+        << ", \"geometry_recipe_hash_lookups\": "
+        << r.renderStatistics.geometryRecipeHashLookups
+        << ", \"geometry_recipe_candidates_scanned\": "
+        << r.renderStatistics.geometryRecipeCandidatesScanned
         << ", \"incremental_command_updates\": "
         << r.renderStatistics.incrementalCommandUpdates
         << ", \"instanced_batches\": "

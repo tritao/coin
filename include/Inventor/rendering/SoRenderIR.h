@@ -801,6 +801,10 @@ struct SoRenderStatistics {
   uint64_t retainedDependencyBranches = 0;
   uint64_t retainedDependencyCommandReferences = 0;
   uint64_t retainedDependencyStorageBytes = 0;
+  uint64_t geometryRecipeLookupAttempts = 0;
+  uint64_t geometryRecipeCacheHits = 0;
+  uint64_t geometryRecipeHashLookups = 0;
+  uint64_t geometryRecipeCandidatesScanned = 0;
   uint64_t incrementalCommandUpdates = 0;
 };
 
