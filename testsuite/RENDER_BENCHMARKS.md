@@ -50,7 +50,11 @@ only the core-profile forced-rebuild scene at the requested object count.
 Picking is split into one-time cold target creation, target refresh after a
 changed frame, and warm repeated-hover latency. Retained runs also report
 asynchronous readback submission, time-to-ready, and maximum nonblocking poll
-call time.
+call time. Async readback uses a three-slot reusable pixel-buffer ring. The
+assembly interaction benchmark bounds allocations to those three slots so
+sustained hover cannot silently return to per-request buffer allocation.
+Readback preserves only the framebuffer and pixel-pack state it changes;
+render passes continue to use the complete renderer-state guard.
 The GL benchmark also records draw calls, actual and skipped program/viewport
 changes, actual and skipped frame-matrix and material uniform batches, and
 actual and skipped depth/raster/blend/texture state changes. The counters make

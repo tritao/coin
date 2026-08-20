@@ -465,6 +465,38 @@ private:
   GLint skipImages = 0;
 };
 
+// Pixel readback only changes framebuffer and pack state. Avoid the much
+// larger render-state snapshot used while drawing pick and selection passes.
+class ScopedPickReadbackState {
+public:
+  explicit ScopedPickReadbackState(const cc_glglue * glue)
+    : glue(glue)
+  {
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFramebuffer);
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFramebuffer);
+    glGetIntegerv(GL_READ_BUFFER, &readBuffer);
+    glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pixelPackBuffer);
+  }
+
+  ~ScopedPickReadbackState()
+  {
+    cc_glglue_glBindFramebuffer(this->glue, GL_DRAW_FRAMEBUFFER,
+                                static_cast<GLuint>(drawFramebuffer));
+    cc_glglue_glBindFramebuffer(this->glue, GL_READ_FRAMEBUFFER,
+                                static_cast<GLuint>(readFramebuffer));
+    glReadBuffer(static_cast<GLenum>(readBuffer));
+    cc_glglue_glBindBuffer(this->glue, GL_PIXEL_PACK_BUFFER,
+                           static_cast<GLuint>(pixelPackBuffer));
+  }
+
+private:
+  const cc_glglue * glue;
+  GLint drawFramebuffer = 0;
+  GLint readFramebuffer = 0;
+  GLint readBuffer = GL_BACK;
+  GLint pixelPackBuffer = 0;
+};
+
 // Picking and selection are explicit operations on a caller-owned GL
 // context. They must not leak the temporary state used to implement them.
 class ScopedGLState {
@@ -3799,7 +3831,7 @@ SoGLRenderBackend::pickClosest(const int x, const int y, const int radius,
   const int top = std::min(height - 1, y + radius);
   if (left > right || bottom > top) return FALSE;
 
-  ScopedGLState state(this->glue);
+  ScopedPickReadbackState state(this->glue);
   cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
                               this->pickTarget.framebuffer);
   glReadBuffer(GL_COLOR_ATTACHMENT0);
@@ -3914,7 +3946,7 @@ SoGLRenderBackend::requestPickClosestAsync(const int x, const int y,
   const size_t planeBytes = pixelCount * sizeof(GLuint);
   const size_t requiredBytes = planeBytes * (slot.includeDepth ? 2 : 1);
 
-  ScopedGLState state(this->glue);
+  ScopedPickReadbackState state(this->glue);
   ScopedPixelPackState packState;
   cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
                               this->pickTarget.framebuffer);
@@ -3979,7 +4011,7 @@ SoGLRenderBackend::pollPickClosestAsync(const SoAsyncPickRequest & request,
 
   const size_t pixelCount = static_cast<size_t>(slot->width) * slot->height;
   const size_t planeBytes = pixelCount * sizeof(GLuint);
-  ScopedGLState state(this->glue);
+  ScopedPickReadbackState state(this->glue);
   cc_glglue_glBindBuffer(this->glue, GL_PIXEL_PACK_BUFFER, slot->buffer);
   const unsigned char * mapped = static_cast<const unsigned char *>(
     cc_glglue_glMapBuffer(this->glue, GL_PIXEL_PACK_BUFFER, GL_READ_ONLY));
@@ -4067,7 +4099,7 @@ SoGLRenderBackend::pickVisibleRegion(const SbBox2s & region,
                            static_cast<int>(region.getMax()[1]));
   if (left > right || bottom > top) return FALSE;
 
-  ScopedGLState state(this->glue);
+  ScopedPickReadbackState state(this->glue);
   cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
                               this->pickTarget.framebuffer);
   glReadBuffer(GL_COLOR_ATTACHMENT0);

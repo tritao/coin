@@ -1890,7 +1890,8 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
       hover.renderStatistics.retainedGeometryResources > maximumResources ||
       hover.renderStatistics.pickDrawCalls > maximumResources ||
       hover.renderStatistics.pickInstancedEntries !=
-        static_cast<uint64_t>(occurrenceCount * 2)) {
+        static_cast<uint64_t>(occurrenceCount * 2) ||
+      hover.renderStatistics.asyncPickBufferAllocations > 3) {
     unavailable = "assembly hover picking violated retained batching invariants";
     manager.releaseRenderBackendResources();
     manager.setCamera(nullptr);
