@@ -185,21 +185,14 @@ int main(int argc, char ** argv)
     const double reportSeconds = std::chrono::duration<double>(
       now - statisticsStart).count();
     if (reportSeconds >= 1.0) {
-      const SoRenderStatistics statistics = manager.getRenderStatistics();
-      std::cout << renderedFrames / reportSeconds << " fps, "
-                << statistics.drawCalls << " draws, "
-                << statistics.retainedCommands << " retained commands, "
-                << statistics.retainedGeometryResources << " resources\n";
+      std::cout << renderedFrames / reportSeconds << " fps\n";
       statisticsStart = now;
       renderedFrames = 0;
     }
   }
 
   if (options.smoke) {
-    const SoRenderStatistics statistics = manager.getRenderStatistics();
     if (!manager.getLastRenderResult().rendered ||
-        statistics.retainedCommands == 0 ||
-        statistics.retainedGeometryResources == 0 ||
         !viewer.hasHoverTarget()) {
       std::cerr << "Viewer smoke did not complete render and hover checks\n";
       session.setScene(nullptr, nullptr);

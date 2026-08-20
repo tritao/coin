@@ -4,11 +4,15 @@
 #include "RenderWorkloads.h"
 
 #include <Inventor/SoRenderManager.h>
-#include <Inventor/SbColor4f.h>
+#include <Inventor/SoPickedPoint.h>
 #include <Inventor/SbVec3f.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoTranslation.h>
-#include <Inventor/rendering/SoRenderIR.h>
+
+#ifndef GLFW_INCLUDE_NONE
+#define GLFW_INCLUDE_NONE
+#endif
+#include <GLFW/glfw3.h>
 
 #include <algorithm>
 #include <chrono>
@@ -31,11 +35,6 @@ struct RenderWorkloadViewerControllerImpl {
   bool animate = false;
   bool paused = false;
   bool hasHover = false;
-  bool hasSelection = false;
-  bool pickPending = false;
-  SoPickIdentity hover;
-  SoSelectionTarget selected;
-  SoAsyncPickRequest pickRequest;
   std::vector<SbVec3f> baseTranslations;
   std::chrono::steady_clock::time_point animationStart;
 
@@ -62,31 +61,6 @@ RenderWorkloadViewerControllerImpl * state(GLFWwindow * window)
     glfwGetWindowUserPointer(window));
 }
 
-SoSelectionTarget selectionTarget(const SoPickIdentity & identity,
-                                  const SbColor4f & color)
-{
-  SoSelectionTarget target;
-  target.commandIndex = identity.commandIndex;
-  target.nodeId = identity.nodeId;
-  target.instanceId = identity.instanceId;
-  target.objectId = identity.objectId;
-  target.type = identity.type;
-  target.elementIndex = identity.elementIndex;
-  target.color = color;
-  return target;
-}
-
-void updateSelection(RenderWorkloadViewerControllerImpl & viewer)
-{
-  SoSelectionState selection;
-  if (viewer.hasSelection) selection.selected.push_back(viewer.selected);
-  if (viewer.hasHover) {
-    selection.highlighted.push_back(selectionTarget(
-      viewer.hover, SbColor4f(0.2f, 0.8f, 1.0f, 0.75f)));
-  }
-  viewer.manager.setSelectionState(selection);
-}
-
 void framebufferSizeCallback(GLFWwindow * window, int width, int height)
 {
   RenderWorkloadViewerControllerImpl * viewer = state(window);
@@ -111,13 +85,6 @@ void mouseButtonCallback(GLFWwindow * window, int button, int action, int)
   if (!viewer) return;
   if (button == GLFW_MOUSE_BUTTON_RIGHT || button == GLFW_MOUSE_BUTTON_MIDDLE)
     viewer->panning = action == GLFW_PRESS;
-  if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS &&
-      viewer->hasHover) {
-    viewer->selected = selectionTarget(
-      viewer->hover, SbColor4f(1.0f, 0.8f, 0.0f, 0.65f));
-    viewer->hasSelection = true;
-    updateSelection(*viewer);
-  }
 }
 
 void cursorCallback(GLFWwindow * window, double x, double y)
@@ -144,10 +111,6 @@ void keyCallback(GLFWwindow * window, int key, int, int action, int)
   if (key == GLFW_KEY_M) viewer->animate = !viewer->animate;
   else if (key == GLFW_KEY_SPACE) viewer->paused = !viewer->paused;
   else if (key == GLFW_KEY_R) viewer->manager.invalidateDrawList();
-  else if (key == GLFW_KEY_C) {
-    viewer->hasSelection = false;
-    updateSelection(*viewer);
-  }
 }
 
 } // namespace
@@ -199,28 +162,11 @@ void RenderWorkloadViewerController::beforeRender()
 void RenderWorkloadViewerController::afterRender(const bool pickingEnabled)
 {
   if (!pickingEnabled) return;
-  if (impl_->pickPending) {
-    SoPickIdentity identity;
-    const SoAsyncPickStatus status =
-      impl_->manager.pollPickIdentityAsync(impl_->pickRequest, identity);
-    if (status != SoAsyncPickStatus::PENDING) {
-      impl_->pickPending = false;
-      const bool hit = status == SoAsyncPickStatus::HIT;
-      if (hit != impl_->hasHover ||
-          (hit && (identity.commandIndex != impl_->hover.commandIndex ||
-                   identity.elementIndex != impl_->hover.elementIndex))) {
-        impl_->hasHover = hit;
-        if (hit) impl_->hover = identity;
-        updateSelection(*impl_);
-      }
-    }
-  }
-  if (!impl_->pickPending) {
-    const int pickX = static_cast<int>(impl_->cursorX);
-    const int pickY = impl_->height - 1 - static_cast<int>(impl_->cursorY);
-    impl_->pickPending = impl_->manager.requestPickIdentityAsync(
-      pickX, pickY, 2, impl_->pickRequest) != FALSE;
-  }
+  const int pickX = static_cast<int>(impl_->cursorX);
+  const int pickY = impl_->height - 1 - static_cast<int>(impl_->cursorY);
+  SoPickedPoint * picked = nullptr;
+  impl_->hasHover = impl_->manager.pickClosest(pickX, pickY, 2, picked);
+  delete picked;
 }
 
 bool RenderWorkloadViewerController::resize(const int width, const int height)

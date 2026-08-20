@@ -151,8 +151,3 @@ const SoRenderManager & GLRenderTestSession::manager() const
 {
   return impl_->manager;
 }
-
-SoRenderStatistics GLRenderTestSession::statistics() const
-{
-  return impl_->manager.getRenderStatistics();
-}

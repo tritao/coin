@@ -41,31 +41,28 @@ Available workload names are `many_small_draws`, `many_material_changes`,
 `feature_rich_scene_end_to_end`, `shared_assembly_expanded`,
 `shared_assembly_sources`, and `shared_assembly_recipe`. Close the window or
 press Escape to exit. Use the mouse wheel to zoom, right- or middle-drag to
-pan, and left-click a retained hover target to select it. `M` toggles mutation
-playback, Space pauses rendering, `R` forces a retained rebuild, and `C` clears
-the selection. The viewer prints frame rate, draw count, retained-command
-count, and retained-resource count once per second. LegacyGL requires a
+pan. `M` toggles mutation playback, Space pauses rendering, and `R` forces a
+retained rebuild. The viewer prints frame rate once per second. LegacyGL requires a
 compatibility-profile build and `--gl-profile compat`; DrawList supports
-compatibility and core profiles. Retained hover and selection visualization
-are available on the DrawList path.
+compatibility and core profiles. The DrawList path also performs a synchronous
+hover pick at the cursor so the interaction path is exercised.
 
 CTest also registers `CoinRenderWorkloadViewerSmoke`. It uses a hidden core
 context to render a small shared-recipe scene, resize its framebuffer, animate
-one occurrence, force a retained rebuild, and complete an asynchronous hover
-identity query. This checks viewer integration without opening a window or
+one occurrence, force a retained rebuild, and complete a hover pick. This
+checks viewer integration without opening a window or
 introducing a timing threshold.
 
 `RenderWorkloadParityTest` renders the expanded, shared-source, and
 shared-recipe assembly representations through the same DrawList core context.
 It requires visible, equivalent pixel output while independently checking
-mutation handles, retained-command counts, and the resource-count bounds that
-distinguish the ownership models. A failure reports the mismatched-pixel count
+the mutation handles exposed by each representation. A failure reports the mismatched-pixel count
 and maximum channel difference rather than maintaining screenshot baselines.
 
 The viewer and parity test share `GLRenderTestSession`. The session accepts an
 arbitrary scene and camera and centralizes context/profile selection,
 LegacyGL or DrawList setup, viewport resize propagation, rendering, readback,
-statistics, and teardown. Workload generation and viewer interaction remain
+and teardown. Workload generation and viewer interaction remain
 separate so other GL integration tests can reuse the session without depending
 on benchmark scenes or UI policy.
 
@@ -85,22 +82,10 @@ context. It reports CPU render-call time, GPU timer-query time, end-to-end GPU
 completion time, dense-scene closest-pick latency, and a non-empty-frame pixel checksum. Unsupported profiles are
 reported in the JSON `unavailable` array rather than being mistaken for results.
 Picking is split into one-time cold target creation, target refresh after a
-changed frame, and warm repeated-hover latency. Retained runs also report
-asynchronous readback submission, time-to-ready, and maximum nonblocking poll
-call time.
-The GL benchmark also records draw calls, actual and skipped program/viewport
-changes, actual and skipped frame-matrix and material uniform batches, and
-actual and skipped depth/raster/blend/texture state changes. The counters make
-driver-call reductions deterministic even when wall-clock timings are noisy.
-VAO binds are reported separately because they describe geometry submission,
-not semantic pipeline state.
-Instanced runs report batches, absorbed commands, avoided draw calls, and
-transient instance bytes. The initial batching contract is deliberately
-limited to adjacent opaque, untextured, non-indexed triangle commands with
-identical geometry, material, lighting, depth, and raster state.
-Retained runs additionally enable opt-in per-command CPU phase timing for
-command preparation, state setup, program/uniform binding, and draw submission.
-Normal rendering leaves this intrusive timing disabled.
+changed frame, and warm repeated-hover latency. Renderer-internal counters and
+more detailed phase timing can be added in a later instrumentation layer; this
+infrastructure branch deliberately depends only on the renderer API available
+at its stack base.
 
 The deterministic workloads currently cover traversal/IR construction, render
 plan construction (including transparent sorting and depth segments), retained

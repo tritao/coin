@@ -19,7 +19,6 @@ constexpr int occurrenceCount = 64;
 
 struct RenderedWorkload {
   std::vector<uint8_t> pixels;
-  SoRenderStatistics statistics;
 };
 
 int skip(const char * reason)
@@ -63,29 +62,16 @@ bool renderWorkload(GLRenderTestSession & session, coin_test::WorkloadKind kind,
   session.manager().setLightingMode(SoRenderManager::UNLIT);
   session.render();
   session.render();
-  result.statistics = session.statistics();
   result.pixels = session.readPixels();
 
-  const uint64_t expectedCommands = occurrenceCount * 2;
-  const uint64_t sharedResources = static_cast<uint64_t>(definitions) * 2;
-  const bool recipe = kind == coin_test::WorkloadKind::SharedAssemblyRecipe;
-  const uint64_t minimumResources = recipe ? sharedResources : expectedCommands;
-  const uint64_t maximumResources = recipe
-    ? sharedResources + static_cast<uint64_t>(definitions) : expectedCommands;
   const bool structureValid =
     session.manager().getLastRenderResult().rendered &&
     session.manager().getLastRenderResult().usedPipeline ==
       SoRenderManager::RenderPipeline::DRAW_LIST &&
-    result.statistics.retainedCommands == expectedCommands &&
-    result.statistics.retainedGeometryResources >= minimumResources &&
-    result.statistics.retainedGeometryResources <= maximumResources &&
     hasVisiblePixel(result.pixels);
   if (!structureValid) {
     std::cerr << "FAIL: " << coin_test::workloadName(kind)
-              << " retained structure or output was invalid (commands="
-              << result.statistics.retainedCommands << ", resources="
-              << result.statistics.retainedGeometryResources << ")"
-              << std::endl;
+              << " did not produce visible DrawList output" << std::endl;
   }
 
   session.setScene(nullptr, nullptr);

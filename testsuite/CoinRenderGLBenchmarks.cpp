@@ -55,16 +55,8 @@ struct Measurement {
   double gpuP95Ms = 0.0;
   double completionMedianMs = 0.0;
   double completionP95Ms = 0.0;
-  double commandPreparationMs = 0.0;
-  double stateSetupMs = 0.0;
-  double programBindingMs = 0.0;
-  double drawSubmissionMs = 0.0;
   double coldPickMs = 0.0;
   double refreshPickMs = 0.0;
-  double asyncPickSubmitMs = 0.0;
-  double asyncPickReadyMs = 0.0;
-  double asyncPickPollMaxMs = 0.0;
-  SoRenderStatistics renderStatistics;
   double pickMedianMs = 0.0;
   double pickP95Ms = 0.0;
   uint64_t pixelChecksum = 0;
@@ -146,8 +138,6 @@ bool runVariant(GLTestProfile profile,
   manager.setCamera(camera);
   manager.setLightingMode(SoRenderManager::UNLIT);
   manager.setRenderPipeline(pipeline);
-  manager.setRenderPhaseTimingEnabled(
-    pipeline == SoRenderManager::RenderPipeline::DRAW_LIST);
 #if COIN_HAVE_LEGACY_GL_RENDERER
   if (pipeline == SoRenderManager::RenderPipeline::LEGACY_GL) {
     manager.setGLRenderAction(&legacyAction);
@@ -170,10 +160,6 @@ bool runVariant(GLTestProfile profile,
   std::vector<double> cpu;
   std::vector<double> gpu;
   std::vector<double> completion;
-  std::vector<double> commandPreparation;
-  std::vector<double> stateSetup;
-  std::vector<double> programBinding;
-  std::vector<double> drawSubmission;
   GLuint query = 0;
   glGenQueries(1, &query);
   for (int sample = 0; sample < samples; ++sample) {
@@ -183,14 +169,6 @@ bool runVariant(GLTestProfile profile,
     const Clock::time_point cpuStart = Clock::now();
     manager.render(TRUE, TRUE);
     cpu.push_back(elapsedMs(cpuStart));
-    const SoRenderStatistics sampleStatistics = manager.getRenderStatistics();
-    commandPreparation.push_back(
-      sampleStatistics.commandPreparationNanoseconds / 1000000.0);
-    stateSetup.push_back(sampleStatistics.stateSetupNanoseconds / 1000000.0);
-    programBinding.push_back(
-      sampleStatistics.programBindingNanoseconds / 1000000.0);
-    drawSubmission.push_back(
-      sampleStatistics.drawSubmissionNanoseconds / 1000000.0);
     glEndQuery(GL_TIME_ELAPSED);
     GLuint64 nanoseconds = 0;
     glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
@@ -198,14 +176,10 @@ bool runVariant(GLTestProfile profile,
     gpu.push_back(static_cast<double>(nanoseconds) / 1000000.0);
   }
   glDeleteQueries(1, &query);
-  const SoRenderStatistics renderStatistics = manager.getRenderStatistics();
 
   std::vector<double> pick;
   double coldPick = 0.0;
   double refreshPick = 0.0;
-  double asyncPickSubmit = 0.0;
-  double asyncPickReady = 0.0;
-  double asyncPickPollMax = 0.0;
   if (workload == WorkloadKind::DensePicking) {
     SoSeparator * legacyPickRoot = NULL;
 #if COIN_HAVE_LEGACY_GL_RENDERER
@@ -253,36 +227,6 @@ bool runVariant(GLTestProfile profile,
     scene->touch();
     context.bindFramebuffer();
     manager.render(TRUE, TRUE);
-#if COIN_HAVE_LEGACY_GL_RENDERER
-    if (pipeline != SoRenderManager::RenderPipeline::LEGACY_GL)
-#endif
-    {
-      SoAsyncPickRequest request;
-      const Clock::time_point asyncStart = Clock::now();
-      if (!manager.requestPickClosestAsync(128, 128, 4, request)) {
-        std::cerr << "FAIL: asynchronous benchmark pick was rejected\n";
-        std::exit(1);
-      }
-      asyncPickSubmit = elapsedMs(asyncStart);
-      SoAsyncPickStatus status = SoAsyncPickStatus::PENDING;
-      SoPickedPoint * asyncResult = NULL;
-      while (status == SoAsyncPickStatus::PENDING) {
-        const Clock::time_point pollStart = Clock::now();
-        status = manager.pollPickClosestAsync(request, asyncResult);
-        asyncPickPollMax = std::max(asyncPickPollMax, elapsedMs(pollStart));
-        if (elapsedMs(asyncStart) > 1000.0) break;
-        if (status == SoAsyncPickStatus::PENDING) std::this_thread::yield();
-      }
-      asyncPickReady = elapsedMs(asyncStart);
-      if (status != SoAsyncPickStatus::HIT || !asyncResult) {
-        std::cerr << "FAIL: asynchronous benchmark pick did not resolve\n";
-        std::exit(1);
-      }
-      delete asyncResult;
-      scene->touch();
-      context.bindFramebuffer();
-      manager.render(TRUE, TRUE);
-    }
     const Clock::time_point refreshPickStart = Clock::now();
     performPick();
     refreshPick = elapsedMs(refreshPickStart);
@@ -314,21 +258,13 @@ bool runVariant(GLTestProfile profile,
   result.gpuP95Ms = percentile(gpu, 0.95);
   result.completionMedianMs = percentile(completion, 0.5);
   result.completionP95Ms = percentile(completion, 0.95);
-  result.commandPreparationMs = percentile(commandPreparation, 0.5);
-  result.stateSetupMs = percentile(stateSetup, 0.5);
-  result.programBindingMs = percentile(programBinding, 0.5);
-  result.drawSubmissionMs = percentile(drawSubmission, 0.5);
   if (!pick.empty()) {
     result.coldPickMs = coldPick;
     result.refreshPickMs = refreshPick;
-    result.asyncPickSubmitMs = asyncPickSubmit;
-    result.asyncPickReadyMs = asyncPickReady;
-    result.asyncPickPollMaxMs = asyncPickPollMax;
     result.pickMedianMs = percentile(pick, 0.5);
     result.pickP95Ms = percentile(pick, 0.95);
   }
   result.pixelChecksum = pixelChecksum;
-  result.renderStatistics = renderStatistics;
   return true;
 }
 
@@ -373,49 +309,6 @@ std::string toJson(const std::vector<Measurement> & results,
         << ", \"completion_p95_ms\": " << r.completionP95Ms
         << ", \"cold_pick_ms\": " << r.coldPickMs
         << ", \"refresh_pick_ms\": " << r.refreshPickMs
-        << ", \"async_pick_submit_ms\": " << r.asyncPickSubmitMs
-        << ", \"async_pick_ready_ms\": " << r.asyncPickReadyMs
-        << ", \"async_pick_poll_max_ms\": " << r.asyncPickPollMaxMs
-        << ", \"draw_calls\": " << r.renderStatistics.drawCalls
-        << ", \"program_binds\": " << r.renderStatistics.programBinds
-        << ", \"skipped_program_binds\": "
-        << r.renderStatistics.skippedProgramBinds
-        << ", \"viewport_changes\": "
-        << r.renderStatistics.viewportChanges
-        << ", \"skipped_viewport_changes\": "
-        << r.renderStatistics.skippedViewportChanges
-        << ", \"frame_matrix_uploads\": "
-        << r.renderStatistics.frameMatrixUploads
-        << ", \"skipped_frame_matrix_uploads\": "
-        << r.renderStatistics.skippedFrameMatrixUploads
-        << ", \"material_uniform_batches\": "
-        << r.renderStatistics.materialUniformBatches
-        << ", \"skipped_material_uniform_batches\": "
-        << r.renderStatistics.skippedMaterialUniformBatches
-        << ", \"state_changes\": "
-        << r.renderStatistics.stateChanges
-        << ", \"skipped_state_changes\": "
-        << r.renderStatistics.skippedStateChanges
-        << ", \"vertex_array_binds\": "
-        << r.renderStatistics.vertexArrayBinds
-        << ", \"skipped_vertex_array_binds\": "
-        << r.renderStatistics.skippedVertexArrayBinds
-        << ", \"instanced_batches\": "
-        << r.renderStatistics.instancedBatches
-        << ", \"instanced_commands\": "
-        << r.renderStatistics.instancedCommands
-        << ", \"draw_calls_avoided\": "
-        << r.renderStatistics.drawCallsAvoided
-        << ", \"instance_bytes_uploaded\": "
-        << r.renderStatistics.instanceBytesUploaded
-        << ", \"command_preparation_ms\": "
-        << r.commandPreparationMs
-        << ", \"state_setup_ms\": "
-        << r.stateSetupMs
-        << ", \"program_binding_ms\": "
-        << r.programBindingMs
-        << ", \"draw_submission_ms\": "
-        << r.drawSubmissionMs
         << ", \"pick_median_ms\": " << r.pickMedianMs
         << ", \"pick_p95_ms\": " << r.pickP95Ms
         << ", \"pixel_checksum\": " << r.pixelChecksum << "}";

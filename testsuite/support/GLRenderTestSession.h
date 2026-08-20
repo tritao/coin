@@ -40,7 +40,6 @@ public:
   GLTestContext & context();
   SoRenderManager & manager();
   const SoRenderManager & manager() const;
-  SoRenderStatistics statistics() const;
 
 private:
   struct Impl;
