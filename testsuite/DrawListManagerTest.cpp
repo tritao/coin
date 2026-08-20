@@ -495,10 +495,21 @@ runTest()
     manager.render(TRUE, TRUE);
     const SoRenderStatistics repeatedTransformStatistics =
       manager.getRenderStatistics();
+    if (traversalCount != traversalCountAfterFirstRender ||
+        repeatedTransformStatistics.drawListRebuilds != 0 ||
+        repeatedTransformStatistics.incrementalCommandUpdates != 1) {
+      std::cerr << "FAIL: repeated translation was not coalesced in place"
+                << std::endl;
+      result = 1;
+    }
+    cubeTranslation->translation.setValue(0.4f, 0.0f, -3.0f);
+    cubeMaterial->diffuseColor.setValue(0.3f, 0.4f, 0.5f);
+    manager.render(TRUE, TRUE);
+    const SoRenderStatistics mixedStatistics = manager.getRenderStatistics();
     if (traversalCount != traversalCountAfterFirstRender + 1 ||
-        repeatedTransformStatistics.drawListRebuilds != 1 ||
-        repeatedTransformStatistics.incrementalCommandUpdates != 0) {
-      std::cerr << "FAIL: multiple notifications did not use a full rebuild"
+        mixedStatistics.drawListRebuilds != 1 ||
+        mixedStatistics.incrementalCommandUpdates != 0) {
+      std::cerr << "FAIL: mixed transform and material edits did not rebuild"
                 << std::endl;
       result = 1;
     }
@@ -572,7 +583,7 @@ runTest()
                 << std::endl;
       result = 1;
     }
-    if (callbacks.pre != 12 || callbacks.post != 12) {
+    if (callbacks.pre != 13 || callbacks.post != 13) {
       std::cerr << "FAIL: cached DrawList renders skipped manager callbacks"
                 << std::endl;
       result = 1;

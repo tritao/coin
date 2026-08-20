@@ -1269,16 +1269,45 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   };
   int updated = 0;
   if (canPatchStateChanges && rootSensor->getNotificationCount() > 1) {
+    enum BatchKind { UNSUPPORTED_BATCH, SWITCH_BATCH, TRANSLATION_BATCH };
+    BatchKind batchKind = UNSUPPORTED_BATCH;
     for (unsigned int i = 0; i < retainedNotificationCount; ++i) {
-      const int patched = patchSwitch(rootSensor->getChangedNode(i),
-                                      rootSensor->getChangedField(i),
-                                      rootSensor->getChangedPath(i));
-      if (patched == 0) {
-        updated = 0;
+      SoNode * node = rootSensor->getChangedNode(i);
+      SoField * field = rootSensor->getChangedField(i);
+      BatchKind changeKind = UNSUPPORTED_BATCH;
+      if (node && node->isOfType(SoSwitch::getClassTypeId())) {
+        SoSwitch * switchNode = static_cast<SoSwitch *>(node);
+        const int whichChild = switchNode->whichChild.getValue();
+        if (field == &switchNode->whichChild &&
+            switchNode->getNumChildren() == 1 &&
+            (whichChild == SO_SWITCH_ALL || whichChild == SO_SWITCH_NONE ||
+             whichChild == 0)) {
+          changeKind = SWITCH_BATCH;
+        }
+      }
+      else if (node && node->isOfType(SoTranslation::getClassTypeId()) &&
+               field == &static_cast<SoTranslation *>(node)->translation) {
+        changeKind = TRANSLATION_BATCH;
+      }
+      if (changeKind == UNSUPPORTED_BATCH ||
+          (batchKind != UNSUPPORTED_BATCH && batchKind != changeKind)) {
+        batchKind = UNSUPPORTED_BATCH;
         break;
       }
-      updated += patched;
+      batchKind = changeKind;
     }
+    for (unsigned int i = 0;
+         batchKind != UNSUPPORTED_BATCH && i < retainedNotificationCount; ++i) {
+      const int patched = batchKind == SWITCH_BATCH
+        ? patchSwitch(rootSensor->getChangedNode(i),
+                      rootSensor->getChangedField(i),
+                      rootSensor->getChangedPath(i))
+        : action->updateCommandMatricesForStatePath(
+            rootSensor->getChangedPath(i));
+      if (patched == 0) batchKind = UNSUPPORTED_BATCH;
+      else updated += patched;
+    }
+    if (batchKind == UNSUPPORTED_BATCH) updated = 0;
   }
   else if (canPatchStateChanges && rootSensor->getNotificationCount() == 1 &&
            rootSensor->getChangedNode() &&

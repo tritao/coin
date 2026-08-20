@@ -1235,11 +1235,42 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
     results.push_back(result);
   };
 
+  const auto verifyAgainstRebuild = [&](const char * name) {
+    const std::vector<uint8_t> incrementalPixels = context.readPixels();
+    manager.invalidateDrawList();
+    context.bindFramebuffer();
+    manager.render(TRUE, TRUE);
+    const std::vector<uint8_t> rebuiltPixels = context.readPixels();
+    if (manager.getRenderStatistics().drawListRebuilds != 1 ||
+        incrementalPixels != rebuiltPixels) {
+      std::cerr << "FAIL: " << name
+                << " differs from a forced DrawList rebuild\n";
+      std::exit(1);
+    }
+  };
+
   measure("incremental_unchanged", 0, [](int) {});
   measure("incremental_transform_1", 1, [&](int sample) {
     mutations.transforms[0]->translation.setValue(
       0.001f * static_cast<float>((sample & 1) ? 1 : -1), 0.0f, 0.0f);
   });
+  const int transformBatchSizes[] = { 10, 100, 1000 };
+  for (size_t batchIndex = 0;
+       batchIndex < sizeof(transformBatchSizes) / sizeof(transformBatchSizes[0]);
+       ++batchIndex) {
+    const int batchSize = transformBatchSizes[batchIndex];
+    if (batchSize > drawCount) continue;
+    const std::string name =
+      "incremental_transform_" + std::to_string(batchSize);
+    measure(name.c_str(), static_cast<uint64_t>(batchSize), [&](int sample) {
+      const float offset = 0.001f * static_cast<float>((sample & 1) ? 1 : -1);
+      for (int i = 0; i < batchSize; ++i) {
+        mutations.transforms[static_cast<size_t>(i)]->translation.setValue(
+          offset, 0.0f, 0.0f);
+      }
+    });
+    verifyAgainstRebuild(name.c_str());
+  }
   measure("incremental_material_1", 1, [&](int sample) {
     mutations.materials[0]->diffuseColor.set1Value(
       0, SbColor((sample & 1) ? 0.7f : 0.2f, 0.4f, 0.6f));
