@@ -1296,16 +1296,24 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
       }
       batchKind = changeKind;
     }
-    for (unsigned int i = 0;
-         batchKind != UNSUPPORTED_BATCH && i < retainedNotificationCount; ++i) {
-      const int patched = batchKind == SWITCH_BATCH
-        ? patchSwitch(rootSensor->getChangedNode(i),
-                      rootSensor->getChangedField(i),
-                      rootSensor->getChangedPath(i))
-        : action->updateCommandMatricesForStatePath(
-            rootSensor->getChangedPath(i));
-      if (patched == 0) batchKind = UNSUPPORTED_BATCH;
-      else updated += patched;
+    if (batchKind == TRANSLATION_BATCH) {
+      std::vector<const SoPath *> changedPaths;
+      changedPaths.reserve(retainedNotificationCount);
+      for (unsigned int i = 0; i < retainedNotificationCount; ++i) {
+        changedPaths.push_back(rootSensor->getChangedPath(i));
+      }
+      updated = action->updateCommandMatricesForStatePaths(changedPaths);
+      if (updated == 0) batchKind = UNSUPPORTED_BATCH;
+    }
+    else {
+      for (unsigned int i = 0;
+           batchKind == SWITCH_BATCH && i < retainedNotificationCount; ++i) {
+        const int patched = patchSwitch(rootSensor->getChangedNode(i),
+                                        rootSensor->getChangedField(i),
+                                        rootSensor->getChangedPath(i));
+        if (patched == 0) batchKind = UNSUPPORTED_BATCH;
+        else updated += patched;
+      }
     }
     if (batchKind == UNSUPPORTED_BATCH) updated = 0;
   }

@@ -216,6 +216,9 @@ public:
   SoLightingHandle captureLightingHandle();
   //! Refresh matrices for commands affected by one state-node notification.
   int updateCommandMatricesForStatePath(const SoPath * statePath);
+  //! Refresh the unique commands affected by a batch of state notifications.
+  int updateCommandMatricesForStatePaths(
+    const std::vector<const SoPath *> & statePaths);
   //! Refresh effective material and material-derived render state.
   int updateCommandMaterialsForStatePath(const SoPath * statePath,
                                          bool opacityMayChange);

@@ -176,7 +176,8 @@ commands in place while preserving command identity. The transform and
 visibility workloads also change batches of 10, 100, and 1,000 nodes when the
 scene is large enough, exposing both notification and command-update scaling.
 Transform batches are checked against a forced rebuild. Duplicate notifications
-are coalesced; mixed, unsupported, and structural edits still fall back to a
+are coalesced, and commands affected by multiple changed transforms are replayed
+once per batch. Mixed, unsupported, and structural edits still fall back to a
 safe rebuild. Child insertion/removal remains the structural control and
 explicitly asserts the resulting command count and plan rebuild.
 

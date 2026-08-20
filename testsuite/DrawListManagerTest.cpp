@@ -196,10 +196,12 @@ runTest()
   traversalCounter->setCallback(countTraversal, &traversalCount);
   SoTranslation * cubeTranslation = new SoTranslation;
   cubeTranslation->translation.setValue(0.0f, 0.0f, -3.0f);
+  SoTranslation * cubeNestedTranslation = new SoTranslation;
   SoMaterial * cubeMaterial = new SoMaterial;
   SoSeparator * cubeOccurrence = new SoSeparator;
   cubeRoot->addChild(traversalCounter);
   cubeOccurrence->addChild(cubeTranslation);
+  cubeOccurrence->addChild(cubeNestedTranslation);
   cubeOccurrence->addChild(cubeMaterial);
   cubeOccurrence->addChild(new SoCube);
   cubeRoot->addChild(cubeOccurrence);
@@ -491,14 +493,14 @@ runTest()
       result = 1;
     }
     cubeTranslation->translation.setValue(0.2f, 0.0f, -3.0f);
-    cubeTranslation->translation.setValue(0.3f, 0.0f, -3.0f);
+    cubeNestedTranslation->translation.setValue(0.1f, 0.0f, 0.0f);
     manager.render(TRUE, TRUE);
     const SoRenderStatistics repeatedTransformStatistics =
       manager.getRenderStatistics();
     if (traversalCount != traversalCountAfterFirstRender ||
         repeatedTransformStatistics.drawListRebuilds != 0 ||
         repeatedTransformStatistics.incrementalCommandUpdates != 1) {
-      std::cerr << "FAIL: repeated translation was not coalesced in place"
+      std::cerr << "FAIL: nested translations did not update one command in place"
                 << std::endl;
       result = 1;
     }

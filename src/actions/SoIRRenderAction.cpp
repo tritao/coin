@@ -905,16 +905,34 @@ SoIRRenderAction::getRenderContextOverride() const
 int
 SoIRRenderAction::updateCommandMatricesForStatePath(const SoPath * statePath)
 {
-  std::vector<size_t> commandIndices;
-  this->findCommandsAffectedByStatePath(statePath, commandIndices);
+  std::vector<const SoPath *> statePaths(1, statePath);
+  return this->updateCommandMatricesForStatePaths(statePaths);
+}
+
+int
+SoIRRenderAction::updateCommandMatricesForStatePaths(
+  const std::vector<const SoPath *> & statePaths)
+{
+  std::vector<uint8_t> affected(
+    static_cast<size_t>(this->drawlist.getNumCommands()), 0);
+  std::vector<size_t> found;
+  for (std::vector<const SoPath *>::const_iterator path = statePaths.begin();
+       path != statePaths.end(); ++path) {
+    this->findCommandsAffectedByStatePath(*path, found);
+    for (std::vector<size_t>::const_iterator command = found.begin();
+         command != found.end(); ++command) {
+      affected[*command] = 1;
+    }
+  }
+  SoGetMatrixAction matrixAction(this->vpRegion);
   int updated = 0;
-  for (std::vector<size_t>::const_iterator it = commandIndices.begin();
-       it != commandIndices.end(); ++it) {
-    const SoPath * commandPath = this->getCommandPath(static_cast<int>(*it));
+  for (size_t commandIndex = 0; commandIndex < affected.size(); ++commandIndex) {
+    if (!affected[commandIndex]) continue;
+    const SoPath * commandPath =
+      this->getCommandPath(static_cast<int>(commandIndex));
     if (!commandPath) continue;
-    SoGetMatrixAction matrixAction(this->vpRegion);
     matrixAction.apply(const_cast<SoPath *>(commandPath));
-    this->drawlist.getCommand(static_cast<int>(*it)).modelMatrix =
+    this->drawlist.getCommand(static_cast<int>(commandIndex)).modelMatrix =
       matrixAction.getMatrix();
     ++updated;
   }
