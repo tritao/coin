@@ -19,6 +19,56 @@ build-bench/bin/CoinRenderBenchmarks --samples 50 --output results.json
 build-bench/bin/CoinRenderGLBenchmarks --samples 50 --output gl-results.json
 ```
 
+## Viewing generated workloads
+
+`CoinRenderWorkloadViewer` displays the same deterministic scene graphs used
+by the hardware benchmarks. This makes scene construction, camera framing,
+transparency, and retained batching behavior inspectable without maintaining
+separate visual copies of the workloads.
+
+```sh
+build-bench/bin/CoinRenderWorkloadViewer \
+  --workload shared_assembly_recipe --objects 10000 \
+  --renderer drawlist --gl-profile core
+
+build-bench/bin/CoinRenderWorkloadViewer \
+  --workload feature_rich_scene_end_to_end --objects 1000 \
+  --renderer legacy --gl-profile compat
+```
+
+Available workload names are `many_small_draws`, `many_material_changes`,
+`transparent_sorting`, `single_pick_dense_scene`,
+`feature_rich_scene_end_to_end`, `shared_assembly_expanded`,
+`shared_assembly_sources`, and `shared_assembly_recipe`. Close the window or
+press Escape to exit. Use the mouse wheel to zoom, right- or middle-drag to
+pan, and left-click a retained hover target to select it. `M` toggles mutation
+playback, Space pauses rendering, `R` forces a retained rebuild, and `C` clears
+the selection. The viewer prints frame rate, draw count, retained-command
+count, and retained-resource count once per second. LegacyGL requires a
+compatibility-profile build and `--gl-profile compat`; DrawList supports
+compatibility and core profiles. Retained hover and selection visualization
+are available on the DrawList path.
+
+CTest also registers `CoinRenderWorkloadViewerSmoke`. It uses a hidden core
+context to render a small shared-recipe scene, resize its framebuffer, animate
+one occurrence, force a retained rebuild, and complete an asynchronous hover
+identity query. This checks viewer integration without opening a window or
+introducing a timing threshold.
+
+`RenderWorkloadParityTest` renders the expanded, shared-source, and
+shared-recipe assembly representations through the same DrawList core context.
+It requires visible, equivalent pixel output while independently checking
+mutation handles, retained-command counts, and the resource-count bounds that
+distinguish the ownership models. A failure reports the mismatched-pixel count
+and maximum channel difference rather than maintaining screenshot baselines.
+
+The viewer and parity test share `GLRenderTestSession`. The session accepts an
+arbitrary scene and camera and centralizes context/profile selection,
+LegacyGL or DrawList setup, viewport resize propagation, rendering, readback,
+statistics, and teardown. Workload generation and viewer interaction remain
+separate so other GL integration tests can reuse the session without depending
+on benchmark scenes or UI policy.
+
 CTest exposes a tiny non-gating smoke run and a separate 10,000-frame stress
 run. Timing results are informational; neither test applies wall-clock pass/fail
 thresholds.

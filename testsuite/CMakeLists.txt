@@ -430,6 +430,20 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		set_tests_properties(CoinRenderGLBenchmarksSmoke PROPERTIES
 			SKIP_RETURN_CODE ${COIN_TEST_SKIP_RETURN_CODE}
 			LABELS "benchmark;benchmark-gl;benchmark-render")
+		add_executable(RenderWorkloadParityTest RenderWorkloadParityTest.cpp)
+		target_link_libraries(RenderWorkloadParityTest PRIVATE
+			CoinRenderWorkloadSupport CoinGLTestSupport
+			CoinPrivateTestHeaders Coin ${COIN_TARGET_LINK_LIBRARIES})
+		target_include_directories(RenderWorkloadParityTest PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR}/support
+			${PROJECT_SOURCE_DIR}/src
+			${PROJECT_SOURCE_DIR}/include
+			${PROJECT_BINARY_DIR}/include
+			${COIN_TARGET_INCLUDE_DIRECTORIES})
+		add_test(NAME RenderWorkloadParityTest COMMAND RenderWorkloadParityTest)
+		set_tests_properties(RenderWorkloadParityTest PROPERTIES
+			SKIP_RETURN_CODE ${COIN_TEST_SKIP_RETURN_CODE}
+			LABELS "gl-core;benchmark;benchmark-render;workload-parity")
 		add_executable(CoinRenderWorkloadViewer CoinRenderWorkloadViewer.cpp)
 		target_sources(CoinRenderWorkloadViewer PRIVATE
 			support/RenderWorkloadViewerController.cpp)
