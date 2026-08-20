@@ -24,6 +24,8 @@ struct GLTestContextConfig {
   int minor = 3;
   int width = 64;
   int height = 64;
+  bool visible = false;
+  bool vsync = false;
 };
 
 class GLTestContext {
@@ -38,7 +40,12 @@ public:
   void shutdown();
 
   bool makeCurrent();
+  bool resizeFramebuffer(int width, int height);
   void bindFramebuffer();
+  void present();
+  void pollEvents();
+  bool shouldClose() const;
+  GLFWwindow * window() const { return window_; }
   std::vector<uint8_t> readPixels() const;
 
   bool isCoreProfile() const { return profile_ == GLTestProfile::Core; }

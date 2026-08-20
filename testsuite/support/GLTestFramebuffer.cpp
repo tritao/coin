@@ -99,6 +99,16 @@ GLTestFramebuffer::bind() const
   glViewport(0, 0, width_, height_);
 }
 
+void
+GLTestFramebuffer::blitToDefault() const
+{
+  if (!this->isInitialized()) return;
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, framebuffer_);
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+  glBlitFramebuffer(0, 0, width_, height_, 0, 0, width_, height_,
+                    GL_COLOR_BUFFER_BIT, GL_NEAREST);
+}
+
 std::vector<uint8_t>
 GLTestFramebuffer::readPixels() const
 {
