@@ -41,6 +41,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -1746,6 +1747,234 @@ bool runAssemblyMutations(GLTestProfile profile, WorkloadKind workload,
   return valid;
 }
 
+bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
+                             int samples,
+                             std::vector<Measurement> & results,
+                             std::string & unavailable)
+{
+  GLTestContextConfig config;
+  config.profile = profile;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 256;
+  config.height = 256;
+  GLTestContext context;
+  if (!context.initialize(config)) {
+    unavailable = "requested OpenGL context is unavailable";
+    return false;
+  }
+
+  SoOrthographicCamera * camera = nullptr;
+  SoSeparator * scene = makeScene(
+    WorkloadKind::SharedAssemblyRecipe, occurrenceCount, camera);
+  SbViewportRegion viewport(SbVec2s(256, 256));
+  viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(256, 256));
+  SoRenderManager manager;
+  manager.setViewportRegion(viewport);
+  manager.setSceneGraph(scene);
+  manager.setCamera(camera);
+  manager.setLightingMode(SoRenderManager::UNLIT);
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+  manager.setRenderPhaseTimingEnabled(TRUE);
+  context.bindFramebuffer();
+  manager.render(TRUE, TRUE);
+  context.bindFramebuffer();
+  manager.render(TRUE, TRUE);
+  const SoRenderStatistics baseline = manager.getRenderStatistics();
+  const uint64_t baselineChecksum = checksumPixels(context.readPixels());
+  const uint64_t maximumResources = static_cast<uint64_t>(
+    assemblyDefinitionCount(occurrenceCount)) * 3;
+  if (baseline.retainedCommands != static_cast<uint64_t>(occurrenceCount * 2) ||
+      baseline.retainedGeometryResources > maximumResources) {
+    unavailable = "assembly interaction scene retained unexpected structure";
+    manager.setCamera(nullptr);
+    manager.setSceneGraph(nullptr);
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+
+  const auto cursorForOccurrence = [&](int occurrence) {
+    const int columns = static_cast<int>(std::ceil(std::sqrt(
+      static_cast<double>(occurrenceCount))));
+    const float x = (static_cast<float>(occurrence % columns) -
+      columns * 0.5f) * 0.65f;
+    const float y = (static_cast<float>(occurrence / columns) -
+      columns * 0.5f) * 0.65f;
+    const float halfHeight = std::max(4.0f, camera->height.getValue() * 0.5f);
+    const int px = static_cast<int>(std::lround(
+      (x / halfHeight * 0.5f + 0.5f) * 255.0f));
+    const int py = static_cast<int>(std::lround(
+      (y / halfHeight * 0.5f + 0.5f) * 255.0f));
+    return SbVec2s(static_cast<short>(px), static_cast<short>(py));
+  };
+
+  Measurement hover;
+  hover.workload = "shared_assembly_hover_pick_" +
+    std::to_string(occurrenceCount);
+  hover.renderer = "DrawList";
+  hover.profile = profile == GLTestProfile::Core ? "core" : "compatibility";
+  hover.semanticDraws = occurrenceCount * 2;
+  hover.samples = samples;
+  std::vector<double> pickTimes;
+  std::vector<double> asyncSubmitTimes;
+  std::vector<double> asyncReadyTimes;
+  std::unordered_set<SoInstanceId> identities;
+  const SbVec2s coldCursor = cursorForOccurrence(0);
+  SoPickedPoint * picked = nullptr;
+  Clock::time_point start = Clock::now();
+  if (!manager.pickClosest(coldCursor[0], coldCursor[1], 3, picked) || !picked) {
+    unavailable = "assembly cold hover pick returned no scene hit";
+    manager.setCamera(nullptr);
+    manager.setSceneGraph(nullptr);
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+  hover.coldPickMs = elapsedMs(start);
+  delete picked;
+  for (int sample = 0; sample < samples; ++sample) {
+    const int occurrence = (sample * 7919) % occurrenceCount;
+    const SbVec2s cursor = cursorForOccurrence(occurrence);
+    picked = nullptr;
+    start = Clock::now();
+    if (!manager.pickClosest(cursor[0], cursor[1], 3, picked) || !picked) {
+      unavailable = "assembly warm hover pick returned no scene hit";
+      break;
+    }
+    pickTimes.push_back(elapsedMs(start));
+    delete picked;
+
+    SoAsyncPickRequest request;
+    start = Clock::now();
+    if (!manager.requestPickIdentityAsync(cursor[0], cursor[1], 3, request)) {
+      unavailable = "assembly asynchronous identity pick was rejected";
+      break;
+    }
+    asyncSubmitTimes.push_back(elapsedMs(start));
+    SoPickIdentity identity;
+    SoAsyncPickStatus status = SoAsyncPickStatus::PENDING;
+    while (status == SoAsyncPickStatus::PENDING) {
+      const Clock::time_point pollStart = Clock::now();
+      status = manager.pollPickIdentityAsync(request, identity);
+      hover.asyncIdPollMaxMs = std::max(
+        hover.asyncIdPollMaxMs, elapsedMs(pollStart));
+      if (status == SoAsyncPickStatus::PENDING) std::this_thread::yield();
+      if (elapsedMs(start) > 1000.0) break;
+    }
+    asyncReadyTimes.push_back(elapsedMs(start));
+    if (status != SoAsyncPickStatus::HIT || identity.instanceId == 0) {
+      unavailable = "assembly asynchronous identity pick did not resolve";
+      break;
+    }
+    identities.insert(identity.instanceId);
+  }
+  if (pickTimes.size() != static_cast<size_t>(samples)) {
+    manager.releaseRenderBackendResources();
+    manager.setCamera(nullptr);
+    manager.setSceneGraph(nullptr);
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+  hover.pickMedianMs = percentile(pickTimes, 0.5);
+  hover.pickP95Ms = percentile(pickTimes, 0.95);
+  hover.asyncIdSubmitMedianMs = percentile(asyncSubmitTimes, 0.5);
+  hover.asyncIdReadyMedianMs = percentile(asyncReadyTimes, 0.5);
+  hover.renderStatistics = manager.getRenderStatistics();
+  if (hover.renderStatistics.drawListRebuilds != 0 ||
+      hover.renderStatistics.retainedGeometryResources > maximumResources) {
+    unavailable = "assembly hover picking changed retained structure";
+    manager.releaseRenderBackendResources();
+    manager.setCamera(nullptr);
+    manager.setSceneGraph(nullptr);
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+  context.bindFramebuffer();
+  hover.pixelChecksum = checksumPixels(context.readPixels());
+  results.push_back(hover);
+
+  const auto measureSelection = [&](const char * name, int selectedCount,
+                                    bool highlighted, bool churn) {
+    std::vector<double> times;
+    for (int sample = 0; sample < samples; ++sample) {
+      SoSelectionState selection;
+      const int offset = churn ? sample : 0;
+      for (int selected = 0; selected < selectedCount; ++selected) {
+        const int occurrence = (selected * 7919 + offset) % occurrenceCount;
+        for (int commandOffset = 0; commandOffset < 2; ++commandOffset) {
+          SoSelectionTarget target;
+          target.commandIndex = occurrence * 2 + commandOffset;
+          target.color = highlighted
+            ? SbColor4f(0.2f, 0.8f, 1.0f, 0.75f)
+            : SbColor4f(1.0f, 0.8f, 0.0f, 0.65f);
+          if (highlighted) selection.highlighted.push_back(target);
+          else selection.selected.push_back(target);
+        }
+      }
+      manager.setSelectionState(selection);
+      context.bindFramebuffer();
+      const Clock::time_point renderStart = Clock::now();
+      manager.render(TRUE, TRUE);
+      times.push_back(elapsedMs(renderStart));
+      const SoRenderStatistics statistics = manager.getRenderStatistics();
+      if (statistics.drawListRebuilds != 0 ||
+          statistics.retainedCommands !=
+            static_cast<uint64_t>(occurrenceCount * 2) ||
+          statistics.retainedGeometryResources > maximumResources) {
+        unavailable = std::string(name) +
+          " changed retained assembly structure";
+        return false;
+      }
+    }
+    Measurement measurement;
+    measurement.workload = std::string(name) + '_' +
+      std::to_string(occurrenceCount);
+    measurement.renderer = "DrawList";
+    measurement.profile = profile == GLTestProfile::Core
+      ? "core" : "compatibility";
+    measurement.semanticDraws = occurrenceCount * 2;
+    measurement.samples = samples;
+    measurement.selectionMedianMs = percentile(times, 0.5);
+    measurement.selectionP95Ms = percentile(times, 0.95);
+    measurement.cpuMedianMs = measurement.selectionMedianMs;
+    measurement.cpuP95Ms = measurement.selectionP95Ms;
+    measurement.renderStatistics = manager.getRenderStatistics();
+    measurement.pixelChecksum = checksumPixels(context.readPixels());
+    if (measurement.pixelChecksum == 0 ||
+        measurement.pixelChecksum == baselineChecksum) {
+      unavailable = std::string(name) +
+        " did not produce a visible interaction overlay";
+      return false;
+    }
+    results.push_back(measurement);
+    return true;
+  };
+
+  const int onePercent = std::max(1, occurrenceCount / 100);
+  const int tenPercent = std::max(1, occurrenceCount / 10);
+  bool valid = identities.size() >= static_cast<size_t>(std::min(samples, 2));
+  if (!valid) unavailable = "assembly hover picks did not preserve occurrence identity";
+  if (valid) valid = measureSelection(
+    "shared_assembly_selection_1_percent", onePercent, false, false);
+  if (valid) valid = measureSelection(
+    "shared_assembly_selection_10_percent", tenPercent, false, false);
+  if (valid) valid = measureSelection(
+    "shared_assembly_selection_churn", tenPercent, false, true);
+  if (valid) valid = measureSelection(
+    "shared_assembly_preselection", 1, true, true);
+
+  manager.setSelectionState(SoSelectionState());
+  manager.releaseRenderBackendResources();
+  manager.setCamera(nullptr);
+  manager.setSceneGraph(nullptr);
+  camera->unref();
+  scene->unref();
+  return valid;
+}
+
 Options parseOptions(int argc, char ** argv)
 {
   Options options;
@@ -1989,6 +2218,15 @@ int main(int argc, char ** argv)
             ":mutations DrawList " +
             (profile == GLTestProfile::Core ? "core: " : "compatibility: ") +
             mutationReason);
+        }
+        if (workload == WorkloadKind::SharedAssemblyRecipe) {
+          std::string interactionReason;
+          if (!runAssemblyInteractions(profile, occurrenceCount, samples,
+                                       results, interactionReason)) {
+            unavailable.push_back("shared_assembly_interactions:DrawList " +
+              std::string(profile == GLTestProfile::Core
+                ? "core: " : "compatibility: ") + interactionReason);
+          }
         }
       }
     }

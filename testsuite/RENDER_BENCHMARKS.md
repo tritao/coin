@@ -116,6 +116,21 @@ commands of every occurrence of the first definition in the shared variants.
 The benchmark rejects unexpected rebuilds or dependency counts and reports the
 mutation median and p95 separately from forced-rebuild timing.
 
+The shared-recipe variant also exercises interaction without changing scene
+structure. `shared_assembly_hover_pick` measures synchronous closest-hit
+latency and asynchronous identity submission and completion. The selection
+workloads measure stable 1% and 10% selected sets, a changing 10% selection,
+and a changing single preselection highlight. Every interaction workload
+requires occurrence-specific pick identity, a visible overlay for selection,
+zero DrawList rebuilds, stable command counts, and bounded retained geometry
+resources.
+
+Picking statistics are intentionally reported alongside hover latency. The
+assembly commands contain per-face and per-edge subelement identities, so the
+current pick path cannot collapse each instanced visual batch into one pick
+draw. This makes pick draw count and instancing an explicit optimization curve
+instead of hiding that work inside the total hover time.
+
 The deterministic workloads currently cover traversal/IR construction, render
 plan construction (including transparent sorting and depth segments), retained
 pick-table construction and resolution, selection churn, and repeated frame
