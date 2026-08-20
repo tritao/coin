@@ -85,6 +85,12 @@ force reconstruction for every measured frame and report both retained command
 and geometry-resource counts. This makes resource sharing observable even when
 the backend can batch byte-identical geometry in every ownership model.
 
+Each definition contains indexed triangles and a separate indexed edge shape.
+Faces and edges have independent material branches and therefore produce two
+commands per occurrence. Their natural face/edge interleaving also exposes
+batch fragmentation: shared resources do not imply adjacent commands that can
+be instanced together.
+
 Use `--assembly-only N` to run only these three scenes with `N` occurrences.
 The normal benchmark uses 500 occurrences and smoke mode uses 24. Each scene
 runs through LegacyGL when available and through DrawList compatibility and
@@ -92,9 +98,10 @@ core contexts.
 
 Each retained assembly variant also measures three isolated edits:
 `placement_1`, `material_1`, and `geometry_definition_1`. Placement and
-material edits must update exactly one occurrence without rebuilding the
-DrawList. A geometry-definition edit updates one occurrence in the expanded
-baseline and every occurrence of the first definition in the shared variants.
+material edits must update the two geometry commands or the one face command,
+respectively, without rebuilding the DrawList. A geometry-definition edit
+updates both commands of one occurrence in the expanded baseline and both
+commands of every occurrence of the first definition in the shared variants.
 The benchmark rejects unexpected rebuilds or dependency counts and reports the
 mutation median and p95 separately from forced-rebuild timing.
 

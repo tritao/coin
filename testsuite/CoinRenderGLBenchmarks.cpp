@@ -15,6 +15,8 @@
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
 #include <Inventor/nodes/SoFaceSet.h>
+#include <Inventor/nodes/SoIndexedFaceSet.h>
+#include <Inventor/nodes/SoIndexedLineSet.h>
 #include <Inventor/nodes/SoLightModel.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoMaterialBinding.h>
@@ -158,34 +160,48 @@ int assemblyDefinitionCount(int occurrenceCount)
 struct AssemblyPart {
   SoCoordinate3 * coordinates = nullptr;
   SoNormal * normals = nullptr;
-  SoFaceSet * face = nullptr;
+  SoIndexedFaceSet * faces = nullptr;
+  SoIndexedLineSet * edges = nullptr;
 };
 
 SoCoordinate3 * addAssemblyGeometry(SoSeparator * parent, WorkloadKind kind,
-                                    const AssemblyPart & part)
+                                    const AssemblyPart & part,
+                                    SoMaterial * faceMaterial,
+                                    SoMaterial * edgeMaterial)
 {
+  SoIndexedFaceSet * faces = part.faces;
+  SoIndexedLineSet * edges = part.edges;
+  SoCoordinate3 * coordinates = part.coordinates;
   if (kind == WorkloadKind::SharedAssemblyExpanded) {
-    SoCoordinate3 * coordinates = new SoCoordinate3;
+    coordinates = new SoCoordinate3;
     coordinates->point = part.coordinates->point;
     SoNormal * normals = new SoNormal;
     normals->vector = part.normals->vector;
-    SoFaceSet * face = new SoFaceSet;
-    face->numVertices = part.face->numVertices;
+    faces = new SoIndexedFaceSet;
+    faces->coordIndex = part.faces->coordIndex;
+    edges = new SoIndexedLineSet;
+    edges->coordIndex = part.edges->coordIndex;
     parent->addChild(coordinates);
     parent->addChild(normals);
-    parent->addChild(face);
-    return coordinates;
+  }
+  else if (kind == WorkloadKind::SharedAssemblySources) {
+    faces = new SoIndexedFaceSet;
+    faces->coordIndex = part.faces->coordIndex;
+    edges = new SoIndexedLineSet;
+    edges->coordIndex = part.edges->coordIndex;
   }
 
-  if (kind == WorkloadKind::SharedAssemblySources) {
-    SoFaceSet * face = new SoFaceSet;
-    face->numVertices = part.face->numVertices;
-    parent->addChild(face);
-  }
-  else {
-    parent->addChild(part.face);
-  }
-  return part.coordinates;
+  SoSeparator * faceBranch = new SoSeparator;
+  faceBranch->renderCaching = SoSeparator::OFF;
+  faceBranch->addChild(faceMaterial);
+  faceBranch->addChild(faces);
+  parent->addChild(faceBranch);
+  SoSeparator * edgeBranch = new SoSeparator;
+  edgeBranch->renderCaching = SoSeparator::OFF;
+  edgeBranch->addChild(edgeMaterial);
+  edgeBranch->addChild(edges);
+  parent->addChild(edgeBranch);
+  return coordinates;
 }
 
 void populateAssemblyScene(SoSeparator * root, WorkloadKind kind,
@@ -201,30 +217,45 @@ void populateAssemblyScene(SoSeparator * root, WorkloadKind kind,
     AssemblyPart & part = parts[static_cast<size_t>(definition)];
     part.coordinates = new SoCoordinate3;
     part.normals = new SoNormal;
-    part.face = new SoFaceSet;
+    part.faces = new SoIndexedFaceSet;
+    part.edges = new SoIndexedLineSet;
     const int triangleCount = 8 + (definition % 5) * 8;
     std::vector<SbVec3f> positions;
     std::vector<SbVec3f> normals;
-    std::vector<int32_t> faceSizes(static_cast<size_t>(triangleCount), 3);
-    positions.reserve(static_cast<size_t>(triangleCount * 3));
-    normals.reserve(static_cast<size_t>(triangleCount * 3));
-    for (int triangle = 0; triangle < triangleCount; ++triangle) {
-      const float angle = static_cast<float>(triangle) * 0.73f;
+    std::vector<int32_t> faceIndices;
+    std::vector<int32_t> edgeIndices;
+    positions.reserve(static_cast<size_t>(triangleCount + 1));
+    normals.reserve(static_cast<size_t>(triangleCount + 1));
+    faceIndices.reserve(static_cast<size_t>(triangleCount * 4));
+    edgeIndices.reserve(static_cast<size_t>(triangleCount * 3));
+    positions.push_back(SbVec3f(0.0f, 0.0f, 0.04f));
+    normals.push_back(SbVec3f(0.0f, 0.0f, 1.0f));
+    for (int vertex = 0; vertex < triangleCount; ++vertex) {
+      const float angle = static_cast<float>(vertex) *
+        6.28318530718f / static_cast<float>(triangleCount);
       const float radius = 0.25f + 0.015f * static_cast<float>(definition);
-      const SbVec3f center(std::cos(angle) * radius,
-                           std::sin(angle) * radius,
-                           0.015f * static_cast<float>(triangle % 3));
-      positions.push_back(center + SbVec3f(-0.08f, -0.06f, 0.0f));
-      positions.push_back(center + SbVec3f( 0.08f, -0.06f, 0.0f));
-      positions.push_back(center + SbVec3f( 0.00f,  0.09f, 0.0f));
-      normals.insert(normals.end(), 3, SbVec3f(0.0f, 0.0f, 1.0f));
+      positions.push_back(SbVec3f(std::cos(angle) * radius,
+                                  std::sin(angle) * radius,
+                                  0.01f * static_cast<float>(vertex % 3)));
+      normals.push_back(SbVec3f(0.0f, 0.0f, 1.0f));
+      const int current = vertex + 1;
+      const int next = ((vertex + 1) % triangleCount) + 1;
+      faceIndices.push_back(0);
+      faceIndices.push_back(current);
+      faceIndices.push_back(next);
+      faceIndices.push_back(-1);
+      edgeIndices.push_back(current);
+      edgeIndices.push_back(next);
+      edgeIndices.push_back(-1);
     }
     part.coordinates->point.setValues(0, static_cast<int>(positions.size()),
                                       positions.data());
     part.normals->vector.setValues(0, static_cast<int>(normals.size()),
                                    normals.data());
-    part.face->numVertices.setValues(0, static_cast<int>(faceSizes.size()),
-                                     faceSizes.data());
+    part.faces->coordIndex.setValues(0, static_cast<int>(faceIndices.size()),
+                                     faceIndices.data());
+    part.edges->coordIndex.setValues(0, static_cast<int>(edgeIndices.size()),
+                                     edgeIndices.data());
     if (mutations) mutations->definitionCoordinates.push_back(part.coordinates);
   }
 
@@ -263,13 +294,13 @@ void populateAssemblyScene(SoSeparator * root, WorkloadKind kind,
     material->diffuseColor.setValue(0.25f + 0.18f * shade,
                                     0.75f - 0.12f * shade,
                                     0.35f + 0.10f * shade);
-    if (occurrence % 20 == 0) material->transparency = 0.25f;
-    instance->addChild(material);
     if (mutations) mutations->materials.push_back(material);
+    SoMaterial * edgeMaterial = new SoMaterial;
+    edgeMaterial->diffuseColor.setValue(0.08f, 0.08f, 0.10f);
     const int definition = std::min(definitionCount - 1,
       occurrence / occurrencesPerDefinition);
     SoCoordinate3 * occurrenceCoordinates = addAssemblyGeometry(instance, kind,
-      parts[static_cast<size_t>(definition)]);
+      parts[static_cast<size_t>(definition)], material, edgeMaterial);
     if (mutations) mutations->coordinates.push_back(occurrenceCoordinates);
     definitionBranches[static_cast<size_t>(definition)]->addChild(instance);
   }
@@ -556,12 +587,14 @@ bool runVariant(GLTestProfile profile,
   const SoRenderStatistics renderStatistics = manager.getRenderStatistics();
   if (pipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
     if (isAssemblyWorkload(workload)) {
+      const uint64_t expectedCommands = static_cast<uint64_t>(drawCount) * 2;
+      const uint64_t sharedResources =
+        static_cast<uint64_t>(assemblyDefinitionCount(drawCount)) * 2;
       const uint64_t expectedResources =
         workload == WorkloadKind::SharedAssemblyRecipe
-        ? static_cast<uint64_t>(assemblyDefinitionCount(drawCount))
-        : static_cast<uint64_t>(drawCount);
+        ? sharedResources : expectedCommands;
       if (renderStatistics.retainedCommands !=
-            static_cast<uint64_t>(drawCount) ||
+            expectedCommands ||
           renderStatistics.retainedGeometryResources != expectedResources) {
         std::cerr << "FAIL: " << workloadName(workload)
                   << " retained unexpected ownership counts"
@@ -579,9 +612,7 @@ bool runVariant(GLTestProfile profile,
       : renderStatistics.instancedCommands != 0;
     const bool expectedAssembly = isAssemblyWorkload(workload);
     const bool expectedBatching = expectedAssembly
-      ? (workload != WorkloadKind::SharedAssemblyRecipe ||
-         (renderStatistics.instancedCommands != 0 &&
-          renderStatistics.drawCalls < static_cast<uint64_t>(drawCount)))
+      ? true
       : workload == WorkloadKind::FeatureRich
       ? expectedInstanceCoverage &&
         renderStatistics.drawCalls < static_cast<uint64_t>(drawCount) &&
@@ -1653,7 +1684,7 @@ bool runAssemblyMutations(GLTestProfile profile, WorkloadKind workload,
     results.push_back(result);
   };
 
-  measure("placement_1", 1, [&](int sample) {
+  measure("placement_1", 2, [&](int sample) {
     mutations.transforms[0]->translation.setValue(
       (sample & 1) ? -0.02f : 0.02f, 0.0f, 0.0f);
   });
@@ -1668,7 +1699,7 @@ bool runAssemblyMutations(GLTestProfile profile, WorkloadKind workload,
       ? mutations.coordinates[0] : mutations.definitionCoordinates[0];
     const uint64_t expectedGeometryUpdates =
       workload == WorkloadKind::SharedAssemblyExpanded
-      ? 1 : static_cast<uint64_t>(firstDefinitionOccurrences);
+      ? 2 : static_cast<uint64_t>(firstDefinitionOccurrences) * 2;
     measure("geometry_definition_1", expectedGeometryUpdates,
       [&](int sample) {
         geometryTarget->point.set1Value(0,
