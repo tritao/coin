@@ -96,6 +96,12 @@ transparent commands retain back-to-front depth order. This turns shared face
 definitions into adjacent instance batches without moving ordering-sensitive
 commands into the surface pass.
 
+Default-width solid indexed edges use the same per-instance transform, color,
+and picking-identity records as surfaces. Wide, patterned, transparent, or
+otherwise specialized lines remain on the individual raster path. In the
+shared assembly workload this permits both the face pass and edge pass to
+collapse to approximately one draw per definition.
+
 Use `--assembly-only N` to run only these three scenes with `N` occurrences.
 The normal benchmark uses 500 occurrences and smoke mode uses 24. Each scene
 runs through LegacyGL when available and through DrawList compatibility and

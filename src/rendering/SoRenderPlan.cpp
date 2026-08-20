@@ -17,7 +17,7 @@ SoRenderPlanner::build(const SoDrawList & drawlist,
     uint32_t commandIndex = 0;
     SoOpacityClass opacity = SO_OPACITY_OPAQUE;
     float depth = 0.0f;
-    bool groupableOpaqueSurface = false;
+    uint8_t opaqueGroup = 2;
     uint64_t geometryKey = 0;
     SoLightingHandle lightingHandle = 0;
   };
@@ -61,9 +61,8 @@ SoRenderPlanner::build(const SoDrawList & drawlist,
       const bool textured = texture.cacheKey != 0 || texture.pixels != NULL;
       planned.geometryKey = geometry.resourceKey;
       planned.lightingHandle = command.lightingHandle;
-      planned.groupableOpaqueSurface =
+      const bool groupableOpaque =
         planned.opacity == SO_OPACITY_OPAQUE && planned.geometryKey != 0 &&
-        geometry.topology == SO_TOPOLOGY_TRIANGLES &&
         command.material.shadingModel == SO_SHADING_UNLIT && !textured &&
         command.material.opacity == 1.0f &&
         command.material.diffuse[3] == 1.0f &&
@@ -77,6 +76,15 @@ SoRenderPlanner::build(const SoDrawList & drawlist,
         !command.state.raster.polygonOffsetLines &&
         !command.state.raster.polygonOffsetPoints &&
         !command.state.useCommandMatrices && !command.pixelRaster.enabled;
+      if (groupableOpaque &&
+          geometry.topology == SO_TOPOLOGY_TRIANGLES) {
+        planned.opaqueGroup = 0;
+      }
+      else if (groupableOpaque && geometry.topology == SO_TOPOLOGY_LINES &&
+               command.state.raster.lineWidth <= 1.0f &&
+               command.state.raster.linePattern == 0xFFFF) {
+        planned.opaqueGroup = 1;
+      }
       commands.push_back(planned);
     }
     std::stable_sort(commands.begin(), commands.end(),
@@ -89,10 +97,10 @@ SoRenderPlanner::build(const SoDrawList & drawlist,
       });
     std::stable_sort(commands.begin(), commands.end(),
       [](const PlannedCommand & lhs, const PlannedCommand & rhs) {
-        if (lhs.groupableOpaqueSurface != rhs.groupableOpaqueSurface) {
-          return lhs.groupableOpaqueSurface;
+        if (lhs.opaqueGroup != rhs.opaqueGroup) {
+          return lhs.opaqueGroup < rhs.opaqueGroup;
         }
-        if (!lhs.groupableOpaqueSurface) return false;
+        if (lhs.opaqueGroup >= 2) return false;
         if (lhs.geometryKey != rhs.geometryKey) {
           return lhs.geometryKey < rhs.geometryKey;
         }

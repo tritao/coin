@@ -69,6 +69,7 @@ main()
   SoDrawList groupedDrawList;
   SoRenderCommand surfaceA1;
   SoRenderCommand edge;
+  SoRenderCommand edge2;
   SoRenderCommand surfaceB;
   SoRenderCommand surfaceA2;
   surfaceA1.geometry.topology = SO_TOPOLOGY_TRIANGLES;
@@ -78,9 +79,11 @@ main()
   surfaceB.geometry.resourceKey = 20;
   edge.geometry.topology = SO_TOPOLOGY_LINES;
   edge.geometry.resourceKey = 5;
+  edge2.geometry = edge.geometry;
   groupedDrawList.addCommand(surfaceA1);
   groupedDrawList.addCommand(edge);
   groupedDrawList.addCommand(surfaceB);
+  groupedDrawList.addCommand(edge2);
   groupedDrawList.addCommand(surfaceA2);
   planner.build(groupedDrawList, frameViewMatrix, plan);
   std::vector<uint32_t> groupedDraws;
@@ -89,10 +92,10 @@ main()
       groupedDraws.push_back(plan.getOperation(i).commandIndex);
     }
   }
-  result = check(groupedDraws.size() == 4 && groupedDraws[0] == 0 &&
-                 groupedDraws[1] == 3 && groupedDraws[2] == 2 &&
-                 groupedDraws[3] == 1,
-                 "planner did not group opaque surfaces before edges") &&
+  result = check(groupedDraws.size() == 5 && groupedDraws[0] == 0 &&
+                 groupedDraws[1] == 4 && groupedDraws[2] == 2 &&
+                 groupedDraws[3] == 1 && groupedDraws[4] == 3,
+                 "planner did not group opaque surfaces and edges") &&
     result;
 
   drawlist.truncate(2);

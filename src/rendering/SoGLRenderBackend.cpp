@@ -2072,7 +2072,12 @@ SoGLRenderBackend::InstanceCommandClass
 SoGLRenderBackend::classifyInstanceCommand(
   const SoRenderCommand & command) const
 {
-  if (command.geometry.topology != SO_TOPOLOGY_TRIANGLES ||
+  const bool triangles =
+    command.geometry.topology == SO_TOPOLOGY_TRIANGLES;
+  const bool nativeLines = command.geometry.topology == SO_TOPOLOGY_LINES &&
+    command.state.raster.lineWidth <= 1.0f &&
+    command.state.raster.linePattern == 0xFFFF;
+  if ((!triangles && !nativeLines) ||
       !((command.geometry.indices == nullptr &&
          command.geometry.indexCount == 0) ||
         (command.geometry.indices != nullptr &&
@@ -2216,13 +2221,14 @@ SoGLRenderBackend::drawInstancedCommands(
   finishPhase(statistics.programBindingNanoseconds);
   this->bindVertexArray(entry.vertexArray);
   const GLsizei instanceCount = static_cast<GLsizei>(commandIndices.size());
+  const GLenum primitive = topologyToGL(first.geometry.topology);
   if (first.geometry.indices && first.geometry.indexCount) {
     glDrawElementsInstanced(
-      GL_TRIANGLES, static_cast<GLsizei>(first.geometry.indexCount),
+      primitive, static_cast<GLsizei>(first.geometry.indexCount),
       GL_UNSIGNED_INT, nullptr, instanceCount);
   }
   else {
-    glDrawArraysInstanced(GL_TRIANGLES, 0,
+    glDrawArraysInstanced(primitive, 0,
                           static_cast<GLsizei>(first.geometry.vertexCount),
                           instanceCount);
   }
@@ -3188,19 +3194,21 @@ SoGLRenderBackend::drawInstancedPickCommands(
   }
   else glDisable(GL_CULL_FACE);
   glFrontFace(first.state.raster.frontFaceCCW ? GL_CCW : GL_CW);
+  if (first.geometry.topology == SO_TOPOLOGY_LINES) glLineWidth(1.0f);
   cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, this->instanceBuffer);
   cc_glglue_glBufferData(this->glue, GL_ARRAY_BUFFER,
                          records.size() * sizeof(InstanceRecord),
                          records.data(), GL_STREAM_DRAW);
   this->glue->glBindVertexArray(cache.vertexArray);
   const GLsizei count = static_cast<GLsizei>(records.size());
+  const GLenum primitive = topologyToGL(first.geometry.topology);
   if (first.geometry.indices && first.geometry.indexCount) {
     glDrawElementsInstanced(
-      GL_TRIANGLES, static_cast<GLsizei>(first.geometry.indexCount),
+      primitive, static_cast<GLsizei>(first.geometry.indexCount),
       GL_UNSIGNED_INT, nullptr, count);
   }
   else {
-    glDrawArraysInstanced(GL_TRIANGLES, 0,
+    glDrawArraysInstanced(primitive, 0,
                           static_cast<GLsizei>(first.geometry.vertexCount),
                           count);
   }

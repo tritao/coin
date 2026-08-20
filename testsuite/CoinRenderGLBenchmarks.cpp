@@ -618,12 +618,12 @@ bool runVariant(GLTestProfile profile,
       ? renderStatistics.instancedCommands == static_cast<uint64_t>(drawCount)
       : renderStatistics.instancedCommands != 0;
     const bool expectedAssembly = isAssemblyWorkload(workload);
-    const uint64_t minimumGroupedFaces = static_cast<uint64_t>(
-      std::max(0, drawCount - assemblyDefinitionCount(drawCount)));
+    const uint64_t minimumGroupedCommands = static_cast<uint64_t>(
+      std::max(0, drawCount - assemblyDefinitionCount(drawCount))) * 2;
     const bool expectedBatching = expectedAssembly
       ? (workload == WorkloadKind::SharedAssemblyExpanded ||
-         (renderStatistics.instancedCommands >= minimumGroupedFaces &&
-          renderStatistics.drawCalls < static_cast<uint64_t>(drawCount) * 2))
+         (renderStatistics.instancedCommands >= minimumGroupedCommands &&
+          renderStatistics.drawCalls < static_cast<uint64_t>(drawCount)))
       : workload == WorkloadKind::FeatureRich
       ? expectedInstanceCoverage &&
         renderStatistics.drawCalls < static_cast<uint64_t>(drawCount) &&
@@ -786,7 +786,8 @@ bool runVariant(GLTestProfile profile,
 }
 
 bool runIndexedInstances(GLTestProfile profile, int instanceCount, int samples,
-                         Measurement & result, std::string & unavailable)
+                         Measurement & result, std::string & unavailable,
+                         bool lineInstances = false)
 {
   GLTestContextConfig config;
   config.profile = profile;
@@ -808,7 +809,8 @@ bool runIndexedInstances(GLTestProfile profile, int instanceCount, int samples,
     -0.03f, -0.03f, 0.0f,  0.03f, -0.03f, 0.0f,
      0.03f,  0.03f, 0.0f, -0.03f,  0.03f, 0.0f
   };
-  const uint32_t indices[] = { 0, 1, 2, 0, 2, 3 };
+  const uint32_t triangleIndices[] = { 0, 1, 2, 0, 2, 3 };
+  const uint32_t lineIndices[] = { 0, 1, 1, 2, 2, 3, 3, 0 };
   const int columns = static_cast<int>(std::ceil(std::sqrt(
     static_cast<double>(instanceCount))));
   const int rows = (instanceCount + columns - 1) / columns;
@@ -820,14 +822,16 @@ bool runIndexedInstances(GLTestProfile profile, int instanceCount, int samples,
     const float x = columns > 1 ? -0.9f + (i % columns) * xSpacing : 0.0f;
     const float y = rows > 1 ? -0.9f + (i / columns) * ySpacing : 0.0f;
     command.modelMatrix.setTranslate(SbVec3f(x, y, 0.0f));
-    command.geometry.topology = SO_TOPOLOGY_TRIANGLES;
+    command.geometry.topology = lineInstances
+      ? SO_TOPOLOGY_LINES : SO_TOPOLOGY_TRIANGLES;
     command.geometry.vertexCount = 4;
-    command.geometry.indexCount = 6;
+    command.geometry.indexCount = lineInstances ? 8 : 6;
     command.geometry.positions = positions;
-    command.geometry.indices = indices;
+    command.geometry.indices = lineInstances ? lineIndices : triangleIndices;
     command.geometry.vertexStride = sizeof(float) * 3;
     command.geometry.cacheKey = 0x494e5354414e4345ULL;
     command.geometry.revision = 1;
+    command.objectId = static_cast<SoObjectId>(i + 1);
     const float shade = static_cast<float>((i * 17) % 101) / 100.0f;
     command.material.diffuse = SbVec4f(0.25f + shade * 0.7f,
                                        0.85f - shade * 0.5f,
@@ -845,6 +849,7 @@ bool runIndexedInstances(GLTestProfile profile, int instanceCount, int samples,
   params.flags = SO_PARAM_CLEAR_WINDOW | SO_PARAM_CLEAR_DEPTH;
   SoRenderPlanner planner;
   SoRenderPlan plan;
+  drawlist.buildPickLUT();
   planner.build(drawlist, params.viewMatrix, plan);
   SoGLRenderBackend backend;
   SoRenderBackendInitParams initParams;
@@ -895,12 +900,25 @@ bool runIndexedInstances(GLTestProfile profile, int instanceCount, int samples,
 
   SoRenderStatistics statistics = backend.getRenderStatistics();
   const uint64_t pixelChecksum = checksumPixels(context.readPixels());
+  context.bindFramebuffer();
+  if (!backend.updatePickBuffer(drawlist, plan, params)) {
+    unavailable = "indexed instance picking render failed";
+    backend.shutdown();
+    return false;
+  }
+  const SoRenderStatistics pickStatistics = backend.getRenderStatistics();
+  statistics.pickDrawCalls = pickStatistics.pickDrawCalls;
+  statistics.pickInstancedBatches = pickStatistics.pickInstancedBatches;
+  statistics.pickInstancedEntries = pickStatistics.pickInstancedEntries;
   const bool expectedBatch = instanceCount > 1;
   if (statistics.drawCalls != 1 ||
       (expectedBatch && (statistics.instancedCommands !=
                            static_cast<uint64_t>(instanceCount) ||
                          statistics.drawCallsAvoided !=
-                           static_cast<uint64_t>(instanceCount - 1))) ||
+                           static_cast<uint64_t>(instanceCount - 1) ||
+                         statistics.pickDrawCalls != 1 ||
+                         statistics.pickInstancedEntries !=
+                           static_cast<uint64_t>(instanceCount))) ||
       pixelChecksum == 0) {
     std::cerr << "FAIL: indexed instance workload did not render as one "
                  "correct batch\n";
@@ -909,7 +927,9 @@ bool runIndexedInstances(GLTestProfile profile, int instanceCount, int samples,
   }
   backend.shutdown();
 
-  result.workload = "indexed_instances_" + std::to_string(instanceCount);
+  result.workload = std::string(lineInstances
+      ? "indexed_line_instances_" : "indexed_instances_") +
+    std::to_string(instanceCount);
   result.renderer = "DrawList";
   result.profile = profile == GLTestProfile::Core ? "core" : "compatibility";
   result.semanticDraws = instanceCount;
@@ -2092,17 +2112,20 @@ int main(int argc, char ** argv)
       GLTestProfile::Compatibility, GLTestProfile::Core
     };
     for (size_t p = 0; p < sizeof(profiles) / sizeof(profiles[0]); ++p) {
-      Measurement indexed;
-      std::string reason;
-      if (runIndexedInstances(profiles[p], indexedCounts[i], samples,
-                              indexed, reason)) {
-        results.push_back(indexed);
-      }
-      else {
-        unavailable.push_back("indexed_instances_" +
-          std::to_string(indexedCounts[i]) + ":DrawList " +
-          (profiles[p] == GLTestProfile::Core ? "core: " : "compatibility: ") +
-          reason);
+      for (const bool lines : { false, true }) {
+        Measurement indexed;
+        std::string reason;
+        if (runIndexedInstances(profiles[p], indexedCounts[i], samples,
+                                indexed, reason, lines)) {
+          results.push_back(indexed);
+        }
+        else {
+          unavailable.push_back(std::string(lines
+              ? "indexed_line_instances_" : "indexed_instances_") +
+            std::to_string(indexedCounts[i]) + ":DrawList " +
+            (profiles[p] == GLTestProfile::Core
+              ? "core: " : "compatibility: ") + reason);
+        }
       }
     }
   }
