@@ -1153,6 +1153,8 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   const SbViewportRegion viewport = PRIVATE(this)->viewport;
   if (!PRIVATE(this)->irAction) {
     PRIVATE(this)->irAction = new SoIRRenderAction(viewport);
+    PRIVATE(this)->irAction->setCommandTimingEnabled(
+      PRIVATE(this)->renderPhaseTimingEnabled);
   }
   PRIVATE(this)->irAction->setViewportRegion(viewport);
   PRIVATE(this)->irAction->setCamera(PRIVATE(this)->camera);
@@ -2634,6 +2636,16 @@ SoRenderManager::getRenderStatistics() const
       paths.dependencyCommandReferences;
     statistics.retainedDependencyStorageBytes =
       paths.dependencyEstimatedStorageBytes;
+    statistics.drawListCommandPathIdentityNanoseconds =
+      paths.commandPathIdentityNanoseconds;
+    statistics.drawListCommandStateNanoseconds =
+      paths.commandStateNanoseconds;
+    statistics.drawListGeometryResourceNanoseconds =
+      paths.geometryResourceNanoseconds;
+    statistics.drawListAppendNanoseconds =
+      paths.drawListAppendNanoseconds;
+    statistics.drawListPathDependencyNanoseconds =
+      paths.pathDependencyNanoseconds;
   }
   return statistics;
 }
@@ -2657,6 +2669,9 @@ SoRenderManager::setRenderPhaseTimingEnabled(const SbBool enabled)
   PRIVATE(this)->renderPhaseTimingEnabled = enabled;
   if (PRIVATE(this)->renderBackend) {
     PRIVATE(this)->renderBackend->setPhaseTimingEnabled(enabled);
+  }
+  if (PRIVATE(this)->irAction) {
+    PRIVATE(this)->irAction->setCommandTimingEnabled(enabled);
   }
 }
 

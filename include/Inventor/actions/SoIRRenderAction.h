@@ -55,6 +55,11 @@ public:
     uint64_t dependencyBranches = 0;
     uint64_t dependencyCommandReferences = 0;
     uint64_t dependencyEstimatedStorageBytes = 0;
+    uint64_t commandPathIdentityNanoseconds = 0;
+    uint64_t commandStateNanoseconds = 0;
+    uint64_t geometryResourceNanoseconds = 0;
+    uint64_t drawListAppendNanoseconds = 0;
+    uint64_t pathDependencyNanoseconds = 0;
   };
 
   /*! Camera state policy used when starting a root traversal. */
@@ -139,6 +144,9 @@ public:
   const SoPath * getCommandPath(int commandIndex) const;
   //! Return path ownership totals for the current retained frame.
   const PathStatistics & getPathStatistics(void) const;
+  //! Enable intrusive per-command construction timing for diagnostics.
+  void setCommandTimingEnabled(SbBool enabled);
+  SbBool isCommandTimingEnabled() const;
 
   //! Append a root without clearing the current retained frame.
   void traverseAdditionalRoot(

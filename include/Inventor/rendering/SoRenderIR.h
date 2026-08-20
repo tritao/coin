@@ -768,6 +768,13 @@ struct SoRenderStatistics {
   // Manager-owned CPU phases. Draw-list construction is zero when a retained
   // frame is reused; plan construction is measured for every submitted frame.
   uint64_t drawListConstructionNanoseconds = 0;
+  // Optional diagnostic breakdown of per-command retained-frame construction.
+  // These counters remain zero unless render phase timing is enabled.
+  uint64_t drawListCommandPathIdentityNanoseconds = 0;
+  uint64_t drawListCommandStateNanoseconds = 0;
+  uint64_t drawListGeometryResourceNanoseconds = 0;
+  uint64_t drawListAppendNanoseconds = 0;
+  uint64_t drawListPathDependencyNanoseconds = 0;
   uint64_t planConstructionNanoseconds = 0;
   uint64_t drawListRebuilds = 0;
   uint64_t retainedCommands = 0;

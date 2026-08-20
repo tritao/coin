@@ -67,6 +67,7 @@
 
 #include <cassert>
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <limits>
 #include <unordered_map>
@@ -86,6 +87,54 @@ public:
     size_t commandIndex;
     size_t next;
   };
+
+  struct DependencyHead {
+    SoNode * node = nullptr;
+    size_t link = std::numeric_limits<size_t>::max();
+  };
+
+  // Incremental invalidation needs one linked-list head per scene-graph
+  // branch. A reusable open-addressed table avoids the node allocation and
+  // pointer chasing of a general-purpose unordered map during every rebuild.
+  DependencyHead * dependencyHead(SoNode * node, bool create)
+  {
+    if (this->branchDependencyHeads.empty()) {
+      if (!create) return nullptr;
+      this->branchDependencyHeads.resize(16);
+    }
+    if (create && (this->branchDependencyCount + 1) * 2 >
+                    this->branchDependencyHeads.size()) {
+      std::vector<DependencyHead> previous =
+        std::move(this->branchDependencyHeads);
+      this->branchDependencyHeads.assign(previous.size() * 2,
+                                         DependencyHead());
+      this->branchDependencyCount = 0;
+      for (const DependencyHead & entry : previous) {
+        if (!entry.node) continue;
+        DependencyHead * destination = this->dependencyHead(entry.node, true);
+        destination->link = entry.link;
+      }
+    }
+    const size_t mask = this->branchDependencyHeads.size() - 1;
+    size_t slot = (reinterpret_cast<uintptr_t>(node) >> 4) & mask;
+    while (this->branchDependencyHeads[slot].node) {
+      if (this->branchDependencyHeads[slot].node == node) {
+        return &this->branchDependencyHeads[slot];
+      }
+      slot = (slot + 1) & mask;
+    }
+    if (!create) return nullptr;
+    this->branchDependencyHeads[slot].node = node;
+    ++this->branchDependencyCount;
+    return &this->branchDependencyHeads[slot];
+  }
+
+  void resetDependencyHeads()
+  {
+    std::fill(this->branchDependencyHeads.begin(),
+              this->branchDependencyHeads.end(), DependencyHead());
+    this->branchDependencyCount = 0;
+  }
 
   // An open-addressed table avoids one allocation per retained node. Keeping
   // it at most half full bounds probe length and lets later frames reuse it.
@@ -146,10 +195,12 @@ public:
   std::vector<int> pathIndices;
   std::vector<SoNode *> ownedPathNodes;
   std::vector<SoNode *> ownedPathNodeTable;
-  std::unordered_map<SoNode *, size_t> branchDependencyHeads;
+  std::vector<DependencyHead> branchDependencyHeads;
+  size_t branchDependencyCount = 0;
   std::vector<DependencyLink> branchDependencyLinks;
   std::unordered_multimap<uint64_t, SoGeometryHandle> geometryRecipes;
   bool recordBranchDependencies = true;
+  bool commandTimingEnabled = false;
   SoRenderStage renderStage = SoRenderStage::Main;
   SoIRRenderContext renderContextOverride;
   bool hasRenderContextOverride = false;
@@ -276,6 +327,18 @@ SoIRRenderAction::addCommand(const SoRenderCommand & command)
 void
 SoIRRenderAction::addCommand(SoRenderCommand && command)
 {
+  using CommandClock = std::chrono::steady_clock;
+  const bool timing = PRIVATE(this)->commandTimingEnabled;
+  CommandClock::time_point phaseStart;
+  if (timing) phaseStart = CommandClock::now();
+  const auto finishPhase = [&](uint64_t & nanoseconds) {
+    if (!timing) return;
+    const CommandClock::time_point now = CommandClock::now();
+    nanoseconds += static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+        now - phaseStart).count());
+    phaseStart = now;
+  };
   SoRenderCommand retained = std::move(command);
   const SoPath * currentPath = this->getCurPath();
   SoNode * tail = currentPath ? currentPath->getTail() : nullptr;
@@ -314,6 +377,7 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
     const uint64_t length = static_cast<uint64_t>(currentPath->getFullLength());
     statistics.nodeEntries += length;
   }
+  finishPhase(PRIVATE(this)->pathStatistics.commandPathIdentityNanoseconds);
 
   if (!retained.geometry.hasBounds && retained.geometry.positions &&
       retained.geometry.vertexCount > 0) {
@@ -351,6 +415,7 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
     retained.lightingHandle = SoRenderIR::fillLightingFromState(
       state, this->drawlist);
   }
+  finishPhase(PRIVATE(this)->pathStatistics.commandStateNanoseconds);
 
   retained.geometryHandle = SO_INVALID_GEOMETRY_HANDLE;
   if (PRIVATE(this)->recordBranchDependencies &&
@@ -385,8 +450,10 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
         retained.geometry.recipeKey, retained.geometryHandle);
     }
   }
+  finishPhase(PRIVATE(this)->pathStatistics.geometryResourceNanoseconds);
   const int commandIndex = this->drawlist.getNumCommands();
   this->drawlist.addCommand(std::move(retained));
+  finishPhase(PRIVATE(this)->pathStatistics.drawListAppendNanoseconds);
 
   SoIRRenderActionP::PathRecord pathRecord;
   if (currentPath) {
@@ -400,19 +467,19 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
       PRIVATE(this)->pathIndices.push_back(indexArray[i]);
       if (PRIVATE(this)->recordBranchDependencies &&
           i + 1 < pathRecord.length) {
-        const size_t noDependency = std::numeric_limits<size_t>::max();
-        std::pair<std::unordered_map<SoNode *, size_t>::iterator, bool> branch =
-          PRIVATE(this)->branchDependencyHeads.emplace(node, noDependency);
-        if (branch.second) {
+        const size_t previousCount = PRIVATE(this)->branchDependencyCount;
+        SoIRRenderActionP::DependencyHead * branch =
+          PRIVATE(this)->dependencyHead(node, true);
+        if (PRIVATE(this)->branchDependencyCount != previousCount) {
           ++PRIVATE(this)->pathStatistics.dependencyBranches;
           PRIVATE(this)->pathStatistics.dependencyEstimatedStorageBytes +=
             sizeof(SoNode *) + sizeof(size_t);
         }
         SoIRRenderActionP::DependencyLink dependency = {
-          static_cast<size_t>(commandIndex), branch.first->second
+          static_cast<size_t>(commandIndex), branch->link
         };
         PRIVATE(this)->branchDependencyLinks.push_back(dependency);
-        branch.first->second = PRIVATE(this)->branchDependencyLinks.size() - 1;
+        branch->link = PRIVATE(this)->branchDependencyLinks.size() - 1;
         ++PRIVATE(this)->pathStatistics.dependencyCommandReferences;
         PRIVATE(this)->pathStatistics.dependencyEstimatedStorageBytes +=
           sizeof(dependency);
@@ -428,6 +495,7 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
   PRIVATE(this)->commandPathRecords.push_back(pathRecord);
   assert(PRIVATE(this)->commandPathRecords.size() ==
          static_cast<size_t>(commandIndex) + 1);
+  finishPhase(PRIVATE(this)->pathStatistics.pathDependencyNanoseconds);
 }
 
 void
@@ -472,6 +540,18 @@ const SoIRRenderAction::PathStatistics &
 SoIRRenderAction::getPathStatistics(void) const
 {
   return PRIVATE(this)->pathStatistics;
+}
+
+void
+SoIRRenderAction::setCommandTimingEnabled(const SbBool enabled)
+{
+  PRIVATE(this)->commandTimingEnabled = enabled != FALSE;
+}
+
+SbBool
+SoIRRenderAction::isCommandTimingEnabled() const
+{
+  return PRIVATE(this)->commandTimingEnabled ? TRUE : FALSE;
 }
 
 void
@@ -624,11 +704,11 @@ SoIRRenderAction::findCommandsAffectedByStatePath(
     prefixIndices[statePath->getFullLength() - 1];
   SoNode * branch = static_cast<SoNode *>(
     prefixNodes[statePathOffset + prefixLength - 1]);
-  const std::unordered_map<SoNode *, size_t>::const_iterator found =
-    PRIVATE(this)->branchDependencyHeads.find(branch);
-  if (found == PRIVATE(this)->branchDependencyHeads.end()) return;
+  const SoIRRenderActionP::DependencyHead * found =
+    PRIVATE(this)->dependencyHead(branch, false);
+  if (!found) return;
   const size_t noDependency = std::numeric_limits<size_t>::max();
-  for (size_t linkIndex = found->second; linkIndex != noDependency;
+  for (size_t linkIndex = found->link; linkIndex != noDependency;
        linkIndex = PRIVATE(this)->branchDependencyLinks[linkIndex].next) {
     const size_t commandIndex =
       PRIVATE(this)->branchDependencyLinks[linkIndex].commandIndex;
@@ -1091,7 +1171,7 @@ SoIRRenderAction::clearCommandPaths()
   PRIVATE(this)->pathNodes.clear();
   PRIVATE(this)->pathIndices.clear();
   PRIVATE(this)->ownedPathNodes.clear();
-  PRIVATE(this)->branchDependencyHeads.clear();
+  PRIVATE(this)->resetDependencyHeads();
   PRIVATE(this)->branchDependencyLinks.clear();
   PRIVATE(this)->recordBranchDependencies = true;
   PRIVATE(this)->resetPathNodeTable();

@@ -89,6 +89,11 @@ struct Measurement {
   double completionMedianMs = 0.0;
   double completionP95Ms = 0.0;
   double drawListConstructionMs = 0.0;
+  double commandPathIdentityMs = 0.0;
+  double commandStateMs = 0.0;
+  double geometryResourceMs = 0.0;
+  double drawListAppendMs = 0.0;
+  double pathDependencyMs = 0.0;
   double planConstructionMs = 0.0;
   double commandPreparationMs = 0.0;
   double stateSetupMs = 0.0;
@@ -551,6 +556,11 @@ bool runVariant(GLTestProfile profile,
   std::vector<double> gpu;
   std::vector<double> completion;
   std::vector<double> drawListConstruction;
+  std::vector<double> commandPathIdentity;
+  std::vector<double> commandState;
+  std::vector<double> geometryResource;
+  std::vector<double> drawListAppend;
+  std::vector<double> pathDependency;
   std::vector<double> planConstruction;
   std::vector<double> commandPreparation;
   std::vector<double> stateSetup;
@@ -572,6 +582,16 @@ bool runVariant(GLTestProfile profile,
     const SoRenderStatistics sampleStatistics = manager.getRenderStatistics();
     drawListConstruction.push_back(
       sampleStatistics.drawListConstructionNanoseconds / 1000000.0);
+    commandPathIdentity.push_back(
+      sampleStatistics.drawListCommandPathIdentityNanoseconds / 1000000.0);
+    commandState.push_back(
+      sampleStatistics.drawListCommandStateNanoseconds / 1000000.0);
+    geometryResource.push_back(
+      sampleStatistics.drawListGeometryResourceNanoseconds / 1000000.0);
+    drawListAppend.push_back(
+      sampleStatistics.drawListAppendNanoseconds / 1000000.0);
+    pathDependency.push_back(
+      sampleStatistics.drawListPathDependencyNanoseconds / 1000000.0);
     planConstruction.push_back(
       sampleStatistics.planConstructionNanoseconds / 1000000.0);
     commandPreparation.push_back(
@@ -770,6 +790,11 @@ bool runVariant(GLTestProfile profile,
   result.completionMedianMs = percentile(completion, 0.5);
   result.completionP95Ms = percentile(completion, 0.95);
   result.drawListConstructionMs = percentile(drawListConstruction, 0.5);
+  result.commandPathIdentityMs = percentile(commandPathIdentity, 0.5);
+  result.commandStateMs = percentile(commandState, 0.5);
+  result.geometryResourceMs = percentile(geometryResource, 0.5);
+  result.drawListAppendMs = percentile(drawListAppend, 0.5);
+  result.pathDependencyMs = percentile(pathDependency, 0.5);
   result.planConstructionMs = percentile(planConstruction, 0.5);
   result.commandPreparationMs = percentile(commandPreparation, 0.5);
   result.stateSetupMs = percentile(stateSetup, 0.5);
@@ -2282,6 +2307,11 @@ std::string toJson(const std::vector<Measurement> & results,
         << ", \"completion_p95_ms\": " << r.completionP95Ms
         << ", \"drawlist_construction_ms\": "
         << r.drawListConstructionMs
+        << ", \"command_path_identity_ms\": " << r.commandPathIdentityMs
+        << ", \"command_state_ms\": " << r.commandStateMs
+        << ", \"geometry_resource_ms\": " << r.geometryResourceMs
+        << ", \"drawlist_append_ms\": " << r.drawListAppendMs
+        << ", \"path_dependency_ms\": " << r.pathDependencyMs
         << ", \"plan_construction_ms\": " << r.planConstructionMs
         << ", \"cold_pick_ms\": " << r.coldPickMs
         << ", \"refresh_pick_ms\": " << r.refreshPickMs
