@@ -471,6 +471,29 @@ runTest()
                 << std::endl;
       result = 1;
     }
+
+    SoSelectionState selection;
+    SoSelectionTarget selectedCube;
+    selectedCube.commandIndex = 0;
+    selectedCube.color = SbColor4f(1.0f, 0.8f, 0.0f, 0.65f);
+    selection.selected.push_back(selectedCube);
+    manager.setSelectionState(selection);
+    if (manager.getSelectionState().selected.size() != 1 ||
+        manager.getSelectionState().selected[0].commandIndex != 0) {
+      std::cerr << "FAIL: manager did not retain frame-local selection state"
+                << std::endl;
+      result = 1;
+    }
+    manager.render(TRUE, TRUE);
+    const SoRenderStatistics selectionStatistics =
+      manager.getRenderStatistics();
+    if (selectionStatistics.drawListRebuilds != 0 ||
+        selectionStatistics.retainedCommands != 1) {
+      std::cerr << "FAIL: selection update rebuilt retained scene state"
+                << std::endl;
+      result = 1;
+    }
+
     if (countNonBlack(context) == 0) {
       std::cerr << "FAIL: transformed-camera manager render produced no pixels" << std::endl;
       result = 1;
@@ -592,6 +615,12 @@ runTest()
 
     manager.setCamera(NULL);
     manager.setSceneGraph(dprRoot);
+    if (!manager.getSelectionState().selected.empty() ||
+        !manager.getSelectionState().highlighted.empty()) {
+      std::cerr << "FAIL: scene replacement retained stale selection targets"
+                << std::endl;
+      result = 1;
+    }
     manager.setDevicePixelRatio(1.0f);
     manager.render(TRUE, TRUE);
     const int normalCoverage = countNonBlack(context);

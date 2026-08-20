@@ -279,6 +279,9 @@ public:
   SoAsyncPickStatus pollPickIdentityAsync(
     const SoAsyncPickRequest & request, SoPickIdentity & result);
   SoRenderStatistics getRenderStatistics() const;
+  //! Replace frame-local selection and highlight targets without rebuilding.
+  void setSelectionState(const SoSelectionState & selection);
+  const SoSelectionState & getSelectionState() const;
   //! Enable intrusive per-command CPU phase timing for diagnostics.
   void setRenderPhaseTimingEnabled(SbBool enabled);
   SbBool isRenderPhaseTimingEnabled() const;

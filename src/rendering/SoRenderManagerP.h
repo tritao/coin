@@ -133,6 +133,7 @@ public:
   uint64_t planConstructionNanoseconds;
   uint64_t drawListRebuilds;
   uint64_t incrementalCommandUpdates;
+  SoSelectionState selectionState;
   uint32_t renderBackendContextId;
   SbBool drawListCallbackScope;
   SbBool drawListValid;

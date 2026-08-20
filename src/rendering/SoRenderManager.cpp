@@ -411,6 +411,7 @@ SoRenderManager::SoRenderManager(void)
   PRIVATE(this)->planConstructionNanoseconds = 0;
   PRIVATE(this)->drawListRebuilds = 0;
   PRIVATE(this)->incrementalCommandUpdates = 0;
+  PRIVATE(this)->selectionState = SoSelectionState();
   PRIVATE(this)->renderBackendContextId = 0;
   PRIVATE(this)->drawListCallbackScope = FALSE;
   PRIVATE(this)->drawListValid = FALSE;
@@ -518,6 +519,7 @@ SoRenderManager::setSceneGraph(SoNode * const sceneroot)
   // Don't unref() until after we've set up the new root, in case the
   // old root == the new sceneroot. (Just to be that bit more robust.)
   SoNode * oldroot = PRIVATE(this)->scene;
+  if (oldroot != sceneroot) PRIVATE(this)->selectionState = SoSelectionState();
 
   // Scene ownership must be declared again by the scene manager or caller
   // when the root changes. Do not let a previous root's camera policy leak
@@ -1428,7 +1430,7 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   }
 
   PRIVATE(this)->renderBackend->render(
-    drawlist, plan, params, &drawlist.getSelectionState());
+    drawlist, plan, params, &PRIVATE(this)->selectionState);
   if (rebuildDrawList) {
     PRIVATE(this)->pickTargetDirty = TRUE;
     PRIVATE(this)->pickTargetGeneration = 0;
@@ -2634,6 +2636,19 @@ SoRenderManager::getRenderStatistics() const
       paths.dependencyEstimatedStorageBytes;
   }
   return statistics;
+}
+
+void
+SoRenderManager::setSelectionState(const SoSelectionState & selection)
+{
+  PRIVATE(this)->selectionState = selection;
+  this->scheduleRedraw();
+}
+
+const SoSelectionState &
+SoRenderManager::getSelectionState() const
+{
+  return PRIVATE(this)->selectionState;
 }
 
 void
