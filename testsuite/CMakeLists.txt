@@ -313,6 +313,11 @@ target_include_directories(RetainedIRTest PRIVATE
 )
 add_test(NAME RetainedIRTest COMMAND RetainedIRTest)
 
+add_executable(SbInlineVectorTest SbInlineVectorTest.cpp)
+target_include_directories(SbInlineVectorTest PRIVATE
+	${PROJECT_SOURCE_DIR}/include)
+add_test(NAME SbInlineVectorTest COMMAND SbInlineVectorTest)
+
 add_executable(RenderPlanTest RenderPlanTest.cpp)
 target_link_libraries(RenderPlanTest Coin ${COIN_TARGET_LINK_LIBRARIES})
 target_include_directories(RenderPlanTest PRIVATE

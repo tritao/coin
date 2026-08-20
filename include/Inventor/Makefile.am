@@ -33,6 +33,7 @@ PublicHeaders = \
 	SbDict.h \
 	SbHeap.h \
 	SbImage.h \
+	SbInlineVector.h \
 	SbLine.h \
 	SbLinear.h \
 	SbMatrix.h \

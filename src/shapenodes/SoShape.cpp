@@ -72,7 +72,7 @@ class SoVBO;
 #include <Inventor/SoPickedPoint.h>
 #include <Inventor/SoPath.h>
 #include <Inventor/SoPrimitiveVertex.h>
-#include <Inventor/lists/SbList.h>
+#include <Inventor/SbInlineVector.h>
 #include <Inventor/actions/SoCallbackAction.h>
 #if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/actions/SoGLRenderAction.h>
@@ -358,7 +358,7 @@ public:
                   const SoPrimitiveVertex * v3) override
   {
     this->setTopology(SO_TOPOLOGY_TRIANGLES);
-    const size_t first = static_cast<size_t>(this->vertices.getLength());
+    const size_t first = this->vertices.size();
     this->append(v1, v1->getMaterialIndex());
     this->append(v2, v2->getMaterialIndex());
     this->append(v3, v3->getMaterialIndex());
@@ -369,7 +369,7 @@ public:
               const SoPrimitiveVertex * v2) override
   {
     this->setTopology(SO_TOPOLOGY_LINES);
-    const size_t first = static_cast<size_t>(this->vertices.getLength());
+    const size_t first = this->vertices.size();
     this->append(v1, v1->getMaterialIndex());
     this->append(v2, v2->getMaterialIndex());
     this->appendRange(first, 2, SO_PICK_EDGE, this->lineIndex(v1, v2));
@@ -378,7 +378,7 @@ public:
   void onPoint(const SoPrimitiveVertex * v) override
   {
     this->setTopology(SO_TOPOLOGY_POINTS);
-    const size_t first = static_cast<size_t>(this->vertices.getLength());
+    const size_t first = this->vertices.size();
     this->append(v, v->getMaterialIndex());
     this->appendRange(first, 1, SO_PICK_VERTEX, this->pointIndex(v));
   }
@@ -387,7 +387,7 @@ public:
                       const VertexData & v3, int faceIndex) override
   {
     this->setTopology(SO_TOPOLOGY_TRIANGLES);
-    const size_t first = static_cast<size_t>(this->vertices.getLength());
+    const size_t first = this->vertices.size();
     this->append(v1);
     this->append(v2);
     this->append(v3);
@@ -402,7 +402,7 @@ public:
 private:
   void flushRun()
   {
-    if (this->vertices.getLength() == 0) return;
+    if (this->vertices.empty()) return;
 
     using TimingClock = std::chrono::steady_clock;
     const bool timing = this->action->isCommandTimingEnabled();
@@ -425,13 +425,13 @@ private:
         static_cast<uint64_t>(std::chrono::duration_cast<
           std::chrono::nanoseconds>(TimingClock::now() - phaseStart).count()));
     }
-    this->vertices.truncate(0);
+    this->vertices.clear();
   }
 
   SoIRMaterialBatchPlan buildMaterialBatches(SoState * state)
   {
     SoIRMaterialBatchPlan plan;
-    const size_t count = static_cast<size_t>(this->vertices.getLength());
+    const size_t count = this->vertices.size();
     const size_t primitiveWidth = this->topology == SO_TOPOLOGY_TRIANGLES ? 3
       : this->topology == SO_TOPOLOGY_LINES ? 2 : 1;
 
@@ -482,7 +482,7 @@ private:
                     SoGeometryDesc & geometry,
                     SoIRMaterialBatchPlan & plan)
   {
-    const size_t count = static_cast<size_t>(this->vertices.getLength());
+    const size_t count = this->vertices.size();
     geometry.topology = this->topology;
     geometry.vertexCount = static_cast<uint32_t>(count);
     geometry.normalCount = geometry.vertexCount;
@@ -574,11 +574,11 @@ private:
       const size_t batchEnd = batch.first + batch.count;
       const size_t primitiveWidth = this->topology == SO_TOPOLOGY_TRIANGLES
         ? 3 : (this->topology == SO_TOPOLOGY_LINES ? 2 : 1);
-      std::vector<SoRenderElementRange> pickRanges;
-      pickRanges.reserve(batch.count / primitiveWidth);
+      command.pick.elementRanges.reserve(batch.count / primitiveWidth);
       bool completePickRanges = true;
-      for (int rangeIndex = 0;
-           rangeIndex < this->primitiveRanges.getLength(); ++rangeIndex) {
+      for (size_t rangeIndex = 0;
+           rangeIndex < this->primitiveRanges.size();
+           ++rangeIndex) {
         const SoIRPrimitiveRange & range =
           this->primitiveRanges[rangeIndex];
         if (range.first < batch.first || range.first >= batchEnd) continue;
@@ -591,17 +591,18 @@ private:
         pickRange.elementIndex = range.elementIndex;
         pickRange.drawStart = static_cast<uint32_t>(range.first - batch.first);
         pickRange.drawCount = static_cast<uint32_t>(range.count);
-        pickRanges.push_back(pickRange);
+        command.pick.elementRanges.push_back(pickRange);
       }
       const size_t expectedRanges = primitiveWidth == 0 ? 0
         : batch.count / primitiveWidth;
-      if (completePickRanges && pickRanges.size() == expectedRanges) {
-        command.pick.elementRanges = std::move(pickRanges);
+      if (!completePickRanges ||
+          command.pick.elementRanges.size() != expectedRanges) {
+        command.pick.elementRanges.clear();
       }
       this->action->applyRenderStage(command);
       this->action->addCommand(std::move(command));
     }
-    this->primitiveRanges.truncate(0);
+    this->primitiveRanges.clear();
   }
 
   void setTopology(SoPrimitiveTopology candidate)
@@ -619,7 +620,7 @@ private:
     copy.normal = vertex->getNormal();
     copy.texcoord = vertex->getTextureCoords();
     copy.materialIndex = materialIndex;
-    this->vertices.append(copy);
+    this->vertices.push_back(copy);
   }
 
   void append(const VertexData & vertex)
@@ -629,7 +630,7 @@ private:
     copy.normal = vertex.normal;
     copy.texcoord = vertex.texcoord;
     copy.materialIndex = vertex.materialIndex;
-    this->vertices.append(copy);
+    this->vertices.push_back(copy);
   }
 
   void appendRange(size_t first, size_t count, SoPickElementType type,
@@ -641,7 +642,7 @@ private:
     range.type = type;
     range.elementIndex = elementIndex;
     range.valid = elementIndex >= 0;
-    this->primitiveRanges.append(range);
+    this->primitiveRanges.push_back(range);
   }
 
   static int faceIndex(const SoPrimitiveVertex * v1,
@@ -690,10 +691,10 @@ private:
   uint64_t geometryCacheKey = 0;
   uint64_t geometryRevision = 0;
   uint64_t geometryRecipeKey = 0;
-  // Most retained shapes emit one triangle. SbList stores that temporary
-  // geometry inline while still growing for larger or mixed-topology shapes.
-  SbList<SoIRVertex> vertices;
-  SbList<SoIRPrimitiveRange> primitiveRanges;
+  // Most retained shapes emit one triangle, so these buffers normally remain
+  // inline while still growing for larger or mixed-topology shapes.
+  SbInlineVector<SoIRVertex, 4> vertices;
+  SbInlineVector<SoIRPrimitiveRange, 4> primitiveRanges;
 };
 
 }

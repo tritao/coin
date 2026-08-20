@@ -4,6 +4,7 @@
 #define COIN_SORENDERIR_H
 
 #include <Inventor/SbBasic.h>
+#include <Inventor/SbInlineVector.h>
 #include <Inventor/SbColor4f.h>
 #include <Inventor/SbMatrix.h>
 #include <Inventor/SbViewVolume.h>
@@ -596,7 +597,7 @@ struct SoRenderElementRange {
 */
 struct SoPickData {
   bool pickable = true;
-  std::vector<SoRenderElementRange> elementRanges;
+  SbInlineVector<SoRenderElementRange, 1> elementRanges;
 };
 
 /*!
