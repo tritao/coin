@@ -1883,8 +1883,11 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
   hover.asyncIdReadyMedianMs = percentile(asyncReadyTimes, 0.5);
   hover.renderStatistics = manager.getRenderStatistics();
   if (hover.renderStatistics.drawListRebuilds != 0 ||
-      hover.renderStatistics.retainedGeometryResources > maximumResources) {
-    unavailable = "assembly hover picking changed retained structure";
+      hover.renderStatistics.retainedGeometryResources > maximumResources ||
+      hover.renderStatistics.pickDrawCalls > maximumResources ||
+      hover.renderStatistics.pickInstancedEntries !=
+        static_cast<uint64_t>(occurrenceCount * 2)) {
+    unavailable = "assembly hover picking violated retained batching invariants";
     manager.releaseRenderBackendResources();
     manager.setCamera(nullptr);
     manager.setSceneGraph(nullptr);

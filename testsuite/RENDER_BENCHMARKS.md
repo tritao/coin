@@ -125,11 +125,14 @@ requires occurrence-specific pick identity, a visible overlay for selection,
 zero DrawList rebuilds, stable command counts, and bounded retained geometry
 resources.
 
-Picking statistics are intentionally reported alongside hover latency. The
-assembly commands contain per-face and per-edge subelement identities, so the
-current pick path cannot collapse each instanced visual batch into one pick
-draw. This makes pick draw count and instancing an explicit optimization curve
-instead of hiding that work inside the total hover time.
+Picking statistics are intentionally reported alongside hover latency. For
+contiguous triangle, line, and point subelement ranges, the picking shader uses
+the GPU primitive index to resolve the frame-local lookup entry. Repeated
+commands can therefore preserve per-face and per-edge identity while using the
+same instance groups as visual rendering. Irregular ranges and specialized
+raster paths retain the range-by-range fallback. The assembly benchmark
+requires every command to join an instanced pick batch and bounds pick draws by
+the retained geometry-resource count.
 
 The deterministic workloads currently cover traversal/IR construction, render
 plan construction (including transparent sorting and depth segments), retained

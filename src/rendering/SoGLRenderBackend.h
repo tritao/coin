@@ -291,6 +291,7 @@ private:
       GLint alphaTestReference = -1;
       GLint pickId = -1;
       GLint instanced = -1;
+      GLint primitivePickIds = -1;
       GLint vpSize = -1;
       GLint lineWidth = -1;
       GLint pointSize = -1;
@@ -431,7 +432,8 @@ private:
   void drawInstancedPickCommands(const SoDrawList & drawlist,
                                  const std::vector<uint32_t> & commandIndices,
                                  const std::vector<GLuint> & pickIds,
-                                 const SoRenderParams & params);
+                                 const SoRenderParams & params,
+                                 bool primitivePickIds = false);
   void drawSelectionEntry(const SoDrawList & drawlist,
                           const SoPickLUTEntry & entry,
                           const SbColor4f & color,
