@@ -1319,6 +1319,66 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
     sharedScene->unref();
   }
 
+  for (size_t countIndex = 0;
+       countIndex < sizeof(sharedCounts) / sizeof(sharedCounts[0]);
+       ++countIndex) {
+    const int sharedCommandCount = sharedCounts[countIndex];
+    if (sharedCommandCount > drawCount) continue;
+
+    SoSeparator * recipeScene = new SoSeparator;
+    SoSeparator * recipeContainer = new SoSeparator;
+    SoSeparator * recipeBranch = new SoSeparator;
+    SoCoordinate3 * recipeCoordinates = new SoCoordinate3;
+    const SbVec3f recipeTriangle[] = {
+      SbVec3f(-0.42f, -0.42f, 0.0f), SbVec3f(0.42f, -0.42f, 0.0f),
+      SbVec3f(0.0f, 0.42f, 0.0f)
+    };
+    recipeCoordinates->point.setValues(0, 3, recipeTriangle);
+    recipeBranch->addChild(recipeCoordinates);
+    SoFaceSet * recipeFace = new SoFaceSet;
+    recipeFace->numVertices.set1Value(0, 3);
+    for (int i = 0; i < sharedCommandCount; ++i) {
+      recipeBranch->addChild(recipeFace);
+    }
+    recipeContainer->addChild(recipeBranch);
+    recipeScene->addChild(recipeContainer);
+    recipeScene->ref();
+    manager.setSceneGraph(recipeScene);
+    context.bindFramebuffer();
+    manager.render(TRUE, TRUE);
+
+    std::vector<double> cpuTimes;
+    std::vector<double> constructionTimes;
+    for (int sample = 0; sample < samples; ++sample) {
+      recipeCoordinates->point.set1Value(
+        0, SbVec3f((sample & 1) ? -0.40f : -0.44f, -0.42f, 0.0f));
+      context.bindFramebuffer();
+      const Clock::time_point start = Clock::now();
+      manager.render(TRUE, TRUE);
+      cpuTimes.push_back(elapsedMs(start));
+      constructionTimes.push_back(
+        manager.getRenderStatistics().drawListConstructionNanoseconds /
+        1000000.0);
+    }
+    Measurement recipeResult;
+    recipeResult.workload = "incremental_geometry_shared_recipe_" +
+      std::to_string(sharedCommandCount);
+    recipeResult.renderer = "DrawList";
+    recipeResult.profile = profile == GLTestProfile::Core
+      ? "core" : "compatibility";
+    recipeResult.semanticDraws = sharedCommandCount;
+    recipeResult.samples = samples;
+    recipeResult.cpuMedianMs = percentile(cpuTimes, 0.5);
+    recipeResult.cpuP95Ms = percentile(cpuTimes, 0.95);
+    recipeResult.drawListConstructionMs = percentile(constructionTimes, 0.5);
+    recipeResult.renderStatistics = manager.getRenderStatistics();
+    recipeResult.pixelChecksum = checksumPixels(context.readPixels());
+    results.push_back(recipeResult);
+
+    manager.setSceneGraph(NULL);
+    recipeScene->unref();
+  }
+
   manager.releaseRenderBackendResources();
   manager.setCamera(NULL);
   manager.setSceneGraph(NULL);
