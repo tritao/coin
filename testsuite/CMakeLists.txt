@@ -144,6 +144,7 @@ endif()
 
 if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 	add_library(CoinGLTestSupport STATIC
+		support/GLRenderTestSession.cpp
 		support/GLTestContext.cpp
 		support/GLTestFramebuffer.cpp)
 	target_include_directories(CoinGLTestSupport PUBLIC
