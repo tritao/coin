@@ -1167,6 +1167,18 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
     scene->unref();
     return false;
   }
+  std::vector<SbVec3f> originalTranslations;
+  originalTranslations.reserve(mutations.transforms.size());
+  for (size_t i = 0; i < mutations.transforms.size(); ++i) {
+    originalTranslations.push_back(
+      mutations.transforms[i]->translation.getValue());
+  }
+  std::vector<SbColor> originalDiffuseColors;
+  originalDiffuseColors.reserve(mutations.materials.size());
+  for (size_t i = 0; i < mutations.materials.size(); ++i) {
+    originalDiffuseColors.push_back(
+      mutations.materials[i]->diffuseColor[0]);
+  }
 
   SbViewportRegion viewport(SbVec2s(256, 256));
   viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(256, 256));
@@ -1243,8 +1255,15 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
     const std::vector<uint8_t> rebuiltPixels = context.readPixels();
     if (manager.getRenderStatistics().drawListRebuilds != 1 ||
         incrementalPixels != rebuiltPixels) {
+      size_t differingBytes = 0;
+      for (size_t i = 0; i < incrementalPixels.size(); ++i) {
+        if (incrementalPixels[i] != rebuiltPixels[i]) ++differingBytes;
+      }
       std::cerr << "FAIL: " << name
-                << " differs from a forced DrawList rebuild\n";
+                << " differs from a forced DrawList rebuild ("
+                << differingBytes << " pixel bytes; incremental checksum "
+                << checksumPixels(incrementalPixels) << ", rebuilt checksum "
+                << checksumPixels(rebuiltPixels) << ")\n";
       std::exit(1);
     }
   };
@@ -1252,7 +1271,8 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
   measure("incremental_unchanged", 0, [](int) {});
   measure("incremental_transform_1", 1, [&](int sample) {
     mutations.transforms[0]->translation.setValue(
-      0.001f * static_cast<float>((sample & 1) ? 1 : -1), 0.0f, 0.0f);
+      originalTranslations[0] +
+      SbVec3f(0.001f * static_cast<float>((sample & 1) ? 1 : -1), 0.0f, 0.0f));
   });
   const int transformBatchSizes[] = { 10, 100, 1000 };
   for (size_t batchIndex = 0;
@@ -1266,15 +1286,40 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
       const float offset = 0.001f * static_cast<float>((sample & 1) ? 1 : -1);
       for (int i = 0; i < batchSize; ++i) {
         mutations.transforms[static_cast<size_t>(i)]->translation.setValue(
-          offset, 0.0f, 0.0f);
+          originalTranslations[static_cast<size_t>(i)] +
+          SbVec3f(offset, 0.0f, 0.0f));
       }
     });
     verifyAgainstRebuild(name.c_str());
   }
+  for (size_t i = 0; i < mutations.transforms.size(); ++i) {
+    mutations.transforms[i]->translation.setValue(originalTranslations[i]);
+  }
+  manager.invalidateDrawList();
+  context.bindFramebuffer();
+  manager.render(TRUE, TRUE);
   measure("incremental_material_1", 1, [&](int sample) {
     mutations.materials[0]->diffuseColor.set1Value(
       0, SbColor((sample & 1) ? 0.7f : 0.2f, 0.4f, 0.6f));
   });
+  const int materialBatchSizes[] = { 10, 100 };
+  for (size_t batchIndex = 0;
+       batchIndex < sizeof(materialBatchSizes) / sizeof(materialBatchSizes[0]);
+       ++batchIndex) {
+    const int batchSize = materialBatchSizes[batchIndex];
+    if (batchSize > drawCount) continue;
+    const std::string name =
+      "incremental_material_" + std::to_string(batchSize);
+    measure(name.c_str(), static_cast<uint64_t>(batchSize), [&](int sample) {
+      const SbColor color(
+        (sample & 1) ? 0.7f : 0.2f, 0.4f, 0.6f);
+      for (int i = 0; i < batchSize; ++i) {
+        mutations.materials[static_cast<size_t>(i)]->diffuseColor.set1Value(
+          0, color);
+      }
+    });
+    verifyAgainstRebuild(name.c_str());
+  }
   measure("incremental_transparency_1", 1, [&](int sample) {
     mutations.materials[0]->transparency.set1Value(
       0, (sample & 1) ? 0.25f : 0.0f);
@@ -1358,6 +1403,22 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
     }
     results.back().pixelChecksum = checksumPixels(context.readPixels());
   };
+
+  if (drawCount >= 1000) {
+    measureInvalidating("incremental_material_1000_fallback", [&](int sample) {
+      const SbColor color(
+        (sample & 1) ? 0.7f : 0.2f, 0.4f, 0.6f);
+      for (int i = 0; i < 1000; ++i) {
+        mutations.materials[static_cast<size_t>(i)]->diffuseColor.set1Value(
+          0, color);
+      }
+    }, [&](int) { return drawCount; }, [&]() {
+      for (size_t i = 0; i < mutations.materials.size(); ++i) {
+        mutations.materials[i]->diffuseColor.set1Value(
+          0, originalDiffuseColors[i]);
+      }
+    });
+  }
 
   SoSeparator * structuralBranch = mutations.structuralBranches[0];
   SoFaceSet * insertedFace = new SoFaceSet;

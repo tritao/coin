@@ -117,6 +117,10 @@
 
 namespace {
 
+// Material replay uses one callback traversal per affected command. Beyond
+// this bounded working set, rebuilding is both simpler and typically cheaper.
+const unsigned int MAX_INCREMENTAL_MATERIAL_NOTIFICATIONS = 256;
+
 SbBool
 backendContextIsCurrent(const SoRenderManagerP * manager)
 {
@@ -1269,7 +1273,12 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   };
   int updated = 0;
   if (canPatchStateChanges && rootSensor->getNotificationCount() > 1) {
-    enum BatchKind { UNSUPPORTED_BATCH, SWITCH_BATCH, TRANSLATION_BATCH };
+    enum BatchKind {
+      UNSUPPORTED_BATCH,
+      SWITCH_BATCH,
+      TRANSLATION_BATCH,
+      MATERIAL_BATCH
+    };
     BatchKind batchKind = UNSUPPORTED_BATCH;
     for (unsigned int i = 0; i < retainedNotificationCount; ++i) {
       SoNode * node = rootSensor->getChangedNode(i);
@@ -1289,6 +1298,18 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
                field == &static_cast<SoTranslation *>(node)->translation) {
         changeKind = TRANSLATION_BATCH;
       }
+      else if (node && node->isOfType(SoMaterial::getClassTypeId())) {
+        SoMaterial * material = static_cast<SoMaterial *>(node);
+        if (retainedNotificationCount <=
+              MAX_INCREMENTAL_MATERIAL_NOTIFICATIONS &&
+            (field == &material->diffuseColor ||
+            field == &material->ambientColor ||
+            field == &material->emissiveColor ||
+            field == &material->specularColor ||
+            field == &material->shininess)) {
+          changeKind = MATERIAL_BATCH;
+        }
+      }
       if (changeKind == UNSUPPORTED_BATCH ||
           (batchKind != UNSUPPORTED_BATCH && batchKind != changeKind)) {
         batchKind = UNSUPPORTED_BATCH;
@@ -1303,6 +1324,15 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
         changedPaths.push_back(rootSensor->getChangedPath(i));
       }
       updated = action->updateCommandMatricesForStatePaths(changedPaths);
+      if (updated == 0) batchKind = UNSUPPORTED_BATCH;
+    }
+    else if (batchKind == MATERIAL_BATCH) {
+      std::vector<const SoPath *> changedPaths;
+      changedPaths.reserve(retainedNotificationCount);
+      for (unsigned int i = 0; i < retainedNotificationCount; ++i) {
+        changedPaths.push_back(rootSensor->getChangedPath(i));
+      }
+      updated = action->updateCommandMaterialsForStatePaths(changedPaths);
       if (updated == 0) batchKind = UNSUPPORTED_BATCH;
     }
     else {

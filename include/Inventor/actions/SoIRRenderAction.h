@@ -222,6 +222,9 @@ public:
   //! Refresh effective material and material-derived render state.
   int updateCommandMaterialsForStatePath(const SoPath * statePath,
                                          bool opacityMayChange);
+  //! Refresh the unique commands affected by non-opacity material changes.
+  int updateCommandMaterialsForStatePaths(
+    const std::vector<const SoPath *> & statePaths);
   //! Toggle retained commands below a stable one-child switch.
   int updateCommandVisibilityForSwitchPath(const SoPath * switchPath,
                                            SbBool visible);

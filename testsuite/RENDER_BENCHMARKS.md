@@ -172,14 +172,17 @@ Normal rendering leaves this intrusive timing disabled.
 deterministic edit sequence to an `N`-command scene. Unchanged frames and
 single placement, material, transparency, and geometry edits must avoid a full
 DrawList rebuild. A stable one-child visibility switch updates its retained
-commands in place while preserving command identity. The transform and
-visibility workloads also change batches of 10, 100, and 1,000 nodes when the
-scene is large enough, exposing both notification and command-update scaling.
-Transform batches are checked against a forced rebuild. Duplicate notifications
-are coalesced, and commands affected by multiple changed transforms are replayed
-once per batch. Mixed, unsupported, and structural edits still fall back to a
-safe rebuild. Child insertion/removal remains the structural control and
-explicitly asserts the resulting command count and plan rebuild.
+commands in place while preserving command identity. The transform, non-opacity
+material, and visibility workloads change batches of nodes when the scene is
+large enough, exposing both notification and command-update scaling. Transform
+and visibility curves reach 1,000 edits; material replay is measured at 10 and
+100 edits, with a 1,000-edit workload asserting the cheaper full-rebuild
+fallback. Transform and material batches are checked against a forced rebuild.
+Duplicate notifications are coalesced, and commands affected by multiple
+changed state nodes are replayed once per batch. Transparency, mixed,
+unsupported, and structural batches also fall back safely. Child
+insertion/removal remains the structural control and explicitly asserts the
+resulting command count and plan rebuild.
 
 The `shared_assembly_{expanded,sources,recipe}` workloads render the same
 deterministic collection of reusable part definitions and transformed

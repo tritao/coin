@@ -1030,6 +1030,10 @@ int
 SoIRRenderAction::updateCommandMaterialsForStatePath(
   const SoPath * statePath, bool opacityMayChange)
 {
+  if (!opacityMayChange) {
+    std::vector<const SoPath *> statePaths(1, statePath);
+    return this->updateCommandMaterialsForStatePaths(statePaths);
+  }
   std::vector<size_t> commandIndices;
   this->findCommandsAffectedByStatePath(statePath, commandIndices);
   std::vector<MaterialReplay> replacements;
@@ -1055,6 +1059,8 @@ SoIRRenderAction::updateCommandMaterialsForStatePath(
     SoCallbackAction materialAction(this->vpRegion);
     materialAction.addPreTailCallback(captureEffectiveMaterial, &replay);
     materialAction.apply(const_cast<SoPath *>(commandPath));
+    replay.material.shadingModel = command.material.shadingModel;
+    replay.material.twoSidedLighting = command.material.twoSidedLighting;
     replay.material.texture = command.material.texture;
     replay.material.textureAlphaIncludesOpacity =
       command.material.textureAlphaIncludesOpacity;
@@ -1070,6 +1076,64 @@ SoIRRenderAction::updateCommandMaterialsForStatePath(
     command.material = replacements[i].material;
     // Remove only blend state synthesized by the previous finalization pass.
     // Explicit scene-authored blending must survive a material update.
+    if (command.finalizationEnabledBlend) command.state.blend = SoBlendState();
+    SoRenderIR::finalizeCommand(command);
+  }
+  return static_cast<int>(commandIndices.size());
+}
+
+int
+SoIRRenderAction::updateCommandMaterialsForStatePaths(
+  const std::vector<const SoPath *> & statePaths)
+{
+  std::vector<uint8_t> affected(
+    static_cast<size_t>(this->drawlist.getNumCommands()), 0);
+  std::vector<size_t> found;
+  for (std::vector<const SoPath *>::const_iterator path = statePaths.begin();
+       path != statePaths.end(); ++path) {
+    this->findCommandsAffectedByStatePath(*path, found);
+    for (std::vector<size_t>::const_iterator command = found.begin();
+         command != found.end(); ++command) {
+      affected[*command] = 1;
+    }
+  }
+
+  std::vector<size_t> commandIndices;
+  for (size_t commandIndex = 0; commandIndex < affected.size(); ++commandIndex) {
+    if (affected[commandIndex]) commandIndices.push_back(commandIndex);
+  }
+  std::vector<MaterialReplay> replacements;
+  replacements.reserve(commandIndices.size());
+  for (std::vector<size_t>::const_iterator commandIndex = commandIndices.begin();
+       commandIndex != commandIndices.end(); ++commandIndex) {
+    const SoPath * commandPath =
+      this->getCommandPath(static_cast<int>(*commandIndex));
+    if (!commandPath) return 0;
+    const SoRenderCommand & command =
+      static_cast<const SoDrawList &>(this->drawlist).getCommand(
+        static_cast<int>(*commandIndex));
+    MaterialReplay replay = {
+      command.materialIndex, SoMaterialData()
+    };
+    // An aborted SoCallbackAction traversal can leave path-local element
+    // state behind. Use a fresh action so each command replay starts clean.
+    SoCallbackAction materialAction(this->vpRegion);
+    materialAction.addPreTailCallback(captureEffectiveMaterial, &replay);
+    materialAction.apply(const_cast<SoPath *>(commandPath));
+    replay.material.shadingModel = command.material.shadingModel;
+    replay.material.twoSidedLighting = command.material.twoSidedLighting;
+    replay.material.texture = command.material.texture;
+    replay.material.textureAlphaIncludesOpacity =
+      command.material.textureAlphaIncludesOpacity;
+    replay.material.vertexColorAlphaIncludesOpacity =
+      command.material.vertexColorAlphaIncludesOpacity;
+    replacements.push_back(replay);
+  }
+
+  for (size_t i = 0; i < commandIndices.size(); ++i) {
+    SoRenderCommand & command = this->drawlist.getCommand(
+      static_cast<int>(commandIndices[i]));
+    command.material = replacements[i].material;
     if (command.finalizationEnabledBlend) command.state.blend = SoBlendState();
     SoRenderIR::finalizeCommand(command);
   }
