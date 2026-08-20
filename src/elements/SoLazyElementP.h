@@ -2,6 +2,7 @@
 #define COIN_SOLAZYELEMENTP_H
 
 #include <Inventor/SbBasic.h>
+#include <Inventor/SbColor.h>
 #include <Inventor/lists/SbList.h>
 
 class SoLazyElement;
@@ -13,6 +14,27 @@ class SoState;
 // helpers are not part of Coin's public element API.
 class SoLazyElementP {
 public:
+  struct RenderSnapshot {
+    SbColor diffuse;
+    SbColor ambient;
+    SbColor emissive;
+    SbColor specular;
+    float transparency = 0.0f;
+    float shininess = 0.0f;
+    float packedOpacity = 1.0f;
+    float alphaTestValue = 0.5f;
+    int lightModel = 0;
+    int blendSource = 0;
+    int blendDestination = 0;
+    int alphaBlendSource = 0;
+    int alphaBlendDestination = 0;
+    int alphaTestFunction = 0;
+    SbBool blending = FALSE;
+    SbBool separateBlending = FALSE;
+    SbBool twoSidedLighting = FALSE;
+    SbBool packedVertexColors = FALSE;
+  };
+
   SoLazyElementP() = default;
 
   static void setPackedVertexColors(
@@ -24,6 +46,8 @@ public:
   static void setAlphaTestSemantic(SoState * state, int function,
                                    float value);
   static int getAlphaTestSemantic(SoState * state, float & value);
+  static RenderSnapshot captureRenderSnapshot(SoState * state,
+                                              int materialIndex);
 
 private:
   friend class SoLazyElement;

@@ -722,6 +722,52 @@ SoLazyElementP::getAlphaTestSemantic(SoState * state, float & value)
   return elem->pimpl->semanticAlphaTest.function;
 }
 
+SoLazyElementP::RenderSnapshot
+SoLazyElementP::captureRenderSnapshot(SoState * state,
+                                      const int materialIndex)
+{
+  const SoLazyElement * elem = SoLazyElement::getInstance(state);
+  RenderSnapshot snapshot;
+  const int diffuseIndex = std::max(
+    0, std::min(materialIndex, elem->coinstate.numdiffuse - 1));
+  if (elem->coinstate.packeddiffuse) {
+    snapshot.diffuse.setPackedValue(
+      elem->coinstate.packedarray[diffuseIndex], snapshot.transparency);
+  }
+  else {
+    snapshot.diffuse = elem->coinstate.diffusearray[diffuseIndex];
+    const int transparencyIndex = std::max(
+      0, std::min(materialIndex, elem->coinstate.numtransp - 1));
+    snapshot.transparency = elem->coinstate.transparray[transparencyIndex];
+  }
+  snapshot.ambient = elem->coinstate.ambient;
+  snapshot.emissive = elem->coinstate.emissive;
+  snapshot.specular = elem->coinstate.specular;
+  snapshot.shininess = elem->coinstate.shininess;
+  snapshot.lightModel = elem->coinstate.lightmodel;
+  snapshot.blending = elem->coinstate.blending;
+  snapshot.separateBlending = elem->coinstate.separateblending;
+  snapshot.blendSource = elem->coinstate.blend_sfactor;
+  snapshot.blendDestination = elem->coinstate.blend_dfactor;
+  snapshot.alphaBlendSource = elem->coinstate.alpha_blend_sfactor;
+  snapshot.alphaBlendDestination = elem->coinstate.alpha_blend_dfactor;
+  snapshot.twoSidedLighting = elem->coinstate.twoside;
+  if (elem->pimpl) {
+    snapshot.alphaTestFunction = elem->pimpl->semanticAlphaTest.function;
+    snapshot.alphaTestValue = elem->pimpl->semanticAlphaTest.value;
+    const PackedColorState & packed = elem->pimpl->packedColor;
+    snapshot.packedVertexColors = packed.fromVertexProperty && elem->isPacked();
+    if (snapshot.packedVertexColors &&
+        packed.inheritedOpacities.getLength() > 0) {
+      const int opacityIndex = std::max(
+        0, std::min(materialIndex,
+                    packed.inheritedOpacities.getLength() - 1));
+      snapshot.packedOpacity = packed.inheritedOpacities[opacityIndex];
+    }
+  }
+  return snapshot;
+}
+
 // ! FIXME: write doc
 
 int32_t

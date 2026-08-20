@@ -36,5 +36,14 @@ int main()
   int sum = 0;
   for (int value : moved) sum += value;
   CHECK(sum == 60);
+
+  moved.resize(5);
+  CHECK(moved.size() == 5);
+  moved.resize(1);
+  CHECK(moved.size() == 1 && moved[0] == 10);
+  moved.resize(0);
+  CHECK(moved.empty());
+  moved.push_back(60);
+  CHECK(moved.size() == 1 && moved[0] == 60);
   return 0;
 }

@@ -50,7 +50,6 @@ class SoVBO;
 #include <Inventor/elements/SoMultiTextureImageElement.h>
 #include <Inventor/elements/SoVertexAttributeElement.h>
 
-#include "elements/SoLazyElementP.h"
 #include "shapenodes/SoShapeGLRenderP.h"
 
 #include <cstring>
@@ -419,7 +418,7 @@ private:
           std::chrono::nanoseconds>(now - phaseStart).count()));
       phaseStart = now;
     }
-    this->emitCommands(state, geometry, plan);
+    this->emitCommands(geometry, plan);
     if (timing) {
       this->action->recordCommandEmissionNanoseconds(
         static_cast<uint64_t>(std::chrono::duration_cast<
@@ -532,8 +531,7 @@ private:
     geometry.colors = colors;
   }
 
-  void emitCommands(SoState * state,
-                    const SoGeometryDesc & sourceGeometry,
+  void emitCommands(const SoGeometryDesc & sourceGeometry,
                     const SoIRMaterialBatchPlan & plan)
   {
     for (size_t batchIndex = 0; batchIndex < plan.size(); ++batchIndex) {
@@ -574,17 +572,6 @@ private:
       SoRenderIR::fillCommandStateFromAction(
         this->action, command, std::max(batch.materialIndex, 0));
       command.materialIndex = std::max(batch.materialIndex, 0);
-      const bool packedVertexColors =
-        SoLazyElementP::hasPackedVertexColorState(state);
-      if (packedVertexColors) {
-        const float inheritedOpacity =
-          SoLazyElementP::getPackedVertexColorOpacity(
-            state, std::max(batch.materialIndex, 0));
-        command.material.opacity = inheritedOpacity;
-        command.material.diffuse[3] = inheritedOpacity;
-      }
-      command.material.vertexColorAlphaIncludesOpacity =
-        command.geometry.colors != nullptr && !packedVertexColors;
       if (timing) {
         this->action->recordCommandStateCaptureNanoseconds(elapsedPhase());
       }
