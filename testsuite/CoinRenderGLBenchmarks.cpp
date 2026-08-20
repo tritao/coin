@@ -1944,8 +1944,7 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
             ? statistics.highlightedOverlayEntries
             : statistics.selectedOverlayEntries) !=
               static_cast<uint64_t>(selectedCount * 2) ||
-          (!subelement && !highlighted &&
-           selectedCount >= occurrenceCount / 10 &&
+          (!highlighted && selectedCount >= occurrenceCount / 10 &&
            occurrenceCount >= 100 &&
            statistics.selectionInstancedEntries == 0)) {
         std::ostringstream reason;

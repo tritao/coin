@@ -763,6 +763,40 @@ runTest()
       }
     }
 
+    // A different geometry between compatible targets must not fragment the
+    // selection batch.
+    SoRenderCommand middleSelectionCommand = command;
+    middleSelectionCommand.geometry.resourceKey = 0x53454c4d4944444cULL;
+    drawlist.clear();
+    drawlist.addCommand(leftSelectionCommand);
+    drawlist.addCommand(middleSelectionCommand);
+    drawlist.addCommand(rightSelectionCommand);
+    SoSelectionState interleavedSelection;
+    leftTarget.commandIndex = 0;
+    interleavedSelection.selected.push_back(leftTarget);
+    SoSelectionTarget middleTarget = leftTarget;
+    middleTarget.commandIndex = 1;
+    interleavedSelection.selected.push_back(middleTarget);
+    rightTarget.commandIndex = 2;
+    interleavedSelection.selected.push_back(rightTarget);
+    if (!render(backend, drawlist, params) ||
+        !backend.renderSelection(drawlist, interleavedSelection, params)) {
+      std::cerr << "FAIL: interleaved selection overlay failed" << std::endl;
+      result = 1;
+    }
+    else {
+      const SoRenderStatistics selectionStatistics =
+        backend.getRenderStatistics();
+      if (selectionStatistics.selectionOverlayDrawCalls != 2 ||
+          selectionStatistics.selectionInstancedBatches != 1 ||
+          selectionStatistics.selectionInstancedEntries != 2 ||
+          selectionStatistics.selectedOverlayEntries != 3) {
+        std::cerr << "FAIL: interleaved selection targets fragmented"
+                  << std::endl;
+        result = 1;
+      }
+    }
+
     // Explicit highlighting is independent of hit-test eligibility.
     SoRenderCommand nonPickableCommand = command;
     nonPickableCommand.pick.pickable = false;

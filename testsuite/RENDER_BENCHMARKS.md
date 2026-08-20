@@ -140,10 +140,12 @@ The 1%, 10%, churn, and preselection workloads bound overlay draws by target
 count while requiring every requested target to be represented.
 
 `shared_assembly_subelement_selection` selects individual faces and edges
-across 10% of occurrences. It requires visible overlay coverage and zero
-DrawList rebuilds. Its naturally interleaved face and edge targets may use
-explicit draws because selection batching currently combines adjacent
-compatible targets only.
+across 10% of occurrences. It requires repeated compatible elements to
+participate in selection batches, visible coverage for every requested target,
+and zero DrawList rebuilds. Singleton geometry/state groups retain one explicit
+draw. Selection planning groups compatible targets by retained geometry and
+render state, so naturally interleaved face and edge targets do not fragment
+batches. Selected and highlighted targets remain separate overlay passes.
 
 The `subelement_selection_{explicit,shared}_{8,64,1000,10000}` curve isolates
 selection cost from scene traversal. Forty commands each select one face from

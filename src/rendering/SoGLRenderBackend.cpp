@@ -4602,88 +4602,108 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
     uint64_t & entryCount = highlighted
       ? this->submissionCache.statistics.highlightedOverlayEntries
       : this->submissionCache.statistics.selectedOverlayEntries;
-    for (size_t offset = 0; offset < targets.size();) {
-      const SoSelectionTarget & firstTarget = targets[offset];
+    struct SelectionBatch {
+      std::vector<size_t> targetIndices;
       std::vector<uint32_t> commandIndices;
       std::vector<SbColor4f> colors;
       std::vector<uint32_t> primitiveIds;
-      bool primitiveBatch = false;
+      bool primitiveSelection = false;
       uint32_t sourcePrimitiveCount = 0;
-      if (firstTarget.commandIndex >= 0 &&
-          firstTarget.commandIndex < drawlist.getNumCommands()) {
+    };
+
+    // Selected and highlighted overlays are separate passes. Within either
+    // pass, group compatible targets in first-seen order so interleaved
+    // geometry recovers the same batches as the main render plan.
+    std::vector<SelectionBatch> batches;
+    std::unordered_map<size_t, std::vector<size_t> > batchesByGeometry;
+    for (size_t targetIndex = 0; targetIndex < targets.size(); ++targetIndex) {
+      const SoSelectionTarget & target = targets[targetIndex];
+      if (target.commandIndex < 0 ||
+          target.commandIndex >= drawlist.getNumCommands()) {
+        SelectionBatch batch;
+        batch.targetIndices.push_back(targetIndex);
+        batches.push_back(std::move(batch));
+        continue;
+      }
+      const SoRenderCommand & command = drawlist.getCommand(
+        target.commandIndex);
+      const bool wholeCommand = target.type == SO_PICK_OBJECT &&
+        target.elementIndex < 0;
+      uint32_t primitiveId = 0;
+      const bool primitiveSelection = !wholeCommand &&
+        selectionPrimitiveId(command, target, primitiveId);
+      const auto cacheIt = this->commandToCache.find(&command);
+      if (!this->canInstanceCommand(command) ||
+          (!wholeCommand && !primitiveSelection) ||
+          cacheIt == this->commandToCache.end()) {
+        SelectionBatch batch;
+        batch.targetIndices.push_back(targetIndex);
+        batches.push_back(std::move(batch));
+        continue;
+      }
+
+      const size_t geometryIndex = cacheIt->second;
+      size_t batchIndex = batches.size();
+      for (const size_t candidate : batchesByGeometry[geometryIndex]) {
+        SelectionBatch & batch = batches[candidate];
         const SoRenderCommand & first = drawlist.getCommand(
-          firstTarget.commandIndex);
-        const bool wholeCommand = firstTarget.type == SO_PICK_OBJECT &&
-          firstTarget.elementIndex < 0;
-        uint32_t firstPrimitive = 0;
-        const bool primitiveSelection = !wholeCommand &&
-          selectionPrimitiveId(first, firstTarget, firstPrimitive);
-        sourcePrimitiveCount = primitiveSelection
-          ? commandPrimitiveCount(first) : 0;
-        if (this->canInstanceCommand(first) &&
-            (wholeCommand || primitiveSelection)) {
-          primitiveBatch = primitiveSelection;
-          commandIndices.push_back(
-            static_cast<uint32_t>(firstTarget.commandIndex));
-          colors.push_back(firstTarget.color);
-          primitiveIds.push_back(firstPrimitive);
-          for (size_t nextOffset = offset + 1;
-               nextOffset < targets.size(); ++nextOffset) {
-            const SoSelectionTarget & nextTarget = targets[nextOffset];
-            if (nextTarget.commandIndex < 0 ||
-                nextTarget.commandIndex >= drawlist.getNumCommands()) break;
-            const SoRenderCommand & next = drawlist.getCommand(
-              nextTarget.commandIndex);
-            uint32_t nextPrimitive = 0;
-            const bool compatibleSelection = wholeCommand
-              ? nextTarget.type == SO_PICK_OBJECT &&
-                nextTarget.elementIndex < 0
-              : selectionPrimitiveId(next, nextTarget, nextPrimitive);
-            if (!compatibleSelection) break;
-            if (!this->canInstanceTogether(first, next)) break;
-            commandIndices.push_back(
-              static_cast<uint32_t>(nextTarget.commandIndex));
-            colors.push_back(nextTarget.color);
-            primitiveIds.push_back(nextPrimitive);
-          }
+          static_cast<int>(batch.commandIndices.front()));
+        if (batch.primitiveSelection == primitiveSelection &&
+            this->canInstanceTogether(first, command)) {
+          batchIndex = candidate;
+          break;
         }
       }
-      const bool batchCandidate = commandIndices.size() > 1;
+      if (batchIndex == batches.size()) {
+        SelectionBatch batch;
+        batch.primitiveSelection = primitiveSelection;
+        batch.sourcePrimitiveCount = primitiveSelection
+          ? commandPrimitiveCount(command) : 0;
+        batches.push_back(std::move(batch));
+        batchesByGeometry[geometryIndex].push_back(batchIndex);
+      }
+      SelectionBatch & batch = batches[batchIndex];
+      batch.targetIndices.push_back(targetIndex);
+      batch.commandIndices.push_back(
+        static_cast<uint32_t>(target.commandIndex));
+      batch.colors.push_back(target.color);
+      batch.primitiveIds.push_back(primitiveId);
+    }
+
+    for (const SelectionBatch & batch : batches) {
+      const bool batchCandidate = batch.commandIndices.size() > 1;
       uint64_t primitiveAmplification = 0;
-      if (batchCandidate && primitiveBatch) {
+      if (batchCandidate && batch.primitiveSelection) {
         primitiveAmplification =
-          static_cast<uint64_t>(sourcePrimitiveCount) * commandIndices.size();
+          static_cast<uint64_t>(batch.sourcePrimitiveCount) *
+          batch.commandIndices.size();
         this->submissionCache.statistics.selectionPrimitiveCandidates +=
-          commandIndices.size();
+          batch.commandIndices.size();
         this->submissionCache.statistics.selectionPrimitiveAmplification +=
           primitiveAmplification;
       }
-      const bool batchAllowed = batchCandidate && (!primitiveBatch ||
-        primitiveAmplification <= MAX_SELECTION_PRIMITIVE_AMPLIFICATION);
+      const bool batchAllowed = batchCandidate &&
+        (!batch.primitiveSelection || primitiveAmplification <=
+          MAX_SELECTION_PRIMITIVE_AMPLIFICATION);
       if (batchAllowed) {
-        this->drawInstancedSelectionCommands(drawlist, commandIndices,
-                                             colors, primitiveIds, params,
-                                             primitiveBatch);
+        this->drawInstancedSelectionCommands(
+          drawlist, batch.commandIndices, batch.colors, batch.primitiveIds,
+          params, batch.primitiveSelection);
         ++this->submissionCache.statistics.selectionOverlayDrawCalls;
         ++this->submissionCache.statistics.selectionInstancedBatches;
         this->submissionCache.statistics.selectionInstancedEntries +=
-          commandIndices.size();
-        entryCount += commandIndices.size();
-        offset += commandIndices.size();
-      }
-      else if (batchCandidate) {
-        ++this->submissionCache.statistics.selectionPrimitiveBatchesRejected;
-        for (size_t index = 0; index < commandIndices.size(); ++index) {
-          drawTarget(targets[offset + index]);
-        }
-        entryCount += commandIndices.size();
-        offset += commandIndices.size();
+          batch.commandIndices.size();
       }
       else {
-        drawTarget(firstTarget);
-        ++entryCount;
-        ++offset;
+        if (batchCandidate) {
+          ++this->submissionCache.statistics
+            .selectionPrimitiveBatchesRejected;
+        }
+        for (const size_t targetIndex : batch.targetIndices) {
+          drawTarget(targets[targetIndex]);
+        }
       }
+      entryCount += batch.targetIndices.size();
     }
   };
 
