@@ -816,12 +816,11 @@ fillCommandTraversalStateFromSnapshot(
   const SoLazyElementP::RenderSnapshot & lazy)
 {
   SoState * state = action->getState();
-  SoDrawList & drawlist = action->getMutableDrawList();
   command.modelMatrix = SoModelMatrixElement::get(state);
   command.viewMatrix = SoViewingMatrixElement::get(state);
   command.projMatrix = SoProjectionMatrixElement::get(state);
   fillRenderStateFromSnapshot(state, command.state, lazy);
-  command.lightingHandle = fillLightingFromState(state, drawlist);
+  command.lightingHandle = action->captureLightingHandle();
   command.pick.pickable = SoPickStyleElement::get(state) !=
     SoPickStyleElement::UNPICKABLE;
 }

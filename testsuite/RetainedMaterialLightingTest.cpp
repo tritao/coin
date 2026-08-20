@@ -14,6 +14,7 @@
 #include <Inventor/nodes/SoSeparator.h>
 #include <Inventor/nodes/SoSpotLight.h>
 #include <Inventor/nodes/SoTexture2.h>
+#include <Inventor/nodes/SoTranslation.h>
 #include <Inventor/nodes/SoVertexProperty.h>
 
 #include <cmath>
@@ -186,6 +187,50 @@ runTest()
   }
 
   root->unref();
+
+  // A reused light node can have a different effective transform in each
+  // branch. Lighting interning must include that transform, not just the
+  // accumulated light-node identities.
+  SoSeparator * transformedLights = new SoSeparator;
+  transformedLights->ref();
+  SoPointLight * sharedPointLight = new SoPointLight;
+  sharedPointLight->location.setValue(0.0f, 0.0f, 0.0f);
+  for (int i = 0; i < 2; ++i) {
+    SoSeparator * branch = new SoSeparator;
+    SoTranslation * translation = new SoTranslation;
+    translation->translation.setValue(i == 0 ? -2.0f : 3.0f, 0.0f, 0.0f);
+    branch->addChild(translation);
+    branch->addChild(sharedPointLight);
+    branch->addChild(new SoCube);
+    transformedLights->addChild(branch);
+  }
+  SoIRRenderAction transformedLightAction(SbViewportRegion(64, 64));
+  transformedLightAction.apply(transformedLights);
+  if (transformedLightAction.getDrawList().getNumCommands() != 2) {
+    std::cerr << "FAIL: transformed-light scene did not emit two commands"
+              << std::endl;
+    result = 1;
+  }
+  else {
+    const SoRenderCommand & first =
+      transformedLightAction.getDrawList().getCommand(0);
+    const SoRenderCommand & second =
+      transformedLightAction.getDrawList().getCommand(1);
+    const SoLightingData * firstLighting =
+      transformedLightAction.getDrawList().getLighting(first.lightingHandle);
+    const SoLightingData * secondLighting =
+      transformedLightAction.getDrawList().getLighting(second.lightingHandle);
+    if (first.lightingHandle == second.lightingHandle || !firstLighting ||
+        !secondLighting || firstLighting->lights.size() != 1 ||
+        secondLighting->lights.size() != 1 ||
+        !nearlyEqual(firstLighting->lights[0].position[0], -2.0f) ||
+        !nearlyEqual(secondLighting->lights[0].position[0], 3.0f)) {
+      std::cerr << "FAIL: lighting interning ignored transformed light state"
+                << std::endl;
+      result = 1;
+    }
+  }
+  transformedLights->unref();
 
   // SoVertexProperty packed alpha is an independent vertex contribution in
   // retained rendering. Verify both ways that Coin can introduce the

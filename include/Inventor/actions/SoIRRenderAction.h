@@ -212,6 +212,8 @@ public:
   SoRenderStage getRenderStage() const;
   void setRenderStage(SoRenderStage stage);
   void applyRenderStage(SoRenderCommand & command);
+  //! Reuse an unchanged frame-local lighting setup while commands are built.
+  SoLightingHandle captureLightingHandle();
   //! Refresh matrices for commands affected by one state-node notification.
   int updateCommandMatricesForStatePath(const SoPath * statePath);
   //! Refresh effective material and material-derived render state.

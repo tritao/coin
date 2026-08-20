@@ -194,6 +194,19 @@ public:
 
   SoIRRenderActionP() = default;
 
+  ~SoIRRenderActionP()
+  {
+    this->clearLightingMatchInfo();
+  }
+
+  void clearLightingMatchInfo()
+  {
+    for (SoElement * element : this->lightingMatchInfo) delete element;
+    this->lightingMatchInfo.fill(nullptr);
+    this->lightingMatrices.clear();
+    this->lightingHandle = 0;
+  }
+
   SoIRBuffer geometryPool;
   std::vector<TextureStorage> textureStorage;
   SbList<SoIRRenderAction::PrimitiveCollector *> collectorStack;
@@ -217,6 +230,9 @@ public:
   // source lookups. Entries are identity-checked; collisions use the map.
   std::array<GeometryRecipeCacheEntry, 256> geometryRecipeCache{};
   std::array<GeometrySourceCacheEntry, 256> geometrySourceCache{};
+  std::array<SoElement *, 3> lightingMatchInfo{};
+  SbInlineVector<SbMatrix, 2> lightingMatrices;
+  SoLightingHandle lightingHandle = 0;
   bool recordBranchDependencies = true;
   bool commandTimingEnabled = false;
   SoRenderStage renderStage = SoRenderStage::Main;
@@ -351,11 +367,52 @@ void
 SoIRRenderAction::beginFrame()
 {
   this->drawlist.clear();
+  PRIVATE(this)->clearLightingMatchInfo();
   this->clearCommandPaths();
   this->resetFrameResources();
   this->unsupportedRendering = false;
   this->unsupportedNode = nullptr;
   this->unsupportedReason = nullptr;
+}
+
+SoLightingHandle
+SoIRRenderAction::captureLightingHandle()
+{
+  SoState * state = this->getState();
+  const int stackIndices[] = {
+    SoLightElement::getClassStackIndex(),
+    SoEnvironmentElement::getClassStackIndex(),
+    SoLightAttenuationElement::getClassStackIndex()
+  };
+  bool matches = PRIVATE(this)->lightingHandle != 0;
+  for (size_t i = 0; matches && i < PRIVATE(this)->lightingMatchInfo.size(); ++i) {
+    const SoElement * current = state->getConstElement(stackIndices[i]);
+    matches = current->matches(PRIVATE(this)->lightingMatchInfo[i]);
+  }
+  const SoNodeList & lights = SoLightElement::getLights(state);
+  matches = matches && lights.getLength() ==
+    static_cast<int>(PRIVATE(this)->lightingMatrices.size());
+  for (int i = 0; matches && i < lights.getLength(); ++i) {
+    matches = SoLightElement::getMatrix(state, i) ==
+      PRIVATE(this)->lightingMatrices[static_cast<size_t>(i)];
+  }
+  if (matches) return PRIVATE(this)->lightingHandle;
+
+  PRIVATE(this)->clearLightingMatchInfo();
+  for (size_t i = 0; i < PRIVATE(this)->lightingMatchInfo.size(); ++i) {
+    PRIVATE(this)->lightingMatchInfo[i] =
+      state->getConstElement(stackIndices[i])->copyMatchInfo();
+  }
+  PRIVATE(this)->lightingMatrices.reserve(
+    static_cast<size_t>(lights.getLength()));
+  for (int i = 0; i < lights.getLength(); ++i) {
+    PRIVATE(this)->lightingMatrices.push_back(
+      SoLightElement::getMatrix(state, i));
+  }
+  SoLightingData lighting;
+  SoRenderIR::captureLightingFromState(state, lighting);
+  PRIVATE(this)->lightingHandle = this->drawlist.addLightingSetup(lighting);
+  return PRIVATE(this)->lightingHandle;
 }
 
 void
