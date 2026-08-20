@@ -110,13 +110,17 @@ ordering-sensitive transform, material, transparency, and geometry edits are
 replanned without rebuilding the DrawList. Pick-buffer refreshes consume the
 same revision- and view-keyed plan instead of planning the frame a second time.
 
-The core-profile `feature_rich_rebuild_500`, `_5000`, and `_50000` workloads
-invalidate the retained frame before every sample. These scaling points expose
-the cost of scene traversal and IR construction separately from transparent
-sorting, GL submission, and GPU completion. Full runs cap these larger curves
-at ten samples; smoke runs execute only a small rebuild case.
+The `feature_rich_rebuild_500`, `_5000`, and `_50000` workloads render the same
+semantic scenes through LegacyGL and a core-profile DrawList. DrawList
+invalidates its retained frame before every sample, while LegacyGL performs
+its normal per-frame traversal. These scaling points compare the complete
+cost of rendering changed scenes and expose retained traversal and IR
+construction separately from transparent sorting, GL submission, and GPU
+completion. Full runs cap these larger curves at ten samples; smoke runs
+execute only a small rebuild case. Builds without LegacyGL report only the
+DrawList measurement.
 For profiler runs, `--rebuild-only N` skips unrelated workloads and executes
-only the core-profile forced-rebuild scene at the requested object count.
+the LegacyGL/DrawList comparison at the requested object count.
 `--assembly-rebuild-only N` does the same for the shared assembly recipe.
 Add `--no-phase-timing` when sampling with an external profiler. This disables
 the intrusive per-command clocks so they do not distort the sampled workload;

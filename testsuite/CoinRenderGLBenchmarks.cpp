@@ -2401,6 +2401,34 @@ int main(int argc, char ** argv)
       }
     }
   };
+  const auto runFeatureRichRebuildComparison = [&](int objectCount,
+                                                    int sampleCount) {
+    const std::string workload = "feature_rich_rebuild_" +
+      std::to_string(objectCount);
+#if COIN_HAVE_LEGACY_GL_RENDERER
+    Measurement legacy;
+    std::string legacyReason;
+    if (runVariant(GLTestProfile::Compatibility,
+                   SoRenderManager::RenderPipeline::LEGACY_GL,
+                   "LegacyGL", WorkloadKind::FeatureRich,
+                   objectCount, sampleCount, legacy, legacyReason)) {
+      legacy.workload = workload;
+      results.push_back(legacy);
+    }
+    else unavailable.push_back(workload + ":LegacyGL: " + legacyReason);
+#endif
+    Measurement retained;
+    std::string retainedReason;
+    if (runVariant(GLTestProfile::Core,
+                   SoRenderManager::RenderPipeline::DRAW_LIST,
+                   "DrawList", WorkloadKind::FeatureRich,
+                   objectCount, sampleCount, retained, retainedReason, true,
+                   options.phaseTiming)) {
+      retained.workload = workload;
+      results.push_back(retained);
+    }
+    else unavailable.push_back(workload + ":DrawList core: " + retainedReason);
+  };
   if (options.incrementalOnly > 0) {
     std::string reason;
     if (!runIncrementalMutationScaling(
@@ -2455,18 +2483,7 @@ int main(int argc, char ** argv)
     return results.empty() ? 77 : 0;
   }
   if (options.rebuildOnly > 0) {
-    Measurement rebuild;
-    std::string reason;
-    if (runVariant(GLTestProfile::Core,
-                   SoRenderManager::RenderPipeline::DRAW_LIST,
-                   "DrawList", WorkloadKind::FeatureRich,
-                   options.rebuildOnly, samples, rebuild, reason, true)) {
-      rebuild.workload = "feature_rich_rebuild_" +
-        std::to_string(options.rebuildOnly);
-      results.push_back(rebuild);
-    }
-    else unavailable.push_back("feature_rich_rebuild_" +
-      std::to_string(options.rebuildOnly) + ":DrawList core: " + reason);
+    runFeatureRichRebuildComparison(options.rebuildOnly, samples);
     const std::string document = toJson(results, unavailable, options);
     if (options.output.empty()) std::cout << document;
     else {
@@ -2521,20 +2538,7 @@ int main(int argc, char ** argv)
   for (size_t i = 0;
        i < sizeof(rebuildCounts) / sizeof(rebuildCounts[0]); ++i) {
     if (rebuildCounts[i] == 0) continue;
-    Measurement rebuild;
-    std::string reason;
-    if (runVariant(GLTestProfile::Core,
-                   SoRenderManager::RenderPipeline::DRAW_LIST,
-                   "DrawList", WorkloadKind::FeatureRich,
-                   rebuildCounts[i], rebuildSamples, rebuild, reason, true)) {
-      rebuild.workload = "feature_rich_rebuild_" +
-        std::to_string(rebuildCounts[i]);
-      results.push_back(rebuild);
-    }
-    else {
-      unavailable.push_back("feature_rich_rebuild_" +
-        std::to_string(rebuildCounts[i]) + ":DrawList core: " + reason);
-    }
+    runFeatureRichRebuildComparison(rebuildCounts[i], rebuildSamples);
   }
   const int indexedCounts[] = { 1, options.smoke ? 8 : 100,
                                 options.smoke ? 0 : 500 };
