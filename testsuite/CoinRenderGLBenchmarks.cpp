@@ -5,6 +5,7 @@
 #include <Inventor/SoDB.h>
 #include <Inventor/SoPickedPoint.h>
 #include <Inventor/SoRenderManager.h>
+#include <Inventor/lists/SoPickedPointList.h>
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/system/gl.h>
 #include <Inventor/actions/SoRayPickAction.h>
@@ -111,6 +112,8 @@ struct Measurement {
   SoRenderStatistics renderStatistics;
   double pickMedianMs = 0.0;
   double pickP95Ms = 0.0;
+  double depthStackMedianMs = 0.0;
+  double depthStackP95Ms = 0.0;
   uint64_t pixelChecksum = 0;
 };
 
@@ -1764,9 +1767,10 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
     return false;
   }
 
+  SceneMutationHandles mutations;
   SoOrthographicCamera * camera = nullptr;
   SoSeparator * scene = makeScene(
-    WorkloadKind::SharedAssemblyRecipe, occurrenceCount, camera);
+    WorkloadKind::SharedAssemblyRecipe, occurrenceCount, camera, &mutations);
   SbViewportRegion viewport(SbVec2s(256, 256));
   viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(256, 256));
   SoRenderManager manager;
@@ -1970,6 +1974,53 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
     "shared_assembly_preselection", 1, true, true);
 
   manager.setSelectionState(SoSelectionState());
+  if (valid) {
+    for (int occurrence = 0; occurrence < occurrenceCount; ++occurrence) {
+      mutations.transforms[static_cast<size_t>(occurrence)]->translation
+        .setValue(0.0f, 0.0f, -0.01f * static_cast<float>(occurrence));
+    }
+    context.bindFramebuffer();
+    manager.render(TRUE, TRUE);
+    context.bindFramebuffer();
+    manager.render(TRUE, TRUE);
+    std::vector<double> depthStackTimes;
+    const int maxLayers = std::min(8, occurrenceCount);
+    for (int sample = 0; sample < samples; ++sample) {
+      SoPickedPointList stack;
+      const Clock::time_point stackStart = Clock::now();
+      if (!manager.pickDepthStack(128, 128, 3, maxLayers, stack, 32) ||
+          stack.getLength() < std::min(2, occurrenceCount)) {
+        unavailable = "assembly depth stack did not return overlapping hits";
+        valid = false;
+        break;
+      }
+      depthStackTimes.push_back(elapsedMs(stackStart));
+    }
+    if (valid) {
+      Measurement depthStack;
+      depthStack.workload = "shared_assembly_depth_stack_" +
+        std::to_string(occurrenceCount);
+      depthStack.renderer = "DrawList";
+      depthStack.profile = profile == GLTestProfile::Core
+        ? "core" : "compatibility";
+      depthStack.semanticDraws = occurrenceCount * 2;
+      depthStack.samples = samples;
+      depthStack.depthStackMedianMs = percentile(depthStackTimes, 0.5);
+      depthStack.depthStackP95Ms = percentile(depthStackTimes, 0.95);
+      depthStack.cpuMedianMs = depthStack.depthStackMedianMs;
+      depthStack.cpuP95Ms = depthStack.depthStackP95Ms;
+      depthStack.renderStatistics = manager.getRenderStatistics();
+      const uint64_t maximumDepthDraws = maximumResources *
+        static_cast<uint64_t>(maxLayers + 1);
+      if (depthStack.renderStatistics.drawListRebuilds != 0 ||
+          depthStack.renderStatistics.depthStackDrawCalls > maximumDepthDraws ||
+          depthStack.renderStatistics.depthStackInstancedEntries == 0) {
+        unavailable = "assembly depth stack violated batching invariants";
+        valid = false;
+      }
+      else results.push_back(depthStack);
+    }
+  }
   manager.releaseRenderBackendResources();
   manager.setCamera(nullptr);
   manager.setSceneGraph(nullptr);
@@ -2138,6 +2189,12 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.pickInstancedBatches
         << ", \"pick_instanced_entries\": "
         << r.renderStatistics.pickInstancedEntries
+        << ", \"depth_stack_draw_calls\": "
+        << r.renderStatistics.depthStackDrawCalls
+        << ", \"depth_stack_instanced_batches\": "
+        << r.renderStatistics.depthStackInstancedBatches
+        << ", \"depth_stack_instanced_entries\": "
+        << r.renderStatistics.depthStackInstancedEntries
         << ", \"async_pick_buffer_allocations\": "
         << r.renderStatistics.asyncPickBufferAllocations
         << ", \"command_preparation_ms\": "
@@ -2150,6 +2207,8 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.drawSubmissionMs
         << ", \"pick_median_ms\": " << r.pickMedianMs
         << ", \"pick_p95_ms\": " << r.pickP95Ms
+        << ", \"depth_stack_median_ms\": " << r.depthStackMedianMs
+        << ", \"depth_stack_p95_ms\": " << r.depthStackP95Ms
         << ", \"pixel_checksum\": " << r.pixelChecksum << "}";
     if (i + 1 != results.size()) out << ',';
     out << '\n';

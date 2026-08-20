@@ -134,6 +134,14 @@ raster paths retain the range-by-range fallback. The assembly benchmark
 requires every command to join an instanced pick batch and bounds pick draws by
 the retained geometry-resource count.
 
+`shared_assembly_depth_stack` moves the shared occurrences onto one overlapping
+view ray and measures bounded front-to-back depth peeling. Its counters cover
+all rendered peel layers separately from ordinary hover-target construction.
+Each layer uses the same primitive-ID instance batches, while depth segments
+and irregular mappings remain ordering barriers. The benchmark requires
+multiple resolved hits, zero DrawList rebuilds, bounded draw calls per layer,
+and nonzero instanced coverage.
+
 The deterministic workloads currently cover traversal/IR construction, render
 plan construction (including transparent sorting and depth segments), retained
 pick-table construction and resolution, selection churn, and repeated frame

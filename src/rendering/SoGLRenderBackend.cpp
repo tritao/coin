@@ -62,6 +62,31 @@ struct InstanceRecord {
 };
 
 bool
+hasPrimitivePickMapping(const SoRenderCommand & command,
+                        const std::vector<SoPickLUTEntry> & lookup,
+                        const std::vector<size_t> & entries)
+{
+  uint32_t primitiveWidth = 0;
+  switch (command.geometry.topology) {
+  case SO_TOPOLOGY_TRIANGLES: primitiveWidth = 3; break;
+  case SO_TOPOLOGY_LINES: primitiveWidth = 2; break;
+  case SO_TOPOLOGY_POINTS: primitiveWidth = 1; break;
+  default: return false;
+  }
+  if (entries.empty()) return false;
+  for (size_t primitive = 0; primitive < entries.size(); ++primitive) {
+    const SoPickLUTEntry & entry = lookup[entries[primitive]];
+    if (entry.elementIndex < 0 || entry.drawCount != primitiveWidth ||
+        entry.drawStart != primitive * primitiveWidth ||
+        entries[primitive] != entries.front() + primitive) return false;
+  }
+  const bool indexed = command.geometry.indices && command.geometry.indexCount;
+  const uint32_t drawCount = indexed ? command.geometry.indexCount
+                                     : command.geometry.vertexCount;
+  return entries.size() * primitiveWidth == drawCount;
+}
+
+bool
 sameMaterialUniforms(const SoMaterialData & lhs, const SoMaterialData & rhs)
 {
   return lhs.diffuse == rhs.diffuse && lhs.ambient == rhs.ambient &&
@@ -3188,8 +3213,12 @@ SoGLRenderBackend::drawInstancedPickCommands(
     this->glue->glUniform1f(uniforms.primitivePickIds,
                             primitivePickIds ? 1.0f : 0.0f);
   }
-  if (uniforms.peelEnabled >= 0)
-    this->glue->glUniform1i(uniforms.peelEnabled, 0);
+  if (uniforms.previousDepth >= 0)
+    this->glue->glUniform1i(uniforms.previousDepth, 1);
+  if (uniforms.peelEnabled >= 0) {
+    this->glue->glUniform1i(uniforms.peelEnabled,
+                            this->pickTarget.peelEnabled ? 1 : 0);
+  }
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(depthFunctionToGL(first.state.depth.func));
   glDepthMask(GL_TRUE);
@@ -3658,29 +3687,10 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
   // A contiguous one-entry-per-primitive table can be addressed directly
   // from gl_PrimitiveID. Require full coverage so an irregular producer can
   // always fall back to the range-by-range path without changing identity.
-  const auto hasPrimitivePickMapping = [&](const uint32_t commandIndex) {
-    const SoRenderCommand & command = drawlist.getCommand(
-      static_cast<int>(commandIndex));
-    uint32_t primitiveWidth = 0;
-    switch (command.geometry.topology) {
-    case SO_TOPOLOGY_TRIANGLES: primitiveWidth = 3; break;
-    case SO_TOPOLOGY_LINES: primitiveWidth = 2; break;
-    case SO_TOPOLOGY_POINTS: primitiveWidth = 1; break;
-    default: return false;
-    }
-    const std::vector<size_t> & entries = lookupByCommand[commandIndex];
-    if (entries.empty()) return false;
-    for (size_t primitive = 0; primitive < entries.size(); ++primitive) {
-      const SoPickLUTEntry & entry =
-        this->pickTarget.lookup[entries[primitive]];
-      if (entry.elementIndex < 0 || entry.drawCount != primitiveWidth ||
-          entry.drawStart != primitive * primitiveWidth ||
-          entries[primitive] != entries.front() + primitive) return false;
-    }
-    const bool indexed = command.geometry.indices && command.geometry.indexCount;
-    const uint32_t drawCount = indexed ? command.geometry.indexCount
-                                       : command.geometry.vertexCount;
-    return entries.size() * primitiveWidth == drawCount;
+  const auto primitiveMapped = [&](const uint32_t commandIndex) {
+    return hasPrimitivePickMapping(
+      drawlist.getCommand(static_cast<int>(commandIndex)),
+      this->pickTarget.lookup, lookupByCommand[commandIndex]);
   };
 
   const uint32_t eventCount = static_cast<uint32_t>(
@@ -3699,7 +3709,7 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
       bool primitivePickIds = false;
       if (this->canInstanceCommand(first) && first.state.depth.enabled &&
           (lookupByCommand[operation.commandIndex].size() == 1 ||
-           hasPrimitivePickMapping(operation.commandIndex))) {
+           primitiveMapped(operation.commandIndex))) {
         const size_t lookupIndex =
           lookupByCommand[operation.commandIndex].front();
         const SoPickLUTEntry & entry = this->pickTarget.lookup[lookupIndex];
@@ -3714,7 +3724,7 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
             if (next.type != SoRenderOperationType::DRAW ||
                 next.commandIndex >= commandCount ||
                 (primitivePickIds
-                  ? !hasPrimitivePickMapping(next.commandIndex)
+                  ? !primitiveMapped(next.commandIndex)
                   : lookupByCommand[next.commandIndex].size() != 1)) break;
             const SoRenderCommand & nextCommand = drawlist.getCommand(
               static_cast<int>(next.commandIndex));
@@ -4117,6 +4127,9 @@ SoGLRenderBackend::pickDepthStack(const int x, const int y, const int radius,
                                   SoPickResultList & results)
 {
   results = SoPickResultList();
+  this->submissionCache.statistics.depthStackDrawCalls = 0;
+  this->submissionCache.statistics.depthStackInstancedBatches = 0;
+  this->submissionCache.statistics.depthStackInstancedEntries = 0;
   if (!this->isInitialized() || !this->pickTarget.ready || radius < 0 ||
       maxLayers <= 0 || maxHits <= 0 || !this->pickTarget.drawlist) {
     return FALSE;
@@ -4268,10 +4281,59 @@ SoGLRenderBackend::pickDepthStack(const int x, const int y, const int radius,
         const SoPickLUTEntry & entry = this->pickTarget.lookup[i];
         this->drawPickEntry(drawlist, entry, static_cast<GLuint>(i + 1),
                             frameView, frameProjection, params);
+        ++this->submissionCache.statistics.depthStackDrawCalls;
       }
     };
-    for (const uint32_t commandIndex : commands) {
-      drawPickCommand(commandIndex);
+    for (size_t commandOffset = 0; commandOffset < commands.size();) {
+      const uint32_t firstIndex = commands[commandOffset];
+      const SoRenderCommand & first = drawlist.getCommand(
+        static_cast<int>(firstIndex));
+      const std::vector<size_t> & firstEntries = lookupByCommand[firstIndex];
+      const bool primitiveMapped = hasPrimitivePickMapping(
+        first, this->pickTarget.lookup, firstEntries);
+      const bool objectMapped = firstEntries.size() == 1 &&
+        this->pickTarget.lookup[firstEntries.front()].type == SO_PICK_OBJECT &&
+        this->pickTarget.lookup[firstEntries.front()].elementIndex == -1;
+      std::vector<uint32_t> instanceCommands;
+      std::vector<GLuint> instanceIds;
+      if (this->canInstanceCommand(first) && first.state.depth.enabled &&
+          (primitiveMapped || objectMapped)) {
+        instanceCommands.push_back(firstIndex);
+        instanceIds.push_back(static_cast<GLuint>(firstEntries.front() + 1));
+        for (size_t nextOffset = commandOffset + 1;
+             nextOffset < commands.size(); ++nextOffset) {
+          const uint32_t nextIndex = commands[nextOffset];
+          const SoRenderCommand & next = drawlist.getCommand(
+            static_cast<int>(nextIndex));
+          const std::vector<size_t> & nextEntries =
+            lookupByCommand[nextIndex];
+          const bool compatibleMapping = primitiveMapped
+            ? hasPrimitivePickMapping(next, this->pickTarget.lookup,
+                                      nextEntries)
+            : nextEntries.size() == 1 &&
+              this->pickTarget.lookup[nextEntries.front()].type ==
+                SO_PICK_OBJECT &&
+              this->pickTarget.lookup[nextEntries.front()].elementIndex == -1;
+          if (!compatibleMapping || !next.state.depth.enabled ||
+              !this->canInstanceTogether(first, next)) break;
+          instanceCommands.push_back(nextIndex);
+          instanceIds.push_back(static_cast<GLuint>(nextEntries.front() + 1));
+        }
+      }
+      if (instanceCommands.size() > 1 || primitiveMapped) {
+        this->drawInstancedPickCommands(drawlist, instanceCommands,
+                                        instanceIds, params,
+                                        primitiveMapped);
+        ++this->submissionCache.statistics.depthStackDrawCalls;
+        ++this->submissionCache.statistics.depthStackInstancedBatches;
+        this->submissionCache.statistics.depthStackInstancedEntries +=
+          instanceCommands.size();
+        commandOffset += instanceCommands.size();
+      }
+      else {
+        drawPickCommand(firstIndex);
+        ++commandOffset;
+      }
     }
     return true;
   };
