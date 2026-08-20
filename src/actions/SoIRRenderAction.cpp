@@ -555,6 +555,24 @@ SoIRRenderAction::isCommandTimingEnabled() const
 }
 
 void
+SoIRRenderAction::recordPrimitiveGenerationNanoseconds(uint64_t nanoseconds)
+{
+  PRIVATE(this)->pathStatistics.primitiveGenerationNanoseconds += nanoseconds;
+}
+
+void
+SoIRRenderAction::recordGeometryPackingNanoseconds(uint64_t nanoseconds)
+{
+  PRIVATE(this)->pathStatistics.geometryPackingNanoseconds += nanoseconds;
+}
+
+void
+SoIRRenderAction::recordCommandEmissionNanoseconds(uint64_t nanoseconds)
+{
+  PRIVATE(this)->pathStatistics.commandEmissionNanoseconds += nanoseconds;
+}
+
+void
 SoIRRenderAction::apply(SoNode * root)
 {
   this->beginFrame();

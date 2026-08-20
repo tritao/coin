@@ -2646,6 +2646,12 @@ SoRenderManager::getRenderStatistics() const
       paths.drawListAppendNanoseconds;
     statistics.drawListPathDependencyNanoseconds =
       paths.pathDependencyNanoseconds;
+    statistics.drawListPrimitiveGenerationNanoseconds =
+      paths.primitiveGenerationNanoseconds;
+    statistics.drawListGeometryPackingNanoseconds =
+      paths.geometryPackingNanoseconds;
+    statistics.drawListCommandEmissionNanoseconds =
+      paths.commandEmissionNanoseconds;
   }
   return statistics;
 }

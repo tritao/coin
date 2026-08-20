@@ -60,6 +60,9 @@ public:
     uint64_t geometryResourceNanoseconds = 0;
     uint64_t drawListAppendNanoseconds = 0;
     uint64_t pathDependencyNanoseconds = 0;
+    uint64_t primitiveGenerationNanoseconds = 0;
+    uint64_t geometryPackingNanoseconds = 0;
+    uint64_t commandEmissionNanoseconds = 0;
   };
 
   /*! Camera state policy used when starting a root traversal. */
@@ -147,6 +150,10 @@ public:
   //! Enable intrusive per-command construction timing for diagnostics.
   void setCommandTimingEnabled(SbBool enabled);
   SbBool isCommandTimingEnabled() const;
+  //! Accumulate opt-in shape construction diagnostics.
+  void recordPrimitiveGenerationNanoseconds(uint64_t nanoseconds);
+  void recordGeometryPackingNanoseconds(uint64_t nanoseconds);
+  void recordCommandEmissionNanoseconds(uint64_t nanoseconds);
 
   //! Append a root without clearing the current retained frame.
   void traverseAdditionalRoot(

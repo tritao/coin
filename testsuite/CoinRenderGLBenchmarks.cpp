@@ -94,6 +94,9 @@ struct Measurement {
   double geometryResourceMs = 0.0;
   double drawListAppendMs = 0.0;
   double pathDependencyMs = 0.0;
+  double primitiveGenerationMs = 0.0;
+  double geometryPackingMs = 0.0;
+  double commandEmissionMs = 0.0;
   double planConstructionMs = 0.0;
   double commandPreparationMs = 0.0;
   double stateSetupMs = 0.0;
@@ -561,6 +564,9 @@ bool runVariant(GLTestProfile profile,
   std::vector<double> geometryResource;
   std::vector<double> drawListAppend;
   std::vector<double> pathDependency;
+  std::vector<double> primitiveGeneration;
+  std::vector<double> geometryPacking;
+  std::vector<double> commandEmission;
   std::vector<double> planConstruction;
   std::vector<double> commandPreparation;
   std::vector<double> stateSetup;
@@ -592,6 +598,12 @@ bool runVariant(GLTestProfile profile,
       sampleStatistics.drawListAppendNanoseconds / 1000000.0);
     pathDependency.push_back(
       sampleStatistics.drawListPathDependencyNanoseconds / 1000000.0);
+    primitiveGeneration.push_back(
+      sampleStatistics.drawListPrimitiveGenerationNanoseconds / 1000000.0);
+    geometryPacking.push_back(
+      sampleStatistics.drawListGeometryPackingNanoseconds / 1000000.0);
+    commandEmission.push_back(
+      sampleStatistics.drawListCommandEmissionNanoseconds / 1000000.0);
     planConstruction.push_back(
       sampleStatistics.planConstructionNanoseconds / 1000000.0);
     commandPreparation.push_back(
@@ -795,6 +807,9 @@ bool runVariant(GLTestProfile profile,
   result.geometryResourceMs = percentile(geometryResource, 0.5);
   result.drawListAppendMs = percentile(drawListAppend, 0.5);
   result.pathDependencyMs = percentile(pathDependency, 0.5);
+  result.primitiveGenerationMs = percentile(primitiveGeneration, 0.5);
+  result.geometryPackingMs = percentile(geometryPacking, 0.5);
+  result.commandEmissionMs = percentile(commandEmission, 0.5);
   result.planConstructionMs = percentile(planConstruction, 0.5);
   result.commandPreparationMs = percentile(commandPreparation, 0.5);
   result.stateSetupMs = percentile(stateSetup, 0.5);
@@ -2312,6 +2327,9 @@ std::string toJson(const std::vector<Measurement> & results,
         << ", \"geometry_resource_ms\": " << r.geometryResourceMs
         << ", \"drawlist_append_ms\": " << r.drawListAppendMs
         << ", \"path_dependency_ms\": " << r.pathDependencyMs
+        << ", \"primitive_generation_ms\": " << r.primitiveGenerationMs
+        << ", \"geometry_packing_ms\": " << r.geometryPackingMs
+        << ", \"command_emission_ms\": " << r.commandEmissionMs
         << ", \"plan_construction_ms\": " << r.planConstructionMs
         << ", \"cold_pick_ms\": " << r.coldPickMs
         << ", \"refresh_pick_ms\": " << r.refreshPickMs

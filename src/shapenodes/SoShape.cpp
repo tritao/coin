@@ -54,6 +54,7 @@ class SoVBO;
 #include "shapenodes/SoShapeGLRenderP.h"
 
 #include <cstring>
+#include <chrono>
 #include <cstdlib>
 #include <utility>
 #include <vector>
@@ -403,11 +404,27 @@ private:
   {
     if (this->vertices.getLength() == 0) return;
 
+    using TimingClock = std::chrono::steady_clock;
+    const bool timing = this->action->isCommandTimingEnabled();
+    TimingClock::time_point phaseStart;
+    if (timing) phaseStart = TimingClock::now();
     SoState * state = this->action->getState();
     SoGeometryDesc geometry = {};
     SoIRMaterialBatchPlan plan;
     this->fillGeometry(state, geometry, plan);
+    if (timing) {
+      const TimingClock::time_point now = TimingClock::now();
+      this->action->recordGeometryPackingNanoseconds(
+        static_cast<uint64_t>(std::chrono::duration_cast<
+          std::chrono::nanoseconds>(now - phaseStart).count()));
+      phaseStart = now;
+    }
     this->emitCommands(state, geometry, plan);
+    if (timing) {
+      this->action->recordCommandEmissionNanoseconds(
+        static_cast<uint64_t>(std::chrono::duration_cast<
+          std::chrono::nanoseconds>(TimingClock::now() - phaseStart).count()));
+    }
     this->vertices.truncate(0);
   }
 
@@ -1034,8 +1051,17 @@ SoShape::IRRender(SoIRRenderAction * action)
 
   SoIRPrimitiveAssembler assembler(action, this);
   action->pushPrimitiveCollector(&assembler);
+  const bool timing = action->isCommandTimingEnabled();
+  const std::chrono::steady_clock::time_point generationStart = timing
+    ? std::chrono::steady_clock::now()
+    : std::chrono::steady_clock::time_point();
   if (!this->generateRetainedPrimitives(action)) {
     this->generatePrimitives(action);
+  }
+  if (timing) {
+    action->recordPrimitiveGenerationNanoseconds(static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - generationStart).count()));
   }
   action->popPrimitiveCollector(&assembler);
   assembler.finalize();

@@ -775,6 +775,11 @@ struct SoRenderStatistics {
   uint64_t drawListGeometryResourceNanoseconds = 0;
   uint64_t drawListAppendNanoseconds = 0;
   uint64_t drawListPathDependencyNanoseconds = 0;
+  uint64_t drawListPrimitiveGenerationNanoseconds = 0;
+  uint64_t drawListGeometryPackingNanoseconds = 0;
+  // Includes command finalization and addCommand(); it must not be summed
+  // with the narrower per-command counters above.
+  uint64_t drawListCommandEmissionNanoseconds = 0;
   uint64_t planConstructionNanoseconds = 0;
   uint64_t drawListRebuilds = 0;
   uint64_t retainedCommands = 0;
