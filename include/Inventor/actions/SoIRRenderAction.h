@@ -219,6 +219,9 @@ public:
   //! Refresh effective material and material-derived render state.
   int updateCommandMaterialsForStatePath(const SoPath * statePath,
                                          bool opacityMayChange);
+  //! Toggle retained commands below a stable one-child switch.
+  int updateCommandVisibilityForSwitchPath(const SoPath * switchPath,
+                                           SbBool visible);
   //! Transactionally regenerate compatible commands affected by one source.
   int updateCommandGeometryForStatePath(const SoPath * statePath);
 #endif

@@ -171,10 +171,11 @@ Normal rendering leaves this intrusive timing disabled.
 `--incremental-only N` reuses the shared scene generator and applies a
 deterministic edit sequence to an `N`-command scene. Unchanged frames and
 single placement, material, transparency, and geometry edits must avoid a full
-DrawList rebuild. Visibility and child insertion/removal currently require one
-safe structural rebuild; their measurements assert the resulting command
-count and plan rebuild explicitly. This makes broad invalidation visible while
-preserving it as a supported baseline for later incremental improvements.
+DrawList rebuild. A stable one-child visibility switch updates its retained
+commands in place while preserving command identity. Child insertion/removal
+currently requires one safe structural rebuild; its measurement asserts the
+resulting command count and plan rebuild explicitly. This keeps broad
+invalidation visible as a supported baseline for later improvements.
 
 The `shared_assembly_{expanded,sources,recipe}` workloads render the same
 deterministic collection of reusable part definitions and transformed

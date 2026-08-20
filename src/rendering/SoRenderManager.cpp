@@ -70,6 +70,7 @@
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoCoordinate3.h>
 #include <Inventor/nodes/SoMaterial.h>
+#include <Inventor/nodes/SoSwitch.h>
 #include <Inventor/nodes/SoTranslation.h>
 #include <Inventor/SoPath.h>
 #include <Inventor/SoPickedPoint.h>
@@ -1279,6 +1280,19 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
                rootSensor->getChangedNode())->point) {
     updated = action->updateCommandGeometryForStatePath(
       rootSensor->getChangedPath());
+  }
+  else if (canPatchSingleStateChange &&
+           rootSensor->getChangedNode()->isOfType(SoSwitch::getClassTypeId())) {
+    SoSwitch * switchNode =
+      static_cast<SoSwitch *>(rootSensor->getChangedNode());
+    const int whichChild = switchNode->whichChild.getValue();
+    if (rootSensor->getChangedField() == &switchNode->whichChild &&
+        switchNode->getNumChildren() == 1 &&
+        (whichChild == SO_SWITCH_ALL || whichChild == SO_SWITCH_NONE ||
+         whichChild == 0)) {
+      updated = action->updateCommandVisibilityForSwitchPath(
+        rootSensor->getChangedPath(), whichChild != SO_SWITCH_NONE);
+    }
   }
   if (updated > 0) {
     PRIVATE(this)->incrementalCommandUpdates = static_cast<uint64_t>(updated);

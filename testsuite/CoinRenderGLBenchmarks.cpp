@@ -1201,6 +1201,14 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
         std::exit(1);
       }
       const bool unchanged = std::string(name) == "incremental_unchanged";
+      const uint64_t expectedUpdates = unchanged ? 0 : 1;
+      if (statistics.incrementalCommandUpdates != expectedUpdates ||
+          statistics.retainedCommands != static_cast<uint64_t>(drawCount)) {
+        std::cerr << "FAIL: " << name
+                  << " updated " << statistics.incrementalCommandUpdates
+                  << " retained commands; expected " << expectedUpdates << "\n";
+        std::exit(1);
+      }
       if (unchanged != (statistics.planConstructionNanoseconds == 0)) {
         std::cerr << "FAIL: " << name
                   << (unchanged ? " rebuilt" : " reused")
@@ -1244,6 +1252,11 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
   measure("incremental_geometry_1", [&](int sample) {
     mutations.coordinates[0]->point.set1Value(
       0, SbVec3f((sample & 1) ? -0.40f : -0.44f, -0.42f, 0.0f));
+  });
+
+  SoSwitch * visibility = mutations.visibilitySwitches[0];
+  measure("incremental_visibility_1", [&](int sample) {
+    visibility->whichChild = (sample & 1) ? SO_SWITCH_ALL : SO_SWITCH_NONE;
   });
 
   const auto measureInvalidating =
@@ -1299,15 +1312,6 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
     }
     results.back().pixelChecksum = checksumPixels(context.readPixels());
   };
-
-  SoSwitch * visibility = mutations.visibilitySwitches[0];
-  measureInvalidating("incremental_visibility_1", [&](int sample) {
-    visibility->whichChild = (sample & 1) ? SO_SWITCH_ALL : SO_SWITCH_NONE;
-  }, [&](int sample) {
-    return (sample & 1) ? drawCount : drawCount - 1;
-  }, [&]() {
-    visibility->whichChild = SO_SWITCH_ALL;
-  });
 
   SoSeparator * structuralBranch = mutations.structuralBranches[0];
   SoFaceSet * insertedFace = new SoFaceSet;

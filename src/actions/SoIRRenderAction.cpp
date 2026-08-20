@@ -59,6 +59,7 @@
 #include <Inventor/nodes/SoCamera.h>
 #include <Inventor/nodes/SoNode.h>
 #include <Inventor/nodes/SoShape.h>
+#include <Inventor/nodes/SoSwitch.h>
 #include <Inventor/lists/SoPathList.h>
 
 #include "actions/SoSubActionP.h"
@@ -217,6 +218,7 @@ public:
   SoInstanceId lastPathInstanceId = 0;
   SoIRRenderAction::PathStatistics pathStatistics;
   std::vector<PathRecord> commandPathRecords;
+  std::vector<SbBool> commandAuthoredVisibility;
   std::vector<SoNode *> pathNodes;
   std::vector<int> pathIndices;
   std::vector<SoNode *> ownedPathNodes;
@@ -610,6 +612,8 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
   }
   finishPhase(PRIVATE(this)->pathStatistics.geometryResourceNanoseconds);
   const int commandIndex = this->drawlist.getNumCommands();
+  PRIVATE(this)->commandAuthoredVisibility.push_back(
+    retained.state.raster.visible);
   this->drawlist.addCommand(std::move(retained));
   finishPhase(PRIVATE(this)->pathStatistics.drawListAppendNanoseconds);
 
@@ -1055,6 +1059,48 @@ SoIRRenderAction::updateCommandMaterialsForStatePath(
 }
 
 int
+SoIRRenderAction::updateCommandVisibilityForSwitchPath(
+  const SoPath * switchPath, SbBool visible)
+{
+  if (!switchPath || switchPath->getFullLength() < 2) return 0;
+  const size_t pathOffset = 1;
+  const size_t prefixLength =
+    static_cast<size_t>(switchPath->getFullLength() - 1);
+  void ** prefixNodes = switchPath->nodes.getArrayPtr();
+  const int * prefixIndices = switchPath->indices.getArrayPtr();
+  SoNode * branch = static_cast<SoNode *>(
+    prefixNodes[pathOffset + prefixLength - 1]);
+  const SoIRRenderActionP::DependencyHead * found =
+    PRIVATE(this)->dependencyHead(branch, false);
+  if (!found) return 0;
+
+  int updated = 0;
+  const size_t noDependency = std::numeric_limits<size_t>::max();
+  for (size_t linkIndex = found->link; linkIndex != noDependency;
+       linkIndex = PRIVATE(this)->branchDependencyLinks[linkIndex].next) {
+    const size_t commandIndex =
+      PRIVATE(this)->branchDependencyLinks[linkIndex].commandIndex;
+    const SoIRRenderActionP::PathRecord & record =
+      PRIVATE(this)->commandPathRecords[commandIndex];
+    if (record.length <= prefixLength) continue;
+    bool matches = true;
+    for (size_t i = 0; matches && i < prefixLength; ++i) {
+      const size_t entry = record.first + i;
+      matches =
+        PRIVATE(this)->pathNodes[entry] == prefixNodes[pathOffset + i] &&
+        PRIVATE(this)->pathIndices[entry] == prefixIndices[pathOffset + i];
+    }
+    if (!matches) continue;
+    SoRenderCommand & command =
+      this->drawlist.getCommand(static_cast<int>(commandIndex));
+    command.state.raster.visible = visible &&
+      PRIVATE(this)->commandAuthoredVisibility[commandIndex];
+    ++updated;
+  }
+  return updated;
+}
+
+int
 SoIRRenderAction::updateCommandGeometryForStatePath(
   const SoPath * statePath)
 {
@@ -1209,6 +1255,7 @@ SoIRRenderAction::updateCommandGeometryForStatePath(
   this->drawlist.truncate(originalCommandCount);
   this->drawlist.truncateGeometryResources(originalResourceCount);
   PRIVATE(this)->commandPathRecords.resize(originalRecordCount);
+  PRIVATE(this)->commandAuthoredVisibility.resize(originalRecordCount);
   PRIVATE(this)->pathNodes.resize(originalNodeCount);
   PRIVATE(this)->pathIndices.resize(originalNodeCount);
   PRIVATE(this)->pathStatistics = originalStatistics;
@@ -1407,6 +1454,7 @@ SoIRRenderAction::clearCommandPaths()
     if (node && SoDB::isInitialized()) node->unref();
   }
   PRIVATE(this)->commandPathRecords.clear();
+  PRIVATE(this)->commandAuthoredVisibility.clear();
   PRIVATE(this)->pathNodes.clear();
   PRIVATE(this)->pathIndices.clear();
   PRIVATE(this)->ownedPathNodes.clear();

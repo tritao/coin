@@ -24,6 +24,7 @@
 #include <Inventor/nodes/SoPointSet.h>
 #include <Inventor/nodes/SoScale.h>
 #include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoSwitch.h>
 #include <Inventor/nodes/SoLightModel.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoTranslation.h>
@@ -336,6 +337,102 @@ runTest()
     sharedManager.setSceneGraph(NULL);
   }
   sharedGeometryRoot->unref();
+
+  // A one-child switch only changes whether its existing retained commands
+  // participate in rendering. Preserve visibility authored below the switch
+  // when the branch is hidden and shown again.
+  SoSeparator * visibilityRoot = new SoSeparator;
+  SoSwitch * visibilitySwitch = new SoSwitch;
+  visibilitySwitch->whichChild = SO_SWITCH_ALL;
+  SoSeparator * visibilityBranch = new SoSeparator;
+  SoTranslation * visibleOffset = new SoTranslation;
+  visibleOffset->translation.setValue(-0.35f, 0.0f, -3.0f);
+  visibilityBranch->addChild(visibleOffset);
+  visibilityBranch->addChild(new SoCube);
+  SoSeparator * authoredInvisible = new SoSeparator;
+  SoTranslation * invisibleOffset = new SoTranslation;
+  invisibleOffset->translation.setValue(0.7f, 0.0f, 0.0f);
+  authoredInvisible->addChild(invisibleOffset);
+  SoDrawStyle * invisibleStyle = new SoDrawStyle;
+  invisibleStyle->style = SoDrawStyle::INVISIBLE;
+  authoredInvisible->addChild(invisibleStyle);
+  authoredInvisible->addChild(new SoCube);
+  visibilityBranch->addChild(authoredInvisible);
+  visibilitySwitch->addChild(visibilityBranch);
+  visibilityRoot->addChild(visibilitySwitch);
+  visibilityRoot->ref();
+  {
+    SoRenderManager visibilityManager;
+    visibilityManager.setViewportRegion(testViewport);
+    visibilityManager.setSceneGraph(visibilityRoot);
+    visibilityManager.setCamera(camera);
+    visibilityManager.setLightingMode(SoRenderManager::UNLIT);
+    visibilityManager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+    visibilityManager.render(TRUE, TRUE);
+    const std::vector<uint8_t> visiblePixels = context.readPixels();
+
+    visibilitySwitch->whichChild = SO_SWITCH_NONE;
+    visibilityManager.render(TRUE, TRUE);
+    const SoRenderStatistics hiddenStatistics =
+      visibilityManager.getRenderStatistics();
+    const int hiddenPixels = countNonBlack(context);
+
+    visibilitySwitch->whichChild = SO_SWITCH_ALL;
+    visibilityManager.render(TRUE, TRUE);
+    const SoRenderStatistics shownStatistics =
+      visibilityManager.getRenderStatistics();
+    const std::vector<uint8_t> shownPixels = context.readPixels();
+    if (hiddenStatistics.drawListRebuilds != 0 ||
+        hiddenStatistics.incrementalCommandUpdates != 2 ||
+        shownStatistics.drawListRebuilds != 0 ||
+        shownStatistics.incrementalCommandUpdates != 2 ||
+        hiddenPixels != 0 || shownPixels != visiblePixels) {
+      std::cerr << "FAIL: one-child switch did not preserve retained visibility"
+                << " (hide rebuilds=" << hiddenStatistics.drawListRebuilds
+                << ", hide updates=" << hiddenStatistics.incrementalCommandUpdates
+                << ", show rebuilds=" << shownStatistics.drawListRebuilds
+                << ", show updates=" << shownStatistics.incrementalCommandUpdates
+                << ", hidden pixels=" << hiddenPixels
+                << ", restored=" << (shownPixels == visiblePixels) << ")"
+                << std::endl;
+      result = 1;
+    }
+    visibilityManager.releaseRenderBackendResources();
+    visibilityManager.setCamera(NULL);
+    visibilityManager.setSceneGraph(NULL);
+  }
+  visibilityRoot->unref();
+
+  // Choosing between children changes scene structure and must retain the
+  // existing full-rebuild behavior.
+  SoSeparator * multiSwitchRoot = new SoSeparator;
+  SoSwitch * multiSwitch = new SoSwitch;
+  multiSwitch->addChild(new SoCube);
+  multiSwitch->addChild(new SoCube);
+  multiSwitchRoot->addChild(multiSwitch);
+  multiSwitchRoot->ref();
+  {
+    SoRenderManager multiSwitchManager;
+    multiSwitchManager.setViewportRegion(testViewport);
+    multiSwitchManager.setSceneGraph(multiSwitchRoot);
+    multiSwitchManager.setCamera(camera);
+    multiSwitchManager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+    multiSwitchManager.render(TRUE, TRUE);
+    multiSwitch->whichChild = 1;
+    multiSwitchManager.render(TRUE, TRUE);
+    const SoRenderStatistics statistics =
+      multiSwitchManager.getRenderStatistics();
+    if (statistics.drawListRebuilds != 1 ||
+        statistics.incrementalCommandUpdates != 0) {
+      std::cerr << "FAIL: multi-child switch did not rebuild the DrawList"
+                << std::endl;
+      result = 1;
+    }
+    multiSwitchManager.releaseRenderBackendResources();
+    multiSwitchManager.setCamera(NULL);
+    multiSwitchManager.setSceneGraph(NULL);
+  }
+  multiSwitchRoot->unref();
 
   {
     SoRenderManager manager;
