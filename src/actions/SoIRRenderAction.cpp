@@ -380,7 +380,9 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
         now - phaseStart).count());
     phaseStart = now;
   };
-  SoRenderCommand retained = std::move(command);
+  // The rvalue parameter is already mutable and remains alive for this call.
+  // Finalize it in place, then move it once into the draw list below.
+  SoRenderCommand & retained = command;
   const SoPath * currentPath = this->getCurPath();
   SoNode * tail = currentPath ? currentPath->getTail() : nullptr;
   if (retained.nodeId == 0 && tail) {
