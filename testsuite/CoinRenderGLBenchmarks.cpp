@@ -62,10 +62,12 @@ enum class WorkloadKind {
 
 struct Options {
   bool smoke = false;
+  bool phaseTiming = true;
   int samples = 0;
   int rebuildOnly = 0;
   int incrementalOnly = 0;
   int assemblyOnly = 0;
+  int assemblyRebuildOnly = 0;
   std::string output;
 };
 
@@ -89,6 +91,7 @@ struct Measurement {
   double completionMedianMs = 0.0;
   double completionP95Ms = 0.0;
   double drawListConstructionMs = 0.0;
+  double traversalUnattributedMs = 0.0;
   double commandPathIdentityMs = 0.0;
   double commandStateMs = 0.0;
   double geometryResourceMs = 0.0;
@@ -503,7 +506,8 @@ bool runVariant(GLTestProfile profile,
                 SoRenderManager::RenderPipeline pipeline,
                 const std::string & renderer, WorkloadKind workload,
                 int drawCount, int samples, Measurement & result,
-                std::string & unavailable, bool forceDrawListRebuild = false)
+                std::string & unavailable, bool forceDrawListRebuild = false,
+                bool phaseTiming = true)
 {
   GLTestContextConfig config;
   config.profile = profile;
@@ -539,7 +543,7 @@ bool runVariant(GLTestProfile profile,
                             : SoRenderManager::UNLIT);
   manager.setRenderPipeline(pipeline);
   manager.setRenderPhaseTimingEnabled(
-    pipeline == SoRenderManager::RenderPipeline::DRAW_LIST);
+    phaseTiming && pipeline == SoRenderManager::RenderPipeline::DRAW_LIST);
 #if COIN_HAVE_LEGACY_GL_RENDERER
   if (pipeline == SoRenderManager::RenderPipeline::LEGACY_GL) {
     manager.setGLRenderAction(&legacyAction);
@@ -563,6 +567,7 @@ bool runVariant(GLTestProfile profile,
   std::vector<double> gpu;
   std::vector<double> completion;
   std::vector<double> drawListConstruction;
+  std::vector<double> traversalUnattributed;
   std::vector<double> commandPathIdentity;
   std::vector<double> commandState;
   std::vector<double> geometryResource;
@@ -620,6 +625,15 @@ bool runVariant(GLTestProfile profile,
       sampleStatistics.drawListCommandFinalizationNanoseconds / 1000000.0);
     commandPickingMetadata.push_back(
       sampleStatistics.drawListCommandPickingMetadataNanoseconds / 1000000.0);
+    const uint64_t attributedConstruction =
+      sampleStatistics.drawListPrimitiveGenerationNanoseconds +
+      sampleStatistics.drawListGeometryPackingNanoseconds +
+      sampleStatistics.drawListCommandEmissionNanoseconds;
+    traversalUnattributed.push_back(
+      sampleStatistics.drawListConstructionNanoseconds > attributedConstruction
+        ? (sampleStatistics.drawListConstructionNanoseconds -
+           attributedConstruction) / 1000000.0
+        : 0.0);
     planConstruction.push_back(
       sampleStatistics.planConstructionNanoseconds / 1000000.0);
     commandPreparation.push_back(
@@ -818,6 +832,7 @@ bool runVariant(GLTestProfile profile,
   result.completionMedianMs = percentile(completion, 0.5);
   result.completionP95Ms = percentile(completion, 0.95);
   result.drawListConstructionMs = percentile(drawListConstruction, 0.5);
+  result.traversalUnattributedMs = percentile(traversalUnattributed, 0.5);
   result.commandPathIdentityMs = percentile(commandPathIdentity, 0.5);
   result.commandStateMs = percentile(commandState, 0.5);
   result.geometryResourceMs = percentile(geometryResource, 0.5);
@@ -2299,6 +2314,7 @@ Options parseOptions(int argc, char ** argv)
   for (int i = 1; i < argc; ++i) {
     const std::string arg(argv[i]);
     if (arg == "--smoke") options.smoke = true;
+    else if (arg == "--no-phase-timing") options.phaseTiming = false;
     else if (arg == "--samples" && i + 1 < argc) options.samples = std::atoi(argv[++i]);
     else if (arg == "--rebuild-only" && i + 1 < argc)
       options.rebuildOnly = std::atoi(argv[++i]);
@@ -2306,11 +2322,15 @@ Options parseOptions(int argc, char ** argv)
       options.incrementalOnly = std::atoi(argv[++i]);
     else if (arg == "--assembly-only" && i + 1 < argc)
       options.assemblyOnly = std::atoi(argv[++i]);
+    else if (arg == "--assembly-rebuild-only" && i + 1 < argc)
+      options.assemblyRebuildOnly = std::atoi(argv[++i]);
     else if (arg == "--output" && i + 1 < argc) options.output = argv[++i];
     else {
       std::cerr << "Usage: CoinRenderGLBenchmarks [--smoke] [--samples N] "
+                   "[--no-phase-timing] "
                    "[--rebuild-only N] [--incremental-only N] "
                    "[--assembly-only N] "
+                   "[--assembly-rebuild-only N] "
                    "[--output FILE]\n";
       std::exit(2);
     }
@@ -2342,6 +2362,8 @@ std::string toJson(const std::vector<Measurement> & results,
         << ", \"completion_p95_ms\": " << r.completionP95Ms
         << ", \"drawlist_construction_ms\": "
         << r.drawListConstructionMs
+        << ", \"traversal_unattributed_ms\": "
+        << r.traversalUnattributedMs
         << ", \"command_path_identity_ms\": " << r.commandPathIdentityMs
         << ", \"command_state_ms\": " << r.commandStateMs
         << ", \"geometry_resource_ms\": " << r.geometryResourceMs
@@ -2705,6 +2727,28 @@ int main(int argc, char ** argv)
   if (options.assemblyOnly > 0) {
     runAssemblyVariants(options.assemblyOnly);
     runSelectionCurves();
+    const std::string document = toJson(results, unavailable, options);
+    if (options.output.empty()) std::cout << document;
+    else {
+      std::ofstream output(options.output.c_str());
+      if (!output) return 1;
+      output << document;
+    }
+    SoDB::finish();
+    return results.empty() ? 77 : 0;
+  }
+  if (options.assemblyRebuildOnly > 0) {
+    Measurement rebuild;
+    std::string reason;
+    if (runVariant(GLTestProfile::Core,
+                   SoRenderManager::RenderPipeline::DRAW_LIST,
+                   "DrawList", WorkloadKind::SharedAssemblyRecipe,
+                   options.assemblyRebuildOnly, samples,
+                   rebuild, reason, true, options.phaseTiming)) {
+      results.push_back(rebuild);
+    }
+    else unavailable.push_back("shared_assembly_recipe:DrawList core: " +
+                               reason);
     const std::string document = toJson(results, unavailable, options);
     if (options.output.empty()) std::cout << document;
     else {

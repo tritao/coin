@@ -439,9 +439,18 @@ public:
   void finalize()
   {
     if (this->reusedVertexCount != 0) {
+      const bool timing = this->action->isCommandTimingEnabled();
+      const std::chrono::steady_clock::time_point emissionStart = timing
+        ? std::chrono::steady_clock::now()
+        : std::chrono::steady_clock::time_point();
       SoIRMaterialBatchPlan plan;
       plan.addBatch(SoIRBatch(0, this->reusedVertexCount, 0));
       this->emitCommands(this->reusedGeometry, plan);
+      if (timing) {
+        this->action->recordCommandEmissionNanoseconds(static_cast<uint64_t>(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - emissionStart).count()));
+      }
       return;
     }
     this->flushRun();
