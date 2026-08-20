@@ -1944,13 +1944,23 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
             ? statistics.highlightedOverlayEntries
             : statistics.selectedOverlayEntries) !=
               static_cast<uint64_t>(selectedCount * 2) ||
-          (!highlighted && selectedCount >= occurrenceCount / 10 &&
+          (!subelement && !highlighted &&
+           selectedCount >= occurrenceCount / 10 &&
            occurrenceCount >= 100 &&
-           statistics.selectionInstancedEntries == 0) ||
-          (subelement && statistics.selectionInstancedEntries !=
-            static_cast<uint64_t>(selectedCount * 2))) {
-        unavailable = std::string(name) +
-          " changed retained assembly structure";
+           statistics.selectionInstancedEntries == 0)) {
+        std::ostringstream reason;
+        reason << name << " changed retained assembly structure"
+               << " (overlay-draws=" << statistics.selectionOverlayDrawCalls
+               << ", instanced=" << statistics.selectionInstancedEntries
+               << ", selected=" << statistics.selectedOverlayEntries
+               << ", highlighted=" << statistics.highlightedOverlayEntries
+               << ", candidates="
+               << statistics.selectionPrimitiveCandidates
+               << ", amplification="
+               << statistics.selectionPrimitiveAmplification
+               << ", rejected="
+               << statistics.selectionPrimitiveBatchesRejected << ')';
+        unavailable = reason.str();
         return false;
       }
     }
@@ -2047,6 +2057,147 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
   camera->unref();
   scene->unref();
   return valid;
+}
+
+bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
+                                 bool sharedGeometry, int samples,
+                                 Measurement & result,
+                                 std::string & unavailable)
+{
+  GLTestContextConfig config;
+  config.profile = profile;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 256;
+  config.height = 256;
+  GLTestContext context;
+  if (!context.initialize(config) || !checkTimerQueries()) {
+    unavailable = "required OpenGL context or timer queries are unavailable";
+    return false;
+  }
+
+  std::vector<float> positions(static_cast<size_t>(primitiveCount + 2) * 3);
+  positions[0] = positions[1] = positions[2] = 0.0f;
+  for (int vertex = 0; vertex <= primitiveCount; ++vertex) {
+    const float angle = static_cast<float>(vertex) * 6.28318530718f /
+      static_cast<float>(primitiveCount);
+    const size_t offset = static_cast<size_t>(vertex + 1) * 3;
+    positions[offset] = std::cos(angle) * 0.04f;
+    positions[offset + 1] = std::sin(angle) * 0.04f;
+    positions[offset + 2] = 0.0f;
+  }
+  std::vector<uint32_t> indices(static_cast<size_t>(primitiveCount) * 3);
+  for (int primitive = 0; primitive < primitiveCount; ++primitive) {
+    indices[static_cast<size_t>(primitive) * 3] = 0;
+    indices[static_cast<size_t>(primitive) * 3 + 1] = primitive + 1;
+    indices[static_cast<size_t>(primitive) * 3 + 2] = primitive + 2;
+  }
+
+  static constexpr int commandCount = 40;
+  SoDrawList drawlist;
+  drawlist.reserve(commandCount);
+  SoSelectionState selection;
+  for (int commandIndex = 0; commandIndex < commandCount; ++commandIndex) {
+    SoRenderCommand command;
+    command.geometry.topology = SO_TOPOLOGY_TRIANGLES;
+    command.geometry.positions = positions.data();
+    command.geometry.vertexCount = primitiveCount + 2;
+    command.geometry.vertexStride = sizeof(float) * 3;
+    command.geometry.indices = indices.data();
+    command.geometry.indexCount = static_cast<uint32_t>(indices.size());
+    command.geometry.resourceKey = sharedGeometry
+      ? 0x53454c4355525645ULL
+      : 0x53454c0000000000ULL + static_cast<uint64_t>(commandIndex + 1);
+    command.geometry.resourceRevision = 1;
+    command.material.diffuse = SbVec4f(0.3f, 0.6f, 0.8f, 1.0f);
+    const int column = commandIndex % 8;
+    const int row = commandIndex / 8;
+    command.modelMatrix.setTranslate(SbVec3f(
+      -0.7f + column * 0.2f, -0.4f + row * 0.2f, 0.0f));
+    SoRenderElementRange range;
+    range.type = SO_PICK_FACE;
+    range.elementIndex = 0;
+    range.drawStart = 0;
+    range.drawCount = 3;
+    command.pick.elementRanges.push_back(range);
+    drawlist.addCommand(command);
+    SoSelectionTarget target;
+    target.commandIndex = commandIndex;
+    target.type = SO_PICK_FACE;
+    target.elementIndex = 0;
+    target.color = SbColor4f(1.0f, 0.8f, 0.0f, 0.65f);
+    selection.selected.push_back(target);
+  }
+
+  SoRenderParams params;
+  params.viewport = SbViewportRegion(256, 256);
+  params.viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(256, 256));
+  params.viewMatrix.makeIdentity();
+  params.projMatrix.makeIdentity();
+  params.clearColor.setValue(0.0f, 0.0f, 0.0f, 1.0f);
+  params.flags = SO_PARAM_CLEAR_WINDOW | SO_PARAM_CLEAR_DEPTH;
+  SoRenderPlanner planner;
+  SoRenderPlan plan;
+  planner.build(drawlist, params.viewMatrix, plan);
+  SoGLRenderBackend backend;
+  SoRenderBackendInitParams initParams;
+  if (!backend.initialize(initParams)) {
+    unavailable = "retained OpenGL backend initialization failed";
+    return false;
+  }
+
+  std::vector<double> cpuTimes;
+  std::vector<double> gpuTimes;
+  GLuint query = 0;
+  glGenQueries(1, &query);
+  for (int sample = 0; sample < samples; ++sample) {
+    context.bindFramebuffer();
+    backend.render(drawlist, plan, params);
+    glBeginQuery(GL_TIME_ELAPSED, query);
+    const Clock::time_point start = Clock::now();
+    backend.renderSelection(drawlist, selection, params);
+    cpuTimes.push_back(elapsedMs(start));
+    glEndQuery(GL_TIME_ELAPSED);
+    GLuint64 nanoseconds = 0;
+    glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
+    gpuTimes.push_back(static_cast<double>(nanoseconds) / 1000000.0);
+  }
+  glDeleteQueries(1, &query);
+  const SoRenderStatistics statistics = backend.getRenderStatistics();
+  const uint64_t pixelChecksum = checksumPixels(context.readPixels());
+  const uint64_t primitiveAmplification =
+    static_cast<uint64_t>(primitiveCount) * commandCount;
+  const bool shouldBatch = sharedGeometry && primitiveAmplification <= 4096;
+  const bool valid = pixelChecksum != 0 &&
+    statistics.selectedOverlayEntries == commandCount &&
+    (shouldBatch
+      ? statistics.selectionInstancedEntries == commandCount &&
+        statistics.selectionOverlayDrawCalls == 1
+      : statistics.selectionInstancedEntries == 0 &&
+        statistics.selectionOverlayDrawCalls == commandCount) &&
+    (!sharedGeometry || shouldBatch ||
+      statistics.selectionPrimitiveBatchesRejected == 1);
+  if (!valid) {
+    unavailable = "subelement selection complexity policy was inconsistent";
+    backend.shutdown();
+    return false;
+  }
+
+  result.workload = std::string("subelement_selection_") +
+    (sharedGeometry ? "shared_" : "explicit_") +
+    std::to_string(primitiveCount);
+  result.renderer = "DrawList";
+  result.profile = profile == GLTestProfile::Core ? "core" : "compatibility";
+  result.semanticDraws = commandCount;
+  result.samples = samples;
+  result.selectionMedianMs = percentile(cpuTimes, 0.5);
+  result.selectionP95Ms = percentile(cpuTimes, 0.95);
+  result.gpuMedianMs = percentile(gpuTimes, 0.5);
+  result.gpuP95Ms = percentile(gpuTimes, 0.95);
+  result.renderStatistics = statistics;
+  result.pixelChecksum = pixelChecksum;
+  backend.shutdown();
+  return true;
 }
 
 Options parseOptions(int argc, char ** argv)
@@ -2225,6 +2376,12 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.selectedOverlayEntries
         << ", \"highlighted_overlay_entries\": "
         << r.renderStatistics.highlightedOverlayEntries
+        << ", \"selection_primitive_candidates\": "
+        << r.renderStatistics.selectionPrimitiveCandidates
+        << ", \"selection_primitive_batches_rejected\": "
+        << r.renderStatistics.selectionPrimitiveBatchesRejected
+        << ", \"selection_primitive_amplification\": "
+        << r.renderStatistics.selectionPrimitiveAmplification
         << ", \"async_pick_buffer_allocations\": "
         << r.renderStatistics.asyncPickBufferAllocations
         << ", \"command_preparation_ms\": "
@@ -2323,6 +2480,36 @@ int main(int argc, char ** argv)
       }
     }
   };
+  const auto runSelectionCurves = [&]() {
+    const int primitiveCounts[] = {
+      8, options.smoke ? 0 : 64, options.smoke ? 0 : 1000,
+      options.smoke ? 0 : 10000
+    };
+    const GLTestProfile profiles[] = {
+      GLTestProfile::Compatibility, GLTestProfile::Core
+    };
+    const int curveSamples = std::min(samples, options.smoke ? 2 : 10);
+    for (GLTestProfile profile : profiles) {
+      for (const int primitiveCount : primitiveCounts) {
+        if (primitiveCount == 0) continue;
+        for (const bool sharedGeometry : {false, true}) {
+          Measurement curve;
+          std::string reason;
+          if (runSubelementSelectionCurve(
+                profile, primitiveCount, sharedGeometry, curveSamples,
+                curve, reason)) {
+            results.push_back(curve);
+          }
+          else {
+            unavailable.push_back(
+              std::string("subelement_selection_curve:DrawList ") +
+              (profile == GLTestProfile::Core ? "core: " :
+                                                "compatibility: ") + reason);
+          }
+        }
+      }
+    }
+  };
   if (options.incrementalOnly > 0) {
     std::string reason;
     if (!runIncrementalMutationScaling(
@@ -2343,6 +2530,7 @@ int main(int argc, char ** argv)
   }
   if (options.assemblyOnly > 0) {
     runAssemblyVariants(options.assemblyOnly);
+    runSelectionCurves();
     const std::string document = toJson(results, unavailable, options);
     if (options.output.empty()) std::cout << document;
     else {
@@ -2410,6 +2598,7 @@ int main(int argc, char ** argv)
       ":DrawList core: " + coreReason);
   }
   runAssemblyVariants(options.smoke ? 24 : 500);
+  runSelectionCurves();
   const int rebuildCounts[] = {
     options.smoke ? 40 : 500,
     options.smoke ? 0 : 5000,

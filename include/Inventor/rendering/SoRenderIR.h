@@ -740,6 +740,12 @@ struct SoRenderStatistics {
   uint64_t selectionInstancedEntries = 0;
   uint64_t selectedOverlayEntries = 0;
   uint64_t highlightedOverlayEntries = 0;
+  // Primitive-selector batches redraw the source geometry for every instance.
+  // These counters expose the candidate entries, projected primitive work,
+  // and batches redirected to explicit range draws by the amplification cap.
+  uint64_t selectionPrimitiveCandidates = 0;
+  uint64_t selectionPrimitiveBatchesRejected = 0;
+  uint64_t selectionPrimitiveAmplification = 0;
   uint64_t asyncPickBufferAllocations = 0;
   // Manager-owned CPU phases. Draw-list construction is zero when a retained
   // frame is reused; plan construction is measured for every submitted frame.

@@ -47,6 +47,11 @@ namespace {
 
 static constexpr int MAX_VERTEX_COUNT = 10000000;
 static constexpr int MAX_SHADER_LIGHTS = 8;
+// Primitive selection instancing redraws the complete source geometry once
+// per instance and discards unselected primitives in the shader. Bound that
+// amplification so batching small shared shapes does not turn large meshes
+// into substantially more GPU work than explicit range draws.
+static constexpr uint64_t MAX_SELECTION_PRIMITIVE_AMPLIFICATION = 4096;
 static constexpr GLuint POSITION_ATTRIBUTE = 0;
 static constexpr GLuint NORMAL_ATTRIBUTE = 1;
 static constexpr GLuint COLOR_ATTRIBUTE = 2;
@@ -113,6 +118,19 @@ selectionPrimitiveId(const SoRenderCommand & command,
     return true;
   }
   return false;
+}
+
+uint32_t
+commandPrimitiveCount(const SoRenderCommand & command)
+{
+  uint32_t primitiveWidth = 0;
+  if (command.geometry.topology == SO_TOPOLOGY_TRIANGLES) primitiveWidth = 3;
+  else if (command.geometry.topology == SO_TOPOLOGY_LINES) primitiveWidth = 2;
+  else return 0;
+  const bool indexed = command.geometry.indices && command.geometry.indexCount;
+  const uint32_t drawCount = indexed ? command.geometry.indexCount
+                                     : command.geometry.vertexCount;
+  return drawCount / primitiveWidth;
 }
 
 bool
@@ -4590,6 +4608,7 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
       std::vector<SbColor4f> colors;
       std::vector<uint32_t> primitiveIds;
       bool primitiveBatch = false;
+      uint32_t sourcePrimitiveCount = 0;
       if (firstTarget.commandIndex >= 0 &&
           firstTarget.commandIndex < drawlist.getNumCommands()) {
         const SoRenderCommand & first = drawlist.getCommand(
@@ -4599,6 +4618,8 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
         uint32_t firstPrimitive = 0;
         const bool primitiveSelection = !wholeCommand &&
           selectionPrimitiveId(first, firstTarget, firstPrimitive);
+        sourcePrimitiveCount = primitiveSelection
+          ? commandPrimitiveCount(first) : 0;
         if (this->canInstanceCommand(first) &&
             (wholeCommand || primitiveSelection)) {
           primitiveBatch = primitiveSelection;
@@ -4627,7 +4648,19 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
           }
         }
       }
-      if (commandIndices.size() > 1) {
+      const bool batchCandidate = commandIndices.size() > 1;
+      uint64_t primitiveAmplification = 0;
+      if (batchCandidate && primitiveBatch) {
+        primitiveAmplification =
+          static_cast<uint64_t>(sourcePrimitiveCount) * commandIndices.size();
+        this->submissionCache.statistics.selectionPrimitiveCandidates +=
+          commandIndices.size();
+        this->submissionCache.statistics.selectionPrimitiveAmplification +=
+          primitiveAmplification;
+      }
+      const bool batchAllowed = batchCandidate && (!primitiveBatch ||
+        primitiveAmplification <= MAX_SELECTION_PRIMITIVE_AMPLIFICATION);
+      if (batchAllowed) {
         this->drawInstancedSelectionCommands(drawlist, commandIndices,
                                              colors, primitiveIds, params,
                                              primitiveBatch);
@@ -4635,6 +4668,14 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
         ++this->submissionCache.statistics.selectionInstancedBatches;
         this->submissionCache.statistics.selectionInstancedEntries +=
           commandIndices.size();
+        entryCount += commandIndices.size();
+        offset += commandIndices.size();
+      }
+      else if (batchCandidate) {
+        ++this->submissionCache.statistics.selectionPrimitiveBatchesRejected;
+        for (size_t index = 0; index < commandIndices.size(); ++index) {
+          drawTarget(targets[offset + index]);
+        }
         entryCount += commandIndices.size();
         offset += commandIndices.size();
       }

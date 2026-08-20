@@ -140,8 +140,24 @@ The 1%, 10%, churn, and preselection workloads bound overlay draws by target
 count while requiring every requested target to be represented.
 
 `shared_assembly_subelement_selection` selects individual faces and edges
-across 10% of occurrences. It requires all requested elements to participate
-in selection batches, visible overlay coverage, and zero DrawList rebuilds.
+across 10% of occurrences. It requires visible overlay coverage and zero
+DrawList rebuilds. Its naturally interleaved face and edge targets may use
+explicit draws because selection batching currently combines adjacent
+compatible targets only.
+
+The `subelement_selection_{explicit,shared}_{8,64,1000,10000}` curve isolates
+selection cost from scene traversal. Forty commands each select one face from
+an indexed mesh of the stated primitive count. The explicit variant uses
+unique geometry and the shared variant exposes primitive-selection instancing.
+The benchmark reports CPU and GPU selection time plus candidate count,
+projected primitive amplification, and rejected batches.
+
+Primitive-selection instancing is limited to 4096 projected primitives per
+batch. Unlike whole-object instancing, the primitive selector redraws the
+complete source mesh for every instance and discards non-selected primitives
+in the fragment shader. Batches above the budget use explicit range draws.
+The budget is based on amplification rather than source-mesh size so it adapts
+to both geometry complexity and the number of selected instances.
 
 Picking statistics are intentionally reported alongside hover latency. For
 contiguous triangle, line, and point subelement ranges, the picking shader uses
