@@ -164,6 +164,52 @@ retainedRenderParams(const SoRenderManagerP * manager)
   return params;
 }
 
+const SoRenderPlan &
+resolveRetainedRenderPlan(SoRenderManagerP * manager,
+                          const SoDrawList & drawlist,
+                          const SbMatrix & viewMatrix)
+{
+  const uint64_t contentRevision = drawlist.getCommandContentRevision();
+  if (!manager->renderPlanValid ||
+      manager->renderPlanContentRevision != contentRevision ||
+      manager->renderPlanViewMatrix != viewMatrix) {
+    const std::chrono::steady_clock::time_point start =
+      manager->renderPhaseTimingEnabled
+        ? std::chrono::steady_clock::now()
+        : std::chrono::steady_clock::time_point();
+    SoRenderPlanner planner;
+    planner.build(drawlist, viewMatrix, manager->renderPlan);
+    manager->renderPlanContentRevision = contentRevision;
+    manager->renderPlanViewMatrix = viewMatrix;
+    manager->renderPlanValid = TRUE;
+    if (manager->renderPhaseTimingEnabled) {
+      manager->planConstructionNanoseconds = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now() - start).count());
+    }
+  }
+  return manager->renderPlan;
+}
+
+bool
+updateRetainedPickTarget(SoRenderManagerP * manager,
+                         SoDrawList & drawlist,
+                         const SoRenderParams & params)
+{
+  if (!manager->pickTargetDirty &&
+      manager->pickTargetGeneration == drawlist.getGeneration()) {
+    return true;
+  }
+  const SoRenderPlan & plan = resolveRetainedRenderPlan(
+    manager, drawlist, params.viewMatrix);
+  if (!manager->renderBackend->updatePickBuffer(drawlist, plan, params)) {
+    return false;
+  }
+  manager->pickTargetDirty = FALSE;
+  manager->pickTargetGeneration = drawlist.getGeneration();
+  return true;
+}
+
 SoDetail *
 detailFromPickResult(const SoPickResult & hit)
 {
@@ -1421,25 +1467,11 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   params.clearDepth = 1.0f;
   params.flags = (clearwindow ? SO_PARAM_CLEAR_WINDOW : 0u) |
                  (clearzbuffer ? SO_PARAM_CLEAR_DEPTH : 0u);
-  const uint64_t contentRevision = drawlist.getCommandContentRevision();
-  if (!PRIVATE(this)->renderPlanValid ||
-      PRIVATE(this)->renderPlanContentRevision != contentRevision) {
-    SoRenderPlanner planner;
-    const RenderPhaseClock::time_point planStart =
-      PRIVATE(this)->renderPhaseTimingEnabled
-        ? RenderPhaseClock::now() : RenderPhaseClock::time_point();
-    planner.build(drawlist, params.viewMatrix, PRIVATE(this)->renderPlan);
-    PRIVATE(this)->renderPlanContentRevision = contentRevision;
-    PRIVATE(this)->renderPlanValid = TRUE;
-    if (PRIVATE(this)->renderPhaseTimingEnabled) {
-      PRIVATE(this)->planConstructionNanoseconds = static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(
-          RenderPhaseClock::now() - planStart).count());
-    }
-  }
+  const SoRenderPlan & plan = resolveRetainedRenderPlan(
+    PRIVATE(this), drawlist, params.viewMatrix);
 
   PRIVATE(this)->renderBackend->render(
-    drawlist, PRIVATE(this)->renderPlan, params, &PRIVATE(this)->selectionState);
+    drawlist, plan, params, &PRIVATE(this)->selectionState);
   if (rebuildDrawList) {
     PRIVATE(this)->pickTargetDirty = TRUE;
     PRIVATE(this)->pickTargetGeneration = 0;
@@ -2507,16 +2539,7 @@ SoRenderManager::pickClosest(const int x, const int y, const int radius,
 
   SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
   const SoRenderParams params = retainedRenderParams(PRIVATE(this));
-  if (PRIVATE(this)->pickTargetDirty ||
-      PRIVATE(this)->pickTargetGeneration != drawlist.getGeneration()) {
-    SoRenderPlanner planner;
-    SoRenderPlan plan;
-    planner.build(drawlist, params.viewMatrix, plan);
-    if (!PRIVATE(this)->renderBackend->updatePickBuffer(drawlist, plan,
-                                                        params)) return FALSE;
-    PRIVATE(this)->pickTargetDirty = FALSE;
-    PRIVATE(this)->pickTargetGeneration = drawlist.getGeneration();
-  }
+  if (!updateRetainedPickTarget(PRIVATE(this), drawlist, params)) return FALSE;
 
   SoPickResult hit;
   if (!PRIVATE(this)->renderBackend->pickClosest(x, y, radius, hit) ||
@@ -2536,16 +2559,7 @@ SoRenderManager::requestPickClosestAsync(const int x, const int y,
       !PRIVATE(this)->renderBackend->isInitialized()) return FALSE;
   SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
   const SoRenderParams params = retainedRenderParams(PRIVATE(this));
-  if (PRIVATE(this)->pickTargetDirty ||
-      PRIVATE(this)->pickTargetGeneration != drawlist.getGeneration()) {
-    SoRenderPlanner planner;
-    SoRenderPlan plan;
-    planner.build(drawlist, params.viewMatrix, plan);
-    if (!PRIVATE(this)->renderBackend->updatePickBuffer(drawlist, plan,
-                                                        params)) return FALSE;
-    PRIVATE(this)->pickTargetDirty = FALSE;
-    PRIVATE(this)->pickTargetGeneration = drawlist.getGeneration();
-  }
+  if (!updateRetainedPickTarget(PRIVATE(this), drawlist, params)) return FALSE;
   return PRIVATE(this)->renderBackend->requestPickClosestAsync(
     x, y, radius, request);
 }
@@ -2580,16 +2594,7 @@ SoRenderManager::requestPickIdentityAsync(const int x, const int y,
       !PRIVATE(this)->renderBackend->isInitialized()) return FALSE;
   SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
   const SoRenderParams params = retainedRenderParams(PRIVATE(this));
-  if (PRIVATE(this)->pickTargetDirty ||
-      PRIVATE(this)->pickTargetGeneration != drawlist.getGeneration()) {
-    SoRenderPlanner planner;
-    SoRenderPlan plan;
-    planner.build(drawlist, params.viewMatrix, plan);
-    if (!PRIVATE(this)->renderBackend->updatePickBuffer(drawlist, plan,
-                                                        params)) return FALSE;
-    PRIVATE(this)->pickTargetDirty = FALSE;
-    PRIVATE(this)->pickTargetGeneration = drawlist.getGeneration();
-  }
+  if (!updateRetainedPickTarget(PRIVATE(this), drawlist, params)) return FALSE;
   return PRIVATE(this)->renderBackend->requestPickIdentityAsync(
     x, y, radius, request);
 }
@@ -2727,16 +2732,7 @@ SoRenderManager::pickDepthStack(const int x, const int y, const int radius,
 
   SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
   const SoRenderParams params = retainedRenderParams(PRIVATE(this));
-  if (PRIVATE(this)->pickTargetDirty ||
-      PRIVATE(this)->pickTargetGeneration != drawlist.getGeneration()) {
-    SoRenderPlanner planner;
-    SoRenderPlan plan;
-    planner.build(drawlist, params.viewMatrix, plan);
-    if (!PRIVATE(this)->renderBackend->updatePickBuffer(drawlist, plan,
-                                                        params)) return FALSE;
-    PRIVATE(this)->pickTargetDirty = FALSE;
-    PRIVATE(this)->pickTargetGeneration = drawlist.getGeneration();
-  }
+  if (!updateRetainedPickTarget(PRIVATE(this), drawlist, params)) return FALSE;
 
   SoPickResultList raw;
   if (!PRIVATE(this)->renderBackend->pickDepthStack(
@@ -2760,16 +2756,7 @@ SoRenderManager::pickVisibleRegion(const SbBox2s & region,
 
   SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
   const SoRenderParams params = retainedRenderParams(PRIVATE(this));
-  if (PRIVATE(this)->pickTargetDirty ||
-      PRIVATE(this)->pickTargetGeneration != drawlist.getGeneration()) {
-    SoRenderPlanner planner;
-    SoRenderPlan plan;
-    planner.build(drawlist, params.viewMatrix, plan);
-    if (!PRIVATE(this)->renderBackend->updatePickBuffer(drawlist, plan,
-                                                        params)) return FALSE;
-    PRIVATE(this)->pickTargetDirty = FALSE;
-    PRIVATE(this)->pickTargetGeneration = drawlist.getGeneration();
-  }
+  if (!updateRetainedPickTarget(PRIVATE(this), drawlist, params)) return FALSE;
 
   SoPickResultList raw;
   if (!PRIVATE(this)->renderBackend->pickVisibleRegion(region, raw)) {

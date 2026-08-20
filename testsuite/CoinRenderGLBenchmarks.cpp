@@ -1581,6 +1581,14 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
   }
   hover.coldPickMs = elapsedMs(start);
   delete picked;
+  if (manager.getRenderStatistics().planConstructionNanoseconds != 0) {
+    unavailable = "assembly hover pick rebuilt an already-current render plan";
+    manager.setCamera(nullptr);
+    manager.setSceneGraph(nullptr);
+    camera->unref();
+    scene->unref();
+    return false;
+  }
   for (int sample = 0; sample < samples; ++sample) {
     const int occurrence = (sample * 7919) % occurrenceCount;
     const SbVec2s cursor = cursorForOccurrence(occurrence);

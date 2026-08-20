@@ -90,7 +90,8 @@ program binding, and draw submission. A cached retained frame reports zero
 draw-list construction time and `drawlist_rebuilds: 0`. Unchanged frames also
 reuse their render plan; command-content changes invalidate that plan so
 ordering-sensitive transform, material, transparency, and geometry edits are
-replanned without rebuilding the DrawList.
+replanned without rebuilding the DrawList. Pick-buffer refreshes consume the
+same revision- and view-keyed plan instead of planning the frame a second time.
 
 The core-profile `feature_rich_rebuild_500`, `_5000`, and `_50000` workloads
 invalidate the retained frame before every sample. These scaling points expose

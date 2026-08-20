@@ -134,6 +134,7 @@ public:
   uint64_t planConstructionNanoseconds;
   SoRenderPlan renderPlan;
   uint64_t renderPlanContentRevision;
+  SbMatrix renderPlanViewMatrix;
   SbBool renderPlanValid;
   uint64_t drawListRebuilds;
   uint64_t incrementalCommandUpdates;
