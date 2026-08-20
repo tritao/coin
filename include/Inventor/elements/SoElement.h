@@ -75,6 +75,28 @@ protected:
 
   static SoElement * getElement(SoState * const state, const int stackIndex);
   static const SoElement * getConstElement(SoState * const state, const int stackIndex);
+
+  // A registered stack index fixes the element inheritance hierarchy. These
+  // helpers validate that invariant in assertion builds and avoid repeating
+  // an SoType ancestry walk in hot element accessors in optimized builds.
+  template <typename Element>
+  static Element * getElementAs(SoState * const state, const int stackIndex)
+  {
+    SoElement * element = getElement(state, stackIndex);
+    assert(!element ||
+           element->getTypeId().isDerivedFrom(Element::getClassTypeId()));
+    return static_cast<Element *>(element);
+  }
+
+  template <typename Element>
+  static const Element * getConstElementAs(SoState * const state,
+                                           const int stackIndex)
+  {
+    const SoElement * element = getConstElement(state, stackIndex);
+    assert(element &&
+           element->getTypeId().isDerivedFrom(Element::getClassTypeId()));
+    return static_cast<const Element *>(element);
+  }
   
   void capture(SoState * const state) const;
 

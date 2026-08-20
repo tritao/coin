@@ -124,14 +124,8 @@ SoFloatElement::set(const int index,
                     SoNode * const COIN_UNUSED_ARG(node),
                     const float value)
 {
-  SoFloatElement * element =
-    coin_safe_cast<SoFloatElement *>
-    (
-     SoFloatElement::getElement(state, index)
-     );
-  if (element) {
-    element->setElt(value);
-  }
+  SoFloatElement * element = getElementAs<SoFloatElement>(state, index);
+  if (element) element->setElt(value);
 }
 
 /*!
@@ -152,12 +146,7 @@ SoFloatElement::set(const int stackIndex, SoState * const state,
 float
 SoFloatElement::get(const int index, SoState * const state)
 {
-  const SoFloatElement * element = coin_safe_cast<const SoFloatElement *>
-    (
-     getConstElement(state, index)
-     ); //, NULL );
-  if (element) { return element->data; }
-  return 0.0f;
+  return getConstElementAs<SoFloatElement>(state, index)->data;
 }
 
 /*!
