@@ -19,6 +19,23 @@ build-bench/bin/CoinRenderBenchmarks --samples 50 --output results.json
 build-bench/bin/CoinRenderGLBenchmarks --samples 50 --output gl-results.json
 ```
 
+For comparable CPU timings, run the benchmark on otherwise idle, controlled
+hardware and keep it on one CPU of a consistent class. This is especially
+important on hybrid processors: scheduler migration between performance,
+efficiency, and low-power cores can move every CPU phase together without
+changing GPU time. On Linux, inspect the available CPU classes with
+`lscpu -e=CPU,CORE,MAXMHZ` and pin an appropriate core, for example:
+
+```sh
+taskset -c 0 build-bench/bin/CoinRenderGLBenchmarks \
+  --samples 50 --output gl-results.json
+```
+
+Record the selected CPU and OpenGL renderer with the result. Use the default
+phase timing when diagnosing where CPU work occurs. For the least intrusive
+headline measurement, repeat the relevant isolated workload with
+`--no-phase-timing`; the detailed phase fields are then intentionally zero.
+
 ## Viewing generated workloads
 
 `CoinRenderWorkloadViewer` displays the same deterministic scene graphs used
