@@ -409,6 +409,8 @@ SoRenderManager::SoRenderManager(void)
   PRIVATE(this)->renderPhaseTimingEnabled = FALSE;
   PRIVATE(this)->drawListConstructionNanoseconds = 0;
   PRIVATE(this)->planConstructionNanoseconds = 0;
+  PRIVATE(this)->renderPlanContentRevision = 0;
+  PRIVATE(this)->renderPlanValid = FALSE;
   PRIVATE(this)->drawListRebuilds = 0;
   PRIVATE(this)->incrementalCommandUpdates = 0;
   PRIVATE(this)->selectionState = SoSelectionState();
@@ -1419,20 +1421,25 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   params.clearDepth = 1.0f;
   params.flags = (clearwindow ? SO_PARAM_CLEAR_WINDOW : 0u) |
                  (clearzbuffer ? SO_PARAM_CLEAR_DEPTH : 0u);
-  SoRenderPlanner planner;
-  SoRenderPlan plan;
-  const RenderPhaseClock::time_point planStart =
-    PRIVATE(this)->renderPhaseTimingEnabled
-      ? RenderPhaseClock::now() : RenderPhaseClock::time_point();
-  planner.build(drawlist, params.viewMatrix, plan);
-  if (PRIVATE(this)->renderPhaseTimingEnabled) {
-    PRIVATE(this)->planConstructionNanoseconds =
-      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-        RenderPhaseClock::now() - planStart).count());
+  const uint64_t contentRevision = drawlist.getCommandContentRevision();
+  if (!PRIVATE(this)->renderPlanValid ||
+      PRIVATE(this)->renderPlanContentRevision != contentRevision) {
+    SoRenderPlanner planner;
+    const RenderPhaseClock::time_point planStart =
+      PRIVATE(this)->renderPhaseTimingEnabled
+        ? RenderPhaseClock::now() : RenderPhaseClock::time_point();
+    planner.build(drawlist, params.viewMatrix, PRIVATE(this)->renderPlan);
+    PRIVATE(this)->renderPlanContentRevision = contentRevision;
+    PRIVATE(this)->renderPlanValid = TRUE;
+    if (PRIVATE(this)->renderPhaseTimingEnabled) {
+      PRIVATE(this)->planConstructionNanoseconds = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+          RenderPhaseClock::now() - planStart).count());
+    }
   }
 
   PRIVATE(this)->renderBackend->render(
-    drawlist, plan, params, &PRIVATE(this)->selectionState);
+    drawlist, PRIVATE(this)->renderPlan, params, &PRIVATE(this)->selectionState);
   if (rebuildDrawList) {
     PRIVATE(this)->pickTargetDirty = TRUE;
     PRIVATE(this)->pickTargetGeneration = 0;

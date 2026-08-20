@@ -87,7 +87,10 @@ reported in the JSON `unavailable` array rather than being mistaken for results.
 End-to-end retained measurements split manager-owned draw-list construction
 and render-plan construction from backend command preparation, state setup,
 program binding, and draw submission. A cached retained frame reports zero
-draw-list construction time and `drawlist_rebuilds: 0`.
+draw-list construction time and `drawlist_rebuilds: 0`. Unchanged frames also
+reuse their render plan; command-content changes invalidate that plan so
+ordering-sensitive transform, material, transparency, and geometry edits are
+replanned without rebuilding the DrawList.
 
 The core-profile `feature_rich_rebuild_500`, `_5000`, and `_50000` workloads
 invalidate the retained frame before every sample. These scaling points expose

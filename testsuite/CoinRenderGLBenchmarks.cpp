@@ -1184,15 +1184,30 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
                            const std::function<void(int)> & mutate) {
     std::vector<double> cpuTimes;
     std::vector<double> constructionTimes;
+    std::vector<double> planTimes;
     for (int sample = 0; sample < samples; ++sample) {
       mutate(sample);
       context.bindFramebuffer();
       const Clock::time_point start = Clock::now();
       manager.render(TRUE, TRUE);
       cpuTimes.push_back(elapsedMs(start));
+      const SoRenderStatistics statistics = manager.getRenderStatistics();
+      if (statistics.drawListRebuilds != 0) {
+        std::cerr << "FAIL: " << name
+                  << " unexpectedly rebuilt the retained draw list\n";
+        std::exit(1);
+      }
+      const bool unchanged = std::string(name) == "incremental_unchanged";
+      if (unchanged != (statistics.planConstructionNanoseconds == 0)) {
+        std::cerr << "FAIL: " << name
+                  << (unchanged ? " rebuilt" : " reused")
+                  << " the render plan unexpectedly\n";
+        std::exit(1);
+      }
       constructionTimes.push_back(
-        manager.getRenderStatistics().drawListConstructionNanoseconds /
-        1000000.0);
+        statistics.drawListConstructionNanoseconds / 1000000.0);
+      planTimes.push_back(
+        statistics.planConstructionNanoseconds / 1000000.0);
     }
     Measurement result;
     result.workload = std::string(name) + "_" + std::to_string(drawCount);
@@ -1204,6 +1219,7 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
     result.cpuMedianMs = percentile(cpuTimes, 0.5);
     result.cpuP95Ms = percentile(cpuTimes, 0.95);
     result.drawListConstructionMs = percentile(constructionTimes, 0.5);
+    result.planConstructionMs = percentile(planTimes, 0.5);
     result.renderStatistics = manager.getRenderStatistics();
     result.pixelChecksum = checksumPixels(context.readPixels());
     results.push_back(result);

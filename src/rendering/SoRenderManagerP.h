@@ -50,6 +50,7 @@
 #include <Inventor/elements/SoLazyElement.h>
 #include <Inventor/sensors/SoNodeSensor.h>
 #include <Inventor/misc/SoNotification.h>
+#include "rendering/SoRenderPlan.h"
 
 class SbMatrix;
 class SoNodeSensor;
@@ -131,6 +132,9 @@ public:
   SbBool renderPhaseTimingEnabled;
   uint64_t drawListConstructionNanoseconds;
   uint64_t planConstructionNanoseconds;
+  SoRenderPlan renderPlan;
+  uint64_t renderPlanContentRevision;
+  SbBool renderPlanValid;
   uint64_t drawListRebuilds;
   uint64_t incrementalCommandUpdates;
   SoSelectionState selectionState;
