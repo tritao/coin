@@ -108,6 +108,11 @@ public:
                                 const VertexData & v2,
                                 const VertexData & v3,
                                 int faceIndex) = 0;
+    //! Reuse or register an explicit non-textured triangle geometry source.
+    virtual SbBool beginRetainedTriangles(uint64_t sourceId,
+                                          uint64_t revision,
+                                          int faceCount)
+    { return FALSE; }
   };
 
   static void initClass(void);
@@ -154,6 +159,8 @@ public:
   //! Enable intrusive per-command construction timing for diagnostics.
   void setCommandTimingEnabled(SbBool enabled);
   SbBool isCommandTimingEnabled() const;
+  SoGeometryHandle findGeometrySource(uint64_t sourceId,
+                                      uint64_t revision) const;
   //! Accumulate opt-in shape construction diagnostics.
   void recordPrimitiveGenerationNanoseconds(uint64_t nanoseconds);
   void recordGeometryPackingNanoseconds(uint64_t nanoseconds);

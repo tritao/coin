@@ -554,6 +554,24 @@ SoIRRenderAction::isCommandTimingEnabled() const
   return PRIVATE(this)->commandTimingEnabled ? TRUE : FALSE;
 }
 
+SoGeometryHandle
+SoIRRenderAction::findGeometrySource(const uint64_t sourceId,
+                                     const uint64_t revision) const
+{
+  const std::pair<
+    std::unordered_multimap<uint64_t, SoGeometryHandle>::const_iterator,
+    std::unordered_multimap<uint64_t, SoGeometryHandle>::const_iterator>
+    candidates = PRIVATE(this)->geometryRecipes.equal_range(sourceId);
+  for (std::unordered_multimap<uint64_t, SoGeometryHandle>::const_iterator
+         candidate = candidates.first; candidate != candidates.second;
+       ++candidate) {
+    const SoGeometryResource * resource =
+      this->drawlist.getGeometryResource(candidate->second);
+    if (resource && resource->revision == revision) return candidate->second;
+  }
+  return SO_INVALID_GEOMETRY_HANDLE;
+}
+
 void
 SoIRRenderAction::recordPrimitiveGenerationNanoseconds(uint64_t nanoseconds)
 {

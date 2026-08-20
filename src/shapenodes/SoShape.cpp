@@ -393,8 +393,40 @@ public:
     this->appendRange(first, 3, SO_PICK_FACE, faceIndex);
   }
 
+  SbBool beginRetainedTriangles(uint64_t sourceId, uint64_t revision,
+                                int faceCount) override
+  {
+    this->geometryRecipeKey = sourceId;
+    this->geometryCacheKey = sourceId;
+    this->geometryRevision = revision;
+    const SoGeometryHandle handle =
+      this->action->findGeometrySource(
+        mixIRCacheHash(sourceId, static_cast<uint64_t>(1)), revision);
+    if (handle == SO_INVALID_GEOMETRY_HANDLE) return FALSE;
+    const SoGeometryResource * resource =
+      this->action->getDrawList().getGeometryResource(handle);
+    if (!resource || faceCount <= 0 ||
+        resource->geometry.vertexCount != static_cast<uint32_t>(faceCount * 3)) {
+      return FALSE;
+    }
+    this->topology = SO_TOPOLOGY_TRIANGLES;
+    for (int face = 0; face < faceCount; ++face) {
+      this->appendRange(static_cast<size_t>(face) * 3, 3,
+                        SO_PICK_FACE, face);
+    }
+    this->reusedGeometry = resource->geometry;
+    this->reusedVertexCount = static_cast<size_t>(faceCount) * 3;
+    return TRUE;
+  }
+
   void finalize()
   {
+    if (this->reusedVertexCount != 0) {
+      SoIRMaterialBatchPlan plan;
+      plan.addBatch(SoIRBatch(0, this->reusedVertexCount, 0));
+      this->emitCommands(this->reusedGeometry, plan);
+      return;
+    }
     this->flushRun();
   }
 
@@ -560,8 +592,10 @@ private:
       command.geometry.texcoords = sourceGeometry.texcoords + batch.first * 4;
       command.geometry.colors = sourceGeometry.colors
         ? sourceGeometry.colors + batch.first * 4 : nullptr;
-      command.geometry.resourceKey = makeIRGeometryResourceKey(
-        command.geometry);
+      if (command.geometry.resourceKey == 0) {
+        command.geometry.resourceKey = makeIRGeometryResourceKey(
+          command.geometry);
+      }
       command.geometry.resourceRevision = command.geometry.resourceKey;
       command.geometry.recipeKey = mixIRCacheHash(
         this->geometryRecipeKey, static_cast<uint64_t>(batchIndex + 1));
@@ -702,6 +736,8 @@ private:
   uint64_t geometryCacheKey = 0;
   uint64_t geometryRevision = 0;
   uint64_t geometryRecipeKey = 0;
+  SoGeometryDesc reusedGeometry;
+  size_t reusedVertexCount = 0;
   // Most retained shapes emit one triangle, so these buffers normally remain
   // inline while still growing for larger or mixed-topology shapes.
   SbInlineVector<SoIRVertex, 4> vertices;

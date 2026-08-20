@@ -86,6 +86,7 @@ class SoVBO;
 #endif
 #include <Inventor/elements/SoNormalBindingElement.h>
 #include <Inventor/elements/SoMaterialBindingElement.h>
+#include <Inventor/elements/SoNormalElement.h>
 #include <Inventor/elements/SoVertexAttributeBindingElement.h>
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/bundles/SoMaterialBundle.h>
@@ -834,6 +835,35 @@ SoFaceSet::generateRetainedPrimitives(SoIRRenderAction * action)
 
   SoTextureCoordinateBundle textureBundle(action, FALSE, FALSE);
   const SbBool useTextures = textureBundle.needCoordinates();
+  if (materialBinding == OVERALL && !useTextures) {
+    const auto mixIdentity = [](uint64_t hash, uint64_t value) {
+      hash ^= value + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
+      return hash;
+    };
+    uint64_t sourceId = mixIdentity(
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(this)),
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(
+        coordinates->is3D()
+          ? static_cast<const void *>(coordinates->getArrayPtr3())
+          : static_cast<const void *>(coordinates->getArrayPtr4()))));
+    sourceId = mixIdentity(sourceId,
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(normals)));
+    sourceId = mixIdentity(sourceId, static_cast<uint64_t>(faceCount));
+    sourceId = mixIdentity(sourceId,
+      static_cast<uint64_t>(this->startIndex.getValue()));
+    sourceId = mixIdentity(sourceId, static_cast<uint64_t>(normalBinding));
+    if (sourceId == 0) sourceId = 1;
+    uint64_t revision = mixIdentity(
+      static_cast<uint64_t>(this->getNodeId()),
+      static_cast<uint64_t>(coordinates->getNodeId()));
+    revision = mixIdentity(revision,
+      static_cast<uint64_t>(SoNormalElement::getInstance(state)->getNodeId()));
+    if (revision == 0) revision = 1;
+    if (collector->beginRetainedTriangles(sourceId, revision, faceCount)) {
+      if (normalCache) this->readUnlockNormalCache();
+      return TRUE;
+    }
+  }
   int coordinateIndex = this->startIndex.getValue();
   int normalIndex = 0;
   int materialIndex = 0;

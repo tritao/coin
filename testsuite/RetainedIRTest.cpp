@@ -209,6 +209,18 @@ runTest()
               << std::endl;
     result = 1;
   }
+  const uint64_t recipeRevision =
+    action.getDrawList().getCommand(0).geometry.revision;
+  recipeCoordinates->point.set1Value(0, SbVec3f(-1.5f, -1.0f, 0.0f));
+  action.apply(recipeRoot);
+  if (action.getDrawList().getNumGeometryResources() != 1 ||
+      action.getDrawList().getCommand(0).geometry.revision == recipeRevision ||
+      action.getDrawList().getCommand(0).geometryHandle !=
+        action.getDrawList().getCommand(1).geometryHandle) {
+    std::cerr << "FAIL: retained geometry source mutation was stale"
+              << std::endl;
+    result = 1;
+  }
   recipeRoot->unref();
   action.apply(root);
 
