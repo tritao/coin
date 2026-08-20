@@ -3358,6 +3358,81 @@ SoGLRenderBackend::drawSelectionEntry(const SoDrawList & drawlist,
 }
 
 void
+SoGLRenderBackend::drawInstancedSelectionCommands(
+  const SoDrawList & drawlist,
+  const std::vector<uint32_t> & commandIndices,
+  const std::vector<SbColor4f> & colors,
+  const SoRenderParams & params)
+{
+  if (commandIndices.size() < 2 || commandIndices.size() != colors.size()) {
+    return;
+  }
+  const SoRenderCommand & first = drawlist.getCommand(
+    static_cast<int>(commandIndices.front()));
+  const auto cacheIt = this->commandToCache.find(&first);
+  if (cacheIt == this->commandToCache.end()) return;
+  const CachedCommand & cache = this->gpuCache[cacheIt->second];
+  if (!cache.vertexArray) return;
+
+  std::vector<InstanceRecord> records;
+  records.reserve(commandIndices.size());
+  for (size_t i = 0; i < commandIndices.size(); ++i) {
+    InstanceRecord record = {};
+    SbMat model;
+    drawlist.getCommand(static_cast<int>(commandIndices[i])).modelMatrix
+      .getValue(model);
+    std::copy(&model[0][0], &model[0][0] + 16, record.model);
+    for (int component = 0; component < 4; ++component) {
+      record.color[component] = colors[i][component];
+    }
+    records.push_back(record);
+  }
+
+  const CommandFrame frame = this->effectiveCommandFrame(first, params, false);
+  glViewport(frame.viewportOrigin[0], frame.viewportOrigin[1],
+             frame.viewportSize[0], frame.viewportSize[1]);
+  const PickProgram & program = this->selectionPrograms.visual;
+  cc_glglue_glUseProgram(this->glue, program.handle);
+  const PickProgram::Uniforms & uniforms = program.uniforms;
+  this->glue->glUniformMatrix4fv(uniforms.view, 1, GL_FALSE,
+                                 &frame.view[0][0]);
+  this->glue->glUniformMatrix4fv(uniforms.proj, 1, GL_FALSE,
+                                 &frame.projection[0][0]);
+  this->glue->glUniform1f(uniforms.instanced, 1.0f);
+  this->glue->glUniform1f(uniforms.useVertexColor, 0.0f);
+  this->glue->glUniform1f(uniforms.textureEnabled, 0.0f);
+  this->glue->glUniform1i(uniforms.alphaTestFunction, 0);
+  glDepthRange(first.state.depth.range[0], first.state.depth.range[1]);
+  if (first.state.raster.cullBackFaces) {
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+  }
+  else glDisable(GL_CULL_FACE);
+  glFrontFace(first.state.raster.frontFaceCCW ? GL_CCW : GL_CW);
+  if (first.geometry.topology == SO_TOPOLOGY_LINES) glLineWidth(1.0f);
+
+  cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, this->instanceBuffer);
+  cc_glglue_glBufferData(this->glue, GL_ARRAY_BUFFER,
+                         records.size() * sizeof(InstanceRecord),
+                         records.data(), GL_STREAM_DRAW);
+  this->glue->glBindVertexArray(cache.vertexArray);
+  const GLsizei instanceCount = static_cast<GLsizei>(records.size());
+  const GLenum primitive = topologyToGL(first.geometry.topology);
+  if (first.geometry.indices && first.geometry.indexCount) {
+    glDrawElementsInstanced(
+      primitive, static_cast<GLsizei>(first.geometry.indexCount),
+      GL_UNSIGNED_INT, nullptr, instanceCount);
+  }
+  else {
+    glDrawArraysInstanced(primitive, 0,
+                          static_cast<GLsizei>(first.geometry.vertexCount),
+                          instanceCount);
+  }
+  this->glue->glUniform1f(uniforms.instanced, 0.0f);
+  this->glue->glBindVertexArray(0);
+}
+
+void
 SoGLRenderBackend::drawCoverageEntry(const SoDrawList & drawlist,
                                      const SoPickLUTEntry & entry,
                                      const GLuint id,
@@ -4439,6 +4514,7 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
                                 : command.geometry.vertexCount;
       this->drawSelectionEntry(drawlist, entry, target.color, view, projection,
                                params);
+      ++this->submissionCache.statistics.selectionOverlayDrawCalls;
       return;
     }
 
@@ -4461,15 +4537,65 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
       entry.drawCount = range.drawCount;
       this->drawSelectionEntry(drawlist, entry, target.color, view, projection,
                                params);
+      ++this->submissionCache.statistics.selectionOverlayDrawCalls;
     }
   };
 
-  for (const SoSelectionTarget & target : selection.selected) {
-    drawTarget(target);
-  }
-  for (const SoSelectionTarget & target : selection.highlighted) {
-    drawTarget(target);
-  }
+  const auto drawTargets = [&](const std::vector<SoSelectionTarget> & targets,
+                               const bool highlighted) {
+    uint64_t & entryCount = highlighted
+      ? this->submissionCache.statistics.highlightedOverlayEntries
+      : this->submissionCache.statistics.selectedOverlayEntries;
+    for (size_t offset = 0; offset < targets.size();) {
+      const SoSelectionTarget & firstTarget = targets[offset];
+      std::vector<uint32_t> commandIndices;
+      std::vector<SbColor4f> colors;
+      if (firstTarget.commandIndex >= 0 &&
+          firstTarget.commandIndex < drawlist.getNumCommands() &&
+          firstTarget.type == SO_PICK_OBJECT &&
+          firstTarget.elementIndex < 0) {
+        const SoRenderCommand & first = drawlist.getCommand(
+          firstTarget.commandIndex);
+        if (this->canInstanceCommand(first)) {
+          commandIndices.push_back(
+            static_cast<uint32_t>(firstTarget.commandIndex));
+          colors.push_back(firstTarget.color);
+          for (size_t nextOffset = offset + 1;
+               nextOffset < targets.size(); ++nextOffset) {
+            const SoSelectionTarget & nextTarget = targets[nextOffset];
+            if (nextTarget.commandIndex < 0 ||
+                nextTarget.commandIndex >= drawlist.getNumCommands() ||
+                nextTarget.type != SO_PICK_OBJECT ||
+                nextTarget.elementIndex >= 0) break;
+            const SoRenderCommand & next = drawlist.getCommand(
+              nextTarget.commandIndex);
+            if (!this->canInstanceTogether(first, next)) break;
+            commandIndices.push_back(
+              static_cast<uint32_t>(nextTarget.commandIndex));
+            colors.push_back(nextTarget.color);
+          }
+        }
+      }
+      if (commandIndices.size() > 1) {
+        this->drawInstancedSelectionCommands(drawlist, commandIndices,
+                                             colors, params);
+        ++this->submissionCache.statistics.selectionOverlayDrawCalls;
+        ++this->submissionCache.statistics.selectionInstancedBatches;
+        this->submissionCache.statistics.selectionInstancedEntries +=
+          commandIndices.size();
+        entryCount += commandIndices.size();
+        offset += commandIndices.size();
+      }
+      else {
+        drawTarget(firstTarget);
+        ++entryCount;
+        ++offset;
+      }
+    }
+  };
+
+  drawTargets(selection.selected, false);
+  drawTargets(selection.highlighted, true);
   // Coverage rendering binds its own programs and viewports directly.
   // Force subsequent visual commands to re-establish cached submission state.
   this->invalidateSubmissionCache();

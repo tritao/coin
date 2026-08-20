@@ -1931,7 +1931,17 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
       if (statistics.drawListRebuilds != 0 ||
           statistics.retainedCommands !=
             static_cast<uint64_t>(occurrenceCount * 2) ||
-          statistics.retainedGeometryResources > maximumResources) {
+          statistics.retainedGeometryResources > maximumResources ||
+          statistics.selectionOverlayDrawCalls == 0 ||
+          statistics.selectionOverlayDrawCalls >
+            static_cast<uint64_t>(selectedCount * 2) ||
+          (highlighted
+            ? statistics.highlightedOverlayEntries
+            : statistics.selectedOverlayEntries) !=
+              static_cast<uint64_t>(selectedCount * 2) ||
+          (!highlighted && selectedCount >= occurrenceCount / 10 &&
+           occurrenceCount >= 100 &&
+           statistics.selectionInstancedEntries == 0)) {
         unavailable = std::string(name) +
           " changed retained assembly structure";
         return false;
@@ -2196,6 +2206,16 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.depthStackInstancedBatches
         << ", \"depth_stack_instanced_entries\": "
         << r.renderStatistics.depthStackInstancedEntries
+        << ", \"selection_overlay_draw_calls\": "
+        << r.renderStatistics.selectionOverlayDrawCalls
+        << ", \"selection_instanced_batches\": "
+        << r.renderStatistics.selectionInstancedBatches
+        << ", \"selection_instanced_entries\": "
+        << r.renderStatistics.selectionInstancedEntries
+        << ", \"selected_overlay_entries\": "
+        << r.renderStatistics.selectedOverlayEntries
+        << ", \"highlighted_overlay_entries\": "
+        << r.renderStatistics.highlightedOverlayEntries
         << ", \"async_pick_buffer_allocations\": "
         << r.renderStatistics.asyncPickBufferAllocations
         << ", \"command_preparation_ms\": "

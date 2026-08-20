@@ -16,5 +16,5 @@ void main()
   vec4 coverage = coin_surface_fragment_color(v_color, v_litColor, v_texcoord);
   if (!coin_material_alpha_test_pass(coverage.a, u_alphaTestFunction,
                                      u_alphaTestReference)) discard;
-  fragColor = u_selectionColor;
+  fragColor = u_instanced > 0.5 ? v_color : u_selectionColor;
 }

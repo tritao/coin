@@ -735,6 +735,11 @@ struct SoRenderStatistics {
   uint64_t depthStackDrawCalls = 0;
   uint64_t depthStackInstancedBatches = 0;
   uint64_t depthStackInstancedEntries = 0;
+  uint64_t selectionOverlayDrawCalls = 0;
+  uint64_t selectionInstancedBatches = 0;
+  uint64_t selectionInstancedEntries = 0;
+  uint64_t selectedOverlayEntries = 0;
+  uint64_t highlightedOverlayEntries = 0;
   uint64_t asyncPickBufferAllocations = 0;
   // Manager-owned CPU phases. Draw-list construction is zero when a retained
   // frame is reused; plan construction is measured for every submitted frame.

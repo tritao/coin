@@ -455,6 +455,11 @@ private:
                           const SbMat & viewMat,
                           const SbMat & projMat,
                           const SoRenderParams & params);
+  void drawInstancedSelectionCommands(
+    const SoDrawList & drawlist,
+    const std::vector<uint32_t> & commandIndices,
+    const std::vector<SbColor4f> & colors,
+    const SoRenderParams & params);
   void drawCoverageEntry(const SoDrawList & drawlist,
                          const SoPickLUTEntry & entry,
                          GLuint id,

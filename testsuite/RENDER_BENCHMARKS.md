@@ -129,6 +129,13 @@ requires occurrence-specific pick identity, a visible overlay for selection,
 zero DrawList rebuilds, stable command counts, and bounded retained geometry
 resources.
 
+Selection results report overlay draws, instanced batches and entries, and
+separate selected/highlighted entry counts. Compatible whole-command overlays
+carry frame-local color and transform in instance records. Subelement targets,
+specialized raster paths, and incompatible coverage retain explicit draws.
+The 1%, 10%, churn, and preselection workloads bound overlay draws by target
+count while requiring every requested target to be represented.
+
 Picking statistics are intentionally reported alongside hover latency. For
 contiguous triangle, line, and point subelement ranges, the picking shader uses
 the GPU primitive index to resolve the frame-local lookup entry. Repeated
