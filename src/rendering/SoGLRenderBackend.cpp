@@ -47,11 +47,13 @@ namespace {
 
 static constexpr int MAX_VERTEX_COUNT = 10000000;
 static constexpr int MAX_SHADER_LIGHTS = 8;
-// Primitive selection instancing redraws the complete source geometry once
-// per instance and discards unselected primitives in the shader. Bound that
-// amplification so batching small shared shapes does not turn large meshes
-// into substantially more GPU work than explicit range draws.
-static constexpr uint64_t MAX_SELECTION_PRIMITIVE_AMPLIFICATION = 4096;
+// Primitive selection instancing redraws the source geometry for every
+// instance, but also avoids one driver draw for every additional target.
+// Hardware curves put that tradeoff near 64 primitives per avoided draw. A
+// small base allowance keeps medium-sized batches from oscillating at the
+// boundary.
+static constexpr uint64_t SELECTION_AMPLIFICATION_BASE = 256;
+static constexpr uint64_t SELECTION_PRIMITIVES_PER_AVOIDED_DRAW = 64;
 static constexpr GLuint POSITION_ATTRIBUTE = 0;
 static constexpr GLuint NORMAL_ATTRIBUTE = 1;
 static constexpr GLuint COLOR_ATTRIBUTE = 2;
@@ -131,6 +133,14 @@ commandPrimitiveCount(const SoRenderCommand & command)
   const uint32_t drawCount = indexed ? command.geometry.indexCount
                                      : command.geometry.vertexCount;
   return drawCount / primitiveWidth;
+}
+
+uint64_t
+selectionPrimitiveBudget(const size_t instanceCount)
+{
+  if (instanceCount < 2) return 0;
+  return SELECTION_AMPLIFICATION_BASE +
+    SELECTION_PRIMITIVES_PER_AVOIDED_DRAW * (instanceCount - 1);
 }
 
 bool
@@ -4599,6 +4609,7 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
 
   const auto drawTargets = [&](const std::vector<SoSelectionTarget> & targets,
                                const bool highlighted) {
+    const auto planningStart = std::chrono::steady_clock::now();
     uint64_t & entryCount = highlighted
       ? this->submissionCache.statistics.highlightedOverlayEntries
       : this->submissionCache.statistics.selectedOverlayEntries;
@@ -4670,6 +4681,11 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
       batch.primitiveIds.push_back(primitiveId);
     }
 
+    this->submissionCache.statistics.selectionPlannedBatches += batches.size();
+    this->submissionCache.statistics.selectionPlanningNanoseconds +=
+      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - planningStart).count());
+
     for (const SelectionBatch & batch : batches) {
       const bool batchCandidate = batch.commandIndices.size() > 1;
       uint64_t primitiveAmplification = 0;
@@ -4684,7 +4700,7 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
       }
       const bool batchAllowed = batchCandidate &&
         (!batch.primitiveSelection || primitiveAmplification <=
-          MAX_SELECTION_PRIMITIVE_AMPLIFICATION);
+          selectionPrimitiveBudget(batch.commandIndices.size()));
       if (batchAllowed) {
         this->drawInstancedSelectionCommands(
           drawlist, batch.commandIndices, batch.colors, batch.primitiveIds,
@@ -4695,6 +4711,8 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
           batch.commandIndices.size();
       }
       else {
+        this->submissionCache.statistics.selectionExplicitEntries +=
+          batch.targetIndices.size();
         if (batchCandidate) {
           ++this->submissionCache.statistics
             .selectionPrimitiveBatchesRejected;

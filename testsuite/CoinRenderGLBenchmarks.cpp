@@ -2059,7 +2059,8 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
 }
 
 bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
-                                 bool sharedGeometry, int samples,
+                                 int commandCount, bool sharedGeometry,
+                                 int samples,
                                  Measurement & result,
                                  std::string & unavailable)
 {
@@ -2075,14 +2076,17 @@ bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
     return false;
   }
 
+  const int columns = static_cast<int>(std::ceil(std::sqrt(
+    static_cast<double>(commandCount))));
+  const float radius = std::min(0.04f, 0.35f / columns);
   std::vector<float> positions(static_cast<size_t>(primitiveCount + 2) * 3);
   positions[0] = positions[1] = positions[2] = 0.0f;
   for (int vertex = 0; vertex <= primitiveCount; ++vertex) {
     const float angle = static_cast<float>(vertex) * 6.28318530718f /
       static_cast<float>(primitiveCount);
     const size_t offset = static_cast<size_t>(vertex + 1) * 3;
-    positions[offset] = std::cos(angle) * 0.04f;
-    positions[offset + 1] = std::sin(angle) * 0.04f;
+    positions[offset] = std::cos(angle) * radius;
+    positions[offset + 1] = std::sin(angle) * radius;
     positions[offset + 2] = 0.0f;
   }
   std::vector<uint32_t> indices(static_cast<size_t>(primitiveCount) * 3);
@@ -2092,7 +2096,6 @@ bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
     indices[static_cast<size_t>(primitive) * 3 + 2] = primitive + 2;
   }
 
-  static constexpr int commandCount = 40;
   SoDrawList drawlist;
   drawlist.reserve(commandCount);
   SoSelectionState selection;
@@ -2109,10 +2112,12 @@ bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
       : 0x53454c0000000000ULL + static_cast<uint64_t>(commandIndex + 1);
     command.geometry.resourceRevision = 1;
     command.material.diffuse = SbVec4f(0.3f, 0.6f, 0.8f, 1.0f);
-    const int column = commandIndex % 8;
-    const int row = commandIndex / 8;
+    const int column = commandIndex % columns;
+    const int row = commandIndex / columns;
+    const float spacing = 1.8f / columns;
     command.modelMatrix.setTranslate(SbVec3f(
-      -0.7f + column * 0.2f, -0.4f + row * 0.2f, 0.0f));
+      -0.9f + (column + 0.5f) * spacing,
+      -0.9f + (row + 0.5f) * spacing, 0.0f));
     SoRenderElementRange range;
     range.type = SO_PICK_FACE;
     range.elementIndex = 0;
@@ -2166,7 +2171,9 @@ bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
   const uint64_t pixelChecksum = checksumPixels(context.readPixels());
   const uint64_t primitiveAmplification =
     static_cast<uint64_t>(primitiveCount) * commandCount;
-  const bool shouldBatch = sharedGeometry && primitiveAmplification <= 4096;
+  const uint64_t primitiveBudget = 256 + 64 * (commandCount - 1);
+  const bool shouldBatch = sharedGeometry &&
+    primitiveAmplification <= primitiveBudget;
   const bool valid = pixelChecksum != 0 &&
     statistics.selectedOverlayEntries == commandCount &&
     (shouldBatch
@@ -2184,7 +2191,8 @@ bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
 
   result.workload = std::string("subelement_selection_") +
     (sharedGeometry ? "shared_" : "explicit_") +
-    std::to_string(primitiveCount);
+    std::to_string(primitiveCount) + "_targets_" +
+    std::to_string(commandCount);
   result.renderer = "DrawList";
   result.profile = profile == GLTestProfile::Core ? "core" : "compatibility";
   result.semanticDraws = commandCount;
@@ -2375,6 +2383,12 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.selectedOverlayEntries
         << ", \"highlighted_overlay_entries\": "
         << r.renderStatistics.highlightedOverlayEntries
+        << ", \"selection_planned_batches\": "
+        << r.renderStatistics.selectionPlannedBatches
+        << ", \"selection_explicit_entries\": "
+        << r.renderStatistics.selectionExplicitEntries
+        << ", \"selection_planning_ms\": "
+        << r.renderStatistics.selectionPlanningNanoseconds / 1000000.0
         << ", \"selection_primitive_candidates\": "
         << r.renderStatistics.selectionPrimitiveCandidates
         << ", \"selection_primitive_batches_rejected\": "
@@ -2487,21 +2501,45 @@ int main(int argc, char ** argv)
     const GLTestProfile profiles[] = {
       GLTestProfile::Compatibility, GLTestProfile::Core
     };
-    const int curveSamples = std::min(samples, options.smoke ? 2 : 10);
+    const int targetCounts[] = {
+      10, options.smoke ? 0 : 100,
+      options.smoke ? 0 : 1000, options.smoke ? 0 : 10000
+    };
     for (GLTestProfile profile : profiles) {
       for (const int primitiveCount : primitiveCounts) {
         if (primitiveCount == 0) continue;
         for (const bool sharedGeometry : {false, true}) {
           Measurement curve;
           std::string reason;
+          const int curveSamples = std::min(samples, options.smoke ? 2 : 10);
           if (runSubelementSelectionCurve(
-                profile, primitiveCount, sharedGeometry, curveSamples,
+                profile, primitiveCount, 40, sharedGeometry, curveSamples,
                 curve, reason)) {
             results.push_back(curve);
           }
           else {
             unavailable.push_back(
               std::string("subelement_selection_curve:DrawList ") +
+              (profile == GLTestProfile::Core ? "core: " :
+                                                "compatibility: ") + reason);
+          }
+        }
+      }
+      for (const int targetCount : targetCounts) {
+        if (targetCount == 0) continue;
+        for (const bool sharedGeometry : {false, true}) {
+          Measurement curve;
+          std::string reason;
+          const int curveSamples = std::min(
+            samples, targetCount >= 1000 ? 3 : 10);
+          if (runSubelementSelectionCurve(
+                profile, 8, targetCount, sharedGeometry, curveSamples,
+                curve, reason)) {
+            results.push_back(curve);
+          }
+          else {
+            unavailable.push_back(
+              std::string("subelement_selection_targets:DrawList ") +
               (profile == GLTestProfile::Core ? "core: " :
                                                 "compatibility: ") + reason);
           }

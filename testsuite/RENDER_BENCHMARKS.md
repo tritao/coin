@@ -147,19 +147,25 @@ draw. Selection planning groups compatible targets by retained geometry and
 render state, so naturally interleaved face and edge targets do not fragment
 batches. Selected and highlighted targets remain separate overlay passes.
 
-The `subelement_selection_{explicit,shared}_{8,64,1000,10000}` curve isolates
-selection cost from scene traversal. Forty commands each select one face from
-an indexed mesh of the stated primitive count. The explicit variant uses
-unique geometry and the shared variant exposes primitive-selection instancing.
-The benchmark reports CPU and GPU selection time plus candidate count,
-projected primitive amplification, and rejected batches.
+The `subelement_selection_{explicit,shared}_{8,64,1000,10000}_targets_40`
+curve isolates geometry complexity from scene traversal. Forty commands each
+select one face from an indexed mesh of the stated primitive count. A second
+`subelement_selection_{explicit,shared}_8_targets_{10,100,1000,10000}` curve
+holds geometry complexity fixed while scaling the selected-target count. The
+explicit variants use unique geometry and the shared variants expose
+primitive-selection instancing.
 
-Primitive-selection instancing is limited to 4096 projected primitives per
-batch. Unlike whole-object instancing, the primitive selector redraws the
-complete source mesh for every instance and discards non-selected primitives
-in the fragment shader. Batches above the budget use explicit range draws.
-The budget is based on amplification rather than source-mesh size so it adapts
-to both geometry complexity and the number of selected instances.
+The curves report total CPU and GPU selection time, selection planning time,
+planned batches, explicit and instanced entries, candidate count, projected
+primitive amplification, and rejected batches. This separates grouping cost
+from the submission work it avoids.
+
+Unlike whole-object instancing, the primitive selector redraws the complete
+source mesh for every instance and discards non-selected primitives in the
+fragment shader. Its amplification budget is `256 + 64 * avoided_draws`, based
+on compatibility and core hardware curves. Batches above the budget use
+explicit range draws. Crediting avoided draws keeps large selections of small
+shared shapes instanced while rejecting expensive full-mesh amplification.
 
 Picking statistics are intentionally reported alongside hover latency. For
 contiguous triangle, line, and point subelement ranges, the picking shader uses

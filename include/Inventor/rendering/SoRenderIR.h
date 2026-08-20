@@ -740,6 +740,9 @@ struct SoRenderStatistics {
   uint64_t selectionInstancedEntries = 0;
   uint64_t selectedOverlayEntries = 0;
   uint64_t highlightedOverlayEntries = 0;
+  uint64_t selectionPlannedBatches = 0;
+  uint64_t selectionExplicitEntries = 0;
+  uint64_t selectionPlanningNanoseconds = 0;
   // Primitive-selector batches redraw the source geometry for every instance.
   // These counters expose the candidate entries, projected primitive work,
   // and batches redirected to explicit range draws by the amplification cap.
