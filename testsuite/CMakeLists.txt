@@ -236,6 +236,11 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		set_tests_properties(CoinRenderGLBenchmarksSmoke PROPERTIES
 			SKIP_RETURN_CODE 77
 			LABELS "benchmark;benchmark-gl;benchmark-render")
+		add_test(NAME CoinRenderIncrementalEditsSmoke
+			COMMAND CoinRenderGLBenchmarks --incremental-only 40 --samples 2)
+		set_tests_properties(CoinRenderIncrementalEditsSmoke PROPERTIES
+			SKIP_RETURN_CODE 77
+			LABELS "benchmark;benchmark-gl;benchmark-render")
 		add_executable(RenderWorkloadParityTest RenderWorkloadParityTest.cpp)
 		target_link_libraries(RenderWorkloadParityTest
 			CoinRenderWorkloadSupport CoinGLTestSupport

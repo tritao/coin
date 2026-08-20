@@ -26,6 +26,7 @@
 #include <Inventor/nodes/SoNormalBinding.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoSwitch.h>
 #include <Inventor/nodes/SoTexture2.h>
 #include <Inventor/nodes/SoTextureCoordinate2.h>
 #include <Inventor/nodes/SoTranslation.h>
@@ -1158,7 +1159,9 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
     WorkloadKind::MaterialChurn, drawCount, camera, &mutations);
   if (mutations.transforms.size() != static_cast<size_t>(drawCount) ||
       mutations.materials.size() != static_cast<size_t>(drawCount) ||
-      mutations.coordinates.size() != static_cast<size_t>(drawCount)) {
+      mutations.coordinates.size() != static_cast<size_t>(drawCount) ||
+      mutations.visibilitySwitches.size() != static_cast<size_t>(drawCount) ||
+      mutations.structuralBranches.size() != static_cast<size_t>(drawCount)) {
     unavailable = "mutation scene did not expose one target per occurrence";
     camera->unref();
     scene->unref();
@@ -1242,6 +1245,86 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
     mutations.coordinates[0]->point.set1Value(
       0, SbVec3f((sample & 1) ? -0.40f : -0.44f, -0.42f, 0.0f));
   });
+
+  const auto measureInvalidating =
+    [&](const char * name, const std::function<void(int)> & mutate,
+        const std::function<int(int)> & expectedCommands,
+        const std::function<void()> & restore) {
+    std::vector<double> cpuTimes;
+    std::vector<double> constructionTimes;
+    std::vector<double> planTimes;
+    for (int sample = 0; sample < samples; ++sample) {
+      mutate(sample);
+      context.bindFramebuffer();
+      const Clock::time_point start = Clock::now();
+      manager.render(TRUE, TRUE);
+      cpuTimes.push_back(elapsedMs(start));
+      const SoRenderStatistics statistics = manager.getRenderStatistics();
+      if (statistics.drawListRebuilds != 1 ||
+          statistics.incrementalCommandUpdates != 0 ||
+          statistics.retainedCommands !=
+            static_cast<uint64_t>(expectedCommands(sample)) ||
+          statistics.planConstructionNanoseconds == 0) {
+        std::cerr << "FAIL: " << name
+                  << " did not perform the expected structural rebuild\n";
+        std::exit(1);
+      }
+      constructionTimes.push_back(
+        statistics.drawListConstructionNanoseconds / 1000000.0);
+      planTimes.push_back(
+        statistics.planConstructionNanoseconds / 1000000.0);
+    }
+    Measurement result;
+    result.workload = std::string(name) + "_" + std::to_string(drawCount);
+    result.renderer = "DrawList";
+    result.profile = profile == GLTestProfile::Core
+      ? "core" : "compatibility";
+    result.semanticDraws = drawCount;
+    result.samples = samples;
+    result.cpuMedianMs = percentile(cpuTimes, 0.5);
+    result.cpuP95Ms = percentile(cpuTimes, 0.95);
+    result.drawListConstructionMs = percentile(constructionTimes, 0.5);
+    result.planConstructionMs = percentile(planTimes, 0.5);
+    result.renderStatistics = manager.getRenderStatistics();
+    results.push_back(result);
+
+    restore();
+    context.bindFramebuffer();
+    manager.render(TRUE, TRUE);
+    if (manager.getRenderStatistics().retainedCommands !=
+        static_cast<uint64_t>(drawCount)) {
+      std::cerr << "FAIL: " << name
+                << " did not restore the original command set\n";
+      std::exit(1);
+    }
+    results.back().pixelChecksum = checksumPixels(context.readPixels());
+  };
+
+  SoSwitch * visibility = mutations.visibilitySwitches[0];
+  measureInvalidating("incremental_visibility_1", [&](int sample) {
+    visibility->whichChild = (sample & 1) ? SO_SWITCH_ALL : SO_SWITCH_NONE;
+  }, [&](int sample) {
+    return (sample & 1) ? drawCount : drawCount - 1;
+  }, [&]() {
+    visibility->whichChild = SO_SWITCH_ALL;
+  });
+
+  SoSeparator * structuralBranch = mutations.structuralBranches[0];
+  SoFaceSet * insertedFace = new SoFaceSet;
+  insertedFace->ref();
+  insertedFace->numVertices.set1Value(0, 3);
+  measureInvalidating("incremental_structure_1", [&](int sample) {
+    const int child = structuralBranch->findChild(insertedFace);
+    if ((sample & 1) == 0 && child < 0) structuralBranch->addChild(insertedFace);
+    else if ((sample & 1) != 0 && child >= 0)
+      structuralBranch->removeChild(child);
+  }, [&](int sample) {
+    return drawCount + (((sample & 1) == 0) ? 1 : 0);
+  }, [&]() {
+    const int child = structuralBranch->findChild(insertedFace);
+    if (child >= 0) structuralBranch->removeChild(child);
+  });
+  insertedFace->unref();
 
   const int sharedCounts[] = { 1, 10, 100, 1000, 10000 };
   for (size_t countIndex = 0;

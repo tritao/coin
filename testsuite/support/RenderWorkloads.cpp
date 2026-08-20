@@ -12,6 +12,7 @@
 #include <Inventor/nodes/SoNormalBinding.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoSwitch.h>
 #include <Inventor/nodes/SoTexture2.h>
 #include <Inventor/nodes/SoTextureCoordinate2.h>
 #include <Inventor/nodes/SoTranslation.h>
@@ -346,6 +347,16 @@ SoSeparator * makeScene(WorkloadKind kind, int drawCount,
   for (int i = 0; i < drawCount; ++i) {
     SoSeparator * draw = new SoSeparator;
     draw->renderCaching = SoSeparator::OFF;
+    SoSwitch * visibility = nullptr;
+    // Mutation consumers need stable handles for visibility and child-list
+    // edits. The wrapper is omitted from ordinary render-only workloads.
+    if (mutations) {
+      visibility = new SoSwitch;
+      visibility->whichChild = SO_SWITCH_ALL;
+      visibility->addChild(draw);
+      mutations->visibilitySwitches.push_back(visibility);
+      mutations->structuralBranches.push_back(draw);
+    }
     SoTranslation * translation = new SoTranslation;
     const float x = kind == WorkloadKind::DensePicking ? 0.0f :
       (static_cast<float>(i % columns) -
@@ -400,7 +411,8 @@ SoSeparator * makeScene(WorkloadKind kind, int drawCount,
       draw->addChild(coordinates);
       draw->addChild(face);
     }
-    root->addChild(draw);
+    root->addChild(visibility ? static_cast<SoNode *>(visibility)
+                              : static_cast<SoNode *>(draw));
   }
   return root;
 }

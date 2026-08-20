@@ -7,6 +7,9 @@
 #include <Inventor/SbColor4f.h>
 #include <Inventor/SbVec3f.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
+#include <Inventor/nodes/SoFaceSet.h>
+#include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoSwitch.h>
 #include <Inventor/nodes/SoTranslation.h>
 #include <Inventor/rendering/SoRenderIR.h>
 
@@ -37,6 +40,7 @@ struct RenderWorkloadViewerControllerImpl {
   SoSelectionTarget selected;
   SoAsyncPickRequest pickRequest;
   std::vector<SbVec3f> baseTranslations;
+  SoFaceSet * insertedFace = nullptr;
   std::chrono::steady_clock::time_point animationStart;
 
   RenderWorkloadViewerControllerImpl(
@@ -51,6 +55,11 @@ struct RenderWorkloadViewerControllerImpl {
     baseTranslations.reserve(mutations.transforms.size());
     for (SoTranslation * transform : mutations.transforms)
       baseTranslations.push_back(transform->translation.getValue());
+  }
+
+  ~RenderWorkloadViewerControllerImpl()
+  {
+    if (insertedFace) insertedFace->unref();
   }
 };
 
@@ -144,6 +153,22 @@ void keyCallback(GLFWwindow * window, int key, int, int action, int)
   if (key == GLFW_KEY_M) viewer->animate = !viewer->animate;
   else if (key == GLFW_KEY_SPACE) viewer->paused = !viewer->paused;
   else if (key == GLFW_KEY_R) viewer->manager.invalidateDrawList();
+  else if (key == GLFW_KEY_V && !viewer->mutations.visibilitySwitches.empty()) {
+    SoSwitch * visibility = viewer->mutations.visibilitySwitches.front();
+    visibility->whichChild = visibility->whichChild.getValue() == SO_SWITCH_NONE
+      ? SO_SWITCH_ALL : SO_SWITCH_NONE;
+  }
+  else if (key == GLFW_KEY_B && !viewer->mutations.structuralBranches.empty()) {
+    SoSeparator * branch = viewer->mutations.structuralBranches.front();
+    if (!viewer->insertedFace) {
+      viewer->insertedFace = new SoFaceSet;
+      viewer->insertedFace->ref();
+      viewer->insertedFace->numVertices.set1Value(0, 3);
+    }
+    const int child = branch->findChild(viewer->insertedFace);
+    if (child < 0) branch->addChild(viewer->insertedFace);
+    else branch->removeChild(child);
+  }
   else if (key == GLFW_KEY_C) {
     viewer->hasSelection = false;
     updateSelection(*viewer);

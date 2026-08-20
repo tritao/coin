@@ -38,7 +38,8 @@ void usage()
     << "  --size WIDTH HEIGHT\n\n"
     << "  --smoke               Hidden finite-frame integration check\n\n"
     << "Controls: wheel zoom, right/middle drag pan, left click select,\n"
-    << "M mutation playback, Space pause, R rebuild, C clear, Escape exit.\n";
+    << "M placement animation, V visibility, B branch edit, Space pause,\n"
+    << "R rebuild, C clear, Escape exit.\n";
 }
 
 bool parseOptions(int argc, char ** argv, Options & options)
@@ -155,7 +156,8 @@ int main(int argc, char ** argv)
   std::cout << "Viewing " << coin_test::workloadName(options.workload)
             << " with " << options.objects << " objects\n"
             << "Controls: wheel zoom, right/middle drag pan, left click select, "
-               "M mutate, Space pause, R rebuild, C clear\n";
+               "M placement, V visibility, B branch edit, Space pause, "
+               "R rebuild, C clear\n";
   using ViewerClock = std::chrono::steady_clock;
   ViewerClock::time_point statisticsStart = ViewerClock::now();
   int renderedFrames = 0;

@@ -58,10 +58,11 @@ Available workload names are `many_small_draws`, `many_material_changes`,
 `feature_rich_scene_end_to_end`, `shared_assembly_expanded`,
 `shared_assembly_sources`, and `shared_assembly_recipe`. Close the window or
 press Escape to exit. Use the mouse wheel to zoom, right- or middle-drag to
-pan, and left-click a retained hover target to select it. `M` toggles mutation
-playback, Space pauses rendering, `R` forces a retained rebuild, and `C` clears
-the selection. The viewer prints frame rate, draw count, retained-command
-count, and retained-resource count once per second. LegacyGL requires a
+pan, and left-click a retained hover target to select it. `M` toggles placement
+animation, `V` toggles one branch's visibility, and `B` inserts or removes one
+drawable from that branch. Space pauses rendering, `R` forces a retained
+rebuild, and `C` clears the selection. The viewer prints frame rate, draw
+count, retained-command count, and retained-resource count once per second. LegacyGL requires a
 compatibility-profile build and `--gl-profile compat`; DrawList supports
 compatibility and core profiles. Retained hover and selection visualization
 are available on the DrawList path.
@@ -166,6 +167,14 @@ optimization target is chosen from measured phase costs.
 Retained runs additionally enable opt-in per-command CPU phase timing for
 command preparation, state setup, program/uniform binding, and draw submission.
 Normal rendering leaves this intrusive timing disabled.
+
+`--incremental-only N` reuses the shared scene generator and applies a
+deterministic edit sequence to an `N`-command scene. Unchanged frames and
+single placement, material, transparency, and geometry edits must avoid a full
+DrawList rebuild. Visibility and child insertion/removal currently require one
+safe structural rebuild; their measurements assert the resulting command
+count and plan rebuild explicitly. This makes broad invalidation visible while
+preserving it as a supported baseline for later incremental improvements.
 
 The `shared_assembly_{expanded,sources,recipe}` workloads render the same
 deterministic collection of reusable part definitions and transformed
