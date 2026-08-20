@@ -886,8 +886,8 @@ SoGLRenderBackend::clearSelectionScratch()
 {
   this->selectionBatches.clear();
   this->selectionBatches.shrink_to_fit();
-  this->selectionBatchesByGeometry.clear();
-  this->selectionBatchesByGeometry.rehash(0);
+  this->selectionBatchesByCompatibility.clear();
+  this->selectionBatchesByCompatibility.rehash(0);
   this->selectionBatchCount = 0;
 }
 
@@ -2276,6 +2276,30 @@ SoGLRenderBackend::classifyInstanceCompatibility(
     first.state.raster.frontFaceCCW == next.state.raster.frontFaceCCW;
   return stateMatches ? InstanceCompatibility::COMPATIBLE
                       : InstanceCompatibility::RENDER_STATE;
+}
+
+bool
+SoGLRenderBackend::hasCompatibleInstanceState(
+  const SoRenderCommand & first, const SoRenderCommand & next) const
+{
+  if (!(sameMaterialUniforms(first.material, next.material) ||
+        sameInstancedUnlitMaterial(first.material, next.material)) ||
+      !sameInstancedTexture(first.material.texture, next.material.texture) ||
+      first.opacityClass != next.opacityClass ||
+      first.material.opacity != next.material.opacity) {
+    return false;
+  }
+  return
+    first.stage == next.stage &&
+    first.lightingHandle == next.lightingHandle &&
+    sameAlphaTest(first.state.alphaTest, next.state.alphaTest) &&
+    sameBlendState(first.state.blend, next.state.blend) &&
+    first.state.depth.enabled == next.state.depth.enabled &&
+    first.state.depth.writeEnabled == next.state.depth.writeEnabled &&
+    first.state.depth.func == next.state.depth.func &&
+    first.state.depth.range == next.state.depth.range &&
+    first.state.raster.cullBackFaces == next.state.raster.cullBackFaces &&
+    first.state.raster.frontFaceCCW == next.state.raster.frontFaceCCW;
 }
 
 bool
@@ -4626,7 +4650,7 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
     for (SelectionBatchScratch & batch : this->selectionBatches) {
       batch.instances.clear();
     }
-    for (auto & item : this->selectionBatchesByGeometry) {
+    for (auto & item : this->selectionBatchesByCompatibility) {
       item.second.clear();
     }
     this->selectionBatchCount = 0;
@@ -4689,20 +4713,25 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
       }
 
       const size_t geometryIndex = cacheIt->second;
-      auto geometryIt = this->selectionBatchesByGeometry.find(geometryIndex);
-      if (geometryIt == this->selectionBatchesByGeometry.end()) {
-        geometryIt = this->selectionBatchesByGeometry.emplace(
-          geometryIndex, std::vector<size_t>()).first;
+      // Geometry and selection mode cheaply narrow the candidates. Render
+      // state is still compared exactly so frame-local material mutations do
+      // not require a persistent compatibility cache or invalidation scheme.
+      const size_t compatibilityKey = geometryIndex * 2 +
+        static_cast<size_t>(primitiveSelection);
+      auto compatibleIt = this->selectionBatchesByCompatibility.find(
+        compatibilityKey);
+      if (compatibleIt == this->selectionBatchesByCompatibility.end()) {
+        compatibleIt = this->selectionBatchesByCompatibility.emplace(
+          compatibilityKey, std::vector<size_t>()).first;
         ++this->submissionCache.statistics.selectionScratchCapacityGrowths;
       }
-      std::vector<size_t> & geometryBatches = geometryIt->second;
+      std::vector<size_t> & compatibleBatches = compatibleIt->second;
       size_t batchIndex = this->selectionBatchCount;
-      for (const size_t candidate : geometryBatches) {
+      for (const size_t candidate : compatibleBatches) {
         SelectionBatchScratch & batch = this->selectionBatches[candidate];
         const SoRenderCommand & first = drawlist.getCommand(
           static_cast<int>(batch.instances.front().commandIndex));
-        if (batch.primitiveSelection == primitiveSelection &&
-            this->canInstanceTogether(first, command)) {
+        if (this->hasCompatibleInstanceState(first, command)) {
           batchIndex = candidate;
           break;
         }
@@ -4713,9 +4742,9 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
         batch.primitiveSelection = primitiveSelection;
         batch.sourcePrimitiveCount = primitiveSelection
           ? commandPrimitiveCount(command) : 0;
-        const size_t oldCapacity = geometryBatches.capacity();
-        geometryBatches.push_back(batchIndex);
-        if (geometryBatches.capacity() != oldCapacity) {
+        const size_t oldCapacity = compatibleBatches.capacity();
+        compatibleBatches.push_back(batchIndex);
+        if (compatibleBatches.capacity() != oldCapacity) {
           ++this->submissionCache.statistics.selectionScratchCapacityGrowths;
         }
       }
@@ -4730,9 +4759,9 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
       scratchBytes += batch.instances.capacity() *
         sizeof(SelectionInstanceScratch);
     }
-    scratchBytes += this->selectionBatchesByGeometry.bucket_count() *
+    scratchBytes += this->selectionBatchesByCompatibility.bucket_count() *
       sizeof(void *);
-    for (const auto & item : this->selectionBatchesByGeometry) {
+    for (const auto & item : this->selectionBatchesByCompatibility) {
       scratchBytes += item.second.capacity() * sizeof(size_t);
     }
     this->submissionCache.statistics.selectionScratchCapacityBytes =
