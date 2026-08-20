@@ -17,6 +17,7 @@ public:
   bool initialize(int width, int height);
   void shutdown();
   void bind() const;
+  void blitToDefault() const;
 
   bool isInitialized() const { return framebuffer_ != 0; }
   int width() const { return width_; }

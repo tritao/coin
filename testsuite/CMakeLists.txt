@@ -1,3 +1,5 @@
+set(COIN_TEST_SKIP_RETURN_CODE 77)
+
 macro(create_testsuite input)
 	get_filename_component(FLNAME "${input}" NAME_WE)
 	get_filename_component(FLPATH "${input}" PATH)
@@ -187,7 +189,7 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 			list(APPEND test_labels ${ARG_LABELS})
 		endif()
 		set_tests_properties(${ARG_NAME} PROPERTIES
-			SKIP_RETURN_CODE 77 LABELS "${test_labels}")
+			SKIP_RETURN_CODE ${COIN_TEST_SKIP_RETURN_CODE} LABELS "${test_labels}")
 	endfunction()
 endif()
 
@@ -210,7 +212,7 @@ function(coin_add_egl_test)
 		set(test_labels ${ARG_LABELS})
 	endif()
 	set_tests_properties(${ARG_NAME} PROPERTIES
-		SKIP_RETURN_CODE 77 LABELS "${test_labels}")
+		SKIP_RETURN_CODE ${COIN_TEST_SKIP_RETURN_CODE} LABELS "${test_labels}")
 endfunction()
 
 add_test(
@@ -416,7 +418,7 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		add_test(NAME CoinRenderGLBenchmarksSmoke
 			COMMAND CoinRenderGLBenchmarks --smoke)
 		set_tests_properties(CoinRenderGLBenchmarksSmoke PROPERTIES
-			SKIP_RETURN_CODE 77
+			SKIP_RETURN_CODE ${COIN_TEST_SKIP_RETURN_CODE}
 			LABELS "benchmark;benchmark-gl;benchmark-render")
 	endif()
 endif()

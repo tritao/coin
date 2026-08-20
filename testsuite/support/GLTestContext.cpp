@@ -57,7 +57,7 @@ GLTestContext::initialize(const GLTestContextConfig & config)
   ++glfwUsers;
   glfwUser_ = true;
 
-  glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+  glfwWindowHint(GLFW_VISIBLE, config.visible ? GLFW_TRUE : GLFW_FALSE);
   glfwWindowHint(GLFW_CLIENT_API, GLFW_OPENGL_API);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, config.major);
   glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, config.minor);
@@ -83,7 +83,7 @@ GLTestContext::initialize(const GLTestContextConfig & config)
 
   profile_ = config.profile;
   glfwMakeContextCurrent(window_);
-  glfwSwapInterval(0);
+  glfwSwapInterval(config.vsync ? 1 : 0);
 
   GLint major = 0;
   GLint minor = 0;
@@ -155,11 +155,42 @@ GLTestContext::makeCurrent()
   return glfwGetCurrentContext() == window_;
 }
 
+bool
+GLTestContext::resizeFramebuffer(const int width, const int height)
+{
+  if (this->window == NULL || width <= 0 || height <= 0) return false;
+  glfwMakeContextCurrent(this->window);
+  if (!this->framebuffer.initialize(this->glueinstance, width, height)) return false;
+  this->bindFramebuffer();
+  return true;
+}
+
 void
 GLTestContext::bindFramebuffer()
 {
   if (!this->makeCurrent()) return;
   framebuffer_.bind();
+}
+
+void
+GLTestContext::present()
+{
+  if (this->window == NULL) return;
+  glfwMakeContextCurrent(this->window);
+  this->framebuffer.blitToDefault();
+  glfwSwapBuffers(this->window);
+}
+
+void GLTestContext::pollEvents()
+{
+  glfwPollEvents();
+  if (this->window && glfwGetKey(this->window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+    glfwSetWindowShouldClose(this->window, GLFW_TRUE);
+}
+
+bool GLTestContext::shouldClose() const
+{
+  return this->window == NULL || glfwWindowShouldClose(this->window) != 0;
 }
 
 std::vector<uint8_t>
