@@ -573,6 +573,30 @@ SoIRRenderAction::recordCommandEmissionNanoseconds(uint64_t nanoseconds)
 }
 
 void
+SoIRRenderAction::recordCommandGeometryIdentityNanoseconds(uint64_t nanoseconds)
+{
+  PRIVATE(this)->pathStatistics.commandGeometryIdentityNanoseconds += nanoseconds;
+}
+
+void
+SoIRRenderAction::recordCommandStateCaptureNanoseconds(uint64_t nanoseconds)
+{
+  PRIVATE(this)->pathStatistics.commandStateCaptureNanoseconds += nanoseconds;
+}
+
+void
+SoIRRenderAction::recordCommandFinalizationNanoseconds(uint64_t nanoseconds)
+{
+  PRIVATE(this)->pathStatistics.commandFinalizationNanoseconds += nanoseconds;
+}
+
+void
+SoIRRenderAction::recordCommandPickingMetadataNanoseconds(uint64_t nanoseconds)
+{
+  PRIVATE(this)->pathStatistics.commandPickingMetadataNanoseconds += nanoseconds;
+}
+
+void
 SoIRRenderAction::apply(SoNode * root)
 {
   this->beginFrame();

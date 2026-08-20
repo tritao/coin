@@ -525,7 +525,7 @@ struct SoLightData {
 */
 struct SoLightingData {
   SbVec3f ambient = SbVec3f(0.2f, 0.2f, 0.2f);
-  std::vector<SoLightData> lights;
+  SbInlineVector<SoLightData, 2> lights;
 };
 
 #if defined(COIN_INTERNAL)
@@ -781,6 +781,10 @@ struct SoRenderStatistics {
   // Includes command finalization and addCommand(); it must not be summed
   // with the narrower per-command counters above.
   uint64_t drawListCommandEmissionNanoseconds = 0;
+  uint64_t drawListCommandGeometryIdentityNanoseconds = 0;
+  uint64_t drawListCommandStateCaptureNanoseconds = 0;
+  uint64_t drawListCommandFinalizationNanoseconds = 0;
+  uint64_t drawListCommandPickingMetadataNanoseconds = 0;
   uint64_t planConstructionNanoseconds = 0;
   uint64_t drawListRebuilds = 0;
   uint64_t retainedCommands = 0;

@@ -97,6 +97,10 @@ struct Measurement {
   double primitiveGenerationMs = 0.0;
   double geometryPackingMs = 0.0;
   double commandEmissionMs = 0.0;
+  double commandGeometryIdentityMs = 0.0;
+  double commandStateCaptureMs = 0.0;
+  double commandFinalizationMs = 0.0;
+  double commandPickingMetadataMs = 0.0;
   double planConstructionMs = 0.0;
   double commandPreparationMs = 0.0;
   double stateSetupMs = 0.0;
@@ -567,6 +571,10 @@ bool runVariant(GLTestProfile profile,
   std::vector<double> primitiveGeneration;
   std::vector<double> geometryPacking;
   std::vector<double> commandEmission;
+  std::vector<double> commandGeometryIdentity;
+  std::vector<double> commandStateCapture;
+  std::vector<double> commandFinalization;
+  std::vector<double> commandPickingMetadata;
   std::vector<double> planConstruction;
   std::vector<double> commandPreparation;
   std::vector<double> stateSetup;
@@ -604,6 +612,14 @@ bool runVariant(GLTestProfile profile,
       sampleStatistics.drawListGeometryPackingNanoseconds / 1000000.0);
     commandEmission.push_back(
       sampleStatistics.drawListCommandEmissionNanoseconds / 1000000.0);
+    commandGeometryIdentity.push_back(
+      sampleStatistics.drawListCommandGeometryIdentityNanoseconds / 1000000.0);
+    commandStateCapture.push_back(
+      sampleStatistics.drawListCommandStateCaptureNanoseconds / 1000000.0);
+    commandFinalization.push_back(
+      sampleStatistics.drawListCommandFinalizationNanoseconds / 1000000.0);
+    commandPickingMetadata.push_back(
+      sampleStatistics.drawListCommandPickingMetadataNanoseconds / 1000000.0);
     planConstruction.push_back(
       sampleStatistics.planConstructionNanoseconds / 1000000.0);
     commandPreparation.push_back(
@@ -810,6 +826,10 @@ bool runVariant(GLTestProfile profile,
   result.primitiveGenerationMs = percentile(primitiveGeneration, 0.5);
   result.geometryPackingMs = percentile(geometryPacking, 0.5);
   result.commandEmissionMs = percentile(commandEmission, 0.5);
+  result.commandGeometryIdentityMs = percentile(commandGeometryIdentity, 0.5);
+  result.commandStateCaptureMs = percentile(commandStateCapture, 0.5);
+  result.commandFinalizationMs = percentile(commandFinalization, 0.5);
+  result.commandPickingMetadataMs = percentile(commandPickingMetadata, 0.5);
   result.planConstructionMs = percentile(planConstruction, 0.5);
   result.commandPreparationMs = percentile(commandPreparation, 0.5);
   result.stateSetupMs = percentile(stateSetup, 0.5);
@@ -2330,6 +2350,12 @@ std::string toJson(const std::vector<Measurement> & results,
         << ", \"primitive_generation_ms\": " << r.primitiveGenerationMs
         << ", \"geometry_packing_ms\": " << r.geometryPackingMs
         << ", \"command_emission_ms\": " << r.commandEmissionMs
+        << ", \"command_geometry_identity_ms\": "
+        << r.commandGeometryIdentityMs
+        << ", \"command_state_capture_ms\": " << r.commandStateCaptureMs
+        << ", \"command_finalization_ms\": " << r.commandFinalizationMs
+        << ", \"command_picking_metadata_ms\": "
+        << r.commandPickingMetadataMs
         << ", \"plan_construction_ms\": " << r.planConstructionMs
         << ", \"cold_pick_ms\": " << r.coldPickMs
         << ", \"refresh_pick_ms\": " << r.refreshPickMs

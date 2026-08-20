@@ -537,6 +537,18 @@ private:
                     const SoIRMaterialBatchPlan & plan)
   {
     for (size_t batchIndex = 0; batchIndex < plan.size(); ++batchIndex) {
+      using TimingClock = std::chrono::steady_clock;
+      const bool timing = this->action->isCommandTimingEnabled();
+      TimingClock::time_point phaseStart;
+      if (timing) phaseStart = TimingClock::now();
+      const auto elapsedPhase = [&]() {
+        const TimingClock::time_point now = TimingClock::now();
+        const uint64_t elapsed = static_cast<uint64_t>(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(
+            now - phaseStart).count());
+        phaseStart = now;
+        return elapsed;
+      };
       const SoIRBatch & batch = plan[batchIndex];
       SoRenderCommand command = {};
       command.geometry = sourceGeometry;
@@ -555,6 +567,9 @@ private:
       command.geometry.resourceRevision = command.geometry.resourceKey;
       command.geometry.recipeKey = mixIRCacheHash(
         this->geometryRecipeKey, static_cast<uint64_t>(batchIndex + 1));
+      if (timing) {
+        this->action->recordCommandGeometryIdentityNanoseconds(elapsedPhase());
+      }
 
       SoRenderIR::fillCommandStateFromAction(
         this->action, command, std::max(batch.materialIndex, 0));
@@ -570,7 +585,13 @@ private:
       }
       command.material.vertexColorAlphaIncludesOpacity =
         command.geometry.colors != nullptr && !packedVertexColors;
+      if (timing) {
+        this->action->recordCommandStateCaptureNanoseconds(elapsedPhase());
+      }
       SoRenderIR::finalizeCommand(command);
+      if (timing) {
+        this->action->recordCommandFinalizationNanoseconds(elapsedPhase());
+      }
       const size_t batchEnd = batch.first + batch.count;
       const size_t primitiveWidth = this->topology == SO_TOPOLOGY_TRIANGLES
         ? 3 : (this->topology == SO_TOPOLOGY_LINES ? 2 : 1);
@@ -600,6 +621,9 @@ private:
         command.pick.elementRanges.clear();
       }
       this->action->applyRenderStage(command);
+      if (timing) {
+        this->action->recordCommandPickingMetadataNanoseconds(elapsedPhase());
+      }
       this->action->addCommand(std::move(command));
     }
     this->primitiveRanges.clear();

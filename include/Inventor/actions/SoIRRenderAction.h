@@ -63,6 +63,10 @@ public:
     uint64_t primitiveGenerationNanoseconds = 0;
     uint64_t geometryPackingNanoseconds = 0;
     uint64_t commandEmissionNanoseconds = 0;
+    uint64_t commandGeometryIdentityNanoseconds = 0;
+    uint64_t commandStateCaptureNanoseconds = 0;
+    uint64_t commandFinalizationNanoseconds = 0;
+    uint64_t commandPickingMetadataNanoseconds = 0;
   };
 
   /*! Camera state policy used when starting a root traversal. */
@@ -154,6 +158,10 @@ public:
   void recordPrimitiveGenerationNanoseconds(uint64_t nanoseconds);
   void recordGeometryPackingNanoseconds(uint64_t nanoseconds);
   void recordCommandEmissionNanoseconds(uint64_t nanoseconds);
+  void recordCommandGeometryIdentityNanoseconds(uint64_t nanoseconds);
+  void recordCommandStateCaptureNanoseconds(uint64_t nanoseconds);
+  void recordCommandFinalizationNanoseconds(uint64_t nanoseconds);
+  void recordCommandPickingMetadataNanoseconds(uint64_t nanoseconds);
 
   //! Append a root without clearing the current retained frame.
   void traverseAdditionalRoot(

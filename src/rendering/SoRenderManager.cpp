@@ -2652,6 +2652,14 @@ SoRenderManager::getRenderStatistics() const
       paths.geometryPackingNanoseconds;
     statistics.drawListCommandEmissionNanoseconds =
       paths.commandEmissionNanoseconds;
+    statistics.drawListCommandGeometryIdentityNanoseconds =
+      paths.commandGeometryIdentityNanoseconds;
+    statistics.drawListCommandStateCaptureNanoseconds =
+      paths.commandStateCaptureNanoseconds;
+    statistics.drawListCommandFinalizationNanoseconds =
+      paths.commandFinalizationNanoseconds;
+    statistics.drawListCommandPickingMetadataNanoseconds =
+      paths.commandPickingMetadataNanoseconds;
   }
   return statistics;
 }
