@@ -800,6 +800,7 @@ runTest()
     if (!render(backend, drawlist, params) ||
         !backend.renderSelection(drawlist, interleavedSelection, params) ||
         backend.getRenderStatistics().selectionScratchCapacityGrowths != 0 ||
+        backend.getRenderStatistics().selectionInstanceCapacityGrowths != 0 ||
         backend.getRenderStatistics().selectionPlanCacheHits != 1) {
       std::cerr << "FAIL: warm selection planning grew scratch capacity"
                 << std::endl;

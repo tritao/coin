@@ -2154,6 +2154,7 @@ bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
   std::vector<double> cpuTimes;
   std::vector<double> gpuTimes;
   uint64_t coldScratchGrowths = 0;
+  uint64_t coldInstanceGrowths = 0;
   GLuint query = 0;
   glGenQueries(1, &query);
   for (int sample = 0; sample < samples; ++sample) {
@@ -2171,8 +2172,9 @@ bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
     const Clock::time_point start = Clock::now();
     backend.renderSelection(drawlist, selection, params);
     if (sample == 0) {
-      coldScratchGrowths = backend.getRenderStatistics()
-        .selectionScratchCapacityGrowths;
+      const SoRenderStatistics coldStatistics = backend.getRenderStatistics();
+      coldScratchGrowths = coldStatistics.selectionScratchCapacityGrowths;
+      coldInstanceGrowths = coldStatistics.selectionInstanceCapacityGrowths;
     }
     cpuTimes.push_back(elapsedMs(start));
     glEndQuery(GL_TIME_ELAPSED);
@@ -2191,6 +2193,8 @@ bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
   const bool valid = pixelChecksum != 0 &&
     coldScratchGrowths > 0 &&
     (samples < 2 || statistics.selectionScratchCapacityGrowths == 0) &&
+    (!shouldBatch || coldInstanceGrowths > 0) &&
+    (samples < 2 || statistics.selectionInstanceCapacityGrowths == 0) &&
     (samples < 2 || (selectionChurn
       ? statistics.selectionPlanCacheMisses == 1 &&
           statistics.selectionPlanCacheHits == 0
@@ -2421,6 +2425,16 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.selectionPlanCacheMisses
         << ", \"selection_plan_reused_entries\": "
         << r.renderStatistics.selectionPlanReusedEntries
+        << ", \"selection_instance_build_ms\": "
+        << r.renderStatistics.selectionInstanceBuildNanoseconds / 1000000.0
+        << ", \"selection_instance_upload_ms\": "
+        << r.renderStatistics.selectionInstanceUploadNanoseconds / 1000000.0
+        << ", \"selection_instance_capacity_growths\": "
+        << r.renderStatistics.selectionInstanceCapacityGrowths
+        << ", \"selection_instance_capacity_bytes\": "
+        << r.renderStatistics.selectionInstanceCapacityBytes
+        << ", \"selection_instance_bytes_uploaded\": "
+        << r.renderStatistics.selectionInstanceBytesUploaded
         << ", \"selection_primitive_candidates\": "
         << r.renderStatistics.selectionPrimitiveCandidates
         << ", \"selection_primitive_batches_rejected\": "

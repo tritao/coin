@@ -62,12 +62,6 @@ static constexpr GLuint LINE_DISTANCE_ATTRIBUTE = 4;
 static constexpr GLuint INSTANCE_MODEL_ATTRIBUTE = 5;
 static constexpr GLuint INSTANCE_PICK_ID_ATTRIBUTE = 10;
 
-struct InstanceRecord {
-  float model[16];
-  float color[4];
-  uint32_t pickId;
-};
-
 bool
 hasPrimitivePickMapping(const SoRenderCommand & command,
                         const std::vector<SoPickLUTEntry> & lookup,
@@ -892,6 +886,8 @@ SoGLRenderBackend::clearSelectionScratch()
     pass.batchCount = 0;
     pass.cacheValid = false;
   }
+  this->selectionInstanceRecords.clear();
+  this->selectionInstanceRecords.shrink_to_fit();
 }
 
 void
@@ -3442,8 +3438,12 @@ SoGLRenderBackend::drawInstancedSelectionCommands(
   const CachedCommand & cache = this->gpuCache[cacheIt->second];
   if (!cache.vertexArray) return;
 
-  std::vector<InstanceRecord> records;
-  records.reserve(batch.instances.size());
+  const auto buildStart = std::chrono::steady_clock::now();
+  if (this->selectionInstanceRecords.capacity() < batch.instances.size()) {
+    this->selectionInstanceRecords.reserve(batch.instances.size());
+    ++this->submissionCache.statistics.selectionInstanceCapacityGrowths;
+  }
+  this->selectionInstanceRecords.clear();
   for (const SelectionInstanceScratch & instance : batch.instances) {
     InstanceRecord record = {};
     SbMat model;
@@ -3454,8 +3454,13 @@ SoGLRenderBackend::drawInstancedSelectionCommands(
       record.color[component] = instance.color[component];
     }
     record.pickId = instance.primitiveId;
-    records.push_back(record);
+    this->selectionInstanceRecords.push_back(record);
   }
+  this->submissionCache.statistics.selectionInstanceBuildNanoseconds +=
+    static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::steady_clock::now() - buildStart).count());
+  this->submissionCache.statistics.selectionInstanceCapacityBytes =
+    this->selectionInstanceRecords.capacity() * sizeof(InstanceRecord);
 
   const CommandFrame frame = this->effectiveCommandFrame(first, params, false);
   glViewport(frame.viewportOrigin[0], frame.viewportOrigin[1],
@@ -3484,12 +3489,21 @@ SoGLRenderBackend::drawInstancedSelectionCommands(
   glFrontFace(first.state.raster.frontFaceCCW ? GL_CCW : GL_CW);
   if (first.geometry.topology == SO_TOPOLOGY_LINES) glLineWidth(1.0f);
 
+  const auto uploadStart = std::chrono::steady_clock::now();
+  const size_t uploadBytes =
+    this->selectionInstanceRecords.size() * sizeof(InstanceRecord);
   cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, this->instanceBuffer);
   cc_glglue_glBufferData(this->glue, GL_ARRAY_BUFFER,
-                         records.size() * sizeof(InstanceRecord),
-                         records.data(), GL_STREAM_DRAW);
+                         uploadBytes, this->selectionInstanceRecords.data(),
+                         GL_STREAM_DRAW);
+  this->submissionCache.statistics.selectionInstanceUploadNanoseconds +=
+    static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+      std::chrono::steady_clock::now() - uploadStart).count());
+  this->submissionCache.statistics.selectionInstanceBytesUploaded +=
+    uploadBytes;
   this->glue->glBindVertexArray(cache.vertexArray);
-  const GLsizei instanceCount = static_cast<GLsizei>(records.size());
+  const GLsizei instanceCount = static_cast<GLsizei>(
+    this->selectionInstanceRecords.size());
   const GLenum primitive = topologyToGL(first.geometry.topology);
   if (first.geometry.indices && first.geometry.indexCount) {
     glDrawElementsInstanced(

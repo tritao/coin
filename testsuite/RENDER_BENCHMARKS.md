@@ -172,6 +172,12 @@ Cache hits, misses, and reused entries are reported separately. The stable
 curves require a warm hit, while `_churn` increments the revision and requires
 a miss on every measured frame.
 
+Selection submission also retains the CPU instance-record vector at its
+high-water capacity. The curves report record-build and existing GL buffer
+upload time separately, along with capacity growth, retained bytes, and bytes
+uploaded. Instanced curves require cold growth and zero warm growth; the GL
+upload mechanism intentionally remains the portable `GL_STREAM_DRAW` path.
+
 The curves report total CPU and GPU selection time, selection planning time,
 planned batches, explicit and instanced entries, candidate count, projected
 primitive amplification, rejected batches, scratch-capacity growth events, and

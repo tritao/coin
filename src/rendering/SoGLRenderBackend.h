@@ -355,6 +355,11 @@ private:
   uint64_t nextAsyncPickRequestId = 1;
   size_t nextAsyncPickSlot = 0;
 
+  struct InstanceRecord {
+    float model[16];
+    float color[4];
+    uint32_t pickId;
+  };
   struct SelectionInstanceScratch {
     size_t targetIndex = 0;
     uint32_t commandIndex = 0;
@@ -377,6 +382,7 @@ private:
     size_t targetCount = 0;
     bool cacheValid = false;
   } selectionPasses[2];
+  std::vector<InstanceRecord> selectionInstanceRecords;
 
   struct SubmissionCache {
     // GL state is grouped by the code responsible for changing it. A group is
