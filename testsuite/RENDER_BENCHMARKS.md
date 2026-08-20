@@ -155,10 +155,17 @@ holds geometry complexity fixed while scaling the selected-target count. The
 explicit variants use unique geometry and the shared variants expose
 primitive-selection instancing.
 
+Shared target-count points also have a `_churn` variant that rotates target
+order every sample. Selection plans are rebuilt because selection is
+frame-local, but backend-owned scratch vectors and geometry buckets retain
+their capacity. Each curve requires capacity growth during its cold sample and
+zero growth in subsequent stable or churned samples.
+
 The curves report total CPU and GPU selection time, selection planning time,
 planned batches, explicit and instanced entries, candidate count, projected
-primitive amplification, and rejected batches. This separates grouping cost
-from the submission work it avoids.
+primitive amplification, rejected batches, scratch-capacity growth events, and
+the scratch high-water mark in bytes. This separates grouping and allocation
+cost from the submission work they avoid.
 
 Unlike whole-object instancing, the primitive selector redraws the complete
 source mesh for every instance and discards non-selected primitives in the

@@ -743,6 +743,11 @@ struct SoRenderStatistics {
   uint64_t selectionPlannedBatches = 0;
   uint64_t selectionExplicitEntries = 0;
   uint64_t selectionPlanningNanoseconds = 0;
+  // Reusable planning storage reports capacity changes rather than allocator
+  // implementation details. Warm stable and churned selections should need
+  // no growth after their high-water mark has been observed.
+  uint64_t selectionScratchCapacityGrowths = 0;
+  uint64_t selectionScratchCapacityBytes = 0;
   // Primitive-selector batches redraw the source geometry for every instance.
   // These counters expose the candidate entries, projected primitive work,
   // and batches redirected to explicit range draws by the amplification cap.

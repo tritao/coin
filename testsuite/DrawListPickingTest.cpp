@@ -796,6 +796,13 @@ runTest()
         result = 1;
       }
     }
+    if (!render(backend, drawlist, params) ||
+        !backend.renderSelection(drawlist, interleavedSelection, params) ||
+        backend.getRenderStatistics().selectionScratchCapacityGrowths != 0) {
+      std::cerr << "FAIL: warm selection planning grew scratch capacity"
+                << std::endl;
+      result = 1;
+    }
 
     // Explicit highlighting is independent of hit-test eligibility.
     SoRenderCommand nonPickableCommand = command;

@@ -355,6 +355,21 @@ private:
   uint64_t nextAsyncPickRequestId = 1;
   size_t nextAsyncPickSlot = 0;
 
+  struct SelectionInstanceScratch {
+    size_t targetIndex = 0;
+    uint32_t commandIndex = 0;
+    SbColor4f color;
+    uint32_t primitiveId = 0;
+  };
+  struct SelectionBatchScratch {
+    std::vector<SelectionInstanceScratch> instances;
+    bool primitiveSelection = false;
+    uint32_t sourcePrimitiveCount = 0;
+  };
+  std::vector<SelectionBatchScratch> selectionBatches;
+  std::unordered_map<size_t, std::vector<size_t> > selectionBatchesByGeometry;
+  size_t selectionBatchCount = 0;
+
   struct SubmissionCache {
     // GL state is grouped by the code responsible for changing it. A group is
     // invalidated when rendering temporarily bypasses these helpers.
@@ -427,6 +442,7 @@ private:
   };
 
   bool createShaders();
+  void clearSelectionScratch();
   const VisualProgram & selectSurfaceProgram(
     const SoRenderCommand & command) const;
   bool ensurePickFramebuffer(const SbVec2s & size);
@@ -457,9 +473,7 @@ private:
                           const SoRenderParams & params);
   void drawInstancedSelectionCommands(
     const SoDrawList & drawlist,
-    const std::vector<uint32_t> & commandIndices,
-    const std::vector<SbColor4f> & colors,
-    const std::vector<uint32_t> & primitiveIds,
+    const SelectionBatchScratch & batch,
     const SoRenderParams & params,
     bool primitiveSelection);
   void drawCoverageEntry(const SoDrawList & drawlist,

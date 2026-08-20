@@ -2060,7 +2060,7 @@ bool runAssemblyInteractions(GLTestProfile profile, int occurrenceCount,
 
 bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
                                  int commandCount, bool sharedGeometry,
-                                 int samples,
+                                 bool selectionChurn, int samples,
                                  Measurement & result,
                                  std::string & unavailable)
 {
@@ -2152,14 +2152,26 @@ bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
 
   std::vector<double> cpuTimes;
   std::vector<double> gpuTimes;
+  uint64_t coldScratchGrowths = 0;
   GLuint query = 0;
   glGenQueries(1, &query);
   for (int sample = 0; sample < samples; ++sample) {
     context.bindFramebuffer();
     backend.render(drawlist, plan, params);
+    if (selectionChurn && !selection.selected.empty()) {
+      const size_t rotation = static_cast<size_t>(sample + 1) %
+        selection.selected.size();
+      std::rotate(selection.selected.begin(),
+                  selection.selected.begin() + rotation,
+                  selection.selected.end());
+    }
     glBeginQuery(GL_TIME_ELAPSED, query);
     const Clock::time_point start = Clock::now();
     backend.renderSelection(drawlist, selection, params);
+    if (sample == 0) {
+      coldScratchGrowths = backend.getRenderStatistics()
+        .selectionScratchCapacityGrowths;
+    }
     cpuTimes.push_back(elapsedMs(start));
     glEndQuery(GL_TIME_ELAPSED);
     GLuint64 nanoseconds = 0;
@@ -2175,6 +2187,8 @@ bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
   const bool shouldBatch = sharedGeometry &&
     primitiveAmplification <= primitiveBudget;
   const bool valid = pixelChecksum != 0 &&
+    coldScratchGrowths > 0 &&
+    (samples < 2 || statistics.selectionScratchCapacityGrowths == 0) &&
     statistics.selectedOverlayEntries == commandCount &&
     (shouldBatch
       ? statistics.selectionInstancedEntries == commandCount &&
@@ -2192,7 +2206,7 @@ bool runSubelementSelectionCurve(GLTestProfile profile, int primitiveCount,
   result.workload = std::string("subelement_selection_") +
     (sharedGeometry ? "shared_" : "explicit_") +
     std::to_string(primitiveCount) + "_targets_" +
-    std::to_string(commandCount);
+    std::to_string(commandCount) + (selectionChurn ? "_churn" : "");
   result.renderer = "DrawList";
   result.profile = profile == GLTestProfile::Core ? "core" : "compatibility";
   result.semanticDraws = commandCount;
@@ -2389,6 +2403,10 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.selectionExplicitEntries
         << ", \"selection_planning_ms\": "
         << r.renderStatistics.selectionPlanningNanoseconds / 1000000.0
+        << ", \"selection_scratch_capacity_growths\": "
+        << r.renderStatistics.selectionScratchCapacityGrowths
+        << ", \"selection_scratch_capacity_bytes\": "
+        << r.renderStatistics.selectionScratchCapacityBytes
         << ", \"selection_primitive_candidates\": "
         << r.renderStatistics.selectionPrimitiveCandidates
         << ", \"selection_primitive_batches_rejected\": "
@@ -2513,7 +2531,8 @@ int main(int argc, char ** argv)
           std::string reason;
           const int curveSamples = std::min(samples, options.smoke ? 2 : 10);
           if (runSubelementSelectionCurve(
-                profile, primitiveCount, 40, sharedGeometry, curveSamples,
+                profile, primitiveCount, 40, sharedGeometry, false,
+                curveSamples,
                 curve, reason)) {
             results.push_back(curve);
           }
@@ -2533,7 +2552,7 @@ int main(int argc, char ** argv)
           const int curveSamples = std::min(
             samples, targetCount >= 1000 ? 3 : 10);
           if (runSubelementSelectionCurve(
-                profile, 8, targetCount, sharedGeometry, curveSamples,
+                profile, 8, targetCount, sharedGeometry, false, curveSamples,
                 curve, reason)) {
             results.push_back(curve);
           }
@@ -2542,6 +2561,22 @@ int main(int argc, char ** argv)
               std::string("subelement_selection_targets:DrawList ") +
               (profile == GLTestProfile::Core ? "core: " :
                                                 "compatibility: ") + reason);
+          }
+          if (sharedGeometry) {
+            Measurement churnCurve;
+            std::string churnReason;
+            if (runSubelementSelectionCurve(
+                  profile, 8, targetCount, true, true, curveSamples,
+                  churnCurve, churnReason)) {
+              results.push_back(churnCurve);
+            }
+            else {
+              unavailable.push_back(
+                std::string("subelement_selection_churn:DrawList ") +
+                (profile == GLTestProfile::Core ? "core: " :
+                                                  "compatibility: ") +
+                churnReason);
+            }
           }
         }
       }
