@@ -96,6 +96,18 @@ sorting, GL submission, and GPU completion. Full runs cap these larger curves
 at ten samples; smoke runs execute only a small rebuild case.
 For profiler runs, `--rebuild-only N` skips unrelated workloads and executes
 only the core-profile forced-rebuild scene at the requested object count.
+`--assembly-rebuild-only N` does the same for the shared assembly recipe.
+Add `--no-phase-timing` when sampling with an external profiler. This disables
+the intrusive per-command clocks so they do not distort the sampled workload;
+the aggregate CPU and GPU measurements remain available, while the disabled
+phase fields are reported as zero. The top-level `phase_timing` JSON field
+records whether those detailed measurements were enabled. For example:
+
+```sh
+perf record -e cycles:u --call-graph dwarf -- \
+  CoinRenderGLBenchmarks --assembly-rebuild-only 1000 --samples 500 \
+  --no-phase-timing
+```
 
 Picking is split into one-time cold target creation, target refresh after a
 changed frame, and warm repeated-hover latency. Retained runs also report

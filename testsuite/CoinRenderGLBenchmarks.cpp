@@ -1999,7 +1999,9 @@ std::string toJson(const std::vector<Measurement> & results,
   out << std::fixed << std::setprecision(6);
   out << "{\n  \"schema_version\": 1,\n  \"mode\": \""
       << (options.smoke ? "smoke" : "benchmark")
-      << "\",\n  \"time_unit\": \"ms\",\n  \"benchmarks\": [\n";
+      << "\",\n  \"time_unit\": \"ms\",\n  \"phase_timing\": "
+      << (options.phaseTiming ? "true" : "false")
+      << ",\n  \"benchmarks\": [\n";
   for (size_t i = 0; i < results.size(); ++i) {
     const Measurement & r = results[i];
     out << "    {\"workload\": \"" << r.workload
