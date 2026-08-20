@@ -153,11 +153,13 @@ int32_t
 SoInt32Element::get(const int index,
                     SoState * const state)
 {
-  const SoInt32Element * element;
-  element = coin_safe_cast<const SoInt32Element *>(getConstElement(state, index)); //, NULL );
-  if (element)
-    return element->data;
-  return 0;
+  const SoElement * base = getConstElement(state, index);
+  // A stack index identifies one element inheritance stack. SoState therefore
+  // guarantees that the enabled element is this type or a derived replacement
+  // (for example, its GL variant). Keep that invariant checked in assertion
+  // builds without repeating an SoType ancestry walk in every release getter.
+  assert(base && base->getTypeId().isDerivedFrom(getClassTypeId()));
+  return static_cast<const SoInt32Element *>(base)->data;
 }
 
 /*!
