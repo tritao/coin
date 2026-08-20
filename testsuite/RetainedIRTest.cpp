@@ -283,13 +283,21 @@ runTest()
   if (validIndexedLineReuse) {
     const SoRenderCommand & repeatedLineCommand =
       action.getDrawList().getCommand(1);
+    const SbInlineVector<SoRenderElementRange, 1> & repeatedLineRanges =
+      action.getDrawList().getCommandElementRanges(repeatedLineCommand);
+    const SoGeometryResource * repeatedLineResource =
+      action.getDrawList().getGeometryResource(
+        repeatedLineCommand.geometryHandle);
     validIndexedLineReuse =
       action.getDrawList().getCommand(0).geometryHandle ==
         repeatedLineCommand.geometryHandle &&
-      repeatedLineCommand.pick.elementRanges.size() == 2 &&
-      repeatedLineCommand.pick.elementRanges[0].type == SO_PICK_EDGE &&
-      repeatedLineCommand.pick.elementRanges[0].elementIndex == 0 &&
-      repeatedLineCommand.pick.elementRanges[1].elementIndex == 1;
+      repeatedLineRanges.size() == 2 &&
+      repeatedLineRanges[0].type == SO_PICK_EDGE &&
+      repeatedLineRanges[0].elementIndex == 0 &&
+      repeatedLineRanges[1].elementIndex == 1 &&
+      repeatedLineCommand.pick.useResourceElementRanges &&
+      repeatedLineCommand.pick.elementRanges.empty() &&
+      repeatedLineResource && repeatedLineResource->elementRanges.size() == 2;
   }
   if (!validIndexedLineReuse) {
     std::cerr << "FAIL: repeated indexed lines did not share one resource"

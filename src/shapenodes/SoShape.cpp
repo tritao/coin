@@ -410,14 +410,14 @@ public:
     this->geometryCacheKey = sourceId;
     this->geometryRevision = revision;
     return this->reuseGeometry(sourceId, revision, faceCount,
-                               SO_TOPOLOGY_TRIANGLES, SO_PICK_FACE, 3);
+                               SO_TOPOLOGY_TRIANGLES, 3);
   }
 
   SbBool reuseRetainedTriangles(uint64_t sourceId,
                                 uint64_t revision) override
   {
     return this->reuseGeometry(sourceId, revision, 0,
-                               SO_TOPOLOGY_TRIANGLES, SO_PICK_FACE, 3);
+                               SO_TOPOLOGY_TRIANGLES, 3);
   }
 
   SbBool beginRetainedLines(uint64_t sourceId, uint64_t revision,
@@ -427,13 +427,13 @@ public:
     this->geometryCacheKey = sourceId;
     this->geometryRevision = revision;
     return this->reuseGeometry(sourceId, revision, segmentCount,
-                               SO_TOPOLOGY_LINES, SO_PICK_EDGE, 2);
+                               SO_TOPOLOGY_LINES, 2);
   }
 
   SbBool reuseRetainedLines(uint64_t sourceId, uint64_t revision) override
   {
     return this->reuseGeometry(sourceId, revision, 0,
-                               SO_TOPOLOGY_LINES, SO_PICK_EDGE, 2);
+                               SO_TOPOLOGY_LINES, 2);
   }
 
   void finalize()
@@ -451,7 +451,6 @@ private:
   SbBool reuseGeometry(uint64_t sourceId, uint64_t revision,
                        int expectedPrimitiveCount,
                        SoPrimitiveTopology topology,
-                       SoPickElementType pickType,
                        int verticesPerPrimitive)
   {
     const SoGeometryHandle handle = this->action->findGeometrySource(
@@ -470,10 +469,8 @@ private:
     this->geometryCacheKey = sourceId;
     this->geometryRevision = revision;
     this->topology = topology;
-    // Reused sources have uniform sequential ranges. Record that compactly;
-    // emitCommands() materializes the command-owned metadata only once.
+    // Reused commands resolve the canonical ranges owned by this resource.
     this->reusedPrimitiveWidth = verticesPerPrimitive;
-    this->reusedPickType = pickType;
     this->reusedGeometry = resource->geometry;
     this->reusedVertexCount = resource->geometry.vertexCount;
     return TRUE;
@@ -666,21 +663,12 @@ private:
         ? 3 : (this->topology == SO_TOPOLOGY_LINES ? 2 : 1);
       const size_t expectedRanges = primitiveWidth == 0 ? 0
         : batch.count / primitiveWidth;
-      command.pick.elementRanges.reserve(expectedRanges);
-      bool completePickRanges = true;
       if (this->reusedPrimitiveWidth != 0) {
-        const size_t firstPrimitive = batch.first / reusedPrimitiveWidth;
-        for (size_t primitive = 0; primitive < expectedRanges; ++primitive) {
-          SoRenderElementRange pickRange;
-          pickRange.type = this->reusedPickType;
-          pickRange.elementIndex = static_cast<int>(firstPrimitive + primitive);
-          pickRange.drawStart = static_cast<uint32_t>(
-            primitive * reusedPrimitiveWidth);
-          pickRange.drawCount = static_cast<uint32_t>(reusedPrimitiveWidth);
-          command.pick.elementRanges.push_back(pickRange);
-        }
+        command.pick.useResourceElementRanges = true;
       }
       else {
+        command.pick.elementRanges.reserve(expectedRanges);
+        bool completePickRanges = true;
         for (size_t rangeIndex = 0;
              rangeIndex < this->primitiveRanges.size();
              ++rangeIndex) {
@@ -698,10 +686,10 @@ private:
           pickRange.drawCount = static_cast<uint32_t>(range.count);
           command.pick.elementRanges.push_back(pickRange);
         }
-      }
-      if (!completePickRanges ||
-          command.pick.elementRanges.size() != expectedRanges) {
-        command.pick.elementRanges.clear();
+        if (!completePickRanges ||
+            command.pick.elementRanges.size() != expectedRanges) {
+          command.pick.elementRanges.clear();
+        }
       }
       this->action->applyRenderStage(command);
       if (timing) {
@@ -801,7 +789,6 @@ private:
   SoGeometryDesc reusedGeometry;
   size_t reusedVertexCount = 0;
   int reusedPrimitiveWidth = 0;
-  SoPickElementType reusedPickType = SO_PICK_OBJECT;
   // Most retained shapes emit one triangle, so these buffers normally remain
   // inline while still growing for larger or mixed-topology shapes.
   SbInlineVector<SoIRVertex, 4> vertices;

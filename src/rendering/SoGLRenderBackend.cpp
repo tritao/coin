@@ -90,7 +90,8 @@ hasPrimitivePickMapping(const SoRenderCommand & command,
 }
 
 bool
-selectionPrimitiveId(const SoRenderCommand & command,
+selectionPrimitiveId(const SoDrawList & drawlist,
+                     const SoRenderCommand & command,
                      const SoSelectionTarget & target,
                      uint32_t & primitiveId)
 {
@@ -101,7 +102,8 @@ selectionPrimitiveId(const SoRenderCommand & command,
   const bool indexed = command.geometry.indices && command.geometry.indexCount;
   const uint32_t drawLimit = indexed ? command.geometry.indexCount
                                      : command.geometry.vertexCount;
-  for (const SoRenderElementRange & range : command.pick.elementRanges) {
+  for (const SoRenderElementRange & range :
+       drawlist.getCommandElementRanges(command)) {
     if (range.type != target.type ||
         range.elementIndex != target.elementIndex ||
         range.drawCount != primitiveWidth ||
@@ -4608,7 +4610,8 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
       return;
     }
 
-    for (const SoRenderElementRange & range : command.pick.elementRanges) {
+    for (const SoRenderElementRange & range :
+         drawlist.getCommandElementRanges(command)) {
       if (range.type != target.type ||
           range.elementIndex != target.elementIndex) continue;
       SoPickLUTEntry entry;
@@ -4717,7 +4720,7 @@ SoGLRenderBackend::renderSelection(const SoDrawList & drawlist,
           target.elementIndex < 0;
         uint32_t primitiveId = 0;
         const bool primitiveSelection = !wholeCommand &&
-          selectionPrimitiveId(command, target, primitiveId);
+          selectionPrimitiveId(drawlist, command, target, primitiveId);
         const auto cacheIt = this->commandToCache.find(&command);
         if (!this->canInstanceCommand(command) ||
             (!wholeCommand && !primitiveSelection) ||

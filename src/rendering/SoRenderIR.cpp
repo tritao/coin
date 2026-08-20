@@ -424,6 +424,17 @@ SoDrawList::getCommandGeometry(const SoRenderCommand & command) const
   return resource ? resource->geometry : command.geometry;
 }
 
+const SbInlineVector<SoRenderElementRange, 1> &
+SoDrawList::getCommandElementRanges(const SoRenderCommand & command) const
+{
+  if (command.pick.useResourceElementRanges) {
+    const SoGeometryResource * resource =
+      this->getGeometryResource(command.geometryHandle);
+    if (resource) return resource->elementRanges;
+  }
+  return command.pick.elementRanges;
+}
+
 void
 SoDrawList::truncateGeometryResources(int count)
 {
@@ -504,7 +515,9 @@ SoDrawList::buildPickLUT() const
                                        : command.geometry.vertexCount;
     if (drawLimit == 0) continue;
 
-    if (command.pick.elementRanges.empty()) {
+    const SbInlineVector<SoRenderElementRange, 1> & elementRanges =
+      this->getCommandElementRanges(command);
+    if (elementRanges.empty()) {
       SoPickLUTEntry entry;
       entry.commandIndex = commandIndex;
       entry.nodeId = command.nodeId;
@@ -518,7 +531,7 @@ SoDrawList::buildPickLUT() const
       continue;
     }
 
-    for (const SoRenderElementRange & range : command.pick.elementRanges) {
+    for (const SoRenderElementRange & range : elementRanges) {
       SoPickLUTEntry entry;
       entry.commandIndex = commandIndex;
       entry.nodeId = command.nodeId;

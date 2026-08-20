@@ -442,12 +442,32 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
     geometryResource.geometry = retained.geometry;
     geometryResource.sourceKey = retained.geometry.recipeKey;
     geometryResource.revision = retained.geometry.revision;
+    geometryResource.elementRanges = std::move(retained.pick.elementRanges);
     retained.geometryHandle =
       this->drawlist.addGeometryResource(std::move(geometryResource));
+    retained.pick.useResourceElementRanges = true;
     if (PRIVATE(this)->recordBranchDependencies &&
         retained.geometry.recipeKey != 0) {
       PRIVATE(this)->geometryRecipes.emplace(
         retained.geometry.recipeKey, retained.geometryHandle);
+    }
+  }
+  else if (!retained.pick.useResourceElementRanges) {
+    const SoGeometryResource * resource =
+      this->drawlist.getGeometryResource(retained.geometryHandle);
+    const auto rangesEqual = [](const SoRenderElementRange & lhs,
+                                const SoRenderElementRange & rhs) {
+      return lhs.type == rhs.type &&
+        lhs.elementIndex == rhs.elementIndex &&
+        lhs.drawStart == rhs.drawStart && lhs.drawCount == rhs.drawCount;
+    };
+    if (resource && resource->elementRanges.size() ==
+                      retained.pick.elementRanges.size() &&
+        std::equal(resource->elementRanges.begin(),
+                   resource->elementRanges.end(),
+                   retained.pick.elementRanges.begin(), rangesEqual)) {
+      retained.pick.elementRanges.clear();
+      retained.pick.useResourceElementRanges = true;
     }
   }
   finishPhase(PRIVATE(this)->pathStatistics.geometryResourceNanoseconds);
