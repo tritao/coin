@@ -113,6 +113,10 @@ struct SoGeometryDesc {
   uint64_t            resourceKey = 0;
   uint64_t            resourceRevision = 0;
 
+  // Identifies the producer and state sources used to generate this payload.
+  // Equal recipe and resource keys allow commands to share one CPU resource.
+  uint64_t            recipeKey = 0;
+
   // Cheap local-space bounds retained for planning. Producers may leave this
   // unset when the backend should use its conservative origin fallback.
   SbVec3f             boundsCenter = SbVec3f(0.0f, 0.0f, 0.0f);

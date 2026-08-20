@@ -257,6 +257,26 @@ makeIRGeometryIdentity(SoIRRenderAction * action,
   if (revision == 0) revision = 1;
 }
 
+uint64_t
+makeIRGeometryRecipeKey(SoState * state, const SoShape * shape)
+{
+  const SoCoordinateElement * coordinates =
+    SoCoordinateElement::getInstance(state);
+  const SoNormalElement * normals = SoNormalElement::getInstance(state);
+  uint64_t key = mixIRCacheHash(IR_CACHE_HASH_OFFSET,
+    static_cast<uint64_t>(reinterpret_cast<uintptr_t>(shape)));
+  const void * coordinateSource = coordinates->is3D()
+    ? static_cast<const void *>(coordinates->getArrayPtr3())
+    : static_cast<const void *>(coordinates->getArrayPtr4());
+  key = mixIRCacheHash(key,
+    static_cast<uint64_t>(reinterpret_cast<uintptr_t>(coordinateSource)));
+  key = mixIRCacheHash(key, static_cast<uint64_t>(coordinates->getNum()));
+  key = mixIRCacheHash(key,
+    static_cast<uint64_t>(reinterpret_cast<uintptr_t>(normals->getArrayPtr())));
+  key = mixIRCacheHash(key, static_cast<uint64_t>(normals->getNum()));
+  return key == 0 ? 1 : key;
+}
+
 struct SoIRVertex {
   SbVec3f position;
   SbVec3f normal;
@@ -329,6 +349,8 @@ public:
     makeIRGeometryIdentity(action, shape,
                            this->geometryCacheKey,
                            this->geometryRevision);
+    this->geometryRecipeKey = makeIRGeometryRecipeKey(
+      action->getState(), shape);
   }
 
   void onTriangle(const SoPrimitiveVertex * v1,
@@ -515,6 +537,8 @@ private:
       command.geometry.resourceKey = makeIRGeometryResourceKey(
         command.geometry);
       command.geometry.resourceRevision = command.geometry.resourceKey;
+      command.geometry.recipeKey = mixIRCacheHash(
+        this->geometryRecipeKey, static_cast<uint64_t>(batchIndex + 1));
 
       SoRenderIR::fillCommandStateFromAction(
         this->action, command, std::max(batch.materialIndex, 0));
@@ -646,6 +670,7 @@ private:
   SoPrimitiveTopology topology;
   uint64_t geometryCacheKey = 0;
   uint64_t geometryRevision = 0;
+  uint64_t geometryRecipeKey = 0;
   std::vector<SoIRVertex> vertices;
   std::vector<SoIRPrimitiveRange> primitiveRanges;
 };

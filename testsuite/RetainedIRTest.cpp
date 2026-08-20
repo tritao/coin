@@ -190,6 +190,26 @@ runTest()
     }
   }
   dagRoot->unref();
+
+  SoSeparator * recipeRoot = new SoSeparator;
+  recipeRoot->ref();
+  SoCoordinate3 * recipeCoordinates = new SoCoordinate3;
+  recipeCoordinates->point.setValues(0, 3, triangle);
+  SoFaceSet * recipeFace = new SoFaceSet;
+  recipeFace->numVertices.set1Value(0, 3);
+  recipeRoot->addChild(recipeCoordinates);
+  recipeRoot->addChild(recipeFace);
+  recipeRoot->addChild(recipeFace);
+  action.apply(recipeRoot);
+  if (action.getDrawList().getNumCommands() != 2 ||
+      action.getDrawList().getNumGeometryResources() != 1 ||
+      action.getDrawList().getCommand(0).geometryHandle !=
+        action.getDrawList().getCommand(1).geometryHandle) {
+    std::cerr << "FAIL: repeated geometry recipe did not share one resource"
+              << std::endl;
+    result = 1;
+  }
+  recipeRoot->unref();
   action.apply(root);
 
   SoRenderCommand command;

@@ -148,6 +148,7 @@ public:
   std::vector<SoNode *> ownedPathNodeTable;
   std::unordered_map<SoNode *, size_t> branchDependencyHeads;
   std::vector<DependencyLink> branchDependencyLinks;
+  std::unordered_multimap<uint64_t, SoGeometryHandle> geometryRecipes;
   bool recordBranchDependencies = true;
   SoRenderStage renderStage = SoRenderStage::Main;
   SoIRRenderContext renderContextOverride;
@@ -351,12 +352,39 @@ SoIRRenderAction::addCommand(SoRenderCommand && command)
       state, this->drawlist);
   }
 
-  SoGeometryResource geometryResource;
-  geometryResource.geometry = retained.geometry;
-  geometryResource.sourceKey = retained.geometry.cacheKey;
-  geometryResource.revision = retained.geometry.revision;
-  retained.geometryHandle =
-    this->drawlist.addGeometryResource(std::move(geometryResource));
+  retained.geometryHandle = SO_INVALID_GEOMETRY_HANDLE;
+  if (PRIVATE(this)->recordBranchDependencies &&
+      retained.geometry.recipeKey != 0) {
+    const std::pair<
+      std::unordered_multimap<uint64_t, SoGeometryHandle>::const_iterator,
+      std::unordered_multimap<uint64_t, SoGeometryHandle>::const_iterator>
+      candidates = PRIVATE(this)->geometryRecipes.equal_range(
+        retained.geometry.recipeKey);
+    for (std::unordered_multimap<uint64_t, SoGeometryHandle>::const_iterator
+           candidate = candidates.first;
+         candidate != candidates.second; ++candidate) {
+      const SoGeometryResource * resource =
+        this->drawlist.getGeometryResource(candidate->second);
+      if (resource && resource->geometry.resourceKey ==
+                        retained.geometry.resourceKey) {
+        retained.geometryHandle = candidate->second;
+        break;
+      }
+    }
+  }
+  if (retained.geometryHandle == SO_INVALID_GEOMETRY_HANDLE) {
+    SoGeometryResource geometryResource;
+    geometryResource.geometry = retained.geometry;
+    geometryResource.sourceKey = retained.geometry.recipeKey;
+    geometryResource.revision = retained.geometry.revision;
+    retained.geometryHandle =
+      this->drawlist.addGeometryResource(std::move(geometryResource));
+    if (PRIVATE(this)->recordBranchDependencies &&
+        retained.geometry.recipeKey != 0) {
+      PRIVATE(this)->geometryRecipes.emplace(
+        retained.geometry.recipeKey, retained.geometryHandle);
+    }
+  }
   const int commandIndex = this->drawlist.getNumCommands();
   this->drawlist.addCommand(std::move(retained));
 
@@ -638,6 +666,27 @@ captureEffectiveMaterial(void * data, SoCallbackAction * action,
     action->getState(), replay->material, replay->materialIndex);
   return SoCallbackAction::ABORT;
 }
+
+void
+copyGeometryPayload(const SoGeometryDesc & source,
+                    const SoGeometryDesc & destination)
+{
+  if (source.positions) std::memcpy(
+    const_cast<float *>(destination.positions), source.positions,
+    static_cast<size_t>(source.vertexCount) * 3 * sizeof(float));
+  if (source.normals) std::memcpy(
+    const_cast<float *>(destination.normals), source.normals,
+    static_cast<size_t>(source.normalCount) * 3 * sizeof(float));
+  if (source.texcoords) std::memcpy(
+    const_cast<float *>(destination.texcoords), source.texcoords,
+    static_cast<size_t>(source.vertexCount) * 4 * sizeof(float));
+  if (source.colors) std::memcpy(
+    const_cast<float *>(destination.colors), source.colors,
+    static_cast<size_t>(source.vertexCount) * 4 * sizeof(float));
+  if (source.indices) std::memcpy(
+    const_cast<uint32_t *>(destination.indices), source.indices,
+    static_cast<size_t>(source.indexCount) * sizeof(uint32_t));
+}
 }
 
 int
@@ -712,11 +761,31 @@ SoIRRenderAction::updateCommandGeometryForStatePath(
   const SoIRBuffer::Checkpoint geometryCheckpoint =
     PRIVATE(this)->geometryPool.checkpoint();
 
+  const SoGeometryHandle sharedHandle =
+    this->drawlist.getCommand(static_cast<int>(commandIndices.front()))
+      .geometryHandle;
+  bool sharedRecipe = sharedHandle != SO_INVALID_GEOMETRY_HANDLE;
+  for (size_t i = 1; sharedRecipe && i < commandIndices.size(); ++i) {
+    sharedRecipe = this->drawlist.getCommand(
+      static_cast<int>(commandIndices[i])).geometryHandle == sharedHandle;
+  }
+  const size_t replacementCount = sharedRecipe ? 1 : commandIndices.size();
+
   PRIVATE(this)->recordBranchDependencies = false;
   bool replacementShapeMatches = true;
   const int changedChildIndex = statePath->getIndex(
     statePath->getFullLength() - 1);
-  if (changedChildIndex == 0) {
+  if (sharedRecipe) {
+    const SoPath * commandPath = this->getCommandPath(
+      static_cast<int>(commandIndices.front()));
+    if (commandPath) {
+      this->traverseAdditionalPath(const_cast<SoPath *>(commandPath));
+      replacementShapeMatches = this->drawlist.getNumCommands() ==
+        originalCommandCount + 1;
+    }
+    else replacementShapeMatches = false;
+  }
+  else if (changedChildIndex == 0) {
     const SoPath * firstCommandPath = this->getCommandPath(
       static_cast<int>(commandIndices.front()));
     const int branchPathLength = statePath->getFullLength() - 2;
@@ -729,7 +798,7 @@ SoIRRenderAction::updateCommandGeometryForStatePath(
       this->traverseAdditionalPath(branchPath);
       branchPath->unref();
       replacementShapeMatches = this->drawlist.getNumCommands() ==
-        originalCommandCount + static_cast<int>(commandIndices.size());
+        originalCommandCount + static_cast<int>(replacementCount);
     }
     else replacementShapeMatches = false;
   }
@@ -749,16 +818,16 @@ SoIRRenderAction::updateCommandGeometryForStatePath(
   PRIVATE(this)->recordBranchDependencies = true;
   bool replacementsCompatible = replacementShapeMatches &&
     this->drawlist.getNumCommands() ==
-      originalCommandCount + static_cast<int>(commandIndices.size()) &&
+      originalCommandCount + static_cast<int>(replacementCount) &&
     PRIVATE(this)->commandPathRecords.size() ==
-      originalRecordCount + commandIndices.size() &&
+      originalRecordCount + replacementCount &&
     !this->unsupportedRendering;
 
   for (size_t i = 0; replacementsCompatible && i < commandIndices.size(); ++i) {
     const SoRenderCommand & original = this->drawlist.getCommand(
       static_cast<int>(commandIndices[i]));
     const SoRenderCommand & replacement = this->drawlist.getCommand(
-      originalCommandCount + static_cast<int>(i));
+      originalCommandCount + static_cast<int>(sharedRecipe ? 0 : i));
     const SoGeometryDesc & source = replacement.geometry;
     const SoGeometryDesc & destination = original.geometry;
     replacementsCompatible = source.topology == destination.topology &&
@@ -778,41 +847,43 @@ SoIRRenderAction::updateCommandGeometryForStatePath(
   }
 
   if (replacementsCompatible) {
+    const SoRenderCommand & firstReplacement = this->drawlist.getCommand(
+      originalCommandCount);
+    const SoGeometryDesc & source = firstReplacement.geometry;
+    SoRenderCommand & firstOriginal = this->drawlist.getCommand(
+      static_cast<int>(commandIndices.front()));
+    const SoGeometryDesc destination = firstOriginal.geometry;
+    if (sharedRecipe) copyGeometryPayload(source, destination);
     for (size_t i = 0; i < commandIndices.size(); ++i) {
       SoRenderCommand & original = this->drawlist.getCommand(
         static_cast<int>(commandIndices[i]));
       const SoRenderCommand & replacement = this->drawlist.getCommand(
-        originalCommandCount + static_cast<int>(i));
-      const SoGeometryDesc & source = replacement.geometry;
-      const SoGeometryDesc & destination = original.geometry;
-      if (source.positions) std::memcpy(
-        const_cast<float *>(destination.positions), source.positions,
-        static_cast<size_t>(source.vertexCount) * 3 * sizeof(float));
-      if (source.normals) std::memcpy(
-        const_cast<float *>(destination.normals), source.normals,
-        static_cast<size_t>(source.normalCount) * 3 * sizeof(float));
-      if (source.texcoords) std::memcpy(
-        const_cast<float *>(destination.texcoords), source.texcoords,
-        static_cast<size_t>(source.vertexCount) * 4 * sizeof(float));
-      if (source.colors) std::memcpy(
-        const_cast<float *>(destination.colors), source.colors,
-        static_cast<size_t>(source.vertexCount) * 4 * sizeof(float));
-      if (source.indices) std::memcpy(
-        const_cast<uint32_t *>(destination.indices), source.indices,
-        static_cast<size_t>(source.indexCount) * sizeof(uint32_t));
-      SoRenderCommand retainedReplacement = replacement;
+        originalCommandCount + static_cast<int>(sharedRecipe ? 0 : i));
+      const SoGeometryDesc & replacementSource = replacement.geometry;
+      const SoGeometryDesc originalDestination = original.geometry;
+      if (!sharedRecipe) {
+        copyGeometryPayload(replacementSource, originalDestination);
+      }
+      SoRenderCommand retainedReplacement = sharedRecipe
+        ? original : replacement;
+      if (sharedRecipe) {
+        retainedReplacement.geometry = replacementSource;
+        retainedReplacement.pick = replacement.pick;
+      }
       retainedReplacement.geometryHandle = original.geometryHandle;
-      retainedReplacement.geometry.positions = destination.positions;
-      retainedReplacement.geometry.normals = destination.normals;
-      retainedReplacement.geometry.texcoords = destination.texcoords;
-      retainedReplacement.geometry.colors = destination.colors;
-      retainedReplacement.geometry.indices = destination.indices;
+      const SoGeometryDesc & retainedStorage = sharedRecipe
+        ? destination : originalDestination;
+      retainedReplacement.geometry.positions = retainedStorage.positions;
+      retainedReplacement.geometry.normals = retainedStorage.normals;
+      retainedReplacement.geometry.texcoords = retainedStorage.texcoords;
+      retainedReplacement.geometry.colors = retainedStorage.colors;
+      retainedReplacement.geometry.indices = retainedStorage.indices;
       original = std::move(retainedReplacement);
       SoGeometryResource * resource =
         this->drawlist.getGeometryResource(original.geometryHandle);
       if (resource) {
         resource->geometry = original.geometry;
-        resource->sourceKey = original.geometry.cacheKey;
+        resource->sourceKey = original.geometry.recipeKey;
         resource->revision = original.geometry.revision;
       }
     }
@@ -1001,6 +1072,7 @@ SoIRRenderAction::resetFrameResources()
   PRIVATE(this)->nextInstanceId = 1;
   PRIVATE(this)->lastPathInstanceId = 0;
   PRIVATE(this)->pathStatistics = PathStatistics();
+  PRIVATE(this)->geometryRecipes.clear();
   PRIVATE(this)->pathStatistics.estimatedStorageBytes =
     PRIVATE(this)->ownedPathNodeTable.size() * sizeof(SoNode *);
 }

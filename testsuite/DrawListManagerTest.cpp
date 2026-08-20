@@ -288,15 +288,15 @@ runTest()
   };
   sharedCoordinates->point.setValues(0, 3, initialTriangle);
   sharedGeometryBranch->addChild(sharedCoordinates);
+  SoFaceSet * sharedFace = new SoFaceSet;
+  sharedFace->numVertices.set1Value(0, 3);
   for (int i = 0; i < 3; ++i) {
     SoSeparator * occurrence = new SoSeparator;
     SoTranslation * offset = new SoTranslation;
     offset->translation.setValue(
       0.6f * static_cast<float>(i - 1), 0.0f, 0.0f);
-    SoFaceSet * face = new SoFaceSet;
-    face->numVertices.set1Value(0, 3);
     occurrence->addChild(offset);
-    occurrence->addChild(face);
+    occurrence->addChild(sharedFace);
     sharedGeometryBranch->addChild(occurrence);
   }
   sharedGeometryContainer->addChild(sharedGeometryBranch);
