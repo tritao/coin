@@ -90,6 +90,14 @@ The normal benchmark uses 500 occurrences and smoke mode uses 24. Each scene
 runs through LegacyGL when available and through DrawList compatibility and
 core contexts.
 
+Each retained assembly variant also measures three isolated edits:
+`placement_1`, `material_1`, and `geometry_definition_1`. Placement and
+material edits must update exactly one occurrence without rebuilding the
+DrawList. A geometry-definition edit updates one occurrence in the expanded
+baseline and every occurrence of the first definition in the shared variants.
+The benchmark rejects unexpected rebuilds or dependency counts and reports the
+mutation median and p95 separately from forced-rebuild timing.
+
 The deterministic workloads currently cover traversal/IR construction, render
 plan construction (including transparent sorting and depth segments), retained
 pick-table construction and resolution, selection churn, and repeated frame

@@ -69,6 +69,7 @@ struct SceneMutationHandles {
   std::vector<SoTranslation *> transforms;
   std::vector<SoMaterial *> materials;
   std::vector<SoCoordinate3 *> coordinates;
+  std::vector<SoCoordinate3 *> definitionCoordinates;
 };
 
 struct Measurement {
@@ -148,14 +149,20 @@ bool isAssemblyWorkload(WorkloadKind kind)
     kind == WorkloadKind::SharedAssemblyRecipe;
 }
 
+int assemblyDefinitionCount(int occurrenceCount)
+{
+  return std::min(20, std::max(1,
+    static_cast<int>(std::sqrt(static_cast<double>(occurrenceCount)))));
+}
+
 struct AssemblyPart {
   SoCoordinate3 * coordinates = nullptr;
   SoNormal * normals = nullptr;
   SoFaceSet * face = nullptr;
 };
 
-void addAssemblyGeometry(SoSeparator * parent, WorkloadKind kind,
-                         const AssemblyPart & part)
+SoCoordinate3 * addAssemblyGeometry(SoSeparator * parent, WorkloadKind kind,
+                                    const AssemblyPart & part)
 {
   if (kind == WorkloadKind::SharedAssemblyExpanded) {
     SoCoordinate3 * coordinates = new SoCoordinate3;
@@ -167,11 +174,9 @@ void addAssemblyGeometry(SoSeparator * parent, WorkloadKind kind,
     parent->addChild(coordinates);
     parent->addChild(normals);
     parent->addChild(face);
-    return;
+    return coordinates;
   }
 
-  parent->addChild(part.coordinates);
-  parent->addChild(part.normals);
   if (kind == WorkloadKind::SharedAssemblySources) {
     SoFaceSet * face = new SoFaceSet;
     face->numVertices = part.face->numVertices;
@@ -180,16 +185,17 @@ void addAssemblyGeometry(SoSeparator * parent, WorkloadKind kind,
   else {
     parent->addChild(part.face);
   }
+  return part.coordinates;
 }
 
 void populateAssemblyScene(SoSeparator * root, WorkloadKind kind,
-                           int occurrenceCount)
+                           int occurrenceCount,
+                           SceneMutationHandles * mutations = nullptr)
 {
   // A small deterministic set of reusable definitions is enough to expose
   // the ownership difference. Geometry size varies by definition so the
   // workload also contains a realistic mixture of small and medium parts.
-  const int definitionCount = std::min(20, std::max(1,
-    static_cast<int>(std::sqrt(static_cast<double>(occurrenceCount)))));
+  const int definitionCount = assemblyDefinitionCount(occurrenceCount);
   std::vector<AssemblyPart> parts(static_cast<size_t>(definitionCount));
   for (int definition = 0; definition < definitionCount; ++definition) {
     AssemblyPart & part = parts[static_cast<size_t>(definition)];
@@ -219,11 +225,25 @@ void populateAssemblyScene(SoSeparator * root, WorkloadKind kind,
                                    normals.data());
     part.face->numVertices.setValues(0, static_cast<int>(faceSizes.size()),
                                      faceSizes.data());
+    if (mutations) mutations->definitionCoordinates.push_back(part.coordinates);
   }
 
   SoNormalBinding * normalBinding = new SoNormalBinding;
   normalBinding->value = SoNormalBinding::PER_VERTEX;
   root->addChild(normalBinding);
+  std::vector<SoSeparator *> definitionBranches(
+    static_cast<size_t>(definitionCount));
+  for (int definition = 0; definition < definitionCount; ++definition) {
+    SoSeparator * branch = new SoSeparator;
+    branch->renderCaching = SoSeparator::OFF;
+    if (kind != WorkloadKind::SharedAssemblyExpanded) {
+      const AssemblyPart & part = parts[static_cast<size_t>(definition)];
+      branch->addChild(part.coordinates);
+      branch->addChild(part.normals);
+    }
+    definitionBranches[static_cast<size_t>(definition)] = branch;
+    root->addChild(branch);
+  }
   const int columns = static_cast<int>(std::ceil(std::sqrt(
     static_cast<double>(occurrenceCount))));
   const int occurrencesPerDefinition =
@@ -237,6 +257,7 @@ void populateAssemblyScene(SoSeparator * root, WorkloadKind kind,
       (static_cast<float>(occurrence / columns) - columns * 0.5f) * 0.65f,
       -0.002f * static_cast<float>(occurrence % 7));
     instance->addChild(placement);
+    if (mutations) mutations->transforms.push_back(placement);
     SoMaterial * material = new SoMaterial;
     const int shade = occurrence % 4;
     material->diffuseColor.setValue(0.25f + 0.18f * shade,
@@ -244,11 +265,13 @@ void populateAssemblyScene(SoSeparator * root, WorkloadKind kind,
                                     0.35f + 0.10f * shade);
     if (occurrence % 20 == 0) material->transparency = 0.25f;
     instance->addChild(material);
+    if (mutations) mutations->materials.push_back(material);
     const int definition = std::min(definitionCount - 1,
       occurrence / occurrencesPerDefinition);
-    addAssemblyGeometry(instance, kind,
+    SoCoordinate3 * occurrenceCoordinates = addAssemblyGeometry(instance, kind,
       parts[static_cast<size_t>(definition)]);
-    root->addChild(instance);
+    if (mutations) mutations->coordinates.push_back(occurrenceCoordinates);
+    definitionBranches[static_cast<size_t>(definition)]->addChild(instance);
   }
 }
 
@@ -282,7 +305,7 @@ SoSeparator * makeScene(WorkloadKind kind, int drawCount,
   if (isAssemblyWorkload(kind)) {
     camera->height = std::max(8.0f, static_cast<float>(
       std::ceil(std::sqrt(static_cast<double>(drawCount))) * 0.7));
-    populateAssemblyScene(root, kind, drawCount);
+    populateAssemblyScene(root, kind, drawCount, mutations);
     return root;
   }
 
@@ -535,8 +558,7 @@ bool runVariant(GLTestProfile profile,
     if (isAssemblyWorkload(workload)) {
       const uint64_t expectedResources =
         workload == WorkloadKind::SharedAssemblyRecipe
-        ? static_cast<uint64_t>(std::min(20, std::max(1,
-            static_cast<int>(std::sqrt(static_cast<double>(drawCount))))))
+        ? static_cast<uint64_t>(assemblyDefinitionCount(drawCount))
         : static_cast<uint64_t>(drawCount);
       if (renderStatistics.retainedCommands !=
             static_cast<uint64_t>(drawCount) ||
@@ -1540,6 +1562,128 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
   return true;
 }
 
+bool runAssemblyMutations(GLTestProfile profile, WorkloadKind workload,
+                          int occurrenceCount, int samples,
+                          std::vector<Measurement> & results,
+                          std::string & unavailable)
+{
+  GLTestContextConfig config;
+  config.profile = profile;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 256;
+  config.height = 256;
+  GLTestContext context;
+  if (!context.initialize(config)) {
+    unavailable = "requested OpenGL context is unavailable";
+    return false;
+  }
+
+  SceneMutationHandles mutations;
+  SoOrthographicCamera * camera = nullptr;
+  SoSeparator * scene = makeScene(workload, occurrenceCount, camera, &mutations);
+  const int definitionCount = assemblyDefinitionCount(occurrenceCount);
+  const int firstDefinitionOccurrences = std::min(occurrenceCount,
+    (occurrenceCount + definitionCount - 1) / definitionCount);
+  if (mutations.transforms.size() != static_cast<size_t>(occurrenceCount) ||
+      mutations.materials.size() != static_cast<size_t>(occurrenceCount) ||
+      mutations.coordinates.size() != static_cast<size_t>(occurrenceCount) ||
+      mutations.definitionCoordinates.size() !=
+        static_cast<size_t>(definitionCount)) {
+    unavailable = "assembly scene did not expose its mutation targets";
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+
+  SbViewportRegion viewport(SbVec2s(256, 256));
+  viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(256, 256));
+  SoRenderManager manager;
+  manager.setViewportRegion(viewport);
+  manager.setSceneGraph(scene);
+  manager.setCamera(camera);
+  manager.setLightingMode(SoRenderManager::UNLIT);
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+  manager.setRenderPhaseTimingEnabled(TRUE);
+  context.bindFramebuffer();
+  manager.render(TRUE, TRUE);
+
+  bool valid = true;
+  const auto measure = [&](const char * suffix, uint64_t expectedUpdates,
+                           const std::function<void(int)> & mutate) {
+    std::vector<double> frameTimes;
+    std::vector<double> constructionTimes;
+    for (int sample = 0; sample < samples; ++sample) {
+      mutate(sample);
+      context.bindFramebuffer();
+      const Clock::time_point start = Clock::now();
+      manager.render(TRUE, TRUE);
+      frameTimes.push_back(elapsedMs(start));
+      const SoRenderStatistics statistics = manager.getRenderStatistics();
+      constructionTimes.push_back(
+        statistics.drawListConstructionNanoseconds / 1000000.0);
+      if (statistics.drawListRebuilds != 0 ||
+          statistics.incrementalCommandUpdates != expectedUpdates) {
+        std::ostringstream reason;
+        reason << workloadName(workload) << ' ' << suffix
+               << " updated " << statistics.incrementalCommandUpdates
+               << " commands with " << statistics.drawListRebuilds
+               << " rebuilds; expected " << expectedUpdates
+               << " incremental updates";
+        unavailable = reason.str();
+        valid = false;
+        return;
+      }
+    }
+    Measurement result;
+    result.workload = std::string(workloadName(workload)) + '_' + suffix +
+      '_' + std::to_string(occurrenceCount);
+    result.renderer = "DrawList";
+    result.profile = profile == GLTestProfile::Core
+      ? "core" : "compatibility";
+    result.semanticDraws = occurrenceCount;
+    result.samples = samples;
+    result.cpuMedianMs = percentile(frameTimes, 0.5);
+    result.cpuP95Ms = percentile(frameTimes, 0.95);
+    result.mutationMedianMs = result.cpuMedianMs;
+    result.mutationP95Ms = result.cpuP95Ms;
+    result.drawListConstructionMs = percentile(constructionTimes, 0.5);
+    result.renderStatistics = manager.getRenderStatistics();
+    result.pixelChecksum = checksumPixels(context.readPixels());
+    results.push_back(result);
+  };
+
+  measure("placement_1", 1, [&](int sample) {
+    mutations.transforms[0]->translation.setValue(
+      (sample & 1) ? -0.02f : 0.02f, 0.0f, 0.0f);
+  });
+  if (valid) measure("material_1", 1, [&](int sample) {
+    mutations.materials[0]->diffuseColor.setValue(
+      (sample & 1) ? SbColor(0.8f, 0.3f, 0.2f)
+                   : SbColor(0.2f, 0.6f, 0.8f));
+  });
+  if (valid) {
+    SoCoordinate3 * geometryTarget =
+      workload == WorkloadKind::SharedAssemblyExpanded
+      ? mutations.coordinates[0] : mutations.definitionCoordinates[0];
+    const uint64_t expectedGeometryUpdates =
+      workload == WorkloadKind::SharedAssemblyExpanded
+      ? 1 : static_cast<uint64_t>(firstDefinitionOccurrences);
+    measure("geometry_definition_1", expectedGeometryUpdates,
+      [&](int sample) {
+        geometryTarget->point.set1Value(0,
+          SbVec3f((sample & 1) ? -0.10f : -0.06f, -0.06f, 0.0f));
+      });
+  }
+
+  manager.releaseRenderBackendResources();
+  manager.setCamera(nullptr);
+  manager.setSceneGraph(nullptr);
+  camera->unref();
+  scene->unref();
+  return valid;
+}
+
 Options parseOptions(int argc, char ** argv)
 {
   Options options;
@@ -1776,6 +1920,14 @@ int main(int argc, char ** argv)
           ":DrawList " +
           (profile == GLTestProfile::Core ? "core: " : "compatibility: ") +
           reason);
+        std::string mutationReason;
+        if (!runAssemblyMutations(profile, workload, occurrenceCount, samples,
+                                  results, mutationReason)) {
+          unavailable.push_back(std::string(workloadName(workload)) +
+            ":mutations DrawList " +
+            (profile == GLTestProfile::Core ? "core: " : "compatibility: ") +
+            mutationReason);
+        }
       }
     }
   };
