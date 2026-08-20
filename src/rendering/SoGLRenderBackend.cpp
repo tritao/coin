@@ -2250,6 +2250,13 @@ SoGLRenderBackend::classifyInstanceCompatibility(
   if (!this->canInstanceCommand(first) || !this->canInstanceCommand(next)) {
     return InstanceCompatibility::COMMAND_INELIGIBLE;
   }
+  return this->classifyEligibleInstanceCompatibility(first, next);
+}
+
+SoGLRenderBackend::InstanceCompatibility
+SoGLRenderBackend::classifyEligibleInstanceCompatibility(
+  const SoRenderCommand & first, const SoRenderCommand & next) const
+{
   const auto firstCache = this->commandToCache.find(&first);
   const auto nextCache = this->commandToCache.find(&next);
   if (firstCache == this->commandToCache.end() ||
@@ -4913,7 +4920,10 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
           const SoRenderCommand & nextCommand = drawlist.getCommand(
             static_cast<int>(next.commandIndex));
           const InstanceCompatibility compatibility =
-            this->classifyInstanceCompatibility(first, nextCommand);
+            this->classifyInstanceCommand(nextCommand) ==
+                InstanceCommandClass::ELIGIBLE
+              ? this->classifyEligibleInstanceCompatibility(first, nextCommand)
+              : InstanceCompatibility::COMMAND_INELIGIBLE;
           if (compatibility != InstanceCompatibility::COMPATIBLE) {
             SoRenderStatistics & statistics =
               this->submissionCache.statistics;

@@ -541,6 +541,8 @@ private:
     const SoRenderCommand & command) const;
   InstanceCompatibility classifyInstanceCompatibility(
     const SoRenderCommand & first, const SoRenderCommand & next) const;
+  InstanceCompatibility classifyEligibleInstanceCompatibility(
+    const SoRenderCommand & first, const SoRenderCommand & next) const;
   void drawInstancedCommands(const SoDrawList & drawlist,
                              const std::vector<uint32_t> & commandIndices,
                              const SoRenderParams & params);
