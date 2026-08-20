@@ -76,6 +76,20 @@ Retained runs additionally enable opt-in per-command CPU phase timing for
 command preparation, state setup, program/uniform binding, and draw submission.
 Normal rendering leaves this intrusive timing disabled.
 
+The `shared_assembly_{expanded,sources,recipe}` workloads render the same
+deterministic collection of reusable part definitions and transformed
+occurrences with three ownership models. `expanded` duplicates the generated
+geometry, `sources` shares coordinate and normal nodes between distinct shape
+nodes, and `recipe` repeats the complete shape recipe. The retained variants
+force reconstruction for every measured frame and report both retained command
+and geometry-resource counts. This makes resource sharing observable even when
+the backend can batch byte-identical geometry in every ownership model.
+
+Use `--assembly-only N` to run only these three scenes with `N` occurrences.
+The normal benchmark uses 500 occurrences and smoke mode uses 24. Each scene
+runs through LegacyGL when available and through DrawList compatibility and
+core contexts.
+
 The deterministic workloads currently cover traversal/IR construction, render
 plan construction (including transparent sorting and depth segments), retained
 pick-table construction and resolution, selection churn, and repeated frame

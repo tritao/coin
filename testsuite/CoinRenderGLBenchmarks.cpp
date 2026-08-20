@@ -50,7 +50,10 @@ enum class WorkloadKind {
   MaterialChurn,
   Transparency,
   DensePicking,
-  FeatureRich
+  FeatureRich,
+  SharedAssemblyExpanded,
+  SharedAssemblySources,
+  SharedAssemblyRecipe
 };
 
 struct Options {
@@ -58,6 +61,7 @@ struct Options {
   int samples = 0;
   int rebuildOnly = 0;
   int incrementalOnly = 0;
+  int assemblyOnly = 0;
   std::string output;
 };
 
@@ -127,8 +131,125 @@ const char * workloadName(WorkloadKind kind)
   case WorkloadKind::Transparency: return "transparent_sorting";
   case WorkloadKind::DensePicking: return "single_pick_dense_scene";
   case WorkloadKind::FeatureRich: return "feature_rich_scene_end_to_end";
+  case WorkloadKind::SharedAssemblyExpanded:
+    return "shared_assembly_expanded";
+  case WorkloadKind::SharedAssemblySources:
+    return "shared_assembly_sources";
+  case WorkloadKind::SharedAssemblyRecipe:
+    return "shared_assembly_recipe";
   }
   return "unknown";
+}
+
+bool isAssemblyWorkload(WorkloadKind kind)
+{
+  return kind == WorkloadKind::SharedAssemblyExpanded ||
+    kind == WorkloadKind::SharedAssemblySources ||
+    kind == WorkloadKind::SharedAssemblyRecipe;
+}
+
+struct AssemblyPart {
+  SoCoordinate3 * coordinates = nullptr;
+  SoNormal * normals = nullptr;
+  SoFaceSet * face = nullptr;
+};
+
+void addAssemblyGeometry(SoSeparator * parent, WorkloadKind kind,
+                         const AssemblyPart & part)
+{
+  if (kind == WorkloadKind::SharedAssemblyExpanded) {
+    SoCoordinate3 * coordinates = new SoCoordinate3;
+    coordinates->point = part.coordinates->point;
+    SoNormal * normals = new SoNormal;
+    normals->vector = part.normals->vector;
+    SoFaceSet * face = new SoFaceSet;
+    face->numVertices = part.face->numVertices;
+    parent->addChild(coordinates);
+    parent->addChild(normals);
+    parent->addChild(face);
+    return;
+  }
+
+  parent->addChild(part.coordinates);
+  parent->addChild(part.normals);
+  if (kind == WorkloadKind::SharedAssemblySources) {
+    SoFaceSet * face = new SoFaceSet;
+    face->numVertices = part.face->numVertices;
+    parent->addChild(face);
+  }
+  else {
+    parent->addChild(part.face);
+  }
+}
+
+void populateAssemblyScene(SoSeparator * root, WorkloadKind kind,
+                           int occurrenceCount)
+{
+  // A small deterministic set of reusable definitions is enough to expose
+  // the ownership difference. Geometry size varies by definition so the
+  // workload also contains a realistic mixture of small and medium parts.
+  const int definitionCount = std::min(20, std::max(1,
+    static_cast<int>(std::sqrt(static_cast<double>(occurrenceCount)))));
+  std::vector<AssemblyPart> parts(static_cast<size_t>(definitionCount));
+  for (int definition = 0; definition < definitionCount; ++definition) {
+    AssemblyPart & part = parts[static_cast<size_t>(definition)];
+    part.coordinates = new SoCoordinate3;
+    part.normals = new SoNormal;
+    part.face = new SoFaceSet;
+    const int triangleCount = 8 + (definition % 5) * 8;
+    std::vector<SbVec3f> positions;
+    std::vector<SbVec3f> normals;
+    std::vector<int32_t> faceSizes(static_cast<size_t>(triangleCount), 3);
+    positions.reserve(static_cast<size_t>(triangleCount * 3));
+    normals.reserve(static_cast<size_t>(triangleCount * 3));
+    for (int triangle = 0; triangle < triangleCount; ++triangle) {
+      const float angle = static_cast<float>(triangle) * 0.73f;
+      const float radius = 0.25f + 0.015f * static_cast<float>(definition);
+      const SbVec3f center(std::cos(angle) * radius,
+                           std::sin(angle) * radius,
+                           0.015f * static_cast<float>(triangle % 3));
+      positions.push_back(center + SbVec3f(-0.08f, -0.06f, 0.0f));
+      positions.push_back(center + SbVec3f( 0.08f, -0.06f, 0.0f));
+      positions.push_back(center + SbVec3f( 0.00f,  0.09f, 0.0f));
+      normals.insert(normals.end(), 3, SbVec3f(0.0f, 0.0f, 1.0f));
+    }
+    part.coordinates->point.setValues(0, static_cast<int>(positions.size()),
+                                      positions.data());
+    part.normals->vector.setValues(0, static_cast<int>(normals.size()),
+                                   normals.data());
+    part.face->numVertices.setValues(0, static_cast<int>(faceSizes.size()),
+                                     faceSizes.data());
+  }
+
+  SoNormalBinding * normalBinding = new SoNormalBinding;
+  normalBinding->value = SoNormalBinding::PER_VERTEX;
+  root->addChild(normalBinding);
+  const int columns = static_cast<int>(std::ceil(std::sqrt(
+    static_cast<double>(occurrenceCount))));
+  const int occurrencesPerDefinition =
+    (occurrenceCount + definitionCount - 1) / definitionCount;
+  for (int occurrence = 0; occurrence < occurrenceCount; ++occurrence) {
+    SoSeparator * instance = new SoSeparator;
+    instance->renderCaching = SoSeparator::OFF;
+    SoTranslation * placement = new SoTranslation;
+    placement->translation.setValue(
+      (static_cast<float>(occurrence % columns) - columns * 0.5f) * 0.65f,
+      (static_cast<float>(occurrence / columns) - columns * 0.5f) * 0.65f,
+      -0.002f * static_cast<float>(occurrence % 7));
+    instance->addChild(placement);
+    SoMaterial * material = new SoMaterial;
+    const int shade = occurrence % 4;
+    material->diffuseColor.setValue(0.25f + 0.18f * shade,
+                                    0.75f - 0.12f * shade,
+                                    0.35f + 0.10f * shade);
+    if (occurrence % 20 == 0) material->transparency = 0.25f;
+    instance->addChild(material);
+    const int definition = std::min(definitionCount - 1,
+      occurrence / occurrencesPerDefinition);
+    addAssemblyGeometry(instance, kind,
+      parts[static_cast<size_t>(definition)]);
+    root->addChild(instance);
+  }
 }
 
 SoSeparator * makeScene(WorkloadKind kind, int drawCount,
@@ -157,6 +278,13 @@ SoSeparator * makeScene(WorkloadKind kind, int drawCount,
   SoMaterial * defaultMaterial = new SoMaterial;
   defaultMaterial->diffuseColor.setValue(0.3f, 0.7f, 1.0f);
   root->addChild(defaultMaterial);
+
+  if (isAssemblyWorkload(kind)) {
+    camera->height = std::max(8.0f, static_cast<float>(
+      std::ceil(std::sqrt(static_cast<double>(drawCount))) * 0.7));
+    populateAssemblyScene(root, kind, drawCount);
+    return root;
+  }
 
   const SbVec3f triangle[] = {
     SbVec3f(-0.42f, -0.42f, 0.0f),
@@ -404,10 +532,35 @@ bool runVariant(GLTestProfile profile,
   glDeleteQueries(1, &query);
   const SoRenderStatistics renderStatistics = manager.getRenderStatistics();
   if (pipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
+    if (isAssemblyWorkload(workload)) {
+      const uint64_t expectedResources =
+        workload == WorkloadKind::SharedAssemblyRecipe
+        ? static_cast<uint64_t>(std::min(20, std::max(1,
+            static_cast<int>(std::sqrt(static_cast<double>(drawCount))))))
+        : static_cast<uint64_t>(drawCount);
+      if (renderStatistics.retainedCommands !=
+            static_cast<uint64_t>(drawCount) ||
+          renderStatistics.retainedGeometryResources != expectedResources) {
+        std::cerr << "FAIL: " << workloadName(workload)
+                  << " retained unexpected ownership counts"
+                  << " (commands=" << renderStatistics.retainedCommands
+                  << ", resources="
+                  << renderStatistics.retainedGeometryResources
+                  << ", expected-resources=" << expectedResources << ")\n";
+        camera->unref();
+        scene->unref();
+        return false;
+      }
+    }
     const bool expectedInstanceCoverage = drawCount >= 20
       ? renderStatistics.instancedCommands == static_cast<uint64_t>(drawCount)
       : renderStatistics.instancedCommands != 0;
-    const bool expectedBatching = workload == WorkloadKind::FeatureRich
+    const bool expectedAssembly = isAssemblyWorkload(workload);
+    const bool expectedBatching = expectedAssembly
+      ? (workload != WorkloadKind::SharedAssemblyRecipe ||
+         (renderStatistics.instancedCommands != 0 &&
+          renderStatistics.drawCalls < static_cast<uint64_t>(drawCount)))
+      : workload == WorkloadKind::FeatureRich
       ? expectedInstanceCoverage &&
         renderStatistics.drawCalls < static_cast<uint64_t>(drawCount) &&
         renderStatistics.instanceBreakGeometryResource != 0 &&
@@ -1398,10 +1551,13 @@ Options parseOptions(int argc, char ** argv)
       options.rebuildOnly = std::atoi(argv[++i]);
     else if (arg == "--incremental-only" && i + 1 < argc)
       options.incrementalOnly = std::atoi(argv[++i]);
+    else if (arg == "--assembly-only" && i + 1 < argc)
+      options.assemblyOnly = std::atoi(argv[++i]);
     else if (arg == "--output" && i + 1 < argc) options.output = argv[++i];
     else {
       std::cerr << "Usage: CoinRenderGLBenchmarks [--smoke] [--samples N] "
                    "[--rebuild-only N] [--incremental-only N] "
+                   "[--assembly-only N] "
                    "[--output FILE]\n";
       std::exit(2);
     }
@@ -1478,6 +1634,10 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.renderStatistics.skippedVertexArrayBinds
         << ", \"drawlist_rebuilds\": "
         << r.renderStatistics.drawListRebuilds
+        << ", \"retained_commands\": "
+        << r.renderStatistics.retainedCommands
+        << ", \"retained_geometry_resources\": "
+        << r.renderStatistics.retainedGeometryResources
         << ", \"retained_path_commands\": "
         << r.renderStatistics.retainedPathCommands
         << ", \"retained_unique_paths\": "
@@ -1582,6 +1742,43 @@ int main(int argc, char ** argv)
   };
   std::vector<Measurement> results;
   std::vector<std::string> unavailable;
+  const auto runAssemblyVariants = [&](int occurrenceCount) {
+    const WorkloadKind assemblyWorkloads[] = {
+      WorkloadKind::SharedAssemblyExpanded,
+      WorkloadKind::SharedAssemblySources,
+      WorkloadKind::SharedAssemblyRecipe
+    };
+    for (WorkloadKind workload : assemblyWorkloads) {
+#if COIN_HAVE_LEGACY_GL_RENDERER
+      Measurement legacy;
+      std::string legacyReason;
+      if (runVariant(GLTestProfile::Compatibility,
+                     SoRenderManager::RenderPipeline::LEGACY_GL,
+                     "LegacyGL", workload, occurrenceCount, samples,
+                     legacy, legacyReason)) {
+        results.push_back(legacy);
+      }
+      else unavailable.push_back(std::string(workloadName(workload)) +
+        ":LegacyGL: " + legacyReason);
+#endif
+      const GLTestProfile profiles[] = {
+        GLTestProfile::Compatibility, GLTestProfile::Core
+      };
+      for (GLTestProfile profile : profiles) {
+        Measurement retained;
+        std::string reason;
+        if (runVariant(profile, SoRenderManager::RenderPipeline::DRAW_LIST,
+                       "DrawList", workload, occurrenceCount, samples,
+                       retained, reason, true)) {
+          results.push_back(retained);
+        }
+        else unavailable.push_back(std::string(workloadName(workload)) +
+          ":DrawList " +
+          (profile == GLTestProfile::Core ? "core: " : "compatibility: ") +
+          reason);
+      }
+    }
+  };
   if (options.incrementalOnly > 0) {
     std::string reason;
     if (!runIncrementalMutationScaling(
@@ -1590,6 +1787,18 @@ int main(int argc, char ** argv)
       unavailable.push_back("incremental_mutation_scaling:DrawList core: " +
                             reason);
     }
+    const std::string document = toJson(results, unavailable, options);
+    if (options.output.empty()) std::cout << document;
+    else {
+      std::ofstream output(options.output.c_str());
+      if (!output) return 1;
+      output << document;
+    }
+    SoDB::finish();
+    return results.empty() ? 77 : 0;
+  }
+  if (options.assemblyOnly > 0) {
+    runAssemblyVariants(options.assemblyOnly);
     const std::string document = toJson(results, unavailable, options);
     if (options.output.empty()) std::cout << document;
     else {
@@ -1656,6 +1865,7 @@ int main(int argc, char ** argv)
     else unavailable.push_back(std::string(workloadName(workloads[i])) +
       ":DrawList core: " + coreReason);
   }
+  runAssemblyVariants(options.smoke ? 24 : 500);
   const int rebuildCounts[] = {
     options.smoke ? 40 : 500,
     options.smoke ? 0 : 5000,

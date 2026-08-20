@@ -2615,6 +2615,10 @@ SoRenderManager::getRenderStatistics() const
   statistics.incrementalCommandUpdates =
     PRIVATE(this)->incrementalCommandUpdates;
   if (PRIVATE(this)->irAction) {
+    const SoDrawList & drawlist = PRIVATE(this)->irAction->getDrawList();
+    statistics.retainedCommands = drawlist.getNumCommands();
+    statistics.retainedGeometryResources =
+      drawlist.getNumGeometryResources();
     const SoIRRenderAction::PathStatistics & paths =
       PRIVATE(this)->irAction->getPathStatistics();
     statistics.retainedPathCommands = paths.commands;
