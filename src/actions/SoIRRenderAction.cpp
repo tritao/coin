@@ -73,6 +73,7 @@
 #include <cstring>
 #include <limits>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 SO_ACTION_SOURCE(SoIRRenderAction);
@@ -283,7 +284,14 @@ SoIRRenderAction::beginFrame()
 void
 SoIRRenderAction::addCommand(const SoRenderCommand & command)
 {
-  SoRenderCommand retained = command;
+  SoRenderCommand copy = command;
+  this->addCommand(std::move(copy));
+}
+
+void
+SoIRRenderAction::addCommand(SoRenderCommand && command)
+{
+  SoRenderCommand & retained = command;
   if (retained.objectId == 0) {
     const SoPath * currentPath = this->getCurPath();
     SoNode * tail = currentPath ? currentPath->getTail() : nullptr;
@@ -364,7 +372,7 @@ SoIRRenderAction::addCommand(const SoRenderCommand & command)
   const int commandIndex = this->drawlist.getNumCommands();
   PRIVATE(this)->commandAuthoredVisibility.push_back(
     retained.state.raster.visible);
-  this->drawlist.addCommand(retained);
+  this->drawlist.addCommand(std::move(retained));
 
   const SoPath * currentPath = this->getCurPath();
   // A retained frame owns a snapshot of each command path. Keep the nodes

@@ -56,6 +56,7 @@ class SoVBO;
 #include <chrono>
 #include <cstring>
 #include <cstdlib>
+#include <utility>
 #include <vector>
 
 #ifdef HAVE_CONFIG_H
@@ -518,7 +519,7 @@ private:
       }
       this->action->applyRenderStage(command);
       command.userData = this->shape;
-      this->action->addCommand(command);
+      this->action->addCommand(std::move(command));
     }
     this->primitiveRanges.clear();
   }

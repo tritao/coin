@@ -720,6 +720,7 @@ public:
 #endif
 
   void addCommand(const SoRenderCommand & cmd);
+  void addCommand(SoRenderCommand && cmd);
   SoRenderCommand & emplaceCommand();
 
   //! Append a geometry resource and return its stable one-based handle.

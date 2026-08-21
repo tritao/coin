@@ -44,6 +44,7 @@
 #include <climits>
 #include <cstdlib>
 #include <inttypes.h>
+#include <utility>
 
 namespace {
 
@@ -363,6 +364,14 @@ SoDrawList::addCommand(const SoRenderCommand & cmd)
   this->pickLUT.clear();
   this->pickLUTGeneration = 0;
   this->pickLUTValid = false;
+}
+
+void
+SoDrawList::addCommand(SoRenderCommand && cmd)
+{
+  this->commands.push_back(std::move(cmd));
+  this->pickLUT.clear();
+  this->pickLUTGeneration = 0;
 }
 
 SoRenderCommand &
