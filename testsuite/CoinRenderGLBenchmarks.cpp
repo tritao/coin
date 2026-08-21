@@ -55,10 +55,17 @@ struct Measurement {
   double gpuP95Ms = 0.0;
   double completionMedianMs = 0.0;
   double completionP95Ms = 0.0;
+  double drawListConstructionMedianMs = 0.0;
+  double planConstructionMedianMs = 0.0;
+  double backendSubmissionMedianMs = 0.0;
   double coldPickMs = 0.0;
+  double coldPickBufferUpdateMs = 0.0;
   double refreshPickMs = 0.0;
+  double refreshPickBufferUpdateMs = 0.0;
   double pickMedianMs = 0.0;
   double pickP95Ms = 0.0;
+  double pickQueryMedianMs = 0.0;
+  double pickResultResolutionMedianMs = 0.0;
   uint64_t pixelChecksum = 0;
 };
 
@@ -138,6 +145,8 @@ bool runVariant(GLTestProfile profile,
   manager.setCamera(camera);
   manager.setLightingMode(SoRenderManager::UNLIT);
   manager.setRenderPipeline(pipeline);
+  manager.setRenderPhaseTimingEnabled(
+    pipeline == SoRenderManager::RenderPipeline::DRAW_LIST);
 #if COIN_HAVE_LEGACY_GL_RENDERER
   if (pipeline == SoRenderManager::RenderPipeline::LEGACY_GL) {
     manager.setGLRenderAction(&legacyAction);
@@ -160,6 +169,9 @@ bool runVariant(GLTestProfile profile,
   std::vector<double> cpu;
   std::vector<double> gpu;
   std::vector<double> completion;
+  std::vector<double> drawListConstruction;
+  std::vector<double> planConstruction;
+  std::vector<double> backendSubmission;
   GLuint query = 0;
   glGenQueries(1, &query);
   for (int sample = 0; sample < samples; ++sample) {
@@ -169,6 +181,14 @@ bool runVariant(GLTestProfile profile,
     const Clock::time_point cpuStart = Clock::now();
     manager.render(TRUE, TRUE);
     cpu.push_back(elapsedMs(cpuStart));
+    const SoRenderManager::RenderPhaseStatistics renderPhases =
+      manager.getRenderPhaseStatistics();
+    drawListConstruction.push_back(
+      renderPhases.drawListConstructionNanoseconds / 1000000.0);
+    planConstruction.push_back(
+      renderPhases.planConstructionNanoseconds / 1000000.0);
+    backendSubmission.push_back(
+      renderPhases.backendSubmissionNanoseconds / 1000000.0);
     glEndQuery(GL_TIME_ELAPSED);
     GLuint64 nanoseconds = 0;
     glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
@@ -179,7 +199,11 @@ bool runVariant(GLTestProfile profile,
 
   std::vector<double> pick;
   double coldPick = 0.0;
+  double coldPickBufferUpdate = 0.0;
   double refreshPick = 0.0;
+  double refreshPickBufferUpdate = 0.0;
+  std::vector<double> pickQuery;
+  std::vector<double> pickResultResolution;
   if (workload == WorkloadKind::DensePicking) {
     SoSeparator * legacyPickRoot = NULL;
 #if COIN_HAVE_LEGACY_GL_RENDERER
@@ -219,10 +243,23 @@ bool runVariant(GLTestProfile profile,
     const Clock::time_point coldPickStart = Clock::now();
     performPick();
     coldPick = elapsedMs(coldPickStart);
+    if (pipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
+      const SoRenderManager::RenderPhaseStatistics phases =
+        manager.getRenderPhaseStatistics();
+      coldPickBufferUpdate =
+        phases.pickBufferUpdateNanoseconds / 1000000.0;
+    }
     for (int sample = 0; sample < samples; ++sample) {
       const Clock::time_point pickStart = Clock::now();
       performPick();
       pick.push_back(elapsedMs(pickStart));
+      if (pipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
+        const SoRenderManager::RenderPhaseStatistics phases =
+          manager.getRenderPhaseStatistics();
+        pickQuery.push_back(phases.pickQueryNanoseconds / 1000000.0);
+        pickResultResolution.push_back(
+          phases.pickResultResolutionNanoseconds / 1000000.0);
+      }
     }
     scene->touch();
     context.bindFramebuffer();
@@ -230,6 +267,12 @@ bool runVariant(GLTestProfile profile,
     const Clock::time_point refreshPickStart = Clock::now();
     performPick();
     refreshPick = elapsedMs(refreshPickStart);
+    if (pipeline == SoRenderManager::RenderPipeline::DRAW_LIST) {
+      const SoRenderManager::RenderPhaseStatistics phases =
+        manager.getRenderPhaseStatistics();
+      refreshPickBufferUpdate =
+        phases.pickBufferUpdateNanoseconds / 1000000.0;
+    }
     if (legacyPickRoot) legacyPickRoot->unref();
   }
 
@@ -258,11 +301,22 @@ bool runVariant(GLTestProfile profile,
   result.gpuP95Ms = percentile(gpu, 0.95);
   result.completionMedianMs = percentile(completion, 0.5);
   result.completionP95Ms = percentile(completion, 0.95);
+  result.drawListConstructionMedianMs =
+    percentile(drawListConstruction, 0.5);
+  result.planConstructionMedianMs = percentile(planConstruction, 0.5);
+  result.backendSubmissionMedianMs = percentile(backendSubmission, 0.5);
   if (!pick.empty()) {
     result.coldPickMs = coldPick;
+    result.coldPickBufferUpdateMs = coldPickBufferUpdate;
     result.refreshPickMs = refreshPick;
+    result.refreshPickBufferUpdateMs = refreshPickBufferUpdate;
     result.pickMedianMs = percentile(pick, 0.5);
     result.pickP95Ms = percentile(pick, 0.95);
+    if (!pickQuery.empty()) {
+      result.pickQueryMedianMs = percentile(pickQuery, 0.5);
+      result.pickResultResolutionMedianMs =
+        percentile(pickResultResolution, 0.5);
+    }
   }
   result.pixelChecksum = pixelChecksum;
   return true;
@@ -291,7 +345,7 @@ std::string toJson(const std::vector<Measurement> & results,
 {
   std::ostringstream out;
   out << std::fixed << std::setprecision(6);
-  out << "{\n  \"schema_version\": 1,\n  \"mode\": \""
+  out << "{\n  \"schema_version\": 2,\n  \"mode\": \""
       << (options.smoke ? "smoke" : "benchmark")
       << "\",\n  \"time_unit\": \"ms\",\n  \"benchmarks\": [\n";
   for (size_t i = 0; i < results.size(); ++i) {
@@ -307,10 +361,23 @@ std::string toJson(const std::vector<Measurement> & results,
         << ", \"gpu_p95_ms\": " << r.gpuP95Ms
         << ", \"completion_median_ms\": " << r.completionMedianMs
         << ", \"completion_p95_ms\": " << r.completionP95Ms
+        << ", \"drawlist_construction_median_ms\": "
+        << r.drawListConstructionMedianMs
+        << ", \"plan_construction_median_ms\": "
+        << r.planConstructionMedianMs
+        << ", \"backend_submission_median_ms\": "
+        << r.backendSubmissionMedianMs
         << ", \"cold_pick_ms\": " << r.coldPickMs
+        << ", \"cold_pick_buffer_update_ms\": "
+        << r.coldPickBufferUpdateMs
         << ", \"refresh_pick_ms\": " << r.refreshPickMs
+        << ", \"refresh_pick_buffer_update_ms\": "
+        << r.refreshPickBufferUpdateMs
         << ", \"pick_median_ms\": " << r.pickMedianMs
         << ", \"pick_p95_ms\": " << r.pickP95Ms
+        << ", \"pick_query_median_ms\": " << r.pickQueryMedianMs
+        << ", \"pick_result_resolution_median_ms\": "
+        << r.pickResultResolutionMedianMs
         << ", \"pixel_checksum\": " << r.pixelChecksum << "}";
     if (i + 1 != results.size()) out << ',';
     out << '\n';

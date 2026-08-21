@@ -82,10 +82,15 @@ context. It reports CPU render-call time, GPU timer-query time, end-to-end GPU
 completion time, dense-scene closest-pick latency, and a non-empty-frame pixel checksum. Unsupported profiles are
 reported in the JSON `unavailable` array rather than being mistaken for results.
 Picking is split into one-time cold target creation, target refresh after a
-changed frame, and warm repeated-hover latency. Renderer-internal counters and
-more detailed phase timing can be added in a later instrumentation layer; this
-infrastructure branch deliberately depends only on the renderer API available
-at its stack base.
+changed frame, and warm repeated-hover latency.
+
+The GL benchmark explicitly enables coarse manager phase timing. JSON schema
+version 2 separates draw-list construction, render-plan construction, and
+backend submission. It also separates pick-plan construction, pick-buffer
+updates, backend pick queries, and result resolution. Timing remains disabled
+for normal `SoRenderManager` users, so these clock reads do not affect ordinary
+rendering. A zero-valued phase means it did not run; for example, a warm hover
+pick normally reuses its existing pick buffer.
 
 The deterministic workloads currently cover traversal/IR construction, render
 plan construction (including transparent sorting and depth segments), retained

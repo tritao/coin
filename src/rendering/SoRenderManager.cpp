@@ -61,6 +61,7 @@
 #include <Inventor/elements/SoLazyElement.h>
 
 #include <algorithm>
+#include <chrono>
 //FIXME:Need this include early, since including it via SoRenderManagerP.h will cause problems for cygwin. Don't understand the root cause BFG 20090629
 #include <vector>
 
@@ -401,6 +402,8 @@ SoRenderManager::SoRenderManager(void)
   PRIVATE(this)->lightingmode = SoRenderManager::LIT;
   PRIVATE(this)->irAction = NULL;
   PRIVATE(this)->renderBackend = NULL;
+  PRIVATE(this)->renderPhaseTimingEnabled = FALSE;
+  PRIVATE(this)->renderPhaseStatistics = RenderPhaseStatistics();
   PRIVATE(this)->renderBackendContextId = 0;
   PRIVATE(this)->drawListCallbackScope = FALSE;
   PRIVATE(this)->pickTargetDirty = TRUE;
@@ -996,6 +999,15 @@ void
 SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
                                         const SbBool clearzbuffer)
 {
+  using RenderPhaseClock = std::chrono::steady_clock;
+  RenderPhaseStatistics & phaseStatistics =
+    PRIVATE(this)->renderPhaseStatistics;
+  phaseStatistics.drawListConstructionNanoseconds = 0;
+  phaseStatistics.planConstructionNanoseconds = 0;
+  phaseStatistics.backendSubmissionNanoseconds = 0;
+  const SbBool measurePhases = PRIVATE(this)->renderPhaseTimingEnabled;
+  const RenderPhaseClock::time_point drawListStart = measurePhases
+    ? RenderPhaseClock::now() : RenderPhaseClock::time_point();
   const SoRenderManager::RenderMode renderMode = PRIVATE(this)->rendermode;
   const SoRenderManager::StereoMode stereoMode = PRIVATE(this)->stereomode;
   const SbBool hasSuperimpositions =
@@ -1263,6 +1275,12 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
 
   SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
 
+  if (measurePhases) {
+    phaseStatistics.drawListConstructionNanoseconds =
+      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        RenderPhaseClock::now() - drawListStart).count());
+  }
+
   SoRenderParams params = {};
   params.viewport = viewport;
   // The retained traversal scopes its scene roots and restores the action
@@ -1288,9 +1306,23 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
                  (clearzbuffer ? SO_PARAM_CLEAR_DEPTH : 0u);
   SoRenderPlanner planner;
   SoRenderPlan plan;
+  const RenderPhaseClock::time_point planStart = measurePhases
+    ? RenderPhaseClock::now() : RenderPhaseClock::time_point();
   planner.build(drawlist, plan);
+  if (measurePhases) {
+    phaseStatistics.planConstructionNanoseconds =
+      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        RenderPhaseClock::now() - planStart).count());
+  }
 
+  const RenderPhaseClock::time_point submissionStart = measurePhases
+    ? RenderPhaseClock::now() : RenderPhaseClock::time_point();
   PRIVATE(this)->renderBackend->render(drawlist, plan, params);
+  if (measurePhases) {
+    phaseStatistics.backendSubmissionNanoseconds =
+      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        RenderPhaseClock::now() - submissionStart).count());
+  }
   PRIVATE(this)->pickTargetDirty = TRUE;
   PRIVATE(this)->pickTargetGeneration = 0;
 
@@ -2318,117 +2350,6 @@ SoRenderManager::getRenderPipeline(void) const
   return PRIVATE(this)->renderPipeline;
 }
 
-SbBool
-SoRenderManager::isRenderPipelineAvailable(const RenderPipeline pipeline) const
-{
-  if (pipeline == RenderPipeline::LEGACY_GL) {
-#if COIN_BUILD_LEGACY_GL_RENDERER
-    return currentContextSupportsLegacyRendering();
-#else
-    return FALSE;
-#endif
-  }
-  return coin_gl_current_context() != NULL;
-}
-
-const SoRenderManager::RenderResult &
-SoRenderManager::getLastRenderResult(void) const
-{
-  return PRIVATE(this)->lastRenderResult;
-}
-
-SbBool
-SoRenderManager::pickClosest(const int x, const int y, const int radius,
-                             SoPickedPoint *& result)
-{
-  result = NULL;
-  SoPickedPointList hits;
-  if (!this->pickDepthStack(x, y, radius, 1, hits, 1) ||
-      hits.getLength() == 0) return FALSE;
-  result = hits[0];
-  hits.remove(0);
-  return TRUE;
-}
-
-SbBool
-SoRenderManager::pickDepthStack(const int x, const int y, const int radius,
-                                const int maxLayers,
-                                SoPickedPointList & results,
-                                const int maxHits)
-{
-  results.truncate(0);
-  if (PRIVATE(this)->renderPipeline != RenderPipeline::DRAW_LIST ||
-      !PRIVATE(this)->renderBackend || !PRIVATE(this)->irAction ||
-      !PRIVATE(this)->renderBackend->isInitialized()) return FALSE;
-
-  SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
-  const SoRenderParams params = retainedRenderParams(PRIVATE(this));
-  if (PRIVATE(this)->pickTargetDirty ||
-      PRIVATE(this)->pickTargetGeneration != drawlist.getGeneration()) {
-    SoRenderPlanner planner;
-    SoRenderPlan plan;
-    planner.build(drawlist, plan);
-    if (!PRIVATE(this)->renderBackend->updatePickBuffer(drawlist, plan,
-                                                        params)) return FALSE;
-    PRIVATE(this)->pickTargetDirty = FALSE;
-    PRIVATE(this)->pickTargetGeneration = drawlist.getGeneration();
-  }
-
-  SoPickResultList raw;
-  if (!PRIVATE(this)->renderBackend->pickDepthStack(
-        x, y, radius, maxLayers, maxHits, raw)) return FALSE;
-  if (raw.generation != drawlist.getGeneration()) return FALSE;
-  for (const SoPickResult & hit : raw.hits) {
-    SoPickedPoint * picked = resolvePickResult(PRIVATE(this), hit, params);
-    if (picked) results.append(picked);
-  }
-  return results.getLength() != 0;
-}
-
-SbBool
-SoRenderManager::pickVisibleRegion(const SbBox2s & region,
-                                   SoPickedPointList & results)
-{
-  results.truncate(0);
-  if (PRIVATE(this)->renderPipeline != RenderPipeline::DRAW_LIST ||
-      !PRIVATE(this)->renderBackend || !PRIVATE(this)->irAction ||
-      !PRIVATE(this)->renderBackend->isInitialized()) return FALSE;
-
-  SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
-  const SoRenderParams params = retainedRenderParams(PRIVATE(this));
-  if (PRIVATE(this)->pickTargetDirty ||
-      PRIVATE(this)->pickTargetGeneration != drawlist.getGeneration()) {
-    SoRenderPlanner planner;
-    SoRenderPlan plan;
-    planner.build(drawlist, plan);
-    if (!PRIVATE(this)->renderBackend->updatePickBuffer(drawlist, plan,
-                                                        params)) return FALSE;
-    PRIVATE(this)->pickTargetDirty = FALSE;
-    PRIVATE(this)->pickTargetGeneration = drawlist.getGeneration();
-  }
-
-  SoPickResultList raw;
-  if (!PRIVATE(this)->renderBackend->pickVisibleRegion(region, raw)) {
-    return FALSE;
-  }
-  if (raw.generation != drawlist.getGeneration()) return FALSE;
-  for (const SoPickResult & hit : raw.hits) {
-    SoPickedPoint * picked = resolvePickResult(PRIVATE(this), hit, params);
-    if (picked) results.append(picked);
-  }
-  return results.getLength() != 0;
-}
-
-void
-SoRenderManager::invalidateSharedGLState(void)
-{
-#if COIN_BUILD_LEGACY_GL_RENDERER
-  if (PRIVATE(this)->glaction) {
-    PRIVATE(this)->glaction->invalidateState();
-  }
-#endif
-}
-
 void
 SoRenderManager::releaseRenderBackendResources(void)
 {
@@ -2502,6 +2423,178 @@ SoRenderManager::getRenderLayerRoot(RenderLayer layer) const
     assert(0 && "unknown render layer");
     return NULL;
   }
+}
+
+SbBool
+SoRenderManager::isRenderPipelineAvailable(const RenderPipeline pipeline) const
+{
+  if (pipeline == RenderPipeline::LEGACY_GL) {
+#if COIN_BUILD_LEGACY_GL_RENDERER
+    return currentContextSupportsLegacyRendering();
+#else
+    return FALSE;
+#endif
+  }
+  return coin_gl_current_context() != NULL;
+}
+
+const SoRenderManager::RenderResult &
+SoRenderManager::getLastRenderResult(void) const
+{
+  return PRIVATE(this)->lastRenderResult;
+}
+
+void
+SoRenderManager::setRenderPhaseTimingEnabled(const SbBool enabled)
+{
+  PRIVATE(this)->renderPhaseTimingEnabled = enabled;
+  if (!enabled) {
+    PRIVATE(this)->renderPhaseStatistics = RenderPhaseStatistics();
+  }
+}
+
+SbBool
+SoRenderManager::isRenderPhaseTimingEnabled(void) const
+{
+  return PRIVATE(this)->renderPhaseTimingEnabled;
+}
+
+SoRenderManager::RenderPhaseStatistics
+SoRenderManager::getRenderPhaseStatistics(void) const
+{
+  return PRIVATE(this)->renderPhaseStatistics;
+}
+
+SbBool
+SoRenderManager::pickClosest(const int x, const int y, const int radius,
+                             SoPickedPoint *& result)
+{
+  result = NULL;
+  SoPickedPointList hits;
+  if (!this->pickDepthStack(x, y, radius, 1, hits, 1) ||
+      hits.getLength() == 0) return FALSE;
+  result = hits[0];
+  hits.remove(0);
+  return TRUE;
+}
+
+SbBool
+SoRenderManager::pickDepthStack(const int x, const int y, const int radius,
+                                const int maxLayers,
+                                SoPickedPointList & results,
+                                const int maxHits)
+{
+  using PickPhaseClock = std::chrono::steady_clock;
+  RenderPhaseStatistics & phaseStatistics =
+    PRIVATE(this)->renderPhaseStatistics;
+  phaseStatistics.pickPlanConstructionNanoseconds = 0;
+  phaseStatistics.pickBufferUpdateNanoseconds = 0;
+  phaseStatistics.pickQueryNanoseconds = 0;
+  phaseStatistics.pickResultResolutionNanoseconds = 0;
+  phaseStatistics.pickBufferRefreshes = 0;
+  const SbBool measurePhases = PRIVATE(this)->renderPhaseTimingEnabled;
+  results.truncate(0);
+  if (PRIVATE(this)->renderPipeline != RenderPipeline::DRAW_LIST ||
+      !PRIVATE(this)->renderBackend || !PRIVATE(this)->irAction ||
+      !PRIVATE(this)->renderBackend->isInitialized()) return FALSE;
+
+  SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
+  const SoRenderParams params = retainedRenderParams(PRIVATE(this));
+  if (PRIVATE(this)->pickTargetDirty ||
+      PRIVATE(this)->pickTargetGeneration != drawlist.getGeneration()) {
+    SoRenderPlanner planner;
+    SoRenderPlan plan;
+    const PickPhaseClock::time_point planStart = measurePhases
+      ? PickPhaseClock::now() : PickPhaseClock::time_point();
+    planner.build(drawlist, plan);
+    if (measurePhases) {
+      phaseStatistics.pickPlanConstructionNanoseconds =
+        static_cast<uint64_t>(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(
+            PickPhaseClock::now() - planStart).count());
+    }
+    const PickPhaseClock::time_point updateStart = measurePhases
+      ? PickPhaseClock::now() : PickPhaseClock::time_point();
+    if (!PRIVATE(this)->renderBackend->updatePickBuffer(drawlist, plan,
+                                                        params)) return FALSE;
+    if (measurePhases) {
+      phaseStatistics.pickBufferUpdateNanoseconds =
+        static_cast<uint64_t>(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(
+            PickPhaseClock::now() - updateStart).count());
+      phaseStatistics.pickBufferRefreshes = 1;
+    }
+    PRIVATE(this)->pickTargetDirty = FALSE;
+    PRIVATE(this)->pickTargetGeneration = drawlist.getGeneration();
+  }
+
+  SoPickResultList raw;
+  const PickPhaseClock::time_point queryStart = measurePhases
+    ? PickPhaseClock::now() : PickPhaseClock::time_point();
+  if (!PRIVATE(this)->renderBackend->pickDepthStack(
+        x, y, radius, maxLayers, maxHits, raw)) return FALSE;
+  if (measurePhases) {
+    phaseStatistics.pickQueryNanoseconds =
+      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        PickPhaseClock::now() - queryStart).count());
+  }
+  if (raw.generation != drawlist.getGeneration()) return FALSE;
+  const PickPhaseClock::time_point resolutionStart = measurePhases
+    ? PickPhaseClock::now() : PickPhaseClock::time_point();
+  for (const SoPickResult & hit : raw.hits) {
+    SoPickedPoint * picked = resolvePickResult(PRIVATE(this), hit, params);
+    if (picked) results.append(picked);
+  }
+  if (measurePhases) {
+    phaseStatistics.pickResultResolutionNanoseconds =
+      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        PickPhaseClock::now() - resolutionStart).count());
+  }
+  return results.getLength() != 0;
+}
+
+SbBool
+SoRenderManager::pickVisibleRegion(const SbBox2s & region,
+                                   SoPickedPointList & results)
+{
+  results.truncate(0);
+  if (PRIVATE(this)->renderPipeline != RenderPipeline::DRAW_LIST ||
+      !PRIVATE(this)->renderBackend || !PRIVATE(this)->irAction ||
+      !PRIVATE(this)->renderBackend->isInitialized()) return FALSE;
+
+  SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
+  const SoRenderParams params = retainedRenderParams(PRIVATE(this));
+  if (PRIVATE(this)->pickTargetDirty ||
+      PRIVATE(this)->pickTargetGeneration != drawlist.getGeneration()) {
+    SoRenderPlanner planner;
+    SoRenderPlan plan;
+    planner.build(drawlist, plan);
+    if (!PRIVATE(this)->renderBackend->updatePickBuffer(drawlist, plan,
+                                                        params)) return FALSE;
+    PRIVATE(this)->pickTargetDirty = FALSE;
+    PRIVATE(this)->pickTargetGeneration = drawlist.getGeneration();
+  }
+
+  SoPickResultList raw;
+  if (!PRIVATE(this)->renderBackend->pickVisibleRegion(region, raw)) {
+    return FALSE;
+  }
+  if (raw.generation != drawlist.getGeneration()) return FALSE;
+  for (const SoPickResult & hit : raw.hits) {
+    SoPickedPoint * picked = resolvePickResult(PRIVATE(this), hit, params);
+    if (picked) results.append(picked);
+  }
+  return results.getLength() != 0;
+}
+
+void
+SoRenderManager::invalidateSharedGLState(void)
+{
+#if COIN_BUILD_LEGACY_GL_RENDERER
+  if (PRIVATE(this)->glaction) {
+    PRIVATE(this)->glaction->invalidateState();
+  }
+#endif
 }
 
 void

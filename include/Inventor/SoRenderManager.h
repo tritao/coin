@@ -102,6 +102,24 @@ public:
     SbBool rendered;
   };
 
+  /*! Optional CPU timings for the most recent retained render and pick.
+
+    Timing is disabled by default. When enabled, the manager records coarse
+    orchestration phases without changing backend behavior. A zero duration
+    means that the phase did not run, for example when a pick reused its
+    existing pick buffer.
+  */
+  struct RenderPhaseStatistics {
+    uint64_t drawListConstructionNanoseconds = 0;
+    uint64_t planConstructionNanoseconds = 0;
+    uint64_t backendSubmissionNanoseconds = 0;
+    uint64_t pickPlanConstructionNanoseconds = 0;
+    uint64_t pickBufferUpdateNanoseconds = 0;
+    uint64_t pickQueryNanoseconds = 0;
+    uint64_t pickResultResolutionNanoseconds = 0;
+    uint64_t pickBufferRefreshes = 0;
+  };
+
   class COIN_DLL_API Superimposition {
   public:
     enum StateFlags {
@@ -263,6 +281,11 @@ public:
   RenderPipeline getRenderPipeline(void) const;
   SbBool isRenderPipelineAvailable(RenderPipeline pipeline) const;
   const RenderResult & getLastRenderResult(void) const;
+
+  //! Enable coarse retained-renderer CPU timing for diagnostics.
+  void setRenderPhaseTimingEnabled(SbBool enabled);
+  SbBool isRenderPhaseTimingEnabled(void) const;
+  RenderPhaseStatistics getRenderPhaseStatistics(void) const;
 
   /*! Return the closest renderer-neutral scene hit. The caller owns result. */
   SbBool pickClosest(int x, int y, int radius, SoPickedPoint *& result);

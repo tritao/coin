@@ -127,6 +127,8 @@ public:
   SoRenderManager::LightingMode lightingmode;
   SoIRRenderAction * irAction;
   SoRenderBackend * renderBackend;
+  SbBool renderPhaseTimingEnabled;
+  SoRenderManager::RenderPhaseStatistics renderPhaseStatistics;
   uint32_t renderBackendContextId;
   SbBool drawListCallbackScope;
   SbBool pickTargetDirty;
