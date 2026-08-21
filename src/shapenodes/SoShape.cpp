@@ -70,6 +70,7 @@ class SoVBO;
 #include <Inventor/SbTime.h>
 #include <Inventor/SoPickedPoint.h>
 #include <Inventor/SoPrimitiveVertex.h>
+#include "rendering/SoInlineVector.h"
 #include <Inventor/actions/SoCallbackAction.h>
 #if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/actions/SoGLRenderAction.h>
@@ -622,8 +623,8 @@ private:
   SoGeometryDesc reusedGeometry;
   size_t reusedVertexCount = 0;
   int reusedPrimitiveWidth = 0;
-  std::vector<SoIRVertex> vertices;
-  std::vector<SoIRPrimitiveRange> primitiveRanges;
+  SoInlineVector<SoIRVertex, 4> vertices;
+  SoInlineVector<SoIRPrimitiveRange, 4> primitiveRanges;
 };
 
 }
