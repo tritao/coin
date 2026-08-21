@@ -574,9 +574,10 @@ runTest()
         firstPickPhases.pickResultResolutionNanoseconds == 0 ||
         firstPickPhases.backendPickTargetPreparationNanoseconds == 0 ||
         firstPickPhases.backendPickTargetRenderingNanoseconds == 0 ||
-        firstPickPhases.backendPickDepthRenderingNanoseconds == 0 ||
         firstPickPhases.backendPickReadbackNanoseconds == 0 ||
-        firstPickPhases.backendPickTargetRestoreNanoseconds == 0) {
+        firstPickPhases.backendPickDepthRenderingNanoseconds != 0 ||
+        firstPickPhases.backendPickDepthPeelingNanoseconds != 0 ||
+        firstPickPhases.backendPickTargetRestoreNanoseconds != 0) {
       std::cerr << "FAIL: retained pick phases were not measured" << std::endl;
       result = 1;
     }
@@ -594,7 +595,9 @@ runTest()
       manager.getRenderPhaseStatistics();
     if (reusedPickPhases.pickBufferRefreshes != 0 ||
         reusedPickPhases.pickBufferUpdateNanoseconds != 0 ||
-        reusedPickPhases.pickQueryNanoseconds == 0) {
+        reusedPickPhases.pickQueryNanoseconds == 0 ||
+        reusedPickPhases.backendPickDepthRenderingNanoseconds == 0 ||
+        reusedPickPhases.backendPickTargetRestoreNanoseconds == 0) {
       std::cerr << "FAIL: reused pick buffer phases were misreported" << std::endl;
       result = 1;
     }

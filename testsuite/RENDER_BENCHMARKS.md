@@ -88,6 +88,12 @@ reported in the JSON `unavailable` array rather than being mistaken for results.
 Picking is split into one-time cold target creation, target refresh after a
 changed frame, and warm repeated-hover latency.
 
+Closest-hit queries read the retained frontmost pick target directly. They do
+not perform depth peeling or restore the target afterward; those phases are
+reserved for `pickDepthStack()`, where overlapping hits are requested
+explicitly. This keeps the common hover path distinct from the more expensive
+selection-cycling operation.
+
 The GL benchmark explicitly enables renderer phase timing. JSON schema version
 7 identifies each result as `per_frame_traversal`, `steady_state`,
 `forced_rebuild`, or `incremental_update`. It separates draw-list construction into primitive generation,

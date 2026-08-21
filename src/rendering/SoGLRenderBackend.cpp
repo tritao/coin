@@ -3552,6 +3552,13 @@ SoGLRenderBackend::pickClosest(const int x, const int y, const int radius,
   if (!this->isInitialized() || !this->pickTarget.ready ||
       radius < 0) return FALSE;
 
+  const bool measurePhases = this->isPhaseTimingEnabled();
+  this->phaseStatistics.pickDepthRenderingNanoseconds = 0;
+  this->phaseStatistics.pickDepthPeelingNanoseconds = 0;
+  this->phaseStatistics.pickReadbackNanoseconds = 0;
+  this->phaseStatistics.pickHitProcessingNanoseconds = 0;
+  this->phaseStatistics.pickTargetRestoreNanoseconds = 0;
+
   const int width = this->pickTarget.size[0];
   const int height = this->pickTarget.size[1];
   if (width <= 0 || height <= 0) return FALSE;
@@ -3572,11 +3579,19 @@ SoGLRenderBackend::pickClosest(const int x, const int y, const int radius,
   std::vector<GLfloat> depths(pixelCount, 1.0f);
   ScopedPixelPackState packState;
   cc_glglue_glBindBuffer(this->glue, GL_PIXEL_PACK_BUFFER, 0);
+  const BackendPhaseClock::time_point readbackStart = measurePhases
+    ? BackendPhaseClock::now() : BackendPhaseClock::time_point();
   glReadPixels(left, bottom, readWidth, readHeight,
                GL_RED_INTEGER, GL_UNSIGNED_INT, ids.data());
   glReadPixels(left, bottom, readWidth, readHeight,
                GL_DEPTH_COMPONENT, GL_FLOAT, depths.data());
+  if (measurePhases) {
+    this->phaseStatistics.pickReadbackNanoseconds =
+      elapsedNanoseconds(readbackStart);
+  }
 
+  const BackendPhaseClock::time_point processingStart = measurePhases
+    ? BackendPhaseClock::now() : BackendPhaseClock::time_point();
   GLuint bestId = 0;
   int bestDistance = 0;
   int bestPixelX = 0;
@@ -3614,6 +3629,10 @@ SoGLRenderBackend::pickClosest(const int x, const int y, const int radius,
   result.pixelX = bestPixelX;
   result.pixelY = bestPixelY;
   result.depth = bestDepth;
+  if (measurePhases) {
+    this->phaseStatistics.pickHitProcessingNanoseconds =
+      elapsedNanoseconds(processingStart);
+  }
   return TRUE;
 }
 

@@ -2631,13 +2631,90 @@ SbBool
 SoRenderManager::pickClosest(const int x, const int y, const int radius,
                              SoPickedPoint *& result)
 {
+  using PickPhaseClock = std::chrono::steady_clock;
   result = NULL;
-  SoPickedPointList hits;
-  if (!this->pickDepthStack(x, y, radius, 1, hits, 1) ||
-      hits.getLength() == 0) return FALSE;
-  result = hits[0];
-  hits.remove(0);
-  return TRUE;
+  RenderPhaseStatistics & phaseStatistics =
+    PRIVATE(this)->renderPhaseStatistics;
+  phaseStatistics.pickPlanConstructionNanoseconds = 0;
+  phaseStatistics.pickBufferUpdateNanoseconds = 0;
+  phaseStatistics.pickQueryNanoseconds = 0;
+  phaseStatistics.pickResultResolutionNanoseconds = 0;
+  phaseStatistics.backendPickTargetPreparationNanoseconds = 0;
+  phaseStatistics.backendPickTargetRenderingNanoseconds = 0;
+  phaseStatistics.backendPickDepthRenderingNanoseconds = 0;
+  phaseStatistics.backendPickDepthPeelingNanoseconds = 0;
+  phaseStatistics.backendPickReadbackNanoseconds = 0;
+  phaseStatistics.backendPickHitProcessingNanoseconds = 0;
+  phaseStatistics.backendPickTargetRestoreNanoseconds = 0;
+  phaseStatistics.pickBufferRefreshes = 0;
+  const SbBool measurePhases = PRIVATE(this)->renderPhaseTimingEnabled;
+  if (PRIVATE(this)->renderPipeline != RenderPipeline::DRAW_LIST ||
+      !PRIVATE(this)->renderBackend || !PRIVATE(this)->irAction ||
+      !PRIVATE(this)->renderBackend->isInitialized()) return FALSE;
+
+  SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
+  const SoRenderParams params = retainedRenderParams(PRIVATE(this));
+  if (PRIVATE(this)->pickTargetDirty ||
+      PRIVATE(this)->pickTargetGeneration != drawlist.getGeneration()) {
+    SoRenderPlanner planner;
+    SoRenderPlan plan;
+    const PickPhaseClock::time_point planStart = measurePhases
+      ? PickPhaseClock::now() : PickPhaseClock::time_point();
+    planner.build(drawlist, params.viewMatrix, plan);
+    if (measurePhases) {
+      phaseStatistics.pickPlanConstructionNanoseconds =
+        static_cast<uint64_t>(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(
+            PickPhaseClock::now() - planStart).count());
+    }
+    const PickPhaseClock::time_point updateStart = measurePhases
+      ? PickPhaseClock::now() : PickPhaseClock::time_point();
+    if (!PRIVATE(this)->renderBackend->updatePickBuffer(drawlist, plan,
+                                                        params)) return FALSE;
+    if (measurePhases) {
+      phaseStatistics.pickBufferUpdateNanoseconds =
+        static_cast<uint64_t>(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(
+            PickPhaseClock::now() - updateStart).count());
+      phaseStatistics.pickBufferRefreshes = 1;
+      const SoRenderBackendPhaseStatistics backendPhases =
+        PRIVATE(this)->renderBackend->getPhaseStatistics();
+      phaseStatistics.backendPickTargetPreparationNanoseconds =
+        backendPhases.pickTargetPreparationNanoseconds;
+      phaseStatistics.backendPickTargetRenderingNanoseconds =
+        backendPhases.pickTargetRenderingNanoseconds;
+    }
+    PRIVATE(this)->pickTargetDirty = FALSE;
+    PRIVATE(this)->pickTargetGeneration = drawlist.getGeneration();
+  }
+
+  SoPickResult hit;
+  const PickPhaseClock::time_point queryStart = measurePhases
+    ? PickPhaseClock::now() : PickPhaseClock::time_point();
+  if (!PRIVATE(this)->renderBackend->pickClosest(x, y, radius, hit)) {
+    return FALSE;
+  }
+  if (measurePhases) {
+    phaseStatistics.pickQueryNanoseconds =
+      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        PickPhaseClock::now() - queryStart).count());
+    const SoRenderBackendPhaseStatistics backendPhases =
+      PRIVATE(this)->renderBackend->getPhaseStatistics();
+    phaseStatistics.backendPickReadbackNanoseconds =
+      backendPhases.pickReadbackNanoseconds;
+    phaseStatistics.backendPickHitProcessingNanoseconds =
+      backendPhases.pickHitProcessingNanoseconds;
+  }
+  if (hit.generation != drawlist.getGeneration()) return FALSE;
+  const PickPhaseClock::time_point resolutionStart = measurePhases
+    ? PickPhaseClock::now() : PickPhaseClock::time_point();
+  result = resolvePickResult(PRIVATE(this), hit, params);
+  if (measurePhases) {
+    phaseStatistics.pickResultResolutionNanoseconds =
+      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        PickPhaseClock::now() - resolutionStart).count());
+  }
+  return result != NULL;
 }
 
 SbBool
