@@ -120,6 +120,7 @@ public:
     uint64_t backendResourcePreparationNanoseconds = 0;
     uint64_t backendCommandExecutionNanoseconds = 0;
     uint64_t backendSelectionNanoseconds = 0;
+    uint64_t drawListRebuilds = 0;
     uint64_t pickPlanConstructionNanoseconds = 0;
     uint64_t pickBufferUpdateNanoseconds = 0;
     uint64_t pickQueryNanoseconds = 0;

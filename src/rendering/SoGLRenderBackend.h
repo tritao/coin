@@ -341,6 +341,7 @@ private:
                          bool selection);
   void beginFrame(const SoRenderParams & params);
   void invalidateCache();
+  void prepareGeometryCache(const SoDrawList & drawlist, bool allowReuse);
   void updateGeometryCache(const SoDrawList & drawlist);
   void updateLineDistances(CachedCommand & entry,
                            const SoRenderCommand & command,

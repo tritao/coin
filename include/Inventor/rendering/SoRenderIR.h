@@ -212,6 +212,8 @@ enum SoAlphaTestPolicy : uint8_t {
 // --- Render param flags (SoRenderParams::flags) ---
 static constexpr uint32_t SO_PARAM_CLEAR_WINDOW = 1u;
 static constexpr uint32_t SO_PARAM_CLEAR_DEPTH  = 4u;  //!< Clear depth buffer before rendering
+//! The owning caller guarantees that this exact draw list is unchanged.
+static constexpr uint32_t SO_PARAM_REUSE_DRAW_LIST = 8u;
 
 /*!
   \struct SoTextureData

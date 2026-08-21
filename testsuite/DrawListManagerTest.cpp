@@ -299,6 +299,23 @@ runTest()
       std::cerr << "FAIL: retained render phases were not measured" << std::endl;
       result = 1;
     }
+    manager.render(TRUE, TRUE);
+    const SoRenderManager::RenderPhaseStatistics reusedRenderPhases =
+      manager.getRenderPhaseStatistics();
+    if (reusedRenderPhases.drawListRebuilds != 0 ||
+        reusedRenderPhases.drawListConstructionNanoseconds != 0) {
+      std::cerr << "FAIL: unchanged retained frame was rebuilt" << std::endl;
+      result = 1;
+    }
+    cubeRoot->touch();
+    manager.render(TRUE, TRUE);
+    const SoRenderManager::RenderPhaseStatistics changedRenderPhases =
+      manager.getRenderPhaseStatistics();
+    if (changedRenderPhases.drawListRebuilds != 1 ||
+        changedRenderPhases.drawListConstructionNanoseconds == 0) {
+      std::cerr << "FAIL: changed retained frame was not rebuilt" << std::endl;
+      result = 1;
+    }
     if (countNonBlack(context) == 0) {
       std::cerr << "FAIL: transformed-camera manager render produced no pixels" << std::endl;
       result = 1;

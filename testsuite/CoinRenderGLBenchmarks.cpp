@@ -65,6 +65,7 @@ struct Measurement {
   double backendResourcePreparationMedianMs = 0.0;
   double backendCommandExecutionMedianMs = 0.0;
   double backendSelectionMedianMs = 0.0;
+  uint64_t drawListRebuilds = 0;
   double coldPickMs = 0.0;
   double coldPickBufferUpdateMs = 0.0;
   double coldPickTargetPreparationMs = 0.0;
@@ -226,6 +227,7 @@ bool runVariant(GLTestProfile profile,
       renderPhases.backendCommandExecutionNanoseconds / 1000000.0);
     backendSelection.push_back(
       renderPhases.backendSelectionNanoseconds / 1000000.0);
+    result.drawListRebuilds += renderPhases.drawListRebuilds;
     glEndQuery(GL_TIME_ELAPSED);
     GLuint64 nanoseconds = 0;
     glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
@@ -463,6 +465,7 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.backendCommandExecutionMedianMs
         << ", \"backend_selection_median_ms\": "
         << r.backendSelectionMedianMs
+        << ", \"drawlist_rebuilds\": " << r.drawListRebuilds
         << ", \"cold_pick_ms\": " << r.coldPickMs
         << ", \"cold_pick_buffer_update_ms\": "
         << r.coldPickBufferUpdateMs

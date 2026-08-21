@@ -99,6 +99,12 @@ not affect ordinary rendering. A zero-valued phase means it did not run; for
 example, a warm hover pick normally reuses its existing pick buffer, and a
 frame without selected objects performs no selection-overlay work.
 
+The timed render samples represent steady-state frames. The retained manager
+reuses its draw list until a scene, camera, layer, viewport-dependent traversal
+setting, or explicit `invalidateDrawList()` call invalidates it. The
+`drawlist_rebuilds` field makes that distinction visible in benchmark output;
+it is normally zero after warmup.
+
 The deterministic workloads currently cover traversal/IR construction, render
 plan construction (including transparent sorting and depth segments), retained
 pick-table construction and resolution, selection churn, and repeated frame

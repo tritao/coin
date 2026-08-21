@@ -131,6 +131,12 @@ public:
   SoRenderManager::RenderPhaseStatistics renderPhaseStatistics;
   uint32_t renderBackendContextId;
   SbBool drawListCallbackScope;
+  SbBool drawListValid;
+  SbBool drawListDirty;
+  uint64_t drawListSceneRevision;
+  uint64_t drawListCameraRevision;
+  uint64_t drawListBackgroundRevision;
+  uint64_t drawListForegroundRevision;
   SbBool pickTargetDirty;
   uint32_t pickTargetGeneration;
 
