@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <functional>
@@ -49,6 +50,16 @@ static constexpr GLuint NORMAL_ATTRIBUTE = 1;
 static constexpr GLuint COLOR_ATTRIBUTE = 2;
 static constexpr GLuint TEXCOORD_ATTRIBUTE = 3;
 static constexpr GLuint LINE_DISTANCE_ATTRIBUTE = 4;
+
+using BackendPhaseClock = std::chrono::steady_clock;
+
+uint64_t
+elapsedNanoseconds(const BackendPhaseClock::time_point & start)
+{
+  return static_cast<uint64_t>(
+    std::chrono::duration_cast<std::chrono::nanoseconds>(
+      BackendPhaseClock::now() - start).count());
+}
 
 GLenum
 textureWrapToGL(const SoTextureWrap wrap)
@@ -2915,6 +2926,11 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
     this->emitError("updatePickBuffer called before backend initialization");
     return FALSE;
   }
+  const bool measurePhases = this->isPhaseTimingEnabled();
+  this->phaseStatistics.pickTargetPreparationNanoseconds = 0;
+  this->phaseStatistics.pickTargetRenderingNanoseconds = 0;
+  const BackendPhaseClock::time_point preparationStart = measurePhases
+    ? BackendPhaseClock::now() : BackendPhaseClock::time_point();
   this->pickTarget.ready = false;
   this->pickTarget.lookup.clear();
   ScopedGLState state(this->glue);
@@ -2948,6 +2964,12 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
   SbMat frameProjection;
   params.viewMatrix.getValue(frameView);
   params.projMatrix.getValue(frameProjection);
+  if (measurePhases) {
+    this->phaseStatistics.pickTargetPreparationNanoseconds =
+      elapsedNanoseconds(preparationStart);
+  }
+  const BackendPhaseClock::time_point renderingStart = measurePhases
+    ? BackendPhaseClock::now() : BackendPhaseClock::time_point();
   auto drawPickCommand = [&](const uint32_t commandIndex) {
     for (size_t i = 0; i < this->pickTarget.lookup.size(); ++i) {
       const int lookupCommandIndex = this->pickTarget.lookup[i].commandIndex;
@@ -2986,6 +3008,10 @@ SoGLRenderBackend::updatePickBuffer(const SoDrawList & drawlist,
   this->pickTarget.plan = plan;
   this->pickTarget.params = params;
   this->pickTarget.ready = true;
+  if (measurePhases) {
+    this->phaseStatistics.pickTargetRenderingNanoseconds =
+      elapsedNanoseconds(renderingStart);
+  }
   return TRUE;
 }
 
@@ -3143,6 +3169,12 @@ SoGLRenderBackend::pickDepthStack(const int x, const int y, const int radius,
       maxLayers <= 0 || maxHits <= 0 || !this->pickTarget.drawlist) {
     return FALSE;
   }
+  const bool measurePhases = this->isPhaseTimingEnabled();
+  this->phaseStatistics.pickDepthRenderingNanoseconds = 0;
+  this->phaseStatistics.pickDepthPeelingNanoseconds = 0;
+  this->phaseStatistics.pickReadbackNanoseconds = 0;
+  this->phaseStatistics.pickHitProcessingNanoseconds = 0;
+  this->phaseStatistics.pickTargetRestoreNanoseconds = 0;
 
   const int width = this->pickTarget.size[0];
   const int height = this->pickTarget.size[1];
@@ -3205,11 +3237,19 @@ SoGLRenderBackend::pickDepthStack(const int x, const int y, const int radius,
   auto readLayer = [&]() {
     std::vector<GLuint> ids(pixelCount, 0);
     std::vector<GLfloat> depths(pixelCount, 1.0f);
+    const BackendPhaseClock::time_point readbackStart = measurePhases
+      ? BackendPhaseClock::now() : BackendPhaseClock::time_point();
     glReadPixels(left, bottom, readWidth, readHeight,
                  GL_RED_INTEGER, GL_UNSIGNED_INT, ids.data());
     glReadPixels(left, bottom, readWidth, readHeight,
                  GL_DEPTH_COMPONENT, GL_FLOAT, depths.data());
+    if (measurePhases) {
+      this->phaseStatistics.pickReadbackNanoseconds +=
+        elapsedNanoseconds(readbackStart);
+    }
 
+    const BackendPhaseClock::time_point processingStart = measurePhases
+      ? BackendPhaseClock::now() : BackendPhaseClock::time_point();
     std::unordered_map<GLuint, SoPickResult> layerHits;
     for (int row = 0; row < readHeight; ++row) {
       for (int column = 0; column < readWidth; ++column) {
@@ -3242,12 +3282,18 @@ SoGLRenderBackend::pickDepthStack(const int x, const int y, const int radius,
         if (lhs.depth != rhs.depth) return lhs.depth < rhs.depth;
         return lhs.id < rhs.id;
       });
+    if (measurePhases) {
+      this->phaseStatistics.pickHitProcessingNanoseconds +=
+        elapsedNanoseconds(processingStart);
+    }
     return ordered;
   };
 
   auto renderLayer = [&](const std::vector<uint32_t> & commands,
                          const int previousDepth, const int targetDepth,
                          const bool peel) {
+    const BackendPhaseClock::time_point renderingStart = measurePhases
+      ? BackendPhaseClock::now() : BackendPhaseClock::time_point();
     cc_glglue_glBindFramebuffer(this->glue, GL_FRAMEBUFFER,
                                 this->pickTarget.framebuffer);
     cc_glglue_glFramebufferTexture2D(
@@ -3288,6 +3334,12 @@ SoGLRenderBackend::pickDepthStack(const int x, const int y, const int radius,
     };
     for (const uint32_t commandIndex : commands) {
       drawPickCommand(commandIndex);
+    }
+    if (measurePhases) {
+      uint64_t & destination = peel
+        ? this->phaseStatistics.pickDepthPeelingNanoseconds
+        : this->phaseStatistics.pickDepthRenderingNanoseconds;
+      destination += elapsedNanoseconds(renderingStart);
     }
     return true;
   };
@@ -3336,7 +3388,13 @@ SoGLRenderBackend::pickDepthStack(const int x, const int y, const int radius,
   // A depth-stack query mutates the ping-pong attachments. Rebuild the cached
   // frontmost target once so ordinary hover remains a read-only tiny query.
   this->pickTarget.peelEnabled = false;
+  const BackendPhaseClock::time_point restoreStart = measurePhases
+    ? BackendPhaseClock::now() : BackendPhaseClock::time_point();
   this->updatePickBuffer(drawlist, plan, params);
+  if (measurePhases) {
+    this->phaseStatistics.pickTargetRestoreNanoseconds =
+      elapsedNanoseconds(restoreStart);
+  }
   return !results.hits.empty();
 }
 
@@ -3430,9 +3488,27 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
     return FALSE;
   }
 
+  const bool measurePhases = this->isPhaseTimingEnabled();
+  this->phaseStatistics.frameSetupNanoseconds = 0;
+  this->phaseStatistics.resourcePreparationNanoseconds = 0;
+  this->phaseStatistics.commandExecutionNanoseconds = 0;
+  this->phaseStatistics.selectionNanoseconds = 0;
+
   this->debugValidateDrawList(drawlist);
+  const BackendPhaseClock::time_point frameSetupStart = measurePhases
+    ? BackendPhaseClock::now() : BackendPhaseClock::time_point();
   this->beginFrame(params);
+  if (measurePhases) {
+    this->phaseStatistics.frameSetupNanoseconds =
+      elapsedNanoseconds(frameSetupStart);
+  }
+  const BackendPhaseClock::time_point resourceStart = measurePhases
+    ? BackendPhaseClock::now() : BackendPhaseClock::time_point();
   this->updateGeometryCache(drawlist);
+  if (measurePhases) {
+    this->phaseStatistics.resourcePreparationNanoseconds =
+      elapsedNanoseconds(resourceStart);
+  }
 
   SbMat view;
   SbMat projection;
@@ -3458,10 +3534,18 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
   const auto flushSelection = [&]() {
     if (!queuedSelection.selected.empty() ||
         !queuedSelection.highlighted.empty()) {
+      const BackendPhaseClock::time_point selectionStart = measurePhases
+        ? BackendPhaseClock::now() : BackendPhaseClock::time_point();
       this->renderSelection(drawlist, queuedSelection, params);
+      if (measurePhases) {
+        this->phaseStatistics.selectionNanoseconds +=
+          elapsedNanoseconds(selectionStart);
+      }
       queuedSelection = SoSelectionState();
     }
   };
+  const BackendPhaseClock::time_point executionStart = measurePhases
+    ? BackendPhaseClock::now() : BackendPhaseClock::time_point();
   for (int i = 0; i < plan.getNumOperations(); ++i) {
     const SoRenderOperation & operation = plan.getOperation(i);
     if (operation.type == SoRenderOperationType::DRAW) {
@@ -3488,5 +3572,16 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
     }
   }
   cc_glglue_glUseProgram(this->glue, 0);
+  if (measurePhases) {
+    const uint64_t executionWithSelection = elapsedNanoseconds(executionStart);
+    this->phaseStatistics.commandExecutionNanoseconds =
+      executionWithSelection - this->phaseStatistics.selectionNanoseconds;
+  }
   return TRUE;
+}
+
+SoRenderBackendPhaseStatistics
+SoGLRenderBackend::getPhaseStatistics() const
+{
+  return this->phaseStatistics;
 }

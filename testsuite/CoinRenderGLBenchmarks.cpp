@@ -58,14 +58,27 @@ struct Measurement {
   double drawListConstructionMedianMs = 0.0;
   double planConstructionMedianMs = 0.0;
   double backendSubmissionMedianMs = 0.0;
+  double backendFrameSetupMedianMs = 0.0;
+  double backendResourcePreparationMedianMs = 0.0;
+  double backendCommandExecutionMedianMs = 0.0;
+  double backendSelectionMedianMs = 0.0;
   double coldPickMs = 0.0;
   double coldPickBufferUpdateMs = 0.0;
+  double coldPickTargetPreparationMs = 0.0;
+  double coldPickTargetRenderingMs = 0.0;
   double refreshPickMs = 0.0;
   double refreshPickBufferUpdateMs = 0.0;
+  double refreshPickTargetPreparationMs = 0.0;
+  double refreshPickTargetRenderingMs = 0.0;
   double pickMedianMs = 0.0;
   double pickP95Ms = 0.0;
   double pickQueryMedianMs = 0.0;
   double pickResultResolutionMedianMs = 0.0;
+  double pickDepthRenderingMedianMs = 0.0;
+  double pickDepthPeelingMedianMs = 0.0;
+  double pickReadbackMedianMs = 0.0;
+  double pickHitProcessingMedianMs = 0.0;
+  double pickTargetRestoreMedianMs = 0.0;
   uint64_t pixelChecksum = 0;
 };
 
@@ -172,6 +185,10 @@ bool runVariant(GLTestProfile profile,
   std::vector<double> drawListConstruction;
   std::vector<double> planConstruction;
   std::vector<double> backendSubmission;
+  std::vector<double> backendFrameSetup;
+  std::vector<double> backendResourcePreparation;
+  std::vector<double> backendCommandExecution;
+  std::vector<double> backendSelection;
   GLuint query = 0;
   glGenQueries(1, &query);
   for (int sample = 0; sample < samples; ++sample) {
@@ -189,6 +206,14 @@ bool runVariant(GLTestProfile profile,
       renderPhases.planConstructionNanoseconds / 1000000.0);
     backendSubmission.push_back(
       renderPhases.backendSubmissionNanoseconds / 1000000.0);
+    backendFrameSetup.push_back(
+      renderPhases.backendFrameSetupNanoseconds / 1000000.0);
+    backendResourcePreparation.push_back(
+      renderPhases.backendResourcePreparationNanoseconds / 1000000.0);
+    backendCommandExecution.push_back(
+      renderPhases.backendCommandExecutionNanoseconds / 1000000.0);
+    backendSelection.push_back(
+      renderPhases.backendSelectionNanoseconds / 1000000.0);
     glEndQuery(GL_TIME_ELAPSED);
     GLuint64 nanoseconds = 0;
     glGetQueryObjectui64v(query, GL_QUERY_RESULT, &nanoseconds);
@@ -200,10 +225,19 @@ bool runVariant(GLTestProfile profile,
   std::vector<double> pick;
   double coldPick = 0.0;
   double coldPickBufferUpdate = 0.0;
+  double coldPickTargetPreparation = 0.0;
+  double coldPickTargetRendering = 0.0;
   double refreshPick = 0.0;
   double refreshPickBufferUpdate = 0.0;
+  double refreshPickTargetPreparation = 0.0;
+  double refreshPickTargetRendering = 0.0;
   std::vector<double> pickQuery;
   std::vector<double> pickResultResolution;
+  std::vector<double> pickDepthRendering;
+  std::vector<double> pickDepthPeeling;
+  std::vector<double> pickReadback;
+  std::vector<double> pickHitProcessing;
+  std::vector<double> pickTargetRestore;
   if (workload == WorkloadKind::DensePicking) {
     SoSeparator * legacyPickRoot = NULL;
 #if COIN_HAVE_LEGACY_GL_RENDERER
@@ -248,6 +282,10 @@ bool runVariant(GLTestProfile profile,
         manager.getRenderPhaseStatistics();
       coldPickBufferUpdate =
         phases.pickBufferUpdateNanoseconds / 1000000.0;
+      coldPickTargetPreparation =
+        phases.backendPickTargetPreparationNanoseconds / 1000000.0;
+      coldPickTargetRendering =
+        phases.backendPickTargetRenderingNanoseconds / 1000000.0;
     }
     for (int sample = 0; sample < samples; ++sample) {
       const Clock::time_point pickStart = Clock::now();
@@ -259,6 +297,16 @@ bool runVariant(GLTestProfile profile,
         pickQuery.push_back(phases.pickQueryNanoseconds / 1000000.0);
         pickResultResolution.push_back(
           phases.pickResultResolutionNanoseconds / 1000000.0);
+        pickDepthRendering.push_back(
+          phases.backendPickDepthRenderingNanoseconds / 1000000.0);
+        pickDepthPeeling.push_back(
+          phases.backendPickDepthPeelingNanoseconds / 1000000.0);
+        pickReadback.push_back(
+          phases.backendPickReadbackNanoseconds / 1000000.0);
+        pickHitProcessing.push_back(
+          phases.backendPickHitProcessingNanoseconds / 1000000.0);
+        pickTargetRestore.push_back(
+          phases.backendPickTargetRestoreNanoseconds / 1000000.0);
       }
     }
     scene->touch();
@@ -272,6 +320,10 @@ bool runVariant(GLTestProfile profile,
         manager.getRenderPhaseStatistics();
       refreshPickBufferUpdate =
         phases.pickBufferUpdateNanoseconds / 1000000.0;
+      refreshPickTargetPreparation =
+        phases.backendPickTargetPreparationNanoseconds / 1000000.0;
+      refreshPickTargetRendering =
+        phases.backendPickTargetRenderingNanoseconds / 1000000.0;
     }
     if (legacyPickRoot) legacyPickRoot->unref();
   }
@@ -305,17 +357,32 @@ bool runVariant(GLTestProfile profile,
     percentile(drawListConstruction, 0.5);
   result.planConstructionMedianMs = percentile(planConstruction, 0.5);
   result.backendSubmissionMedianMs = percentile(backendSubmission, 0.5);
+  result.backendFrameSetupMedianMs = percentile(backendFrameSetup, 0.5);
+  result.backendResourcePreparationMedianMs =
+    percentile(backendResourcePreparation, 0.5);
+  result.backendCommandExecutionMedianMs =
+    percentile(backendCommandExecution, 0.5);
+  result.backendSelectionMedianMs = percentile(backendSelection, 0.5);
   if (!pick.empty()) {
     result.coldPickMs = coldPick;
     result.coldPickBufferUpdateMs = coldPickBufferUpdate;
+    result.coldPickTargetPreparationMs = coldPickTargetPreparation;
+    result.coldPickTargetRenderingMs = coldPickTargetRendering;
     result.refreshPickMs = refreshPick;
     result.refreshPickBufferUpdateMs = refreshPickBufferUpdate;
+    result.refreshPickTargetPreparationMs = refreshPickTargetPreparation;
+    result.refreshPickTargetRenderingMs = refreshPickTargetRendering;
     result.pickMedianMs = percentile(pick, 0.5);
     result.pickP95Ms = percentile(pick, 0.95);
     if (!pickQuery.empty()) {
       result.pickQueryMedianMs = percentile(pickQuery, 0.5);
       result.pickResultResolutionMedianMs =
         percentile(pickResultResolution, 0.5);
+      result.pickDepthRenderingMedianMs = percentile(pickDepthRendering, 0.5);
+      result.pickDepthPeelingMedianMs = percentile(pickDepthPeeling, 0.5);
+      result.pickReadbackMedianMs = percentile(pickReadback, 0.5);
+      result.pickHitProcessingMedianMs = percentile(pickHitProcessing, 0.5);
+      result.pickTargetRestoreMedianMs = percentile(pickTargetRestore, 0.5);
     }
   }
   result.pixelChecksum = pixelChecksum;
@@ -345,7 +412,7 @@ std::string toJson(const std::vector<Measurement> & results,
 {
   std::ostringstream out;
   out << std::fixed << std::setprecision(6);
-  out << "{\n  \"schema_version\": 2,\n  \"mode\": \""
+  out << "{\n  \"schema_version\": 3,\n  \"mode\": \""
       << (options.smoke ? "smoke" : "benchmark")
       << "\",\n  \"time_unit\": \"ms\",\n  \"benchmarks\": [\n";
   for (size_t i = 0; i < results.size(); ++i) {
@@ -367,17 +434,42 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.planConstructionMedianMs
         << ", \"backend_submission_median_ms\": "
         << r.backendSubmissionMedianMs
+        << ", \"backend_frame_setup_median_ms\": "
+        << r.backendFrameSetupMedianMs
+        << ", \"backend_resource_preparation_median_ms\": "
+        << r.backendResourcePreparationMedianMs
+        << ", \"backend_command_execution_median_ms\": "
+        << r.backendCommandExecutionMedianMs
+        << ", \"backend_selection_median_ms\": "
+        << r.backendSelectionMedianMs
         << ", \"cold_pick_ms\": " << r.coldPickMs
         << ", \"cold_pick_buffer_update_ms\": "
         << r.coldPickBufferUpdateMs
+        << ", \"cold_pick_target_preparation_ms\": "
+        << r.coldPickTargetPreparationMs
+        << ", \"cold_pick_target_rendering_ms\": "
+        << r.coldPickTargetRenderingMs
         << ", \"refresh_pick_ms\": " << r.refreshPickMs
         << ", \"refresh_pick_buffer_update_ms\": "
         << r.refreshPickBufferUpdateMs
+        << ", \"refresh_pick_target_preparation_ms\": "
+        << r.refreshPickTargetPreparationMs
+        << ", \"refresh_pick_target_rendering_ms\": "
+        << r.refreshPickTargetRenderingMs
         << ", \"pick_median_ms\": " << r.pickMedianMs
         << ", \"pick_p95_ms\": " << r.pickP95Ms
         << ", \"pick_query_median_ms\": " << r.pickQueryMedianMs
         << ", \"pick_result_resolution_median_ms\": "
         << r.pickResultResolutionMedianMs
+        << ", \"pick_depth_rendering_median_ms\": "
+        << r.pickDepthRenderingMedianMs
+        << ", \"pick_depth_peeling_median_ms\": "
+        << r.pickDepthPeelingMedianMs
+        << ", \"pick_readback_median_ms\": " << r.pickReadbackMedianMs
+        << ", \"pick_hit_processing_median_ms\": "
+        << r.pickHitProcessingMedianMs
+        << ", \"pick_target_restore_median_ms\": "
+        << r.pickTargetRestoreMedianMs
         << ", \"pixel_checksum\": " << r.pixelChecksum << "}";
     if (i + 1 != results.size()) out << ',';
     out << '\n';

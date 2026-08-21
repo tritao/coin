@@ -292,7 +292,10 @@ runTest()
       manager.getRenderPhaseStatistics();
     if (renderPhases.drawListConstructionNanoseconds == 0 ||
         renderPhases.planConstructionNanoseconds == 0 ||
-        renderPhases.backendSubmissionNanoseconds == 0) {
+        renderPhases.backendSubmissionNanoseconds == 0 ||
+        renderPhases.backendFrameSetupNanoseconds == 0 ||
+        renderPhases.backendResourcePreparationNanoseconds == 0 ||
+        renderPhases.backendCommandExecutionNanoseconds == 0) {
       std::cerr << "FAIL: retained render phases were not measured" << std::endl;
       result = 1;
     }
@@ -318,7 +321,12 @@ runTest()
     if (firstPickPhases.pickBufferRefreshes != 1 ||
         firstPickPhases.pickBufferUpdateNanoseconds == 0 ||
         firstPickPhases.pickQueryNanoseconds == 0 ||
-        firstPickPhases.pickResultResolutionNanoseconds == 0) {
+        firstPickPhases.pickResultResolutionNanoseconds == 0 ||
+        firstPickPhases.backendPickTargetPreparationNanoseconds == 0 ||
+        firstPickPhases.backendPickTargetRenderingNanoseconds == 0 ||
+        firstPickPhases.backendPickDepthRenderingNanoseconds == 0 ||
+        firstPickPhases.backendPickReadbackNanoseconds == 0 ||
+        firstPickPhases.backendPickTargetRestoreNanoseconds == 0) {
       std::cerr << "FAIL: retained pick phases were not measured" << std::endl;
       result = 1;
     }

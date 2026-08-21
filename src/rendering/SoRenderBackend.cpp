@@ -9,7 +9,7 @@
 #include <cassert>
 
 SoRenderBackend::SoRenderBackend()
-  : initialized(FALSE), initParams()
+  : initialized(FALSE), phaseTimingEnabled(FALSE), initParams()
 {
 }
 
@@ -66,6 +66,24 @@ SbBool
 SoRenderBackend::isInitialized() const
 {
   return this->initialized;
+}
+
+void
+SoRenderBackend::setPhaseTimingEnabled(const SbBool enabled)
+{
+  this->phaseTimingEnabled = enabled;
+}
+
+SbBool
+SoRenderBackend::isPhaseTimingEnabled() const
+{
+  return this->phaseTimingEnabled;
+}
+
+SoRenderBackendPhaseStatistics
+SoRenderBackend::getPhaseStatistics() const
+{
+  return SoRenderBackendPhaseStatistics();
 }
 
 void

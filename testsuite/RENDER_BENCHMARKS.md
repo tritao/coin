@@ -84,13 +84,17 @@ reported in the JSON `unavailable` array rather than being mistaken for results.
 Picking is split into one-time cold target creation, target refresh after a
 changed frame, and warm repeated-hover latency.
 
-The GL benchmark explicitly enables coarse manager phase timing. JSON schema
-version 2 separates draw-list construction, render-plan construction, and
-backend submission. It also separates pick-plan construction, pick-buffer
-updates, backend pick queries, and result resolution. Timing remains disabled
-for normal `SoRenderManager` users, so these clock reads do not affect ordinary
-rendering. A zero-valued phase means it did not run; for example, a warm hover
-pick normally reuses its existing pick buffer.
+The GL benchmark explicitly enables renderer phase timing. JSON schema version
+3 separates draw-list construction, render-plan construction, and backend
+submission. Backend submission is further divided into frame setup, resource
+preparation, command execution, and selection overlays. Picking reports target
+preparation and rendering, depth rendering and peeling, readback, hit
+processing, target restoration, and final scene-result resolution.
+
+Timing remains disabled for normal `SoRenderManager` users, so clock reads do
+not affect ordinary rendering. A zero-valued phase means it did not run; for
+example, a warm hover pick normally reuses its existing pick buffer, and a
+frame without selected objects performs no selection-overlay work.
 
 The deterministic workloads currently cover traversal/IR construction, render
 plan construction (including transparent sorting and depth segments), retained

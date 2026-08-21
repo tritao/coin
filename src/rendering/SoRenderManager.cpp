@@ -1005,6 +1005,10 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   phaseStatistics.drawListConstructionNanoseconds = 0;
   phaseStatistics.planConstructionNanoseconds = 0;
   phaseStatistics.backendSubmissionNanoseconds = 0;
+  phaseStatistics.backendFrameSetupNanoseconds = 0;
+  phaseStatistics.backendResourcePreparationNanoseconds = 0;
+  phaseStatistics.backendCommandExecutionNanoseconds = 0;
+  phaseStatistics.backendSelectionNanoseconds = 0;
   const SbBool measurePhases = PRIVATE(this)->renderPhaseTimingEnabled;
   const RenderPhaseClock::time_point drawListStart = measurePhases
     ? RenderPhaseClock::now() : RenderPhaseClock::time_point();
@@ -1095,6 +1099,7 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
 
   if (!PRIVATE(this)->renderBackend) {
     PRIVATE(this)->renderBackend = new SoGLRenderBackend;
+    PRIVATE(this)->renderBackend->setPhaseTimingEnabled(measurePhases);
   }
   if (!PRIVATE(this)->renderBackend->isInitialized()) {
     SoRenderBackendInitParams initparams = {};
@@ -1322,6 +1327,16 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
     phaseStatistics.backendSubmissionNanoseconds =
       static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
         RenderPhaseClock::now() - submissionStart).count());
+    const SoRenderBackendPhaseStatistics backendPhases =
+      PRIVATE(this)->renderBackend->getPhaseStatistics();
+    phaseStatistics.backendFrameSetupNanoseconds =
+      backendPhases.frameSetupNanoseconds;
+    phaseStatistics.backendResourcePreparationNanoseconds =
+      backendPhases.resourcePreparationNanoseconds;
+    phaseStatistics.backendCommandExecutionNanoseconds =
+      backendPhases.commandExecutionNanoseconds;
+    phaseStatistics.backendSelectionNanoseconds =
+      backendPhases.selectionNanoseconds;
   }
   PRIVATE(this)->pickTargetDirty = TRUE;
   PRIVATE(this)->pickTargetGeneration = 0;
@@ -2448,6 +2463,9 @@ void
 SoRenderManager::setRenderPhaseTimingEnabled(const SbBool enabled)
 {
   PRIVATE(this)->renderPhaseTimingEnabled = enabled;
+  if (PRIVATE(this)->renderBackend) {
+    PRIVATE(this)->renderBackend->setPhaseTimingEnabled(enabled);
+  }
   if (!enabled) {
     PRIVATE(this)->renderPhaseStatistics = RenderPhaseStatistics();
   }
@@ -2491,6 +2509,13 @@ SoRenderManager::pickDepthStack(const int x, const int y, const int radius,
   phaseStatistics.pickBufferUpdateNanoseconds = 0;
   phaseStatistics.pickQueryNanoseconds = 0;
   phaseStatistics.pickResultResolutionNanoseconds = 0;
+  phaseStatistics.backendPickTargetPreparationNanoseconds = 0;
+  phaseStatistics.backendPickTargetRenderingNanoseconds = 0;
+  phaseStatistics.backendPickDepthRenderingNanoseconds = 0;
+  phaseStatistics.backendPickDepthPeelingNanoseconds = 0;
+  phaseStatistics.backendPickReadbackNanoseconds = 0;
+  phaseStatistics.backendPickHitProcessingNanoseconds = 0;
+  phaseStatistics.backendPickTargetRestoreNanoseconds = 0;
   phaseStatistics.pickBufferRefreshes = 0;
   const SbBool measurePhases = PRIVATE(this)->renderPhaseTimingEnabled;
   results.truncate(0);
@@ -2523,6 +2548,12 @@ SoRenderManager::pickDepthStack(const int x, const int y, const int radius,
           std::chrono::duration_cast<std::chrono::nanoseconds>(
             PickPhaseClock::now() - updateStart).count());
       phaseStatistics.pickBufferRefreshes = 1;
+      const SoRenderBackendPhaseStatistics backendPhases =
+        PRIVATE(this)->renderBackend->getPhaseStatistics();
+      phaseStatistics.backendPickTargetPreparationNanoseconds =
+        backendPhases.pickTargetPreparationNanoseconds;
+      phaseStatistics.backendPickTargetRenderingNanoseconds =
+        backendPhases.pickTargetRenderingNanoseconds;
     }
     PRIVATE(this)->pickTargetDirty = FALSE;
     PRIVATE(this)->pickTargetGeneration = drawlist.getGeneration();
@@ -2537,6 +2568,18 @@ SoRenderManager::pickDepthStack(const int x, const int y, const int radius,
     phaseStatistics.pickQueryNanoseconds =
       static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
         PickPhaseClock::now() - queryStart).count());
+    const SoRenderBackendPhaseStatistics backendPhases =
+      PRIVATE(this)->renderBackend->getPhaseStatistics();
+    phaseStatistics.backendPickDepthRenderingNanoseconds =
+      backendPhases.pickDepthRenderingNanoseconds;
+    phaseStatistics.backendPickDepthPeelingNanoseconds =
+      backendPhases.pickDepthPeelingNanoseconds;
+    phaseStatistics.backendPickReadbackNanoseconds =
+      backendPhases.pickReadbackNanoseconds;
+    phaseStatistics.backendPickHitProcessingNanoseconds =
+      backendPhases.pickHitProcessingNanoseconds;
+    phaseStatistics.backendPickTargetRestoreNanoseconds =
+      backendPhases.pickTargetRestoreNanoseconds;
   }
   if (raw.generation != drawlist.getGeneration()) return FALSE;
   const PickPhaseClock::time_point resolutionStart = measurePhases

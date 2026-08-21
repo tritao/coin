@@ -43,6 +43,7 @@ public:
                 const SoRenderPlan & plan,
                 const SoRenderParams & params,
                 const SoSelectionState * selection = nullptr) override;
+  SoRenderBackendPhaseStatistics getPhaseStatistics() const override;
 
   //! Render the current DrawList into the explicit integer picking buffer.
   SbBool updatePickBuffer(const SoDrawList & drawlist,
@@ -453,6 +454,7 @@ private:
   uint32_t cacheGeneration = 0;
   size_t cachedCommandCount = 0;
   bool haveCacheGeneration = false;
+  SoRenderBackendPhaseStatistics phaseStatistics;
 };
 
 #endif // COIN_SOGLRENDERBACKEND_H

@@ -46,6 +46,21 @@ struct SoRenderBackendInitParams {
   SoRenderBackendLogFn errorCallback = nullptr;
 };
 
+//! Opt-in CPU phase timings reported by retained-rendering backends.
+struct SoRenderBackendPhaseStatistics {
+  uint64_t frameSetupNanoseconds = 0;
+  uint64_t resourcePreparationNanoseconds = 0;
+  uint64_t commandExecutionNanoseconds = 0;
+  uint64_t selectionNanoseconds = 0;
+  uint64_t pickTargetPreparationNanoseconds = 0;
+  uint64_t pickTargetRenderingNanoseconds = 0;
+  uint64_t pickDepthRenderingNanoseconds = 0;
+  uint64_t pickDepthPeelingNanoseconds = 0;
+  uint64_t pickReadbackNanoseconds = 0;
+  uint64_t pickHitProcessingNanoseconds = 0;
+  uint64_t pickTargetRestoreNanoseconds = 0;
+};
+
 /*!
   \class SoRenderBackend
   \brief Backend-neutral lifecycle and DrawList execution interface.
@@ -101,6 +116,9 @@ public:
                                  const SoRenderParams & params);
 
   SbBool isInitialized() const;
+  void setPhaseTimingEnabled(SbBool enabled);
+  SbBool isPhaseTimingEnabled() const;
+  virtual SoRenderBackendPhaseStatistics getPhaseStatistics() const;
 
 protected:
   void setInitialized(SbBool state);
@@ -114,6 +132,7 @@ protected:
 
 private:
   SbBool                    initialized;
+  SbBool                    phaseTimingEnabled;
   SoRenderBackendInitParams initParams;
 };
 

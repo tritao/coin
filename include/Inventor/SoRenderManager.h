@@ -113,10 +113,21 @@ public:
     uint64_t drawListConstructionNanoseconds = 0;
     uint64_t planConstructionNanoseconds = 0;
     uint64_t backendSubmissionNanoseconds = 0;
+    uint64_t backendFrameSetupNanoseconds = 0;
+    uint64_t backendResourcePreparationNanoseconds = 0;
+    uint64_t backendCommandExecutionNanoseconds = 0;
+    uint64_t backendSelectionNanoseconds = 0;
     uint64_t pickPlanConstructionNanoseconds = 0;
     uint64_t pickBufferUpdateNanoseconds = 0;
     uint64_t pickQueryNanoseconds = 0;
     uint64_t pickResultResolutionNanoseconds = 0;
+    uint64_t backendPickTargetPreparationNanoseconds = 0;
+    uint64_t backendPickTargetRenderingNanoseconds = 0;
+    uint64_t backendPickDepthRenderingNanoseconds = 0;
+    uint64_t backendPickDepthPeelingNanoseconds = 0;
+    uint64_t backendPickReadbackNanoseconds = 0;
+    uint64_t backendPickHitProcessingNanoseconds = 0;
+    uint64_t backendPickTargetRestoreNanoseconds = 0;
     uint64_t pickBufferRefreshes = 0;
   };
 
