@@ -50,7 +50,6 @@ class SoVBO;
 #include <Inventor/elements/SoMultiTextureImageElement.h>
 #include <Inventor/elements/SoVertexAttributeElement.h>
 
-#include "elements/SoLazyElementP.h"
 #include "shapenodes/SoShapeGLRenderP.h"
 
 #include <chrono>
@@ -176,7 +175,31 @@ struct SoIRBatch {
 };
 
 struct SoIRMaterialBatchPlan {
-  std::vector<SoIRBatch> batches;
+  void addBatch(const SoIRBatch & batch)
+  {
+    if (!this->hasInlineBatch) {
+      this->inlineBatch = batch;
+      this->hasInlineBatch = true;
+    }
+    else this->additionalBatches.push_back(batch);
+  }
+  size_t size() const
+  {
+    return this->hasInlineBatch ? 1 + this->additionalBatches.size() : 0;
+  }
+  bool empty() const { return !this->hasInlineBatch; }
+  SoIRBatch & back()
+  {
+    return this->additionalBatches.empty()
+      ? this->inlineBatch : this->additionalBatches.back();
+  }
+  const SoIRBatch & operator[](size_t index) const
+  {
+    return index == 0 ? this->inlineBatch : this->additionalBatches[index - 1];
+  }
+  SoIRBatch inlineBatch = SoIRBatch(0, 0, -1);
+  std::vector<SoIRBatch> additionalBatches;
+  bool hasInlineBatch = false;
   bool needsVertexColors = false;
 };
 
@@ -278,14 +301,13 @@ public:
   void finalize()
   {
     if (this->reusedVertexCount != 0) {
-      std::vector<SoIRBatch> batches;
-      batches.push_back(SoIRBatch(0, this->reusedVertexCount, 0));
+      SoIRMaterialBatchPlan batches;
+      batches.addBatch(SoIRBatch(0, this->reusedVertexCount, 0));
       const std::chrono::steady_clock::time_point start =
         this->action->isConstructionTimingEnabled()
           ? std::chrono::steady_clock::now()
           : std::chrono::steady_clock::time_point();
-      this->emitCommands(this->action->getState(),
-                         this->reusedGeometry, batches);
+      this->emitCommands(this->reusedGeometry, batches);
       if (this->action->isConstructionTimingEnabled()) {
         this->action->recordCommandEmissionNanoseconds(
           static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -330,7 +352,7 @@ private:
 
     SoState * state = this->action->getState();
     SoGeometryDesc geometry = {};
-    std::vector<SoIRBatch> batches;
+    SoIRMaterialBatchPlan batches;
     const bool measure = this->action->isConstructionTimingEnabled() != FALSE;
     std::chrono::steady_clock::time_point start = measure
       ? std::chrono::steady_clock::now()
@@ -342,7 +364,7 @@ private:
           std::chrono::steady_clock::now() - start).count()));
       start = std::chrono::steady_clock::now();
     }
-    this->emitCommands(state, geometry, batches);
+    this->emitCommands(geometry, batches);
     if (measure) {
       this->action->recordCommandEmissionNanoseconds(
         static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -371,7 +393,7 @@ private:
       materialBinding == SoMaterialBindingElement::PER_VERTEX_INDEXED;
 
     if (!hasExplicitMaterialIndices) {
-      plan.batches.push_back(SoIRBatch(0, count, 0));
+      plan.addBatch(SoIRBatch(0, count, 0));
     }
     for (size_t first = 0; hasExplicitMaterialIndices && first < count;) {
       const size_t primitiveCount = std::min(primitiveWidth, count - first);
@@ -382,17 +404,17 @@ private:
           break;
         }
       }
-      if (plan.batches.empty() ||
-          plan.batches.back().materialIndex != materialIndex) {
-        plan.batches.push_back(SoIRBatch(first, primitiveCount, materialIndex));
+      if (plan.empty() || plan.back().materialIndex != materialIndex) {
+        plan.addBatch(SoIRBatch(first, primitiveCount, materialIndex));
       }
       else {
-        plan.batches.back().count += primitiveCount;
+        plan.back().count += primitiveCount;
       }
       first += primitiveCount;
     }
     plan.needsVertexColors = hasPerVertexMaterials;
-    for (const SoIRBatch & batch : plan.batches) {
+    for (size_t i = 0; i < plan.size(); ++i) {
+      const SoIRBatch & batch = plan[i];
       if (batch.materialIndex < 0) {
         plan.needsVertexColors = true;
         break;
@@ -403,7 +425,7 @@ private:
 
   void fillGeometry(SoState * state,
                     SoGeometryDesc & geometry,
-                    std::vector<SoIRBatch> & batches)
+                    SoIRMaterialBatchPlan & batches)
   {
     const size_t count = this->vertices.size();
     geometry.topology = this->topology;
@@ -420,11 +442,10 @@ private:
       this->action->allocateGeometryStorage(sizeof(float) * 3 * count));
     float * texcoords = static_cast<float *>(
       this->action->allocateGeometryStorage(sizeof(float) * 4 * count));
-    const SoIRMaterialBatchPlan plan = this->buildMaterialBatches(state);
-    batches = plan.batches;
+    batches = this->buildMaterialBatches(state);
 
     float * colors = nullptr;
-    if (plan.needsVertexColors) {
+    if (batches.needsVertexColors) {
       colors = static_cast<float *>(
         this->action->allocateGeometryStorage(sizeof(float) * 4 * count));
     }
@@ -458,11 +479,11 @@ private:
     geometry.colors = colors;
   }
 
-  void emitCommands(SoState * state,
-                    const SoGeometryDesc & sourceGeometry,
-                    const std::vector<SoIRBatch> & batches)
+  void emitCommands(const SoGeometryDesc & sourceGeometry,
+                    const SoIRMaterialBatchPlan & batches)
   {
-    for (const SoIRBatch & batch : batches) {
+    for (size_t batchIndex = 0; batchIndex < batches.size(); ++batchIndex) {
+      const SoIRBatch & batch = batches[batchIndex];
       SoRenderCommand command = {};
       command.geometry = sourceGeometry;
       command.geometry.vertexCount = static_cast<uint32_t>(batch.count);
@@ -476,17 +497,6 @@ private:
       SoRenderIR::fillCommandStateFromAction(
         this->action, command, std::max(batch.materialIndex, 0));
       command.materialIndex = std::max(batch.materialIndex, 0);
-      const bool packedVertexColors =
-        SoLazyElementP::hasPackedVertexColorState(state);
-      if (packedVertexColors) {
-        const float inheritedOpacity =
-          SoLazyElementP::getPackedVertexColorOpacity(
-            state, std::max(batch.materialIndex, 0));
-        command.material.opacity = inheritedOpacity;
-        command.material.diffuse[3] = inheritedOpacity;
-      }
-      command.material.vertexColorAlphaIncludesOpacity =
-        command.geometry.colors != nullptr && !packedVertexColors;
       SoRenderIR::finalizeCommand(command);
       const size_t batchEnd = batch.first + batch.count;
       const size_t primitiveWidth = this->topology == SO_TOPOLOGY_TRIANGLES
