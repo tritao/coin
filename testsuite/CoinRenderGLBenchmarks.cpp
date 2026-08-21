@@ -40,6 +40,7 @@ using Clock = std::chrono::steady_clock;
 struct Options {
   bool smoke = false;
   int samples = 0;
+  int rebuildOnly = 0;
   std::string output;
 };
 
@@ -47,6 +48,7 @@ struct Measurement {
   std::string workload;
   std::string renderer;
   std::string profile;
+  std::string executionMode;
   int semanticDraws = 0;
   int samples = 0;
   double cpuMedianMs = 0.0;
@@ -129,7 +131,8 @@ bool runVariant(GLTestProfile profile,
                 SoRenderManager::RenderPipeline pipeline,
                 const std::string & renderer, WorkloadKind workload,
                 int drawCount, int samples, Measurement & result,
-                std::string & unavailable)
+                std::string & unavailable,
+                bool forceDrawListRebuild = false)
 {
   GLTestContextConfig config;
   config.profile = profile;
@@ -200,6 +203,7 @@ bool runVariant(GLTestProfile profile,
   glGenQueries(1, &query);
   for (int sample = 0; sample < samples; ++sample) {
     context.bindFramebuffer();
+    if (forceDrawListRebuild) manager.invalidateDrawList();
     const Clock::time_point totalStart = Clock::now();
     glBeginQuery(GL_TIME_ELAPSED, query);
     const Clock::time_point cpuStart = Clock::now();
@@ -359,6 +363,9 @@ bool runVariant(GLTestProfile profile,
   result.workload = workloadName(workload);
   result.renderer = renderer;
   result.profile = profile == GLTestProfile::Core ? "core" : "compatibility";
+  result.executionMode = forceDrawListRebuild ? "forced_rebuild" :
+    (pipeline == SoRenderManager::RenderPipeline::LEGACY_GL ?
+      "per_frame_traversal" : "steady_state");
   result.semanticDraws = drawCount;
   result.samples = samples;
   result.cpuMedianMs = percentile(cpu, 0.5);
@@ -403,6 +410,11 @@ bool runVariant(GLTestProfile profile,
     }
   }
   result.pixelChecksum = pixelChecksum;
+  if (forceDrawListRebuild &&
+      result.drawListRebuilds != static_cast<uint64_t>(samples)) {
+    unavailable = "forced rebuild did not rebuild every measured frame";
+    return false;
+  }
   return true;
 }
 
@@ -413,10 +425,12 @@ Options parseOptions(int argc, char ** argv)
     const std::string arg(argv[i]);
     if (arg == "--smoke") options.smoke = true;
     else if (arg == "--samples" && i + 1 < argc) options.samples = std::atoi(argv[++i]);
+    else if (arg == "--rebuild-only" && i + 1 < argc)
+      options.rebuildOnly = std::atoi(argv[++i]);
     else if (arg == "--output" && i + 1 < argc) options.output = argv[++i];
     else {
       std::cerr << "Usage: CoinRenderGLBenchmarks [--smoke] [--samples N] "
-                   "[--output FILE]\n";
+                   "[--rebuild-only N] [--output FILE]\n";
       std::exit(2);
     }
   }
@@ -429,7 +443,7 @@ std::string toJson(const std::vector<Measurement> & results,
 {
   std::ostringstream out;
   out << std::fixed << std::setprecision(6);
-  out << "{\n  \"schema_version\": 4,\n  \"mode\": \""
+  out << "{\n  \"schema_version\": 5,\n  \"mode\": \""
       << (options.smoke ? "smoke" : "benchmark")
       << "\",\n  \"time_unit\": \"ms\",\n  \"benchmarks\": [\n";
   for (size_t i = 0; i < results.size(); ++i) {
@@ -437,6 +451,7 @@ std::string toJson(const std::vector<Measurement> & results,
     out << "    {\"workload\": \"" << r.workload
         << "\", \"renderer\": \"" << r.renderer
         << "\", \"profile\": \"" << r.profile
+        << "\", \"execution_mode\": \"" << r.executionMode
         << "\", \"semantic_draws\": " << r.semanticDraws
         << ", \"samples\": " << r.samples
         << ", \"cpu_render_median_ms\": " << r.cpuMedianMs
@@ -523,6 +538,49 @@ int main(int argc, char ** argv)
   };
   std::vector<Measurement> results;
   std::vector<std::string> unavailable;
+  if (options.rebuildOnly > 0) {
+    const WorkloadKind workload = WorkloadKind::FeatureRich;
+    const int drawCount = options.rebuildOnly;
+    const std::string workloadLabel = "feature_rich_rebuild_" +
+      std::to_string(drawCount);
+    const auto run = [&](GLTestProfile profile,
+                         SoRenderManager::RenderPipeline pipeline,
+                         const char * renderer,
+                         bool forceRebuild) {
+      Measurement measurement;
+      std::string reason;
+      if (runVariant(profile, pipeline, renderer, workload, drawCount, samples,
+                     measurement, reason, forceRebuild)) {
+        measurement.workload = workloadLabel;
+        results.push_back(measurement);
+      }
+      else {
+        unavailable.push_back(workloadLabel + ":" + renderer + ": " + reason);
+      }
+    };
+#if COIN_HAVE_LEGACY_GL_RENDERER
+    run(GLTestProfile::Compatibility,
+        SoRenderManager::RenderPipeline::LEGACY_GL, "LegacyGL", false);
+#endif
+    run(GLTestProfile::Compatibility,
+        SoRenderManager::RenderPipeline::DRAW_LIST, "DrawList", false);
+    run(GLTestProfile::Compatibility,
+        SoRenderManager::RenderPipeline::DRAW_LIST, "DrawList", true);
+    run(GLTestProfile::Core,
+        SoRenderManager::RenderPipeline::DRAW_LIST, "DrawList", false);
+    run(GLTestProfile::Core,
+        SoRenderManager::RenderPipeline::DRAW_LIST, "DrawList", true);
+
+    const std::string document = toJson(results, unavailable, options);
+    if (options.output.empty()) std::cout << document;
+    else {
+      std::ofstream output(options.output.c_str());
+      if (!output) return 1;
+      output << document;
+    }
+    SoDB::finish();
+    return results.empty() ? 77 : 0;
+  }
   for (size_t i = 0; i < sizeof(workloads) / sizeof(workloads[0]); ++i) {
 #if COIN_HAVE_LEGACY_GL_RENDERER
     Measurement legacy;
