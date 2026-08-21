@@ -44,6 +44,12 @@ class COIN_DLL_API SoIRRenderAction : public SoAction {
   SO_ACTION_HEADER(SoIRRenderAction);
 
 public:
+  struct ConstructionStatistics {
+    uint64_t primitiveGenerationNanoseconds = 0;
+    uint64_t geometryPackingNanoseconds = 0;
+    uint64_t commandEmissionNanoseconds = 0;
+  };
+
   /*! Camera state policy used when starting a root traversal. */
   enum class CameraPolicy {
     //! Initialize the traversal from the camera configured on this action.
@@ -160,6 +166,13 @@ public:
   void popPrimitiveCollector(PrimitiveCollector * collector);
   //! Return the currently active primitive collector, or NULL.
   PrimitiveCollector * getActivePrimitiveCollector(void) const;
+  //! Enable intrusive construction attribution for benchmark diagnostics.
+  void setConstructionTimingEnabled(SbBool enabled);
+  SbBool isConstructionTimingEnabled() const;
+  const ConstructionStatistics & getConstructionStatistics() const;
+  void recordPrimitiveGenerationNanoseconds(uint64_t nanoseconds);
+  void recordGeometryPackingNanoseconds(uint64_t nanoseconds);
+  void recordCommandEmissionNanoseconds(uint64_t nanoseconds);
 
 protected:
   virtual void beginTraversal(SoNode * node) override;

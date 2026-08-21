@@ -56,6 +56,9 @@ struct Measurement {
   double completionMedianMs = 0.0;
   double completionP95Ms = 0.0;
   double drawListConstructionMedianMs = 0.0;
+  double primitiveGenerationMedianMs = 0.0;
+  double geometryPackingMedianMs = 0.0;
+  double commandEmissionMedianMs = 0.0;
   double planConstructionMedianMs = 0.0;
   double backendSubmissionMedianMs = 0.0;
   double backendFrameSetupMedianMs = 0.0;
@@ -183,6 +186,9 @@ bool runVariant(GLTestProfile profile,
   std::vector<double> gpu;
   std::vector<double> completion;
   std::vector<double> drawListConstruction;
+  std::vector<double> primitiveGeneration;
+  std::vector<double> geometryPacking;
+  std::vector<double> commandEmission;
   std::vector<double> planConstruction;
   std::vector<double> backendSubmission;
   std::vector<double> backendFrameSetup;
@@ -202,6 +208,12 @@ bool runVariant(GLTestProfile profile,
       manager.getRenderPhaseStatistics();
     drawListConstruction.push_back(
       renderPhases.drawListConstructionNanoseconds / 1000000.0);
+    primitiveGeneration.push_back(
+      renderPhases.drawListPrimitiveGenerationNanoseconds / 1000000.0);
+    geometryPacking.push_back(
+      renderPhases.drawListGeometryPackingNanoseconds / 1000000.0);
+    commandEmission.push_back(
+      renderPhases.drawListCommandEmissionNanoseconds / 1000000.0);
     planConstruction.push_back(
       renderPhases.planConstructionNanoseconds / 1000000.0);
     backendSubmission.push_back(
@@ -355,6 +367,9 @@ bool runVariant(GLTestProfile profile,
   result.completionP95Ms = percentile(completion, 0.95);
   result.drawListConstructionMedianMs =
     percentile(drawListConstruction, 0.5);
+  result.primitiveGenerationMedianMs = percentile(primitiveGeneration, 0.5);
+  result.geometryPackingMedianMs = percentile(geometryPacking, 0.5);
+  result.commandEmissionMedianMs = percentile(commandEmission, 0.5);
   result.planConstructionMedianMs = percentile(planConstruction, 0.5);
   result.backendSubmissionMedianMs = percentile(backendSubmission, 0.5);
   result.backendFrameSetupMedianMs = percentile(backendFrameSetup, 0.5);
@@ -412,7 +427,7 @@ std::string toJson(const std::vector<Measurement> & results,
 {
   std::ostringstream out;
   out << std::fixed << std::setprecision(6);
-  out << "{\n  \"schema_version\": 3,\n  \"mode\": \""
+  out << "{\n  \"schema_version\": 4,\n  \"mode\": \""
       << (options.smoke ? "smoke" : "benchmark")
       << "\",\n  \"time_unit\": \"ms\",\n  \"benchmarks\": [\n";
   for (size_t i = 0; i < results.size(); ++i) {
@@ -430,6 +445,12 @@ std::string toJson(const std::vector<Measurement> & results,
         << ", \"completion_p95_ms\": " << r.completionP95Ms
         << ", \"drawlist_construction_median_ms\": "
         << r.drawListConstructionMedianMs
+        << ", \"drawlist_primitive_generation_median_ms\": "
+        << r.primitiveGenerationMedianMs
+        << ", \"drawlist_geometry_packing_median_ms\": "
+        << r.geometryPackingMedianMs
+        << ", \"drawlist_command_emission_median_ms\": "
+        << r.commandEmissionMedianMs
         << ", \"plan_construction_median_ms\": "
         << r.planConstructionMedianMs
         << ", \"backend_submission_median_ms\": "

@@ -53,6 +53,7 @@ class SoVBO;
 #include "elements/SoLazyElementP.h"
 #include "shapenodes/SoShapeGLRenderP.h"
 
+#include <chrono>
 #include <cstring>
 #include <cstdlib>
 #include <vector>
@@ -234,8 +235,23 @@ private:
     SoState * state = this->action->getState();
     SoGeometryDesc geometry = {};
     std::vector<SoIRBatch> batches;
+    const bool measure = this->action->isConstructionTimingEnabled() != FALSE;
+    std::chrono::steady_clock::time_point start = measure
+      ? std::chrono::steady_clock::now()
+      : std::chrono::steady_clock::time_point();
     this->fillGeometry(state, geometry, batches);
+    if (measure) {
+      this->action->recordGeometryPackingNanoseconds(
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now() - start).count()));
+      start = std::chrono::steady_clock::now();
+    }
     this->emitCommands(state, geometry, batches);
+    if (measure) {
+      this->action->recordCommandEmissionNanoseconds(
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now() - start).count()));
+    }
     this->vertices.clear();
   }
 
@@ -835,7 +851,16 @@ SoShape::IRRender(SoIRRenderAction * action)
 
   SoIRPrimitiveAssembler assembler(action, this);
   action->pushPrimitiveCollector(&assembler);
+  const bool measure = action->isConstructionTimingEnabled() != FALSE;
+  const std::chrono::steady_clock::time_point primitiveStart = measure
+    ? std::chrono::steady_clock::now()
+    : std::chrono::steady_clock::time_point();
   this->generatePrimitives(action);
+  if (measure) {
+    action->recordPrimitiveGenerationNanoseconds(
+      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - primitiveStart).count()));
+  }
   action->popPrimitiveCollector(&assembler);
   assembler.finalize();
 

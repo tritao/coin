@@ -89,6 +89,8 @@ public:
   SoIRBuffer geometryPool;
   std::vector<TextureStorage> textureStorage;
   SbList<SoIRRenderAction::PrimitiveCollector *> collectorStack;
+  bool constructionTimingEnabled = false;
+  SoIRRenderAction::ConstructionStatistics constructionStatistics;
 };
 
 #define PRIVATE(obj) (obj->pimpl)
@@ -416,6 +418,45 @@ SoIRRenderAction::getActivePrimitiveCollector(void) const
   return PRIVATE(this)->collectorStack[count - 1];
 }
 
+void
+SoIRRenderAction::setConstructionTimingEnabled(const SbBool enabled)
+{
+  PRIVATE(this)->constructionTimingEnabled = enabled != FALSE;
+}
+
+SbBool
+SoIRRenderAction::isConstructionTimingEnabled() const
+{
+  return PRIVATE(this)->constructionTimingEnabled ? TRUE : FALSE;
+}
+
+const SoIRRenderAction::ConstructionStatistics &
+SoIRRenderAction::getConstructionStatistics() const
+{
+  return PRIVATE(this)->constructionStatistics;
+}
+
+void
+SoIRRenderAction::recordPrimitiveGenerationNanoseconds(uint64_t nanoseconds)
+{
+  PRIVATE(this)->constructionStatistics.primitiveGenerationNanoseconds +=
+    nanoseconds;
+}
+
+void
+SoIRRenderAction::recordGeometryPackingNanoseconds(uint64_t nanoseconds)
+{
+  PRIVATE(this)->constructionStatistics.geometryPackingNanoseconds +=
+    nanoseconds;
+}
+
+void
+SoIRRenderAction::recordCommandEmissionNanoseconds(uint64_t nanoseconds)
+{
+  PRIVATE(this)->constructionStatistics.commandEmissionNanoseconds +=
+    nanoseconds;
+}
+
 void *
 SoIRRenderAction::allocateGeometryStorage(size_t bytes, size_t alignment)
 {
@@ -531,6 +572,7 @@ SoIRRenderAction::resetFrameResources()
   PRIVATE(this)->geometryPool.clear();
   PRIVATE(this)->textureStorage.clear();
   PRIVATE(this)->collectorStack.truncate(0);
+  PRIVATE(this)->constructionStatistics = ConstructionStatistics();
 }
 
 void

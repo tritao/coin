@@ -1003,6 +1003,9 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   RenderPhaseStatistics & phaseStatistics =
     PRIVATE(this)->renderPhaseStatistics;
   phaseStatistics.drawListConstructionNanoseconds = 0;
+  phaseStatistics.drawListPrimitiveGenerationNanoseconds = 0;
+  phaseStatistics.drawListGeometryPackingNanoseconds = 0;
+  phaseStatistics.drawListCommandEmissionNanoseconds = 0;
   phaseStatistics.planConstructionNanoseconds = 0;
   phaseStatistics.backendSubmissionNanoseconds = 0;
   phaseStatistics.backendFrameSetupNanoseconds = 0;
@@ -1156,6 +1159,7 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   PRIVATE(this)->irAction->setDevicePixelRatio(PRIVATE(this)->devicePixelRatio);
 
   SoIRRenderAction * action = PRIVATE(this)->irAction;
+  action->setConstructionTimingEnabled(measurePhases);
   SoState * state = action->getState();
   action->beginFrame();
 
@@ -1281,9 +1285,17 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   SoDrawList & drawlist = PRIVATE(this)->irAction->getMutableDrawList();
 
   if (measurePhases) {
+    const SoIRRenderAction::ConstructionStatistics & construction =
+      action->getConstructionStatistics();
     phaseStatistics.drawListConstructionNanoseconds =
       static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
         RenderPhaseClock::now() - drawListStart).count());
+    phaseStatistics.drawListPrimitiveGenerationNanoseconds =
+      construction.primitiveGenerationNanoseconds;
+    phaseStatistics.drawListGeometryPackingNanoseconds =
+      construction.geometryPackingNanoseconds;
+    phaseStatistics.drawListCommandEmissionNanoseconds =
+      construction.commandEmissionNanoseconds;
   }
 
   SoRenderParams params = {};
