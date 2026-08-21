@@ -41,7 +41,7 @@ public:
   void present();
   void pollEvents();
   bool shouldClose() const;
-  GLFWwindow * window() const { return this->window; }
+  GLFWwindow * window() const { return window_; }
   std::vector<uint8_t> readPixels() const;
 
   bool isCoreProfile() const { return profile_ == GLTestProfile::Core; }

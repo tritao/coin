@@ -2,8 +2,37 @@
 
 #include <iostream>
 
+#include <Inventor/C/glue/gl.h>
+
+#ifndef APIENTRY
+#define APIENTRY
+#endif
+
+namespace {
+
+typedef void (APIENTRY * CoinTestBlitFramebufferProc)(
+  GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1,
+  GLint dstX0, GLint dstY0, GLint dstX1, GLint dstY1,
+  GLbitfield mask, GLenum filter);
+
+CoinTestBlitFramebufferProc
+getBlitFramebufferProc(const cc_glglue * glue)
+{
+  CoinTestBlitFramebufferProc proc =
+    reinterpret_cast<CoinTestBlitFramebufferProc>(
+      cc_glglue_getprocaddress(glue, "glBlitFramebuffer"));
+  if (proc == NULL) {
+    proc = reinterpret_cast<CoinTestBlitFramebufferProc>(
+      cc_glglue_getprocaddress(glue, "glBlitFramebufferEXT"));
+  }
+  return proc;
+}
+
+} // namespace
+
 GLTestFramebuffer::GLTestFramebuffer()
-  : framebuffer_(0),
+  : glue_(NULL),
+    framebuffer_(0),
     colorTexture_(0),
     depthRenderbuffer_(0),
     width_(0),
@@ -17,7 +46,8 @@ GLTestFramebuffer::~GLTestFramebuffer()
 }
 
 bool
-GLTestFramebuffer::initialize(const int width, const int height)
+GLTestFramebuffer::initialize(const cc_glglue * glue,
+                              const int width, const int height)
 {
   if (width <= 0 || height <= 0) {
     std::cerr << "Invalid GL test framebuffer size: " << width << "x"
@@ -26,6 +56,7 @@ GLTestFramebuffer::initialize(const int width, const int height)
   }
 
   this->shutdown();
+  glue_ = glue;
   width_ = width;
   height_ = height;
 
@@ -82,6 +113,7 @@ GLTestFramebuffer::shutdown()
   }
   width_ = 0;
   height_ = 0;
+  glue_ = NULL;
 }
 
 void
@@ -89,6 +121,19 @@ GLTestFramebuffer::bind() const
 {
   glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
   glViewport(0, 0, width_, height_);
+}
+
+void
+GLTestFramebuffer::blitToDefault() const
+{
+  if (!this->isInitialized()) return;
+  cc_glglue_glBindFramebuffer(glue_, GL_READ_FRAMEBUFFER, framebuffer_);
+  cc_glglue_glBindFramebuffer(glue_, GL_DRAW_FRAMEBUFFER, 0);
+  CoinTestBlitFramebufferProc proc = getBlitFramebufferProc(glue_);
+  if (proc != NULL) {
+    proc(0, 0, width_, height_, 0, 0, width_, height_,
+         GL_COLOR_BUFFER_BIT, GL_NEAREST);
+  }
 }
 
 std::vector<uint8_t>

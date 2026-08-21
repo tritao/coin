@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include <Inventor/system/gl.h>
+#include <Inventor/C/glue/gl.h>
 
 namespace {
 
@@ -111,11 +112,12 @@ GLTestContext::initialize(const GLTestContextConfig & config)
   }
 #endif
 
-  if (!framebuffer_.initialize(config.width, config.height)) {
+  contextId_ = nextContextId++;
+  if (!framebuffer_.initialize(cc_glglue_instance(contextId_),
+                               config.width, config.height)) {
     this->shutdown();
     return false;
   }
-  contextId_ = nextContextId++;
   this->bindFramebuffer();
   glDisable(GL_SCISSOR_TEST);
   glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -158,9 +160,11 @@ GLTestContext::makeCurrent()
 bool
 GLTestContext::resizeFramebuffer(const int width, const int height)
 {
-  if (this->window == NULL || width <= 0 || height <= 0) return false;
-  glfwMakeContextCurrent(this->window);
-  if (!this->framebuffer.initialize(this->glueinstance, width, height)) return false;
+  if (window_ == NULL || width <= 0 || height <= 0) return false;
+  glfwMakeContextCurrent(window_);
+  if (!framebuffer_.initialize(cc_glglue_instance(contextId_), width, height)) {
+    return false;
+  }
   this->bindFramebuffer();
   return true;
 }
@@ -175,22 +179,22 @@ GLTestContext::bindFramebuffer()
 void
 GLTestContext::present()
 {
-  if (this->window == NULL) return;
-  glfwMakeContextCurrent(this->window);
-  this->framebuffer.blitToDefault();
-  glfwSwapBuffers(this->window);
+  if (window_ == NULL) return;
+  glfwMakeContextCurrent(window_);
+  framebuffer_.blitToDefault();
+  glfwSwapBuffers(window_);
 }
 
 void GLTestContext::pollEvents()
 {
   glfwPollEvents();
-  if (this->window && glfwGetKey(this->window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-    glfwSetWindowShouldClose(this->window, GLFW_TRUE);
+  if (window_ && glfwGetKey(window_, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+    glfwSetWindowShouldClose(window_, GLFW_TRUE);
 }
 
 bool GLTestContext::shouldClose() const
 {
-  return this->window == NULL || glfwWindowShouldClose(this->window) != 0;
+  return window_ == NULL || glfwWindowShouldClose(window_) != 0;
 }
 
 std::vector<uint8_t>

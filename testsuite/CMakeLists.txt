@@ -101,6 +101,12 @@ endif()
 add_test(NAME CoinTests COMMAND CoinTests)
 set_tests_properties(CoinTests PROPERTIES LABELS "unit")
 
+add_library(CoinPrivateTestHeaders INTERFACE)
+target_compile_definitions(CoinPrivateTestHeaders INTERFACE COIN_INTERNAL)
+target_include_directories(CoinPrivateTestHeaders INTERFACE
+	${PROJECT_SOURCE_DIR}/src
+	${PROJECT_SOURCE_DIR}/src/glue/khronos)
+
 # Generic OpenGL tests use the existing GLFW test support.  EGL remains an
 # explicit implementation-contract suite below; it is not the provider for
 # ordinary GL semantics tests.
@@ -155,7 +161,8 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 		${COIN_TARGET_INCLUDE_DIRECTORIES})
 	target_link_libraries(CoinGLTestSupport PUBLIC
 		${COIN_GLFW_TARGET}
-		${COIN_TARGET_LINK_LIBRARIES})
+		${COIN_TARGET_LINK_LIBRARIES}
+		PRIVATE CoinPrivateTestHeaders Coin)
 
 	function(coin_add_gl_test)
 		cmake_parse_arguments(ARG "PRIVATE_COIN_API" "NAME;PROFILE"
@@ -255,7 +262,8 @@ target_include_directories(LegacyBlendingTest PRIVATE
 add_test(NAME LegacyBlendingTest COMMAND LegacyBlendingTest)
 
 add_executable(RetainedIRTest RetainedIRTest.cpp)
-target_link_libraries(RetainedIRTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+target_link_libraries(RetainedIRTest CoinPrivateTestHeaders Coin
+	${COIN_TARGET_LINK_LIBRARIES})
 target_include_directories(RetainedIRTest PRIVATE
 	${PROJECT_SOURCE_DIR}/include
 	${PROJECT_BINARY_DIR}/include
