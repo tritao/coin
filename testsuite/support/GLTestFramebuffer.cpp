@@ -60,8 +60,8 @@ GLTestFramebuffer::initialize(const cc_glglue * glue,
   width_ = width;
   height_ = height;
 
-  glGenFramebuffers(1, &framebuffer_);
-  glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
+  cc_glglue_glGenFramebuffers(glue_, 1, &framebuffer_);
+  cc_glglue_glBindFramebuffer(glue_, GL_FRAMEBUFFER, framebuffer_);
 
   glGenTextures(1, &colorTexture_);
   glBindTexture(GL_TEXTURE_2D, colorTexture_);
@@ -71,28 +71,31 @@ GLTestFramebuffer::initialize(const cc_glglue * glue,
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width_, height_, 0, GL_RGBA,
                GL_UNSIGNED_BYTE, NULL);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                         GL_TEXTURE_2D, colorTexture_, 0);
+  cc_glglue_glFramebufferTexture2D(glue_, GL_FRAMEBUFFER,
+                                   GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                                   colorTexture_, 0);
 
-  glGenRenderbuffers(1, &depthRenderbuffer_);
-  glBindRenderbuffer(GL_RENDERBUFFER, depthRenderbuffer_);
-  glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
-                        width_, height_);
-  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
-                            GL_RENDERBUFFER, depthRenderbuffer_);
+  cc_glglue_glGenRenderbuffers(glue_, 1, &depthRenderbuffer_);
+  cc_glglue_glBindRenderbuffer(glue_, GL_RENDERBUFFER, depthRenderbuffer_);
+  cc_glglue_glRenderbufferStorage(glue_, GL_RENDERBUFFER,
+                                  GL_DEPTH_COMPONENT24, width_, height_);
+  cc_glglue_glFramebufferRenderbuffer(glue_, GL_FRAMEBUFFER,
+                                      GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER,
+                                      depthRenderbuffer_);
 
-  const GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+  const GLenum status = cc_glglue_glCheckFramebufferStatus(
+    glue_, GL_FRAMEBUFFER);
   if (status != GL_FRAMEBUFFER_COMPLETE) {
     std::cerr << "GL test framebuffer is incomplete: 0x" << std::hex
               << status << std::dec << std::endl;
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    cc_glglue_glBindFramebuffer(glue_, GL_FRAMEBUFFER, 0);
     this->shutdown();
     return false;
   }
 
   glBindTexture(GL_TEXTURE_2D, 0);
-  glBindRenderbuffer(GL_RENDERBUFFER, 0);
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  cc_glglue_glBindRenderbuffer(glue_, GL_RENDERBUFFER, 0);
+  cc_glglue_glBindFramebuffer(glue_, GL_FRAMEBUFFER, 0);
   return true;
 }
 
@@ -100,7 +103,7 @@ void
 GLTestFramebuffer::shutdown()
 {
   if (depthRenderbuffer_ != 0) {
-    glDeleteRenderbuffers(1, &depthRenderbuffer_);
+    cc_glglue_glDeleteRenderbuffers(glue_, 1, &depthRenderbuffer_);
     depthRenderbuffer_ = 0;
   }
   if (colorTexture_ != 0) {
@@ -108,7 +111,7 @@ GLTestFramebuffer::shutdown()
     colorTexture_ = 0;
   }
   if (framebuffer_ != 0) {
-    glDeleteFramebuffers(1, &framebuffer_);
+    cc_glglue_glDeleteFramebuffers(glue_, 1, &framebuffer_);
     framebuffer_ = 0;
   }
   width_ = 0;
@@ -119,7 +122,7 @@ GLTestFramebuffer::shutdown()
 void
 GLTestFramebuffer::bind() const
 {
-  glBindFramebuffer(GL_FRAMEBUFFER, framebuffer_);
+  cc_glglue_glBindFramebuffer(glue_, GL_FRAMEBUFFER, framebuffer_);
   glViewport(0, 0, width_, height_);
 }
 
@@ -157,7 +160,7 @@ GLTestFramebuffer::readPixels() const
   glGetIntegerv(GL_PACK_IMAGE_HEIGHT, &packImageHeight);
   glGetIntegerv(GL_PACK_SKIP_IMAGES, &packSkipImages);
   glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &pixelPackBuffer);
-  glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+  cc_glglue_glBindBuffer(glue_, GL_PIXEL_PACK_BUFFER, 0);
   glPixelStorei(GL_PACK_ALIGNMENT, 1);
   glPixelStorei(GL_PACK_ROW_LENGTH, 0);
   glPixelStorei(GL_PACK_SKIP_ROWS, 0);
@@ -173,6 +176,7 @@ GLTestFramebuffer::readPixels() const
   glPixelStorei(GL_PACK_SKIP_PIXELS, packSkipPixels);
   glPixelStorei(GL_PACK_IMAGE_HEIGHT, packImageHeight);
   glPixelStorei(GL_PACK_SKIP_IMAGES, packSkipImages);
-  glBindBuffer(GL_PIXEL_PACK_BUFFER, static_cast<GLuint>(pixelPackBuffer));
+  cc_glglue_glBindBuffer(glue_, GL_PIXEL_PACK_BUFFER,
+                         static_cast<GLuint>(pixelPackBuffer));
   return pixels;
 }

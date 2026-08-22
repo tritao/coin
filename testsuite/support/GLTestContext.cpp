@@ -86,10 +86,12 @@ GLTestContext::initialize(const GLTestContextConfig & config)
   glfwMakeContextCurrent(window_);
   glfwSwapInterval(config.vsync ? 1 : 0);
 
-  GLint major = 0;
-  GLint minor = 0;
-  glGetIntegerv(GL_MAJOR_VERSION, &major);
-  glGetIntegerv(GL_MINOR_VERSION, &minor);
+  contextId_ = nextContextId++;
+  const cc_glglue * glue = cc_glglue_instance(contextId_);
+  unsigned int major = 0;
+  unsigned int minor = 0;
+  unsigned int release = 0;
+  cc_glglue_glversion(glue, &major, &minor, &release);
   majorVersion_ = static_cast<int>(major);
   minorVersion_ = static_cast<int>(minor);
   if (!versionAtLeast(majorVersion_, minorVersion_, config.major, config.minor)) {
@@ -112,9 +114,7 @@ GLTestContext::initialize(const GLTestContextConfig & config)
   }
 #endif
 
-  contextId_ = nextContextId++;
-  if (!framebuffer_.initialize(cc_glglue_instance(contextId_),
-                               config.width, config.height)) {
+  if (!framebuffer_.initialize(glue, config.width, config.height)) {
     this->shutdown();
     return false;
   }

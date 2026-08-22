@@ -353,14 +353,17 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 	coin_add_gl_test(
 		NAME RetainedMaterialLightingGLTest
 		PROFILE core
+		PRIVATE_COIN_API
 		SOURCES RetainedMaterialLightingGLTest.cpp)
 	coin_add_gl_test(
 		NAME RetainedRasterGLTest
 		PROFILE core
+		PRIVATE_COIN_API
 		SOURCES RetainedRasterGLTest.cpp)
 	coin_add_gl_test(
 		NAME DrawListGLTest
 		PROFILE core
+		PRIVATE_COIN_API
 		SOURCES DrawListGLTest.cpp)
 	coin_add_gl_test(
 		NAME DrawListPickingTest
@@ -370,10 +373,12 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 	coin_add_gl_test(
 		NAME DrawListManagerTest
 		PROFILE core
+		PRIVATE_COIN_API
 		SOURCES DrawListManagerTest.cpp)
 	coin_add_gl_test(
 		NAME RenderLayerLifecycleTest
 		PROFILE core
+		PRIVATE_COIN_API
 		SOURCES RenderLayerLifecycleTest.cpp)
 	coin_add_gl_test(
 		NAME GLSLRuntimeTest
