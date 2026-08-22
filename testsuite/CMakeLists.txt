@@ -101,12 +101,6 @@ endif()
 add_test(NAME CoinTests COMMAND CoinTests)
 set_tests_properties(CoinTests PROPERTIES LABELS "unit")
 
-add_library(CoinPrivateTestHeaders INTERFACE)
-target_compile_definitions(CoinPrivateTestHeaders INTERFACE COIN_INTERNAL)
-target_include_directories(CoinPrivateTestHeaders INTERFACE
-	${PROJECT_SOURCE_DIR}/src
-	${PROJECT_SOURCE_DIR}/src/glue/khronos)
-
 # Generic OpenGL tests use the existing GLFW test support.  EGL remains an
 # explicit implementation-contract suite below; it is not the provider for
 # ordinary GL semantics tests.
@@ -162,7 +156,7 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 	target_link_libraries(CoinGLTestSupport PUBLIC
 		${COIN_GLFW_TARGET}
 		${COIN_TARGET_LINK_LIBRARIES}
-		PRIVATE CoinPrivateTestHeaders Coin)
+		PRIVATE Coin)
 
 	function(coin_add_gl_test)
 		cmake_parse_arguments(ARG "PRIVATE_COIN_API" "NAME;PROFILE"
@@ -262,7 +256,7 @@ target_include_directories(LegacyBlendingTest PRIVATE
 add_test(NAME LegacyBlendingTest COMMAND LegacyBlendingTest)
 
 add_executable(RetainedIRTest RetainedIRTest.cpp)
-target_link_libraries(RetainedIRTest CoinPrivateTestHeaders Coin
+target_link_libraries(RetainedIRTest Coin
 	${COIN_TARGET_LINK_LIBRARIES})
 target_include_directories(RetainedIRTest PRIVATE
 	${PROJECT_SOURCE_DIR}/include
@@ -422,26 +416,29 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 			${PROJECT_SOURCE_DIR}/include
 			${PROJECT_BINARY_DIR}/include
 			${COIN_TARGET_INCLUDE_DIRECTORIES})
-		add_executable(CoinRenderGLBenchmarks CoinRenderGLBenchmarks.cpp)
-		target_link_libraries(CoinRenderGLBenchmarks PRIVATE
-			CoinRenderWorkloadSupport CoinGLTestSupport
-			CoinPrivateTestHeaders Coin
-			${COIN_TARGET_LINK_LIBRARIES})
-		target_include_directories(CoinRenderGLBenchmarks PRIVATE
-			${CMAKE_CURRENT_SOURCE_DIR}/support
-			${PROJECT_SOURCE_DIR}/src
-			${PROJECT_SOURCE_DIR}/include
-			${PROJECT_BINARY_DIR}/include
-			${COIN_TARGET_INCLUDE_DIRECTORIES})
-		add_test(NAME CoinRenderGLBenchmarksSmoke
-			COMMAND CoinRenderGLBenchmarks --smoke)
-		set_tests_properties(CoinRenderGLBenchmarksSmoke PROPERTIES
-			SKIP_RETURN_CODE ${COIN_TEST_SKIP_RETURN_CODE}
-			LABELS "benchmark;benchmark-gl;benchmark-render")
+		if(NOT WIN32 OR NOT COIN_BUILD_SHARED_LIBS)
+			add_executable(CoinRenderGLBenchmarks CoinRenderGLBenchmarks.cpp)
+			target_link_libraries(CoinRenderGLBenchmarks PRIVATE
+				CoinRenderWorkloadSupport CoinGLTestSupport
+				Coin
+				${COIN_TARGET_LINK_LIBRARIES})
+			target_compile_definitions(CoinRenderGLBenchmarks PRIVATE COIN_INTERNAL)
+			target_include_directories(CoinRenderGLBenchmarks PRIVATE
+				${CMAKE_CURRENT_SOURCE_DIR}/support
+				${PROJECT_SOURCE_DIR}/src
+				${PROJECT_SOURCE_DIR}/include
+				${PROJECT_BINARY_DIR}/include
+				${COIN_TARGET_INCLUDE_DIRECTORIES})
+			add_test(NAME CoinRenderGLBenchmarksSmoke
+				COMMAND CoinRenderGLBenchmarks --smoke)
+			set_tests_properties(CoinRenderGLBenchmarksSmoke PROPERTIES
+				SKIP_RETURN_CODE ${COIN_TEST_SKIP_RETURN_CODE}
+				LABELS "benchmark;benchmark-gl;benchmark-render")
+		endif()
 		add_executable(RenderWorkloadParityTest RenderWorkloadParityTest.cpp)
 		target_link_libraries(RenderWorkloadParityTest PRIVATE
 			CoinRenderWorkloadSupport CoinGLTestSupport
-			CoinPrivateTestHeaders Coin ${COIN_TARGET_LINK_LIBRARIES})
+			Coin ${COIN_TARGET_LINK_LIBRARIES})
 		target_include_directories(RenderWorkloadParityTest PRIVATE
 			${CMAKE_CURRENT_SOURCE_DIR}/support
 			${PROJECT_SOURCE_DIR}/src
@@ -457,7 +454,7 @@ if(COIN_BUILD_GL_TESTS_EFFECTIVE)
 			support/RenderWorkloadViewerController.cpp)
 		target_link_libraries(CoinRenderWorkloadViewer PRIVATE
 			CoinRenderWorkloadSupport CoinGLTestSupport
-			CoinPrivateTestHeaders Coin ${COIN_TARGET_LINK_LIBRARIES})
+			Coin ${COIN_TARGET_LINK_LIBRARIES})
 		target_include_directories(CoinRenderWorkloadViewer PRIVATE
 			${CMAKE_CURRENT_SOURCE_DIR}/support
 			${PROJECT_SOURCE_DIR}/src
@@ -486,7 +483,7 @@ endif()
 if(COIN_BUILD_BENCHMARKS)
 	add_executable(CoinRenderBenchmarks CoinRenderBenchmarks.cpp)
 	target_link_libraries(CoinRenderBenchmarks PRIVATE
-		CoinPrivateTestHeaders Coin ${COIN_TARGET_LINK_LIBRARIES})
+		Coin ${COIN_TARGET_LINK_LIBRARIES})
 	target_include_directories(CoinRenderBenchmarks PRIVATE
 		${PROJECT_SOURCE_DIR}/src
 		${PROJECT_SOURCE_DIR}/include
