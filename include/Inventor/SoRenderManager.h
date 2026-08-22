@@ -110,6 +110,20 @@ public:
     existing pick buffer.
   */
   struct RenderPhaseStatistics {
+    //! Logical retained commands and physical GL submissions for the frame.
+    uint64_t semanticDrawCommands = 0;
+    uint64_t submittedDrawCalls = 0;
+    uint64_t instancedTriangleBatches = 0;
+    uint64_t instancedTriangleCommands = 0;
+    uint64_t instancedLineBatches = 0;
+    uint64_t instancedLineCommands = 0;
+    uint64_t selectionTargets = 0;
+    uint64_t selectionDrawCalls = 0;
+    uint64_t selectionInstancedBatches = 0;
+    uint64_t selectionInstancedCommands = 0;
+    uint64_t pickDrawCalls = 0;
+    uint64_t pickInstancedBatches = 0;
+    uint64_t pickInstancedCommands = 0;
     uint64_t drawListConstructionNanoseconds = 0;
     uint64_t drawListPrimitiveGenerationNanoseconds = 0;
     uint64_t drawListGeometryPackingNanoseconds = 0;

@@ -4,6 +4,7 @@
 
 #include "rendering/SoRenderBackend.h"
 
+#include <Inventor/C/glue/gl.h>
 #include <Inventor/rendering/SoRenderIR.h>
 #include <Inventor/system/gl.h>
 
@@ -12,8 +13,6 @@
 #include <functional>
 #include <unordered_map>
 #include <vector>
-
-struct cc_glglue;
 
 /*!
   \class SoGLRenderBackend
@@ -43,7 +42,7 @@ public:
                 const SoRenderPlan & plan,
                 const SoRenderParams & params,
                 const SoSelectionState * selection = nullptr) override;
-  SoRenderBackendPhaseStatistics getPhaseStatistics() const override;
+  SoRenderBackendStatistics getStatistics() const override;
 
   //! Render the current DrawList into the explicit integer picking buffer.
   SbBool updatePickBuffer(const SoDrawList & drawlist,
@@ -52,6 +51,10 @@ public:
   //! Resolve the closest nonzero ID in a viewport-local pixel-radius query.
   SbBool pickClosest(int x, int y, int radius,
                      SoPickResult & result) override;
+  SbBool requestPickClosestAsync(int x, int y, int radius,
+                                 SoAsyncPickRequest & request) override;
+  SoAsyncPickStatus pollPickClosestAsync(
+    const SoAsyncPickRequest & request, SoPickResult & result) override;
   SbBool pickVisibleRegion(const SbBox2s & region,
                            SoPickResultList & results) override;
   SbBool pickDepthStack(int x, int y, int radius, int maxLayers,
@@ -298,7 +301,44 @@ private:
 
   PickPrograms selectionPrograms;
 
+  struct SelectionInstanceScratch {
+    size_t targetIndex = 0;
+    uint32_t commandIndex = 0;
+    SbColor4f color;
+    uint32_t primitiveId = 0;
+  };
+  struct SelectionBatchScratch {
+    std::vector<SelectionInstanceScratch> instances;
+    bool primitiveSelection = false;
+    uint32_t sourcePrimitiveCount = 0;
+  };
+  struct SelectionPassScratch {
+    std::vector<SelectionBatchScratch> batches;
+    std::unordered_map<size_t, std::vector<size_t> > batchesByGeometry;
+    size_t batchCount = 0;
+    const SoDrawList * drawlist = nullptr;
+    uint32_t drawlistGeneration = 0;
+    uint64_t contentRevision = 0;
+    uint64_t targetFingerprint = 0;
+    size_t targetCount = 0;
+    bool cacheValid = false;
+  } selectionPasses[2];
+  struct InteractionInstanceRecord {
+    float model[16];
+    float color[4];
+    uint32_t primitiveId = 0;
+  };
+  // Shared by picking and selection; both use the same instance layout.
+  std::vector<InteractionInstanceRecord> interactionInstanceRecords;
   struct PickTarget {
+    struct Submission {
+      enum class Type : uint8_t { DRAW_ONE, DRAW_BATCH, CLEAR_DEPTH };
+      Type type = Type::DRAW_ONE;
+      uint32_t index = 0;
+      bool primitivePickIds = false;
+      std::vector<uint32_t> commandIndices;
+      std::vector<GLuint> pickIds;
+    };
     GLuint framebuffer = 0;
     GLuint colorTexture = 0;
     GLuint depthTextures[2] = {0, 0};
@@ -306,12 +346,35 @@ private:
     bool peelEnabled = false;
     SbVec2s size;
     std::vector<SoPickLUTEntry> lookup;
+    std::vector<std::vector<size_t> > lookupByCommand;
+    uint64_t lookupRevision = 0;
+    uint64_t submissionLookupRevision = 0;
+    std::vector<Submission> submissions;
     uint32_t generation = 0;
+    uint64_t updateSerial = 0;
     const SoDrawList * drawlist = nullptr;
     SoRenderPlan plan;
     SoRenderParams params;
     bool ready = false;
   } pickTarget;
+
+  struct AsyncPickSlot {
+    GLuint buffer = 0;
+    cc_glglue_sync fence = nullptr;
+    uint64_t requestId = 0;
+    uint64_t targetSerial = 0;
+    uint32_t generation = 0;
+    int left = 0;
+    int bottom = 0;
+    int width = 0;
+    int height = 0;
+    int centerX = 0;
+    int centerY = 0;
+    bool active = false;
+    size_t capacityBytes = 0;
+  } asyncPickSlots[3];
+  uint64_t nextAsyncPickRequestId = 1;
+  size_t nextAsyncPickSlot = 0;
 
   struct CommandFrame {
     SbMat view;
@@ -321,8 +384,10 @@ private:
   };
 
   bool createShaders();
+  void clearSelectionScratch();
   bool ensurePickFramebuffer(const SbVec2s & size);
   void destroyPickFramebuffer();
+  void destroyAsyncPickResources(bool releaseGL);
   void drawPickEntry(const SoDrawList & drawlist,
                      const SoPickLUTEntry & entry,
                      GLuint id,
@@ -342,9 +407,7 @@ private:
                           const SoRenderParams & params);
   void drawInstancedSelectionCommands(
     const SoDrawList & drawlist,
-    const std::vector<uint32_t> & commandIndices,
-    const std::vector<SbColor4f> & colors,
-    const std::vector<uint32_t> & primitiveIds,
+    const SelectionBatchScratch & batch,
     const SoRenderParams & params,
     bool primitiveSelection);
   void drawCoverageEntry(const SoDrawList & drawlist,
@@ -491,7 +554,7 @@ private:
   size_t cachedCommandCount = 0;
   bool haveCacheGeneration = false;
   GLuint instanceBuffer = 0;
-  SoRenderBackendPhaseStatistics phaseStatistics;
+  SoRenderBackendStatistics statistics;
 };
 
 #endif // COIN_SOGLRENDERBACKEND_H

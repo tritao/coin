@@ -41,6 +41,20 @@ SoRenderBackend::pickClosest(int, int, int, SoPickResult &)
 }
 
 SbBool
+SoRenderBackend::requestPickClosestAsync(int, int, int,
+                                         SoAsyncPickRequest &)
+{
+  return FALSE;
+}
+
+SoAsyncPickStatus
+SoRenderBackend::pollPickClosestAsync(const SoAsyncPickRequest &,
+                                      SoPickResult &)
+{
+  return SoAsyncPickStatus::FAILED;
+}
+
+SbBool
 SoRenderBackend::pickVisibleRegion(const SbBox2s &,
                                    SoPickResultList &)
 {
@@ -80,10 +94,10 @@ SoRenderBackend::isPhaseTimingEnabled() const
   return this->phaseTimingEnabled;
 }
 
-SoRenderBackendPhaseStatistics
-SoRenderBackend::getPhaseStatistics() const
+SoRenderBackendStatistics
+SoRenderBackend::getStatistics() const
 {
-  return SoRenderBackendPhaseStatistics();
+  return SoRenderBackendStatistics();
 }
 
 void

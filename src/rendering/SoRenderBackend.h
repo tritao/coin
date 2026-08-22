@@ -46,20 +46,72 @@ struct SoRenderBackendInitParams {
   SoRenderBackendLogFn errorCallback = nullptr;
 };
 
-//! Opt-in CPU phase timings reported by retained-rendering backends.
-struct SoRenderBackendPhaseStatistics {
+//! Draw submission diagnostics for the most recent retained frame.
+struct SoRenderBackendSubmissionStatistics {
+  uint64_t semanticDrawCommands = 0;
+  uint64_t submittedDrawCalls = 0;
+  uint64_t instancedTriangleBatches = 0;
+  uint64_t instancedTriangleCommands = 0;
+  uint64_t instancedLineBatches = 0;
+  uint64_t instancedLineCommands = 0;
   uint64_t resourceValidations = 0;
   uint64_t frameSetupNanoseconds = 0;
   uint64_t resourcePreparationNanoseconds = 0;
   uint64_t commandExecutionNanoseconds = 0;
-  uint64_t selectionNanoseconds = 0;
-  uint64_t pickTargetPreparationNanoseconds = 0;
-  uint64_t pickTargetRenderingNanoseconds = 0;
-  uint64_t pickDepthRenderingNanoseconds = 0;
-  uint64_t pickDepthPeelingNanoseconds = 0;
-  uint64_t pickReadbackNanoseconds = 0;
-  uint64_t pickHitProcessingNanoseconds = 0;
-  uint64_t pickTargetRestoreNanoseconds = 0;
+};
+
+//! Selection-overlay diagnostics for the most recent retained frame.
+struct SoRenderBackendSelectionStatistics {
+  uint64_t targets = 0;
+  uint64_t drawCalls = 0;
+  uint64_t instancedBatches = 0;
+  uint64_t instancedCommands = 0;
+  uint64_t durationNanoseconds = 0;
+};
+
+//! Closest-pick diagnostics for the most recent target update or query.
+struct SoRenderBackendPickStatistics {
+  uint64_t drawCalls = 0;
+  uint64_t instancedBatches = 0;
+  uint64_t instancedCommands = 0;
+  uint64_t targetPreparationNanoseconds = 0;
+  uint64_t targetRenderingNanoseconds = 0;
+  uint64_t readbackNanoseconds = 0;
+  uint64_t hitProcessingNanoseconds = 0;
+};
+
+//! Depth-stack-pick diagnostics for the most recent query.
+struct SoRenderBackendDepthPickStatistics {
+  uint64_t drawCalls = 0;
+  uint64_t instancedBatches = 0;
+  uint64_t instancedCommands = 0;
+  uint64_t renderingNanoseconds = 0;
+  uint64_t peelingNanoseconds = 0;
+  uint64_t readbackNanoseconds = 0;
+  uint64_t hitProcessingNanoseconds = 0;
+  uint64_t targetRestoreNanoseconds = 0;
+};
+
+//! Opt-in diagnostics reported by retained-rendering backends.
+struct SoRenderBackendStatistics {
+  SoRenderBackendSubmissionStatistics submission;
+  SoRenderBackendSelectionStatistics selection;
+  SoRenderBackendPickStatistics closestPick;
+  SoRenderBackendDepthPickStatistics depthPick;
+};
+
+enum class SoAsyncPickStatus : uint8_t {
+  PENDING,
+  HIT,
+  MISS,
+  STALE,
+  FAILED
+};
+
+struct SoAsyncPickRequest {
+  uint64_t requestId = 0;
+  uint64_t targetSerial = 0;
+  uint32_t generation = 0;
 };
 
 /*!
@@ -100,6 +152,12 @@ public:
   //! Resolve the closest viewport-local hit against the last explicit update.
   virtual SbBool pickClosest(int x, int y, int radius,
                              SoPickResult & result);
+  //! Queue closest-hit readback without waiting for GPU completion.
+  virtual SbBool requestPickClosestAsync(int x, int y, int radius,
+                                         SoAsyncPickRequest & request);
+  //! Poll a queued closest-hit readback without blocking.
+  virtual SoAsyncPickStatus pollPickClosestAsync(
+    const SoAsyncPickRequest & request, SoPickResult & result);
   //! Resolve and deduplicate the visible IDs in a viewport-local region.
   virtual SbBool pickVisibleRegion(const SbBox2s & region,
                                    SoPickResultList & results);
@@ -119,7 +177,7 @@ public:
   SbBool isInitialized() const;
   void setPhaseTimingEnabled(SbBool enabled);
   SbBool isPhaseTimingEnabled() const;
-  virtual SoRenderBackendPhaseStatistics getPhaseStatistics() const;
+  virtual SoRenderBackendStatistics getStatistics() const;
 
 protected:
   void setInitialized(SbBool state);
