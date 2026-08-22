@@ -194,6 +194,7 @@ class SoVBO;
 #include <Inventor/SoPrimitiveVertex.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoGetPrimitiveCountAction.h>
+#include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/actions/SoRayPickAction.h>
 #include <Inventor/bundles/SoMaterialBundle.h>
 #include <Inventor/bundles/SoTextureCoordinateBundle.h>
@@ -713,6 +714,129 @@ SoIndexedFaceSet::GLRender(SoGLRenderAction * action)
   vertex.setPoint(coords->get3(idx));        \
   pointDetail.setCoordinateIndex(idx);      \
   this->shapeVertex(&vertex);
+
+// doc from parent
+SbBool
+SoIndexedFaceSet::generateRetainedPrimitives(SoIRRenderAction * action)
+{
+  const int numIndices = this->coordIndex.getNum();
+  if (numIndices < 3) return TRUE;
+
+  SoIRRenderAction::PrimitiveCollector * collector =
+    action->getActivePrimitiveCollector();
+  if (!collector) return FALSE;
+
+  SoState * state = action->getState();
+  const SbBool hasVertexProperty = this->vertexProperty.getValue() != NULL;
+  if (hasVertexProperty) {
+    state->push();
+    this->vertexProperty.getValue()->doAction(action);
+  }
+
+  const Binding materialBinding = this->findMaterialBinding(state);
+  Binding normalBinding = this->findNormalBinding(state);
+  const SoCoordinateElement * coordinates;
+  const SbVec3f * normals;
+  const int32_t * coordinateIndices;
+  const int32_t * normalIndices;
+  const int32_t * textureIndices;
+  const int32_t * materialIndices;
+  int actualNumIndices;
+  SbBool sendNormals = TRUE;
+  SbBool normalCacheUsed;
+  this->getVertexData(state, coordinates, normals, coordinateIndices,
+                      normalIndices, textureIndices, materialIndices,
+                      actualNumIndices, sendNormals, normalCacheUsed);
+
+  SoTextureCoordinateBundle textureBundle(action, FALSE, FALSE);
+  const SbBool supported =
+    materialBinding == OVERALL &&
+    !textureBundle.needCoordinates() &&
+    !normalCacheUsed && normals != NULL &&
+    (normalBinding == OVERALL || normalBinding == PER_VERTEX_INDEXED);
+  if (!supported) {
+    if (normalCacheUsed) this->readUnlockNormalCache();
+    if (hasVertexProperty) state->pop();
+    return FALSE;
+  }
+  if (normalBinding == PER_VERTEX_INDEXED && normalIndices == NULL) {
+    normalIndices = coordinateIndices;
+  }
+
+  const auto mixIdentity = [](uint64_t hash, uint64_t value) {
+    hash ^= value + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
+    return hash;
+  };
+  uint64_t sourceId = mixIdentity(
+    static_cast<uint64_t>(reinterpret_cast<uintptr_t>(this)),
+    static_cast<uint64_t>(reinterpret_cast<uintptr_t>(coordinateIndices)));
+  sourceId = mixIdentity(sourceId,
+    static_cast<uint64_t>(reinterpret_cast<uintptr_t>(normalIndices)));
+  sourceId = mixIdentity(sourceId,
+    static_cast<uint64_t>(reinterpret_cast<uintptr_t>(normals)));
+  sourceId = mixIdentity(sourceId, static_cast<uint64_t>(actualNumIndices));
+  sourceId = mixIdentity(sourceId, static_cast<uint64_t>(normalBinding));
+  if (sourceId == 0) sourceId = 1;
+
+  uint64_t revision = mixIdentity(
+    static_cast<uint64_t>(this->getNodeId()),
+    static_cast<uint64_t>(coordinates->getNodeId()));
+  revision = mixIdentity(revision,
+    static_cast<uint64_t>(SoNormalElement::getInstance(state)->getNodeId()));
+  if (revision == 0) revision = 1;
+
+  // Probe the frame-local source table before inspecting individual indices.
+  // A hit proves that this exact source revision was validated earlier.
+  if (collector->reuseRetainedTriangles(sourceId, revision)) {
+    if (hasVertexProperty) state->pop();
+    return TRUE;
+  }
+
+  // This path deliberately handles only already-triangulated input. More
+  // general faces must retain generatePrimitives()' tessellation semantics.
+  int faceCount = 0;
+  int cursor = 0;
+  while (cursor < actualNumIndices) {
+    if (cursor + 2 >= actualNumIndices ||
+        coordinateIndices[cursor] < 0 ||
+        coordinateIndices[cursor + 1] < 0 ||
+        coordinateIndices[cursor + 2] < 0) {
+      if (hasVertexProperty) state->pop();
+      return FALSE;
+    }
+    cursor += 3;
+    ++faceCount;
+    if (cursor < actualNumIndices) {
+      if (coordinateIndices[cursor] >= 0) {
+        if (hasVertexProperty) state->pop();
+        return FALSE;
+      }
+      ++cursor;
+    }
+  }
+
+  if (collector->beginRetainedTriangles(sourceId, revision, faceCount)) {
+    if (hasVertexProperty) state->pop();
+    return TRUE;
+  }
+
+  cursor = 0;
+  for (int face = 0; face < faceCount; ++face) {
+    SoIRRenderAction::PrimitiveCollector::VertexData vertices[3];
+    for (int vertex = 0; vertex < 3; ++vertex, ++cursor) {
+      const int32_t coordinateIndex = coordinateIndices[cursor];
+      vertices[vertex].point = coordinates->get3(coordinateIndex);
+      vertices[vertex].normal = normals[
+        normalBinding == OVERALL ? 0 : normalIndices[cursor]];
+      vertices[vertex].materialIndex = 0;
+    }
+    collector->onTriangleData(vertices[0], vertices[1], vertices[2], face);
+    if (cursor < actualNumIndices && coordinateIndices[cursor] < 0) ++cursor;
+  }
+
+  if (hasVertexProperty) state->pop();
+  return TRUE;
+}
 
 // doc from parent
 void

@@ -79,12 +79,15 @@ class SoVBO;
 #include <Inventor/misc/SoState.h>
 #include <Inventor/SoPrimitiveVertex.h>
 #include <Inventor/actions/SoGLRenderAction.h>
+#include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/system/gl.h>
 #if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLCoordinateElement.h>
 #endif
 #include <Inventor/elements/SoNormalBindingElement.h>
 #include <Inventor/elements/SoMaterialBindingElement.h>
+#include <Inventor/elements/SoMultiTextureCoordinateElement.h>
+#include <Inventor/elements/SoNormalElement.h>
 #include <Inventor/elements/SoVertexAttributeBindingElement.h>
 #include <Inventor/errors/SoDebugError.h>
 #include <Inventor/bundles/SoMaterialBundle.h>
@@ -100,6 +103,8 @@ class SoVBO;
 #include <Inventor/caches/SoConvexDataCache.h>
 #include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/elements/SoModelMatrixElement.h>
+#include <cstdint>
+#include <cstring>
 #if COIN_BUILD_LEGACY_GL_RENDERER
 #include <Inventor/elements/SoGLLazyElement.h>
 #endif
@@ -791,6 +796,153 @@ SoFaceSet::getPrimitiveCount(SoGetPrimitiveCountAction *action)
     }
     action->addNumTriangles(cnt);
   }
+}
+
+SbBool
+SoFaceSet::generateRetainedPrimitives(SoIRRenderAction * action)
+{
+  // Triangles can be emitted from resolved vertex state directly. Other face
+  // sizes retain the established tessellation path in generatePrimitives().
+  const int faceCount = this->numVertices.getNum();
+  if (faceCount == 0 || (faceCount == 1 && this->numVertices[0] == 0)) {
+    return TRUE;
+  }
+  const int32_t * faceSizes = this->numVertices.getValues(0);
+  for (int face = 0; face < faceCount; ++face) {
+    if (faceSizes[face] != 3) return FALSE;
+  }
+  if (this->startIndex.getValue() < 0) return FALSE;
+
+  SoIRRenderAction::PrimitiveCollector * collector =
+    action->getActivePrimitiveCollector();
+  if (!collector) return FALSE;
+  SoState * state = action->getState();
+  const SoCoordinateElement * coordinates;
+  const SbVec3f * normals;
+  SbBool needNormals = TRUE;
+  SoVertexShape::getVertexData(state, coordinates, normals, needNormals);
+  const Binding materialBinding = this->findMaterialBinding(state);
+  const Binding normalBinding = this->findNormalBinding(state);
+
+  SoNormalCache * normalCache = NULL;
+  if (needNormals && normals == NULL) {
+    normalCache = this->generateAndReadLockNormalCache(state);
+    normals = normalCache->getNormals();
+  }
+  if (!normals) {
+    if (normalCache) this->readUnlockNormalCache();
+    return FALSE;
+  }
+
+  SoTextureCoordinateBundle textureBundle(action, FALSE, FALSE);
+  const SbBool useTextures = textureBundle.needCoordinates();
+  const SoLazyElement * lazy = SoLazyElement::getInstance(state);
+  const bool explicitVertexColors = materialBinding == PER_VERTEX &&
+    !lazy->isPacked() && lazy->getNumDiffuse() >= faceCount * 3;
+  if ((materialBinding == OVERALL || explicitVertexColors) &&
+      (!useTextures || !textureBundle.isFunction())) {
+    const auto mixIdentity = [](uint64_t hash, uint64_t value) {
+      hash ^= value + 0x9e3779b97f4a7c15ULL + (hash << 6) + (hash >> 2);
+      return hash;
+    };
+    const void * coordinateSource = coordinates->is3D()
+      ? static_cast<const void *>(coordinates->getArrayPtr3())
+      : static_cast<const void *>(coordinates->getArrayPtr4());
+    uint64_t sourceKey = mixIdentity(
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(this)),
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(coordinateSource)));
+    sourceKey = mixIdentity(sourceKey,
+      static_cast<uint64_t>(reinterpret_cast<uintptr_t>(normals)));
+    sourceKey = mixIdentity(sourceKey, static_cast<uint64_t>(faceCount));
+    sourceKey = mixIdentity(sourceKey,
+      static_cast<uint64_t>(this->startIndex.getValue()));
+    sourceKey = mixIdentity(sourceKey, static_cast<uint64_t>(normalBinding));
+    sourceKey = mixIdentity(sourceKey, static_cast<uint64_t>(materialBinding));
+    if (explicitVertexColors) {
+      sourceKey = mixIdentity(sourceKey, static_cast<uint64_t>(
+        reinterpret_cast<uintptr_t>(lazy->getDiffusePointer())));
+      sourceKey = mixIdentity(sourceKey, static_cast<uint64_t>(
+        reinterpret_cast<uintptr_t>(lazy->getTransparencyPointer())));
+      sourceKey = mixIdentity(sourceKey,
+        static_cast<uint64_t>(lazy->getNumDiffuse()));
+      sourceKey = mixIdentity(sourceKey,
+        static_cast<uint64_t>(lazy->getNumTransparencies()));
+    }
+    if (useTextures) {
+      const SoMultiTextureCoordinateElement * textureCoordinates =
+        SoMultiTextureCoordinateElement::getInstance(state);
+      const int dimension = textureCoordinates->getDimension(0);
+      const void * textureCoordinateSource = dimension == 2
+        ? static_cast<const void *>(textureCoordinates->getArrayPtr2(0))
+        : (dimension == 3
+          ? static_cast<const void *>(textureCoordinates->getArrayPtr3(0))
+          : static_cast<const void *>(textureCoordinates->getArrayPtr4(0)));
+      sourceKey = mixIdentity(sourceKey, static_cast<uint64_t>(
+        reinterpret_cast<uintptr_t>(textureCoordinateSource)));
+      sourceKey = mixIdentity(sourceKey,
+        static_cast<uint64_t>(textureCoordinates->getNum(0)));
+      sourceKey = mixIdentity(sourceKey, static_cast<uint64_t>(dimension));
+    }
+    if (sourceKey == 0) sourceKey = 1;
+    uint64_t revision = mixIdentity(
+      static_cast<uint64_t>(this->getNodeId()),
+      static_cast<uint64_t>(coordinates->getNodeId()));
+    revision = mixIdentity(revision,
+      static_cast<uint64_t>(SoNormalElement::getInstance(state)->getNodeId()));
+    if (explicitVertexColors) {
+      const int vertexCount = faceCount * 3;
+      for (int vertex = 0; vertex < vertexCount; ++vertex) {
+        const SbColor & color = SoLazyElement::getDiffuse(state, vertex);
+        for (int channel = 0; channel < 3; ++channel) {
+          uint32_t bits = 0;
+          const float value = color[channel];
+          std::memcpy(&bits, &value, sizeof(bits));
+          revision = mixIdentity(revision, bits);
+        }
+        uint32_t transparencyBits = 0;
+        const float transparency =
+          SoLazyElement::getTransparency(state, vertex);
+        std::memcpy(&transparencyBits, &transparency,
+                    sizeof(transparencyBits));
+        revision = mixIdentity(revision, transparencyBits);
+      }
+    }
+    if (useTextures) {
+      revision = mixIdentity(revision, static_cast<uint64_t>(
+        SoMultiTextureCoordinateElement::getNodeId(state, 0)));
+    }
+    if (revision == 0) revision = 1;
+    if (collector->beginRetainedTriangles(sourceKey, revision, faceCount)) {
+      if (normalCache) this->readUnlockNormalCache();
+      return TRUE;
+    }
+  }
+  int coordinateIndex = this->startIndex.getValue();
+  int normalIndex = 0;
+  int materialIndex = 0;
+  int textureIndex = 0;
+  for (int face = 0; face < faceCount; ++face) {
+    SoIRRenderAction::PrimitiveCollector::VertexData vertices[3];
+    for (int vertex = 0; vertex < 3; ++vertex, ++coordinateIndex) {
+      vertices[vertex].point = coordinates->get3(coordinateIndex);
+      vertices[vertex].normal = normals[
+        normalBinding == OVERALL ? 0 : normalIndex];
+      vertices[vertex].materialIndex =
+        materialBinding == OVERALL ? 0 : materialIndex;
+      if (useTextures) {
+        vertices[vertex].texcoord = textureBundle.isFunction()
+          ? textureBundle.get(vertices[vertex].point, vertices[vertex].normal)
+          : textureBundle.get(textureIndex++);
+      }
+      if (normalBinding == PER_VERTEX) ++normalIndex;
+      if (materialBinding == PER_VERTEX) ++materialIndex;
+    }
+    collector->onTriangleData(vertices[0], vertices[1], vertices[2], face);
+    if (normalBinding == PER_FACE) ++normalIndex;
+    if (materialBinding == PER_FACE) ++materialIndex;
+  }
+  if (normalCache) this->readUnlockNormalCache();
+  return TRUE;
 }
 
 // doc from parent

@@ -100,6 +100,41 @@ struct SoGeometryDesc {
 
 };
 
+//! Stable, draw-list-local reference to a geometry resource.
+using SoGeometryHandle = uint32_t;
+static constexpr SoGeometryHandle SO_INVALID_GEOMETRY_HANDLE = 0;
+
+//! Backend-neutral identity kinds retained for picking.
+enum SoPickElementType : uint8_t {
+  SO_PICK_OBJECT = 0,
+  SO_PICK_FACE,
+  SO_PICK_EDGE,
+  SO_PICK_VERTEX
+};
+
+//! Maps one logical subelement to a geometry draw range.
+struct SoRenderElementRange {
+  SoPickElementType type = SO_PICK_OBJECT;
+  int elementIndex = -1;
+  uint32_t drawStart = 0;
+  uint32_t drawCount = 0;
+};
+
+/*!
+  \struct SoGeometryResource
+  \brief Draw-list-owned geometry descriptor with producer identity.
+
+  Handles are one-based and remain stable until SoDrawList::clear(). The
+  descriptor keeps the existing frame-lifetime pointer contract; the resource
+  table separates shared geometry identity from individual draw commands.
+*/
+struct SoGeometryResource {
+  SoGeometryDesc geometry;
+  uint64_t sourceKey = 0;
+  uint64_t revision = 0;
+  std::vector<SoRenderElementRange> elementRanges;
+};
+
 /*!
   \enum SoShadingModel
   \brief Effective shading contract carried by a render command.
@@ -517,31 +552,12 @@ struct COIN_DLL_API SoIRRenderContext {
   \enum SoPickElementType
   \brief Backend-neutral identity kinds retained for picking.
 */
-enum SoPickElementType : uint8_t {
-  SO_PICK_OBJECT = 0,
-  SO_PICK_FACE,
-  SO_PICK_EDGE,
-  SO_PICK_VERTEX
-};
-
-/*! \struct SoRenderElementRange
-  \brief Maps one logical subelement to a geometry draw range.
-
-  For indexed geometry, drawStart/drawCount refer to indices. For
-  non-indexed geometry, they refer to vertices.
-*/
-struct SoRenderElementRange {
-  SoPickElementType type = SO_PICK_OBJECT;
-  int elementIndex = -1;
-  uint32_t drawStart = 0;
-  uint32_t drawCount = 0;
-};
-
 /*! \struct SoPickData
   \brief Backend-neutral pickability and optional subelement ranges.
 */
 struct SoPickData {
   bool pickable = true;
+  bool useResourceElementRanges = false;
   std::vector<SoRenderElementRange> elementRanges;
 };
 
@@ -637,6 +653,7 @@ struct SoRenderCommand {
   // Geometry, texture pixels, and other pointer-valued fields are borrowed;
   // see the lifetime contract on SoGeometryDesc and SoTextureData.
   SoGeometryDesc   geometry;
+  SoGeometryHandle geometryHandle = SO_INVALID_GEOMETRY_HANDLE;
   SoMaterialData   material;
   SoRenderState    state;
 
@@ -685,6 +702,20 @@ public:
   void addCommand(const SoRenderCommand & cmd);
   SoRenderCommand & emplaceCommand();
 
+  //! Append a geometry resource and return its stable one-based handle.
+  SoGeometryHandle addGeometryResource(const SoGeometryResource & resource);
+  //! Return NULL for an invalid handle or a handle outside this draw list.
+  SoGeometryResource * getGeometryResource(SoGeometryHandle handle);
+  const SoGeometryResource * getGeometryResource(
+    SoGeometryHandle handle) const;
+  int getNumGeometryResources() const;
+  //! Resolve a command resource, falling back to its embedded descriptor.
+  const SoGeometryDesc & getCommandGeometry(
+    const SoRenderCommand & command) const;
+  //! Resolve command-local or shared geometry subelement ranges.
+  const std::vector<SoRenderElementRange> & getCommandElementRanges(
+    const SoRenderCommand & command) const;
+
   int getNumCommands() const;
   //! Remove commands beyond index count without reordering remaining commands.
   void truncate(int count);
@@ -730,6 +761,7 @@ public:
 
 private:
   std::vector<SoRenderCommand> commands;
+  std::vector<SoGeometryResource> geometryResources;
   std::vector<SoLightingData> lightingSetups;
   std::vector<SoDepthClearEvent> depthClearEvents;
   SoSelectionState selection;

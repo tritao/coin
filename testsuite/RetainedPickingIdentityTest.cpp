@@ -37,13 +37,15 @@ const SoRenderCommand * commandFor(const SoIRRenderAction & action,
   return NULL;
 }
 
-bool hasRange(const SoRenderCommand & command,
+bool hasRange(const SoDrawList & drawlist,
+              const SoRenderCommand & command,
               SoPickElementType type,
               int elementIndex,
               uint32_t drawStart,
               uint32_t drawCount)
 {
-  for (const SoRenderElementRange & range : command.pick.elementRanges) {
+  for (const SoRenderElementRange & range :
+       drawlist.getCommandElementRanges(command)) {
     if (range.type == type && range.elementIndex == elementIndex &&
         range.drawStart == drawStart && range.drawCount == drawCount) {
       return true;
@@ -126,8 +128,10 @@ main()
   const SoRenderCommand * faceCommand = commandFor(action, faces, commandIndex);
   check(faceCommand != NULL, "indexed faces did not produce a retained command", result);
   if (faceCommand) {
-    check(hasRange(*faceCommand, SO_PICK_FACE, 0, 0, 3) &&
-          hasRange(*faceCommand, SO_PICK_FACE, 1, 3, 3),
+    check(hasRange(action.getDrawList(), *faceCommand,
+                   SO_PICK_FACE, 0, 0, 3) &&
+          hasRange(action.getDrawList(), *faceCommand,
+                   SO_PICK_FACE, 1, 3, 3),
           "indexed faces did not retain face ranges", result);
     check(action.getCommandPath(commandIndex) != NULL &&
           action.getCommandPath(commandIndex)->getTail() == faces,
@@ -139,25 +143,32 @@ main()
   check(indexedLineCommand != NULL,
         "indexed lines did not produce a retained command", result);
   if (indexedLineCommand) {
-    check(hasRange(*indexedLineCommand, SO_PICK_EDGE, 0, 0, 2) &&
-          hasRange(*indexedLineCommand, SO_PICK_EDGE, 1, 2, 2),
+    check(hasRange(action.getDrawList(), *indexedLineCommand,
+                   SO_PICK_EDGE, 0, 0, 2) &&
+          hasRange(action.getDrawList(), *indexedLineCommand,
+                   SO_PICK_EDGE, 1, 2, 2),
           "indexed lines did not retain edge ranges", result);
   }
 
   const SoRenderCommand * lineCommand = commandFor(action, lines, commandIndex);
   check(lineCommand != NULL, "line set did not produce a retained command", result);
   if (lineCommand) {
-    check(hasRange(*lineCommand, SO_PICK_EDGE, 0, 0, 2) &&
-          hasRange(*lineCommand, SO_PICK_EDGE, 1, 2, 2),
+    check(hasRange(action.getDrawList(), *lineCommand,
+                   SO_PICK_EDGE, 0, 0, 2) &&
+          hasRange(action.getDrawList(), *lineCommand,
+                   SO_PICK_EDGE, 1, 2, 2),
           "line set did not retain edge ranges", result);
   }
 
   const SoRenderCommand * pointCommand = commandFor(action, points, commandIndex);
   check(pointCommand != NULL, "point set did not produce a retained command", result);
   if (pointCommand) {
-    check(hasRange(*pointCommand, SO_PICK_VERTEX, 0, 0, 1) &&
-          hasRange(*pointCommand, SO_PICK_VERTEX, 1, 1, 1) &&
-          hasRange(*pointCommand, SO_PICK_VERTEX, 2, 2, 1),
+    check(hasRange(action.getDrawList(), *pointCommand,
+                   SO_PICK_VERTEX, 0, 0, 1) &&
+          hasRange(action.getDrawList(), *pointCommand,
+                   SO_PICK_VERTEX, 1, 1, 1) &&
+          hasRange(action.getDrawList(), *pointCommand,
+                   SO_PICK_VERTEX, 2, 2, 1),
           "point set did not retain vertex ranges", result);
   }
 

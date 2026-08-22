@@ -83,6 +83,8 @@ public:
                    const int32_t numCoords, const SbVec4f * const coords);
 
   static CoordType getType(SoState * const state, const int unit = 0);
+  //! Return the source node revision recorded for this coordinate unit.
+  static SbUniqueId getNodeId(SoState * const state, const int unit = 0);
   virtual CoordType getType(const int unit = 0) const;
   
   static const SoMultiTextureCoordinateElement * getInstance(SoState * const state);

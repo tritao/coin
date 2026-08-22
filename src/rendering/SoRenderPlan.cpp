@@ -21,8 +21,9 @@ SoRenderPlanner::build(const SoDrawList & drawlist,
   const auto depthOf = [&drawlist](const uint32_t commandIndex) {
     const SoRenderCommand & command = drawlist.getCommand(
       static_cast<int>(commandIndex));
-    const SbVec3f localCenter = command.geometry.hasBounds
-      ? command.geometry.boundsCenter : SbVec3f(0.0f, 0.0f, 0.0f);
+    const SoGeometryDesc & geometry = drawlist.getCommandGeometry(command);
+    const SbVec3f localCenter = geometry.hasBounds
+      ? geometry.boundsCenter : SbVec3f(0.0f, 0.0f, 0.0f);
     SbVec3f worldCenter;
     SbVec3f eyeCenter;
     command.modelMatrix.multVecMatrix(localCenter, worldCenter);

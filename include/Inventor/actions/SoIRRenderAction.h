@@ -69,6 +69,13 @@ public:
   */
   class PrimitiveCollector {
   public:
+    //! Primitive attributes needed by the retained renderer.
+    struct VertexData {
+      SbVec3f point;
+      SbVec3f normal;
+      SbVec4f texcoord = SbVec4f(0.0f, 0.0f, 0.0f, 1.0f);
+      int materialIndex = 0;
+    };
     virtual ~PrimitiveCollector() {}
     virtual void onTriangle(const SoPrimitiveVertex * v1,
                             const SoPrimitiveVertex * v2,
@@ -76,6 +83,32 @@ public:
     virtual void onLine(const SoPrimitiveVertex * v1,
                         const SoPrimitiveVertex * v2) = 0;
     virtual void onPoint(const SoPrimitiveVertex * v) = 0;
+    //! Receive an already resolved triangle and its picking identity.
+    virtual void onTriangleData(const VertexData & v1,
+                                const VertexData & v2,
+                                const VertexData & v3,
+                                int faceIndex) = 0;
+    //! Receive an already resolved line segment and its picking identity.
+    virtual void onLineData(const VertexData & v1,
+                            const VertexData & v2,
+                            int lineIndex) = 0;
+    //! Reuse or register an explicit non-textured triangle source.
+    virtual SbBool beginRetainedTriangles(uint64_t sourceKey,
+                                          uint64_t revision,
+                                          int faceCount)
+    { return FALSE; }
+    //! Reuse a previously registered triangle source without rescanning it.
+    virtual SbBool reuseRetainedTriangles(uint64_t sourceId,
+                                          uint64_t revision)
+    { return FALSE; }
+    //! Reuse or register an explicit non-textured line-segment source.
+    virtual SbBool beginRetainedLines(uint64_t sourceId,
+                                      uint64_t revision,
+                                      int segmentCount)
+    { return FALSE; }
+    virtual SbBool reuseRetainedLines(uint64_t sourceId,
+                                      uint64_t revision)
+    { return FALSE; }
   };
 
   static void initClass(void);
@@ -166,6 +199,9 @@ public:
   void popPrimitiveCollector(PrimitiveCollector * collector);
   //! Return the currently active primitive collector, or NULL.
   PrimitiveCollector * getActivePrimitiveCollector(void) const;
+  //! Find a geometry resource with the same producer identity this frame.
+  SoGeometryHandle findGeometrySource(uint64_t sourceKey,
+                                      uint64_t revision) const;
   //! Enable intrusive construction attribution for benchmark diagnostics.
   void setConstructionTimingEnabled(SbBool enabled);
   SbBool isConstructionTimingEnabled() const;

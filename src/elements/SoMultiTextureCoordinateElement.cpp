@@ -426,6 +426,15 @@ SoMultiTextureCoordinateElement::getType(SoState * const state, const int unit)
   return element->getType(unit);
 }
 
+SbUniqueId
+SoMultiTextureCoordinateElement::getNodeId(SoState * const state,
+                                           const int unit)
+{
+  const SoMultiTextureCoordinateElement * elem = getInstance(state);
+  PRIVATE(elem)->ensureCapacity(unit);
+  return PRIVATE(elem)->unitdata[unit].nodeid;
+}
+
 //! FIXME: write doc.
 
 // side effect, will increase array size

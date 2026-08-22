@@ -222,12 +222,107 @@ public:
     this->appendRange(first, 1, SO_PICK_VERTEX, this->pointIndex(v));
   }
 
+  void onTriangleData(const VertexData & v1, const VertexData & v2,
+                      const VertexData & v3, int faceIndex) override
+  {
+    this->setTopology(SO_TOPOLOGY_TRIANGLES);
+    const size_t first = this->vertices.size();
+    this->append(v1);
+    this->append(v2);
+    this->append(v3);
+    this->appendRange(first, 3, SO_PICK_FACE, faceIndex);
+  }
+
+  void onLineData(const VertexData & v1, const VertexData & v2,
+                  int lineIndex) override
+  {
+    this->setTopology(SO_TOPOLOGY_LINES);
+    const size_t first = this->vertices.size();
+    this->append(v1);
+    this->append(v2);
+    this->appendRange(first, 2, SO_PICK_EDGE, lineIndex);
+  }
+
+  SbBool beginRetainedTriangles(uint64_t sourceKey, uint64_t revision,
+                                int faceCount) override
+  {
+    this->geometryCacheKey = sourceKey;
+    this->geometryRevision = revision;
+    return this->reuseGeometry(sourceKey, revision, faceCount,
+                               SO_TOPOLOGY_TRIANGLES, 3);
+  }
+
+  SbBool reuseRetainedTriangles(uint64_t sourceKey,
+                                uint64_t revision) override
+  {
+    return this->reuseGeometry(sourceKey, revision, 0,
+                               SO_TOPOLOGY_TRIANGLES, 3);
+  }
+
+  SbBool beginRetainedLines(uint64_t sourceKey, uint64_t revision,
+                            int segmentCount) override
+  {
+    this->geometryCacheKey = sourceKey;
+    this->geometryRevision = revision;
+    return this->reuseGeometry(sourceKey, revision, segmentCount,
+                               SO_TOPOLOGY_LINES, 2);
+  }
+
+  SbBool reuseRetainedLines(uint64_t sourceKey, uint64_t revision) override
+  {
+    return this->reuseGeometry(sourceKey, revision, 0,
+                               SO_TOPOLOGY_LINES, 2);
+  }
+
   void finalize()
   {
+    if (this->reusedVertexCount != 0) {
+      std::vector<SoIRBatch> batches;
+      batches.push_back(SoIRBatch(0, this->reusedVertexCount, 0));
+      const std::chrono::steady_clock::time_point start =
+        this->action->isConstructionTimingEnabled()
+          ? std::chrono::steady_clock::now()
+          : std::chrono::steady_clock::time_point();
+      this->emitCommands(this->action->getState(),
+                         this->reusedGeometry, batches);
+      if (this->action->isConstructionTimingEnabled()) {
+        this->action->recordCommandEmissionNanoseconds(
+          static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - start).count()));
+      }
+      return;
+    }
     this->flushRun();
   }
 
 private:
+  SbBool reuseGeometry(uint64_t sourceKey, uint64_t revision,
+                       int expectedPrimitiveCount,
+                       SoPrimitiveTopology topology,
+                       int verticesPerPrimitive)
+  {
+    const SoGeometryHandle handle =
+      this->action->findGeometrySource(sourceKey, revision);
+    if (handle == SO_INVALID_GEOMETRY_HANDLE) return FALSE;
+    const SoGeometryResource * resource =
+      this->action->getDrawList().getGeometryResource(handle);
+    if (!resource || resource->geometry.topology != topology ||
+        resource->geometry.vertexCount == 0 ||
+        resource->geometry.vertexCount % verticesPerPrimitive != 0 ||
+        (expectedPrimitiveCount > 0 && resource->geometry.vertexCount !=
+          static_cast<uint32_t>(expectedPrimitiveCount * verticesPerPrimitive))) {
+      return FALSE;
+    }
+    this->geometryCacheKey = sourceKey;
+    this->geometryRevision = revision;
+    this->topology = topology;
+    // Reused commands resolve the canonical ranges owned by the resource.
+    this->reusedPrimitiveWidth = verticesPerPrimitive;
+    this->reusedGeometry = resource->geometry;
+    this->reusedVertexCount = resource->geometry.vertexCount;
+    return TRUE;
+  }
+
   void flushRun()
   {
     if (this->vertices.empty()) return;
@@ -315,6 +410,8 @@ private:
     geometry.normalCount = geometry.vertexCount;
     geometry.vertexStride = sizeof(float) * 3;
     geometry.texcoordStride = sizeof(float) * 4;
+    geometry.cacheKey = this->geometryCacheKey;
+    geometry.revision = this->geometryRevision;
 
     float * positions = static_cast<float *>(
       this->action->allocateGeometryStorage(sizeof(float) * 3 * count));
@@ -392,25 +489,31 @@ private:
       const size_t batchEnd = batch.first + batch.count;
       const size_t primitiveWidth = this->topology == SO_TOPOLOGY_TRIANGLES
         ? 3 : (this->topology == SO_TOPOLOGY_LINES ? 2 : 1);
-      std::vector<SoRenderElementRange> pickRanges;
-      bool completePickRanges = true;
-      for (const SoIRPrimitiveRange & range : this->primitiveRanges) {
-        if (range.first < batch.first || range.first >= batchEnd) continue;
-        if (!range.valid || range.first + range.count > batchEnd) {
-          completePickRanges = false;
-          break;
-        }
-        SoRenderElementRange pickRange;
-        pickRange.type = range.type;
-        pickRange.elementIndex = range.elementIndex;
-        pickRange.drawStart = static_cast<uint32_t>(range.first - batch.first);
-        pickRange.drawCount = static_cast<uint32_t>(range.count);
-        pickRanges.push_back(pickRange);
-      }
       const size_t expectedRanges = primitiveWidth == 0 ? 0
         : batch.count / primitiveWidth;
-      if (completePickRanges && pickRanges.size() == expectedRanges) {
-        command.pick.elementRanges = pickRanges;
+      if (this->reusedPrimitiveWidth != 0) {
+        command.pick.useResourceElementRanges = true;
+      }
+      else {
+        command.pick.elementRanges.reserve(expectedRanges);
+        bool completePickRanges = true;
+        for (const SoIRPrimitiveRange & range : this->primitiveRanges) {
+          if (range.first < batch.first || range.first >= batchEnd) continue;
+          if (!range.valid || range.first + range.count > batchEnd) {
+            completePickRanges = false;
+            break;
+          }
+          SoRenderElementRange pickRange;
+          pickRange.type = range.type;
+          pickRange.elementIndex = range.elementIndex;
+          pickRange.drawStart = static_cast<uint32_t>(range.first - batch.first);
+          pickRange.drawCount = static_cast<uint32_t>(range.count);
+          command.pick.elementRanges.push_back(pickRange);
+        }
+        if (!completePickRanges ||
+            command.pick.elementRanges.size() != expectedRanges) {
+          command.pick.elementRanges.clear();
+        }
       }
       this->action->applyRenderStage(command);
       command.userData = this->shape;
@@ -434,6 +537,16 @@ private:
     copy.normal = vertex->getNormal();
     copy.texcoord = vertex->getTextureCoords();
     copy.materialIndex = materialIndex;
+    this->vertices.push_back(copy);
+  }
+
+  void append(const VertexData & vertex)
+  {
+    SoIRVertex copy;
+    copy.position = vertex.point;
+    copy.normal = vertex.normal;
+    copy.texcoord = vertex.texcoord;
+    copy.materialIndex = vertex.materialIndex;
     this->vertices.push_back(copy);
   }
 
@@ -492,6 +605,11 @@ private:
   SoIRRenderAction * action;
   SoShape * shape;
   SoPrimitiveTopology topology;
+  uint64_t geometryCacheKey = 0;
+  uint64_t geometryRevision = 0;
+  SoGeometryDesc reusedGeometry;
+  size_t reusedVertexCount = 0;
+  int reusedPrimitiveWidth = 0;
   std::vector<SoIRVertex> vertices;
   std::vector<SoIRPrimitiveRange> primitiveRanges;
 };
@@ -832,7 +950,14 @@ SoShape::GLRender(SoGLRenderAction * action)
 
   if (vp) action->getState()->pop();
 }
+
 #endif
+
+SbBool
+SoShape::generateRetainedPrimitives(SoIRRenderAction *)
+{
+  return FALSE;
+}
 
 void
 SoShape::IRRender(SoIRRenderAction * action)
@@ -855,7 +980,9 @@ SoShape::IRRender(SoIRRenderAction * action)
   const std::chrono::steady_clock::time_point primitiveStart = measure
     ? std::chrono::steady_clock::now()
     : std::chrono::steady_clock::time_point();
-  this->generatePrimitives(action);
+  if (!this->generateRetainedPrimitives(action)) {
+    this->generatePrimitives(action);
+  }
   if (measure) {
     action->recordPrimitiveGenerationNanoseconds(
       static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(

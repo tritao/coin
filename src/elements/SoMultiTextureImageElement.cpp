@@ -193,6 +193,16 @@ SoMultiTextureImageElement::get(SoState * const state,
   return getImage(state, unit, size, numComponents);
 }
 
+SbUniqueId
+SoMultiTextureImageElement::getNodeId(SoState * const state, const int unit)
+{
+  const SoMultiTextureImageElement * elem =
+    coin_assert_cast<const SoMultiTextureImageElement *>(
+      getConstElement(state, classStackIndex));
+  PRIVATE(elem)->ensureCapacity(unit);
+  return PRIVATE(elem)->unitdata[unit].nodeid;
+}
+
 /*!
   FIXME: write doc.
 

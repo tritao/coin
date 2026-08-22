@@ -68,6 +68,7 @@
 #include <algorithm>
 #include <cstring>
 #include <limits>
+#include <unordered_map>
 #include <vector>
 
 SO_ACTION_SOURCE(SoIRRenderAction);
@@ -89,6 +90,7 @@ public:
   SoIRBuffer geometryPool;
   std::vector<TextureStorage> textureStorage;
   SbList<SoIRRenderAction::PrimitiveCollector *> collectorStack;
+  std::unordered_multimap<uint64_t, SoGeometryHandle> geometrySources;
   bool constructionTimingEnabled = false;
   SoIRRenderAction::ConstructionStatistics constructionStatistics;
 };
@@ -237,6 +239,40 @@ SoIRRenderAction::addCommand(const SoRenderCommand & command)
   else if (retained.lightingHandle == 0 && state) {
     retained.lightingHandle = SoRenderIR::fillLightingFromState(
       state, this->drawlist);
+  }
+
+  if (retained.geometry.cacheKey != 0) {
+    retained.geometryHandle = this->findGeometrySource(
+      retained.geometry.cacheKey, retained.geometry.revision);
+    if (retained.geometryHandle == SO_INVALID_GEOMETRY_HANDLE) {
+      SoGeometryResource resource;
+      resource.geometry = retained.geometry;
+      resource.sourceKey = retained.geometry.cacheKey;
+      resource.revision = retained.geometry.revision;
+      resource.elementRanges = retained.pick.elementRanges;
+      retained.geometryHandle = this->drawlist.addGeometryResource(resource);
+      retained.pick.elementRanges.clear();
+      retained.pick.useResourceElementRanges = true;
+      PRIVATE(this)->geometrySources.emplace(
+        retained.geometry.cacheKey, retained.geometryHandle);
+    }
+    else {
+      const SoGeometryResource * resource =
+        this->drawlist.getGeometryResource(retained.geometryHandle);
+      const auto rangesEqual = [](const SoRenderElementRange & lhs,
+                                  const SoRenderElementRange & rhs) {
+        return lhs.type == rhs.type && lhs.elementIndex == rhs.elementIndex &&
+          lhs.drawStart == rhs.drawStart && lhs.drawCount == rhs.drawCount;
+      };
+      if (resource && resource->elementRanges.size() ==
+                        retained.pick.elementRanges.size() &&
+          std::equal(resource->elementRanges.begin(),
+                     resource->elementRanges.end(),
+                     retained.pick.elementRanges.begin(), rangesEqual)) {
+        retained.pick.elementRanges.clear();
+        retained.pick.useResourceElementRanges = true;
+      }
+    }
   }
 
   const int commandIndex = this->drawlist.getNumCommands();
@@ -418,6 +454,20 @@ SoIRRenderAction::getActivePrimitiveCollector(void) const
   return PRIVATE(this)->collectorStack[count - 1];
 }
 
+SoGeometryHandle
+SoIRRenderAction::findGeometrySource(const uint64_t sourceKey,
+                                     const uint64_t revision) const
+{
+  const auto candidates = PRIVATE(this)->geometrySources.equal_range(sourceKey);
+  for (auto candidate = candidates.first; candidate != candidates.second;
+       ++candidate) {
+    const SoGeometryResource * resource =
+      this->drawlist.getGeometryResource(candidate->second);
+    if (resource && resource->revision == revision) return candidate->second;
+  }
+  return SO_INVALID_GEOMETRY_HANDLE;
+}
+
 void
 SoIRRenderAction::setConstructionTimingEnabled(const SbBool enabled)
 {
@@ -572,6 +622,7 @@ SoIRRenderAction::resetFrameResources()
   PRIVATE(this)->geometryPool.clear();
   PRIVATE(this)->textureStorage.clear();
   PRIVATE(this)->collectorStack.truncate(0);
+  PRIVATE(this)->geometrySources.clear();
   PRIVATE(this)->constructionStatistics = ConstructionStatistics();
 }
 

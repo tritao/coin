@@ -40,6 +40,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <cstdint>
 #include <climits>
 #include <cstdlib>
 #include <inttypes.h>
@@ -282,6 +283,7 @@ void
 SoDrawList::clear()
 {
   this->commands.clear();
+  this->geometryResources.clear();
   this->lightingSetups.clear();
   this->depthClearEvents.clear();
   this->selection = SoSelectionState();
@@ -337,6 +339,58 @@ SoDrawList::emplaceCommand()
   this->pickLUTGeneration = 0;
   this->commands.emplace_back();
   return this->commands.back();
+}
+
+SoGeometryHandle
+SoDrawList::addGeometryResource(const SoGeometryResource & resource)
+{
+  this->geometryResources.push_back(resource);
+  return static_cast<SoGeometryHandle>(this->geometryResources.size());
+}
+
+SoGeometryResource *
+SoDrawList::getGeometryResource(SoGeometryHandle handle)
+{
+  if (handle == SO_INVALID_GEOMETRY_HANDLE ||
+      static_cast<size_t>(handle) > this->geometryResources.size()) {
+    return nullptr;
+  }
+  return &this->geometryResources[static_cast<size_t>(handle - 1)];
+}
+
+const SoGeometryResource *
+SoDrawList::getGeometryResource(SoGeometryHandle handle) const
+{
+  if (handle == SO_INVALID_GEOMETRY_HANDLE ||
+      static_cast<size_t>(handle) > this->geometryResources.size()) {
+    return nullptr;
+  }
+  return &this->geometryResources[static_cast<size_t>(handle - 1)];
+}
+
+int
+SoDrawList::getNumGeometryResources() const
+{
+  return static_cast<int>(this->geometryResources.size());
+}
+
+const SoGeometryDesc &
+SoDrawList::getCommandGeometry(const SoRenderCommand & command) const
+{
+  const SoGeometryResource * resource =
+    this->getGeometryResource(command.geometryHandle);
+  return resource ? resource->geometry : command.geometry;
+}
+
+const std::vector<SoRenderElementRange> &
+SoDrawList::getCommandElementRanges(const SoRenderCommand & command) const
+{
+  if (command.pick.useResourceElementRanges) {
+    const SoGeometryResource * resource =
+      this->getGeometryResource(command.geometryHandle);
+    if (resource) return resource->elementRanges;
+  }
+  return command.pick.elementRanges;
 }
 
 void
@@ -409,7 +463,9 @@ SoDrawList::buildPickLUT() const
                                        : command.geometry.vertexCount;
     if (drawLimit == 0) continue;
 
-    if (command.pick.elementRanges.empty()) {
+    const std::vector<SoRenderElementRange> & elementRanges =
+      this->getCommandElementRanges(command);
+    if (elementRanges.empty()) {
       SoPickLUTEntry entry;
       entry.commandIndex = commandIndex;
       entry.objectId = command.objectId;
@@ -421,7 +477,7 @@ SoDrawList::buildPickLUT() const
       continue;
     }
 
-    for (const SoRenderElementRange & range : command.pick.elementRanges) {
+    for (const SoRenderElementRange & range : elementRanges) {
       SoPickLUTEntry entry;
       entry.commandIndex = commandIndex;
       entry.objectId = command.objectId;
@@ -754,6 +810,13 @@ fillTextureFromState(SoState * state, SoIRRenderAction * action,
     bytes, byteCount, size[0], size[1], numComponents, hasTransparency);
 
   material.texture.pixels = copy;
+  // The image element owns the source bytes and changes its node id whenever
+  // the producing texture node changes. Preserve both pieces so backends can
+  // retain one upload even though the IR owns a separate frame-local copy.
+  material.texture.cacheKey = static_cast<uint64_t>(
+    reinterpret_cast<uintptr_t>(bytes));
+  material.texture.revision = static_cast<uint64_t>(
+    SoMultiTextureImageElement::getNodeId(state, 0));
   material.texture.width = size[0];
   material.texture.height = size[1];
   material.texture.numComponents = numComponents;

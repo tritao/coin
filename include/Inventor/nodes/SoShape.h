@@ -89,6 +89,8 @@ protected:
 
   float getComplexityValue(SoAction * action);
   virtual void generatePrimitives(SoAction * action) =  0;
+  //! Emit directly to a retained primitive collector when supported.
+  virtual SbBool generateRetainedPrimitives(SoIRRenderAction * action);
 #if COIN_HAVE_LEGACY_GL_RENDERER
   virtual SbBool shouldGLRender(SoGLRenderAction * action);
   void beginSolidShape(SoGLRenderAction * action);
