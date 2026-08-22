@@ -49,6 +49,8 @@ struct Options {
   int samples = 0;
   int rebuildOnly = 0;
   int mutationOnly = 0;
+  std::string mutationWorkload;
+  bool mutationUpdatesOnly = false;
   int interactionOnly = 0;
   std::string output;
 };
@@ -787,11 +789,14 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
   return valid;
 }
 
+enum class AssemblyBenchmarkScope { All, HoverOnly, UpdatesOnly };
+
 bool runAssemblyMutations(GLTestProfile profile, WorkloadKind workload,
                           int occurrenceCount, int samples,
                           std::vector<Measurement> & results,
                           std::string & unavailable,
-                          bool hoverOnly = false)
+                          AssemblyBenchmarkScope scope =
+                            AssemblyBenchmarkScope::All)
 {
   GLTestContextConfig config;
   config.profile = profile;
@@ -854,7 +859,8 @@ bool runAssemblyMutations(GLTestProfile profile, WorkloadKind workload,
   for (SoTranslation * transform : mutations.transforms) {
     originalTranslations.push_back(transform->translation.getValue());
   }
-  if (workload == WorkloadKind::SharedAssemblyRecipe) {
+  if (workload == WorkloadKind::SharedAssemblyRecipe &&
+      scope != AssemblyBenchmarkScope::UpdatesOnly) {
     const auto pickAt = [&](const SbVec2s & cursor, SoNode *& identity) {
       SoPickedPoint * picked = NULL;
       if (!manager.pickClosest(cursor[0], cursor[1], 4, picked) || !picked) {
@@ -1068,7 +1074,7 @@ bool runAssemblyMutations(GLTestProfile profile, WorkloadKind workload,
     manager.render(TRUE, TRUE);
     hover.pixelChecksum = checksumPixels(context.readPixels());
     results.push_back(hover);
-    if (hoverOnly) {
+    if (scope == AssemblyBenchmarkScope::HoverOnly) {
       manager.releaseRenderBackendResources();
       manager.setCamera(NULL);
       manager.setSceneGraph(NULL);
@@ -1871,13 +1877,16 @@ bool runAssemblyDepthStack(GLTestProfile profile, int occurrenceCount,
 }
 
 void runMutationBenchmarks(GLTestProfile profile, int objectCount, int samples,
+                           const std::string & workloadFilter,
+                           bool updatesOnly,
                            std::vector<Measurement> & results,
                            std::vector<std::string> & unavailable)
 {
   const std::string profileName = profile == GLTestProfile::Core
     ? "core" : "compatibility";
   std::string reason;
-  if (!runIncrementalMutationScaling(
+  if ((workloadFilter.empty() || workloadFilter == "incremental") &&
+      !runIncrementalMutationScaling(
         profile, objectCount, samples, results, reason)) {
     unavailable.push_back(
       "incremental mutations DrawList " + profileName + ": " + reason);
@@ -1889,21 +1898,27 @@ void runMutationBenchmarks(GLTestProfile profile, int objectCount, int samples,
     WorkloadKind::SharedAssemblyRecipe
   };
   for (WorkloadKind workload : assemblies) {
+    if (!workloadFilter.empty() &&
+        workloadFilter != workloadName(workload)) continue;
     reason.clear();
     if (!runAssemblyMutations(
-          profile, workload, objectCount, samples, results, reason)) {
+          profile, workload, objectCount, samples, results, reason,
+          updatesOnly ? AssemblyBenchmarkScope::UpdatesOnly
+                      : AssemblyBenchmarkScope::All)) {
       unavailable.push_back(std::string(workloadName(workload)) +
         " mutation DrawList " + profileName + ": " + reason);
     }
   }
   reason.clear();
-  if (!runAssemblySelectionInteractions(
+  if ((workloadFilter.empty() || workloadFilter == "selection") &&
+      !runAssemblySelectionInteractions(
         profile, objectCount, samples, results, reason)) {
     unavailable.push_back(
       "shared assembly selection DrawList " + profileName + ": " + reason);
   }
   reason.clear();
-  if (!runAssemblyDepthStack(
+  if ((workloadFilter.empty() || workloadFilter == "depth_stack") &&
+      !runAssemblyDepthStack(
         profile, objectCount, samples, results, reason)) {
     unavailable.push_back(
       "shared assembly depth stack DrawList " + profileName + ": " + reason);
@@ -1921,12 +1936,18 @@ Options parseOptions(int argc, char ** argv)
       options.rebuildOnly = std::atoi(argv[++i]);
     else if (arg == "--mutation-only" && i + 1 < argc)
       options.mutationOnly = std::atoi(argv[++i]);
+    else if (arg == "--mutation-workload" && i + 1 < argc)
+      options.mutationWorkload = argv[++i];
+    else if (arg == "--mutation-updates-only")
+      options.mutationUpdatesOnly = true;
     else if (arg == "--interaction-only" && i + 1 < argc)
       options.interactionOnly = std::atoi(argv[++i]);
     else if (arg == "--output" && i + 1 < argc) options.output = argv[++i];
     else {
       std::cerr << "Usage: CoinRenderGLBenchmarks [--smoke] [--samples N] "
                    "[--rebuild-only N] [--mutation-only N] "
+                   "[--mutation-workload NAME] "
+                   "[--mutation-updates-only] "
                    "[--interaction-only N] [--output FILE]\n";
       std::exit(2);
     }
@@ -2094,7 +2115,8 @@ int main(int argc, char ** argv)
       std::string reason;
       if (!runAssemblyMutations(
             profile, WorkloadKind::SharedAssemblyRecipe,
-            options.interactionOnly, samples, results, reason, true)) {
+            options.interactionOnly, samples, results, reason,
+            AssemblyBenchmarkScope::HoverOnly)) {
         unavailable.push_back("shared assembly hover: " + reason);
       }
       reason.clear();
@@ -2121,8 +2143,12 @@ int main(int argc, char ** argv)
   if (options.mutationOnly > 0) {
     runMutationBenchmarks(GLTestProfile::Compatibility,
                           options.mutationOnly, samples,
+                          options.mutationWorkload,
+                          options.mutationUpdatesOnly,
                           results, unavailable);
     runMutationBenchmarks(GLTestProfile::Core, options.mutationOnly, samples,
+                          options.mutationWorkload,
+                          options.mutationUpdatesOnly,
                           results, unavailable);
     const std::string document = toJson(results, unavailable, options);
     if (options.output.empty()) std::cout << document;
@@ -2212,7 +2238,8 @@ int main(int argc, char ** argv)
   }
   for (GLTestProfile profile : { GLTestProfile::Compatibility,
                                  GLTestProfile::Core }) {
-    runMutationBenchmarks(profile, draws, samples, results, unavailable);
+    runMutationBenchmarks(profile, draws, samples, std::string(), false,
+                          results, unavailable);
   }
   const std::string document = toJson(results, unavailable, options);
   if (options.output.empty()) std::cout << document;

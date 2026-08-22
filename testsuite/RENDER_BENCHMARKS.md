@@ -25,6 +25,22 @@ build-bench/bin/CoinRenderGLBenchmarks --interaction-only 50000 \
   --samples 50 --output interactions-50000.json
 ```
 
+For comparable CPU timings, use otherwise idle, controlled hardware and keep
+the benchmark on one CPU of a consistent class. This matters on hybrid
+processors: migration between performance, efficiency, and low-power cores
+can move every CPU phase without changing GPU time. On Linux, inspect the CPU
+classes and pin a suitable core, for example:
+
+```sh
+lscpu -e=CPU,CORE,MAXMHZ
+taskset -c 2 build-bench/bin/CoinRenderGLBenchmarks \
+  --mutation-only 50000 --samples 20 --output mutations-50000.json
+```
+
+Record the selected CPU and OpenGL renderer with the result, and use the same
+CPU for both sides of a comparison. CPU numbering and core classes are
+machine-specific; `2` above is only an example.
+
 ## Viewing generated workloads
 
 `CoinRenderWorkloadViewer` displays the same deterministic scene graphs used
@@ -176,6 +192,14 @@ scene. The benchmark applies deterministic batches of 1, 10, and 100
 translation and diffuse-material edits, plus one geometry edit, through both
 DrawList compatibility and core contexts. Every sample must report the exact
 number of incrementally updated commands, with no DrawList reconstruction.
+
+Add `--mutation-workload NAME` to restrict that run to one family:
+`incremental`, `shared_assembly_expanded`, `shared_assembly_sources`,
+`shared_assembly_recipe`, `selection`, or `depth_stack`. A focused run keeps
+unrelated interaction workloads out of CPU profiles.
+
+Use `--mutation-updates-only` with an assembly family to omit its hover-pick
+measurements and profile only retained render updates.
 Results include median and p95 frame time, the update count, and construction
 time so a silent fallback cannot appear to be a valid incremental result. The
 normal and smoke benchmark runs include the same curves at their standard
