@@ -372,6 +372,7 @@ SoDrawList::addCommand(SoRenderCommand && cmd)
   this->commands.push_back(std::move(cmd));
   this->pickLUT.clear();
   this->pickLUTGeneration = 0;
+  this->pickLUTValid = false;
 }
 
 SoRenderCommand &
@@ -382,6 +383,7 @@ SoDrawList::emplaceCommand()
   ++this->resourceRevision;
   this->pickLUT.clear();
   this->pickLUTGeneration = 0;
+  this->pickLUTValid = false;
   this->commands.emplace_back();
   return this->commands.back();
 }
