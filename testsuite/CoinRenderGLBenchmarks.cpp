@@ -22,6 +22,7 @@
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoSwitch.h>
 #include <Inventor/nodes/SoTranslation.h>
 
 #include <algorithm>
@@ -70,6 +71,9 @@ struct Measurement {
   uint64_t pickDrawCalls = 0;
   uint64_t pickInstancedBatches = 0;
   uint64_t pickInstancedCommands = 0;
+  uint64_t pickDepthDrawCalls = 0;
+  uint64_t pickDepthInstancedBatches = 0;
+  uint64_t pickDepthInstancedCommands = 0;
   int samples = 0;
   double cpuMedianMs = 0.0;
   double cpuP95Ms = 0.0;
@@ -146,6 +150,35 @@ uint64_t checksumPixels(const std::vector<uint8_t> & pixels)
     if ((i % 4) != 3 && pixels[i] > 4) nonBlack = true;
   }
   return nonBlack ? hash : 0;
+}
+
+bool findVisibleCursor(
+  const int width, const int height,
+  const std::function<bool(int, int, int)> & hitAt,
+  SbVec2s & cursor, const bool requireExactPixel)
+{
+  const int searchRadius = 4;
+  for (int y = 2; y < height; y += searchRadius) {
+    for (int x = 2; x < width; x += searchRadius) {
+      if (!hitAt(x, y, searchRadius)) continue;
+      if (!requireExactPixel) {
+        cursor = SbVec2s(static_cast<short>(x), static_cast<short>(y));
+        return true;
+      }
+      for (int py = std::max(0, y - searchRadius);
+           py <= std::min(height - 1, y + searchRadius); ++py) {
+        for (int px = std::max(0, x - searchRadius);
+             px <= std::min(width - 1, x + searchRadius); ++px) {
+          if (hitAt(px, py, 0)) {
+            cursor = SbVec2s(
+              static_cast<short>(px), static_cast<short>(py));
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
 }
 
 bool checkTimerQueries()
@@ -487,7 +520,11 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
     WorkloadKind::MaterialChurn, drawCount, camera, &mutations);
   if (mutations.transforms.size() != static_cast<size_t>(drawCount) ||
       mutations.materials.size() != static_cast<size_t>(drawCount) ||
-      mutations.coordinates.size() != static_cast<size_t>(drawCount)) {
+      mutations.coordinates.size() != static_cast<size_t>(drawCount) ||
+      mutations.visibilitySwitches.size() !=
+        static_cast<size_t>(drawCount) ||
+      mutations.structuralBranches.size() !=
+        static_cast<size_t>(drawCount)) {
     unavailable = "mutation scene did not expose one target per command";
     camera->unref();
     scene->unref();
@@ -608,6 +645,140 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
     }
   }
 
+  const int requestedVisibilityCounts[] = { 1, 10, 100, 1000 };
+  for (int requested : requestedVisibilityCounts) {
+    if (!valid || requested > drawCount) break;
+    valid = measure("visibility", requested, [&](int sample) {
+      const int child = (sample & 1) ? SO_SWITCH_ALL : SO_SWITCH_NONE;
+      for (int i = 0; i < requested; ++i) {
+        mutations.visibilitySwitches[static_cast<size_t>(i)]->whichChild =
+          child;
+      }
+    });
+    // Keep each curve independent of the final state left by the previous
+    // sample count.
+    for (int i = 0; i < requested; ++i) {
+      mutations.visibilitySwitches[static_cast<size_t>(i)]->whichChild =
+        SO_SWITCH_ALL;
+    }
+    context.bindFramebuffer();
+    manager.render(TRUE, TRUE);
+  }
+
+  if (valid && drawCount > 256) {
+    const int changedCount = 257;
+    std::vector<double> frameTimes;
+    std::vector<double> constructionTimes;
+    for (int sample = 0; sample < samples; ++sample) {
+      const SbColor color = (sample & 1)
+        ? SbColor(0.65f, 0.3f, 0.2f) : SbColor(0.2f, 0.45f, 0.7f);
+      for (int i = 0; i < changedCount; ++i) {
+        mutations.materials[static_cast<size_t>(i)]->diffuseColor = color;
+      }
+      context.bindFramebuffer();
+      const Clock::time_point start = Clock::now();
+      manager.render(TRUE, TRUE);
+      frameTimes.push_back(elapsedMs(start));
+      const SoRenderManager::RenderPhaseStatistics phases =
+        manager.getRenderPhaseStatistics();
+      constructionTimes.push_back(
+        phases.drawListConstructionNanoseconds / 1000000.0);
+      if (phases.drawListRebuilds != 1 ||
+          phases.incrementalCommandUpdates != 0) {
+        unavailable = "bounded material batch did not use full rebuild";
+        valid = false;
+        break;
+      }
+    }
+    if (valid) {
+      Measurement result;
+      result.workload = "material_fallback_257_of_" +
+        std::to_string(drawCount);
+      result.renderer = "DrawList";
+      result.profile = profile == GLTestProfile::Core
+        ? "core" : "compatibility";
+      result.executionMode = "full_rebuild_fallback";
+      result.semanticDraws = drawCount;
+      result.samples = samples;
+      result.cpuMedianMs = percentile(frameTimes, 0.5);
+      result.cpuP95Ms = percentile(frameTimes, 0.95);
+      result.completionMedianMs = result.cpuMedianMs;
+      result.completionP95Ms = result.cpuP95Ms;
+      result.mutationMedianMs = result.cpuMedianMs;
+      result.mutationP95Ms = result.cpuP95Ms;
+      result.drawListConstructionMedianMs =
+        percentile(constructionTimes, 0.5);
+      result.drawListRebuilds = static_cast<uint64_t>(samples);
+      result.pixelChecksum = checksumPixels(context.readPixels());
+      results.push_back(result);
+    }
+  }
+
+  if (valid) {
+    SoSeparator * branch = mutations.structuralBranches[0];
+    SoFaceSet * insertedFace = new SoFaceSet;
+    insertedFace->ref();
+    insertedFace->numVertices.set1Value(0, 3);
+    const std::vector<uint8_t> baselinePixels = context.readPixels();
+    std::vector<double> frameTimes;
+    std::vector<double> constructionTimes;
+    std::vector<double> planTimes;
+    for (int sample = 0; sample < samples; ++sample) {
+      const int child = branch->findChild(insertedFace);
+      if ((sample & 1) == 0 && child < 0) branch->addChild(insertedFace);
+      else if ((sample & 1) != 0 && child >= 0) branch->removeChild(child);
+      context.bindFramebuffer();
+      const Clock::time_point start = Clock::now();
+      manager.render(TRUE, TRUE);
+      frameTimes.push_back(elapsedMs(start));
+      const SoRenderManager::RenderPhaseStatistics phases =
+        manager.getRenderPhaseStatistics();
+      constructionTimes.push_back(
+        phases.drawListConstructionNanoseconds / 1000000.0);
+      planTimes.push_back(phases.planConstructionNanoseconds / 1000000.0);
+      if (phases.drawListRebuilds != 1 ||
+          phases.incrementalCommandUpdates != 0 ||
+          phases.drawListConstructionNanoseconds == 0 ||
+          phases.planConstructionNanoseconds == 0) {
+        unavailable = "structural edit did not rebuild retained state";
+        valid = false;
+        break;
+      }
+    }
+    const int insertedChild = branch->findChild(insertedFace);
+    if (insertedChild >= 0) branch->removeChild(insertedChild);
+    context.bindFramebuffer();
+    manager.render(TRUE, TRUE);
+    if (valid && baselinePixels != context.readPixels()) {
+      unavailable = "structural edit did not restore baseline output";
+      valid = false;
+    }
+    if (valid) {
+      Measurement result;
+      result.workload = "structural_insert_remove_1_of_" +
+        std::to_string(drawCount);
+      result.renderer = "DrawList";
+      result.profile = profile == GLTestProfile::Core
+        ? "core" : "compatibility";
+      result.executionMode = "full_rebuild";
+      result.semanticDraws = drawCount;
+      result.samples = samples;
+      result.cpuMedianMs = percentile(frameTimes, 0.5);
+      result.cpuP95Ms = percentile(frameTimes, 0.95);
+      result.completionMedianMs = result.cpuMedianMs;
+      result.completionP95Ms = result.cpuP95Ms;
+      result.mutationMedianMs = result.cpuMedianMs;
+      result.mutationP95Ms = result.cpuP95Ms;
+      result.drawListConstructionMedianMs =
+        percentile(constructionTimes, 0.5);
+      result.planConstructionMedianMs = percentile(planTimes, 0.5);
+      result.drawListRebuilds = static_cast<uint64_t>(samples);
+      result.pixelChecksum = checksumPixels(baselinePixels);
+      results.push_back(result);
+    }
+    insertedFace->unref();
+  }
+
   manager.releaseRenderBackendResources();
   manager.setCamera(NULL);
   manager.setSceneGraph(NULL);
@@ -641,6 +812,7 @@ bool runAssemblyMutations(GLTestProfile profile, WorkloadKind workload,
   const int definitionCount = assemblyDefinitionCount(occurrenceCount);
   if (mutations.coordinates.size() !=
         static_cast<size_t>(occurrenceCount) ||
+      mutations.materials.size() != static_cast<size_t>(occurrenceCount) ||
       mutations.definitionCoordinates.size() !=
         static_cast<size_t>(definitionCount)) {
     unavailable = "assembly scene did not expose geometry mutation targets";
@@ -995,6 +1167,123 @@ bool runAssemblyMutations(GLTestProfile profile, WorkloadKind workload,
     results.push_back(transformResult);
   }
 
+  std::vector<SbColor> originalMaterialColors;
+  originalMaterialColors.reserve(mutations.materials.size());
+  for (SoMaterial * material : mutations.materials) {
+    originalMaterialColors.push_back(material->diffuseColor[0]);
+  }
+  const auto measureOccurrenceMaterial =
+    [&](const std::string & label, const int changedCount,
+        const std::function<void(int)> & mutate) {
+      std::vector<double> materialFrameTimes;
+      std::vector<double> materialPlanTimes;
+      for (int sample = 0; sample < samples; ++sample) {
+        mutate(sample);
+        context.bindFramebuffer();
+        const Clock::time_point start = Clock::now();
+        manager.render(TRUE, TRUE);
+        materialFrameTimes.push_back(elapsedMs(start));
+        const SoRenderManager::RenderPhaseStatistics phases =
+          manager.getRenderPhaseStatistics();
+        materialPlanTimes.push_back(
+          phases.planConstructionNanoseconds / 1000000.0);
+        if (phases.drawListRebuilds != 0 ||
+            phases.incrementalCommandUpdates !=
+              static_cast<uint64_t>(changedCount) ||
+            phases.planConstructionNanoseconds == 0) {
+          std::ostringstream reason;
+          reason << label << " updated " << phases.incrementalCommandUpdates
+                 << " commands with " << phases.drawListRebuilds
+                 << " rebuilds and " << phases.planConstructionNanoseconds
+                 << " ns of plan construction; expected " << changedCount
+                 << " incremental updates";
+          unavailable = reason.str();
+          return false;
+        }
+      }
+
+      const std::vector<uint8_t> materialPixels = context.readPixels();
+      manager.invalidateDrawList();
+      context.bindFramebuffer();
+      manager.render(TRUE, TRUE);
+      if (materialPixels != context.readPixels()) {
+        unavailable = label + " differs from a forced rebuild";
+        return false;
+      }
+
+      Measurement materialResult;
+      materialResult.workload = "incremental_" +
+        std::string(workloadName(workload)) + '_' + label + '_' +
+        std::to_string(changedCount) + "_of_" +
+        std::to_string(occurrenceCount);
+      materialResult.renderer = "DrawList";
+      materialResult.profile = profile == GLTestProfile::Core
+        ? "core" : "compatibility";
+      materialResult.executionMode = "incremental_update";
+      materialResult.semanticDraws = occurrenceCount * 2;
+      materialResult.samples = samples;
+      materialResult.cpuMedianMs = percentile(materialFrameTimes, 0.5);
+      materialResult.cpuP95Ms = percentile(materialFrameTimes, 0.95);
+      materialResult.completionMedianMs = materialResult.cpuMedianMs;
+      materialResult.completionP95Ms = materialResult.cpuP95Ms;
+      materialResult.mutationMedianMs = materialResult.cpuMedianMs;
+      materialResult.mutationP95Ms = materialResult.cpuP95Ms;
+      materialResult.planConstructionMedianMs =
+        percentile(materialPlanTimes, 0.5);
+      materialResult.incrementalCommandUpdates = changedCount;
+      materialResult.pixelChecksum = checksumPixels(materialPixels);
+      results.push_back(materialResult);
+      return true;
+    };
+
+  const int requestedMaterialCounts[] = { 1, 10, 100 };
+  int previousMaterialCount = 0;
+  for (int requested : requestedMaterialCounts) {
+    const int changedCount = std::min(requested, occurrenceCount);
+    if (changedCount == previousMaterialCount) continue;
+    previousMaterialCount = changedCount;
+    if (!measureOccurrenceMaterial(
+          "material", changedCount, [&](int sample) {
+            const SbColor color = (sample & 1)
+              ? SbColor(0.80f, 0.25f, 0.15f)
+              : SbColor(0.15f, 0.55f, 0.85f);
+            for (int occurrence = 0; occurrence < changedCount;
+                 ++occurrence) {
+              mutations.materials[static_cast<size_t>(occurrence)]
+                ->diffuseColor.set1Value(0, color);
+            }
+          })) {
+      manager.releaseRenderBackendResources();
+      manager.setCamera(NULL);
+      manager.setSceneGraph(NULL);
+      camera->unref();
+      scene->unref();
+      return false;
+    }
+  }
+
+  for (size_t occurrence = 0; occurrence < mutations.materials.size();
+       ++occurrence) {
+    mutations.materials[occurrence]->diffuseColor.set1Value(
+      0, originalMaterialColors[occurrence]);
+  }
+  context.bindFramebuffer();
+  manager.render(TRUE, TRUE);
+  if (!measureOccurrenceMaterial("opacity_transition", 1, [&](int sample) {
+        mutations.materials[0]->transparency.set1Value(
+          0, (sample & 1) ? 0.0f : 0.35f);
+      })) {
+    manager.releaseRenderBackendResources();
+    manager.setCamera(NULL);
+    manager.setSceneGraph(NULL);
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+  mutations.materials[0]->transparency.set1Value(0, 0.0f);
+  context.bindFramebuffer();
+  manager.render(TRUE, TRUE);
+
   std::vector<double> frameTimes;
   for (int sample = 0; sample < samples; ++sample) {
     const float offset = (sample & 1) ? -0.01f : 0.01f;
@@ -1178,17 +1467,12 @@ bool runAssemblySelectionInteractions(
   }
   SbVec2s asyncCursor;
   SoPickResult setupHit;
-  bool foundAsyncCursor = false;
-  for (int y = 2; y < 256 && !foundAsyncCursor; y += 4) {
-    for (int x = 2; x < 256; x += 4) {
-      if (backend.pickClosest(x, y, 4, setupHit)) {
-        asyncCursor = SbVec2s(static_cast<short>(x), static_cast<short>(y));
-        foundAsyncCursor = true;
-        break;
-      }
-    }
-  }
-  if (!foundAsyncCursor) {
+  if (!findVisibleCursor(
+        256, 256,
+        [&](const int x, const int y, const int radius) {
+          return backend.pickClosest(x, y, radius, setupHit) != FALSE;
+        },
+        asyncCursor, false)) {
     unavailable = "assembly asynchronous pick setup found no visible hit";
     backend.shutdown();
     camera->unref();
@@ -1265,6 +1549,7 @@ bool runAssemblySelectionInteractions(
   const auto measureSelection = [&](const char * label,
                                     const int selectedOccurrences,
                                     const bool churn,
+                                    const bool subelement,
                                     const bool highlighted) {
     std::vector<double> timings;
     SoRenderBackendStatistics statistics;
@@ -1287,6 +1572,12 @@ bool runAssemblySelectionInteractions(
           for (int commandOffset = 0; commandOffset < 2; ++commandOffset) {
             SoSelectionTarget target;
             target.commandIndex = occurrence * 2 + commandOffset;
+            if (subelement) {
+              target.type = commandOffset == 0 ? SO_PICK_FACE : SO_PICK_EDGE;
+              // Every assembly definition contains at least eight face and
+              // edge ranges, so this remains valid across the shared recipes.
+              target.elementIndex = selected % 8;
+            }
             target.color = SbColor4f(1.0f, 0.75f, 0.0f, 0.65f);
             selection.selected.push_back(target);
           }
@@ -1300,7 +1591,9 @@ bool runAssemblySelectionInteractions(
         static_cast<uint64_t>(selectedOccurrences) * 2;
       if (statistics.selection.targets != expectedTargets ||
           statistics.selection.drawCalls > expectedTargets ||
-          statistics.selection.instancedCommands > expectedTargets) {
+          statistics.selection.instancedCommands > expectedTargets ||
+          (subelement && selectedOccurrences >= 10 &&
+           statistics.selection.instancedCommands == 0)) {
         return false;
       }
     }
@@ -1337,14 +1630,241 @@ bool runAssemblySelectionInteractions(
   const int tenPercent = std::max(1, occurrenceCount / 10);
   const bool valid =
     measureSelection(
-      "shared_assembly_selection_1_percent", onePercent, false, false) &&
+      "shared_assembly_selection_1_percent", onePercent,
+      false, false, false) &&
     measureSelection(
-      "shared_assembly_selection_10_percent", tenPercent, false, false) &&
+      "shared_assembly_selection_10_percent", tenPercent,
+      false, false, false) &&
     measureSelection(
-      "shared_assembly_selection_churn", tenPercent, true, false) &&
-    measureSelection("shared_assembly_preselection", 1, false, true);
+      "shared_assembly_selection_churn", tenPercent,
+      true, false, false) &&
+    measureSelection(
+      "shared_assembly_subelement_selection", tenPercent,
+      true, true, false) &&
+    measureSelection(
+      "shared_assembly_preselection", 1, false, false, true);
   if (!valid) unavailable = "assembly selection interaction invariant failed";
   backend.shutdown();
+  camera->unref();
+  scene->unref();
+  return valid;
+}
+
+bool runAssemblyDepthStack(GLTestProfile profile, int occurrenceCount,
+                           int samples, std::vector<Measurement> & results,
+                           std::string & unavailable)
+{
+  GLTestContextConfig config;
+  config.profile = profile;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 256;
+  config.height = 256;
+  GLTestContext context;
+  if (!context.initialize(config)) {
+    unavailable = "requested OpenGL context is unavailable";
+    return false;
+  }
+
+  SceneMutationHandles mutations;
+  SoOrthographicCamera * camera = NULL;
+  SoSeparator * scene = makeScene(
+    WorkloadKind::SharedAssemblyRecipe, occurrenceCount, camera, &mutations);
+  if (mutations.transforms.size() != static_cast<size_t>(occurrenceCount)) {
+    unavailable = "depth-stack scene did not expose every occurrence";
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+  SbVec3f stackOrigin =
+    mutations.transforms.front()->translation.getValue();
+  float nearestCenter = stackOrigin[0] * stackOrigin[0] +
+    stackOrigin[1] * stackOrigin[1];
+  for (SoTranslation * transform : mutations.transforms) {
+    const SbVec3f candidate = transform->translation.getValue();
+    const float distance = candidate[0] * candidate[0] +
+      candidate[1] * candidate[1];
+    if (distance < nearestCenter) {
+      stackOrigin = candidate;
+      nearestCenter = distance;
+    }
+  }
+  for (int occurrence = 0; occurrence < occurrenceCount; ++occurrence) {
+    mutations.transforms[static_cast<size_t>(occurrence)]->translation =
+      SbVec3f(stackOrigin[0], stackOrigin[1],
+              stackOrigin[2] - 0.05f * static_cast<float>(occurrence));
+  }
+  camera->farDistance = std::max(
+    100.0f, 20.0f + 0.05f * static_cast<float>(occurrenceCount));
+
+  SbViewportRegion viewport(SbVec2s(256, 256));
+  viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(256, 256));
+  SoRenderManager manager;
+  manager.setViewportRegion(viewport);
+  manager.setSceneGraph(scene);
+  manager.setCamera(camera);
+  manager.setLightingMode(SoRenderManager::UNLIT);
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+  manager.setRenderPhaseTimingEnabled(TRUE);
+  context.bindFramebuffer();
+  manager.render(TRUE, TRUE);
+  context.bindFramebuffer();
+  manager.render(TRUE, TRUE);
+
+  // Build the target outside every depth curve so samples measure peeling,
+  // readback, and result resolution rather than cold target construction.
+  SbVec2s stackCursor;
+  if (!findVisibleCursor(
+        256, 256,
+        [&](const int x, const int y, const int radius) {
+          SoPickedPoint * hit = NULL;
+          const bool found = manager.pickClosest(x, y, radius, hit) && hit;
+          delete hit;
+          return found;
+        },
+        stackCursor, true)) {
+    unavailable = "depth-stack scene produced no visible hit";
+    manager.releaseRenderBackendResources();
+    manager.setCamera(NULL);
+    manager.setSceneGraph(NULL);
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+
+  bool valid = true;
+  const int requestedLayers[] = { 1, 8, 32, 128 };
+  int previousLayers = 0;
+  for (int requested : requestedLayers) {
+    const int maxLayers = std::min(requested, occurrenceCount);
+    if (maxLayers == previousLayers) continue;
+    previousLayers = maxLayers;
+    const int curveSamples = std::min(
+      samples, std::max(5, 128 / std::max(1, maxLayers)));
+    std::vector<double> totalTimes;
+    std::vector<double> queryTimes;
+    std::vector<double> resolutionTimes;
+    std::vector<double> renderingTimes;
+    std::vector<double> peelingTimes;
+    std::vector<double> readbackTimes;
+    std::vector<double> processingTimes;
+    std::vector<double> restoreTimes;
+    SoRenderManager::RenderPhaseStatistics phases;
+    for (int sample = 0; sample < curveSamples; ++sample) {
+      SoPickedPointList stack;
+      const Clock::time_point start = Clock::now();
+      if (!manager.pickDepthStack(stackCursor[0], stackCursor[1], 0,
+                                  maxLayers, stack,
+                                  maxLayers)) {
+        unavailable = "assembly depth-stack query returned no hits";
+        valid = false;
+        break;
+      }
+      totalTimes.push_back(elapsedMs(start));
+      phases = manager.getRenderPhaseStatistics();
+      queryTimes.push_back(phases.pickQueryNanoseconds / 1000000.0);
+      resolutionTimes.push_back(
+        phases.pickResultResolutionNanoseconds / 1000000.0);
+      renderingTimes.push_back(
+        phases.backendPickDepthRenderingNanoseconds / 1000000.0);
+      peelingTimes.push_back(
+        phases.backendPickDepthPeelingNanoseconds / 1000000.0);
+      readbackTimes.push_back(
+        phases.backendPickReadbackNanoseconds / 1000000.0);
+      processingTimes.push_back(
+        phases.backendPickHitProcessingNanoseconds / 1000000.0);
+      restoreTimes.push_back(
+        phases.backendPickTargetRestoreNanoseconds / 1000000.0);
+
+      std::vector<const SoSeparator *> identities;
+      float previousZ = 0.0f;
+      bool havePreviousZ = false;
+      for (int hitIndex = 0; hitIndex < stack.getLength(); ++hitIndex) {
+        SoPickedPoint * hit = stack[hitIndex];
+        const float z = hit->getPoint()[2];
+        if (havePreviousZ && z > previousZ + 0.0001f) {
+          unavailable = "assembly depth-stack hits were not front-to-back";
+          valid = false;
+          break;
+        }
+        previousZ = z;
+        havePreviousZ = true;
+        const SoPath * path = hit->getPath();
+        const SoSeparator * identity = NULL;
+        for (int node = 0; path && node < path->getLength(); ++node) {
+          SoSeparator * candidate = SoSeparator::getClassTypeId() ==
+              path->getNode(node)->getTypeId()
+            ? static_cast<SoSeparator *>(path->getNode(node)) : NULL;
+          if (candidate && std::find(mutations.structuralBranches.begin(),
+                                     mutations.structuralBranches.end(),
+                                     candidate) !=
+                           mutations.structuralBranches.end()) {
+            identity = candidate;
+            break;
+          }
+        }
+        if (identity && std::find(identities.begin(), identities.end(),
+                                  identity) == identities.end()) {
+          identities.push_back(identity);
+        }
+      }
+      if (!valid) break;
+      const size_t expectedIdentities = static_cast<size_t>(
+        std::min(maxLayers, std::min(2, occurrenceCount)));
+      if (identities.size() < expectedIdentities ||
+          phases.drawListRebuilds != 0 ||
+          phases.pickBufferRefreshes != 0 ||
+          phases.pickInstancedBatches == 0 ||
+          phases.pickInstancedCommands == 0 ||
+          phases.pickDrawCalls >=
+            static_cast<uint64_t>(occurrenceCount * 2) *
+              static_cast<uint64_t>(maxLayers + 1)) {
+        std::ostringstream reason;
+        reason << "assembly depth-stack batching invariant failed at "
+               << maxLayers << " layers (identities=" << identities.size()
+               << ", rebuilds=" << phases.drawListRebuilds
+               << ", refreshes=" << phases.pickBufferRefreshes
+               << ", draws=" << phases.pickDrawCalls
+               << ", batches=" << phases.pickInstancedBatches
+               << ", commands=" << phases.pickInstancedCommands << ')';
+        unavailable = reason.str();
+        valid = false;
+        break;
+      }
+    }
+    if (!valid) break;
+
+    Measurement result;
+    result.workload = "shared_assembly_depth_stack_" +
+      std::to_string(maxLayers) + "_of_" +
+      std::to_string(occurrenceCount);
+    result.renderer = "DrawList";
+    result.profile = profile == GLTestProfile::Core
+      ? "core" : "compatibility";
+    result.executionMode = "depth_stack_interaction";
+    result.semanticDraws = occurrenceCount * 2;
+    result.samples = curveSamples;
+    result.cpuMedianMs = percentile(totalTimes, 0.5);
+    result.cpuP95Ms = percentile(totalTimes, 0.95);
+    result.pickMedianMs = result.cpuMedianMs;
+    result.pickP95Ms = result.cpuP95Ms;
+    result.pickQueryMedianMs = percentile(queryTimes, 0.5);
+    result.pickResultResolutionMedianMs = percentile(resolutionTimes, 0.5);
+    result.pickDepthRenderingMedianMs = percentile(renderingTimes, 0.5);
+    result.pickDepthPeelingMedianMs = percentile(peelingTimes, 0.5);
+    result.pickReadbackMedianMs = percentile(readbackTimes, 0.5);
+    result.pickHitProcessingMedianMs = percentile(processingTimes, 0.5);
+    result.pickTargetRestoreMedianMs = percentile(restoreTimes, 0.5);
+    result.pickDepthDrawCalls = phases.pickDrawCalls;
+    result.pickDepthInstancedBatches = phases.pickInstancedBatches;
+    result.pickDepthInstancedCommands = phases.pickInstancedCommands;
+    result.pixelChecksum = checksumPixels(context.readPixels());
+    results.push_back(result);
+  }
+
+  manager.releaseRenderBackendResources();
+  manager.setCamera(NULL);
+  manager.setSceneGraph(NULL);
   camera->unref();
   scene->unref();
   return valid;
@@ -1382,6 +1902,12 @@ void runMutationBenchmarks(GLTestProfile profile, int objectCount, int samples,
     unavailable.push_back(
       "shared assembly selection DrawList " + profileName + ": " + reason);
   }
+  reason.clear();
+  if (!runAssemblyDepthStack(
+        profile, objectCount, samples, results, reason)) {
+    unavailable.push_back(
+      "shared assembly depth stack DrawList " + profileName + ": " + reason);
+  }
 }
 
 Options parseOptions(int argc, char ** argv)
@@ -1417,7 +1943,7 @@ std::string toJson(const std::vector<Measurement> & results,
   const char * mode = options.interactionOnly > 0 ? "interaction" :
     (options.mutationOnly > 0 ? "mutation" :
       (options.smoke ? "smoke" : "benchmark"));
-  out << "{\n  \"schema_version\": 13,\n  \"mode\": \""
+  out << "{\n  \"schema_version\": 14,\n  \"mode\": \""
       << mode
       << "\",\n  \"time_unit\": \"ms\",\n  \"benchmarks\": [\n";
   for (size_t i = 0; i < results.size(); ++i) {
@@ -1472,6 +1998,11 @@ std::string toJson(const std::vector<Measurement> & results,
         << ", \"pick_draw_calls\": " << r.pickDrawCalls
         << ", \"pick_instanced_batches\": " << r.pickInstancedBatches
         << ", \"pick_instanced_commands\": " << r.pickInstancedCommands
+        << ", \"pick_depth_draw_calls\": " << r.pickDepthDrawCalls
+        << ", \"pick_depth_instanced_batches\": "
+        << r.pickDepthInstancedBatches
+        << ", \"pick_depth_instanced_commands\": "
+        << r.pickDepthInstancedCommands
         << ", \"drawlist_rebuilds\": " << r.drawListRebuilds
         << ", \"incremental_command_updates\": "
         << r.incrementalCommandUpdates
@@ -1570,6 +2101,11 @@ int main(int argc, char ** argv)
       if (!runAssemblySelectionInteractions(
             profile, options.interactionOnly, samples, results, reason)) {
         unavailable.push_back("shared assembly interactions: " + reason);
+      }
+      reason.clear();
+      if (!runAssemblyDepthStack(
+            profile, options.interactionOnly, samples, results, reason)) {
+        unavailable.push_back("shared assembly depth stack: " + reason);
       }
     }
     const std::string document = toJson(results, unavailable, options);
