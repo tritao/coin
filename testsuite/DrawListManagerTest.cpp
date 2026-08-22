@@ -582,6 +582,17 @@ runTest()
       result = 1;
     }
 
+    cubeTranslation->translation.setValue(0.21f, 0.0f, -3.0f);
+    manager.render(TRUE, TRUE);
+    closest = NULL;
+    if (!manager.pickClosest(16, 16, 1, closest) || !closest ||
+        manager.getRenderPhaseStatistics().pickBufferRefreshes != 1) {
+      std::cerr << "FAIL: incremental update did not refresh retained picking"
+                << std::endl;
+      result = 1;
+    }
+    delete closest;
+
     SoPickedPointList stack;
     if (!manager.pickDepthStack(16, 16, 0, 8, stack) ||
         stack.getLength() == 0 ||
@@ -597,6 +608,7 @@ runTest()
         reusedPickPhases.pickBufferUpdateNanoseconds != 0 ||
         reusedPickPhases.pickQueryNanoseconds == 0 ||
         reusedPickPhases.backendPickDepthRenderingNanoseconds == 0 ||
+        reusedPickPhases.pickDrawCalls == 0 ||
         reusedPickPhases.backendPickTargetRestoreNanoseconds == 0) {
       std::cerr << "FAIL: reused pick buffer phases were misreported" << std::endl;
       result = 1;

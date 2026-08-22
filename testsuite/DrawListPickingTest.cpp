@@ -461,10 +461,46 @@ runTest()
         std::cerr << "FAIL: indexed face range did not resolve" << std::endl;
         result = 1;
       }
+      SoAsyncPickRequest request;
+      SoPickResult asyncHit;
+      if (!backend.requestPickClosestAsync(32, 32, 0, request)) {
+        std::cerr << "FAIL: asynchronous closest-pick request failed"
+                  << std::endl;
+        result = 1;
+      }
+      else {
+        SoAsyncPickStatus status =
+          backend.pollPickClosestAsync(request, asyncHit);
+        if (status == SoAsyncPickStatus::PENDING) {
+          glFinish();
+          status = backend.pollPickClosestAsync(request, asyncHit);
+        }
+        if (status != SoAsyncPickStatus::HIT || asyncHit.id != faceHit.id ||
+            asyncHit.type != faceHit.type ||
+            asyncHit.elementIndex != faceHit.elementIndex) {
+          std::cerr << "FAIL: asynchronous closest pick differed from sync"
+                    << std::endl;
+          result = 1;
+        }
+      }
     }
 
     // An explicitly empty or out-of-bounds range is invalid; it must not
     // silently turn into a whole-command object entry.
+    SoAsyncPickRequest staleRequest;
+    const bool queuedStaleRequest =
+      backend.requestPickClosestAsync(32, 32, 0, staleRequest);
+    drawlist.getCommandForRetainedUpdate(0).modelMatrix.setTranslate(
+      SbVec3f(0.001f, 0.0f, 0.0f));
+    drawlist.applyRetainedInvalidation(false, false, false);
+    SoPickResult staleHit;
+    if (!queuedStaleRequest || !updatePickBuffer(backend, drawlist, params) ||
+        backend.pollPickClosestAsync(staleRequest, staleHit) !=
+          SoAsyncPickStatus::STALE) {
+      std::cerr << "FAIL: asynchronous pick survived target replacement"
+                << std::endl;
+      result = 1;
+    }
     SoRenderCommand invalidRangeCommand = command;
     SoRenderElementRange invalidRange;
     invalidRange.type = SO_PICK_FACE;
@@ -543,6 +579,74 @@ runTest()
     if (!render(backend, drawlist, params) ||
         !backend.renderSelection(drawlist, instancedSelection, params)) {
       std::cerr << "FAIL: instanced selection overlay failed" << std::endl;
+      result = 1;
+    }
+
+    // Shared indexed edges use the same instance identity path as surfaces
+    // for visual rendering, picking, and selection overlays.
+    const float indexedEdgePositions[] = {
+      0.0f, -0.5f, 0.0f,
+      0.0f,  0.5f, 0.0f
+    };
+    const uint32_t lineIndices[] = { 0, 1 };
+    SoRenderCommand leftEdge = command;
+    leftEdge.geometry.topology = SO_TOPOLOGY_LINES;
+    leftEdge.geometry.positions = indexedEdgePositions;
+    leftEdge.geometry.vertexCount = 2;
+    leftEdge.geometry.indices = lineIndices;
+    leftEdge.geometry.indexCount = 2;
+    leftEdge.geometry.cacheKey = 0x45444745494e5354ULL;
+    leftEdge.modelMatrix.setTranslate(SbVec3f(-0.25f, 0.0f, 0.0f));
+    SoRenderCommand rightEdge = leftEdge;
+    rightEdge.objectId += 1;
+    rightEdge.modelMatrix.setTranslate(SbVec3f(0.25f, 0.0f, 0.0f));
+    drawlist.clear();
+    drawlist.addCommand(leftEdge);
+    drawlist.addCommand(rightEdge);
+    SoSelectionState edgeSelection;
+    SoSelectionTarget edgeTarget;
+    edgeTarget.commandIndex = 1;
+    edgeSelection.selected.push_back(edgeTarget);
+    SoPickResult edgeHit;
+    if (!render(backend, drawlist, params) ||
+        !updatePickBuffer(backend, drawlist, params) ||
+        !backend.pick(24, 32, 1, edgeHit) || edgeHit.commandIndex != 0 ||
+        !backend.renderSelection(drawlist, edgeSelection, params)) {
+      std::cerr << "FAIL: instanced indexed-edge semantics failed"
+                << std::endl;
+      result = 1;
+    }
+
+    // Stable target identity may reuse its grouping plan, but colors remain
+    // frame-local submission data.
+    instancedSelection.selected[0].color =
+      SbColor4f(0.0f, 1.0f, 0.0f, 0.5f);
+    instancedSelection.selected[1].color =
+      SbColor4f(1.0f, 0.0f, 0.0f, 0.5f);
+    if (!render(backend, drawlist, params) ||
+        !backend.renderSelection(drawlist, instancedSelection, params)) {
+      std::cerr << "FAIL: stable selection plan reuse failed" << std::endl;
+      result = 1;
+    }
+
+    // Compatible targets can still batch when an unrelated geometry target
+    // appears between them in selection order.
+    SoRenderCommand middleSelectionCommand = command;
+    middleSelectionCommand.geometry.cacheKey = 0x53454c4d4944444cULL;
+    drawlist.clear();
+    drawlist.addCommand(leftSelectionCommand);
+    drawlist.addCommand(middleSelectionCommand);
+    drawlist.addCommand(rightSelectionCommand);
+    SoSelectionState interleavedSelection;
+    SoSelectionTarget middleTarget;
+    middleTarget.commandIndex = 1;
+    interleavedSelection.selected.push_back(leftTarget);
+    interleavedSelection.selected.push_back(middleTarget);
+    rightTarget.commandIndex = 2;
+    interleavedSelection.selected.push_back(rightTarget);
+    if (!render(backend, drawlist, params) ||
+        !backend.renderSelection(drawlist, interleavedSelection, params)) {
+      std::cerr << "FAIL: interleaved selection grouping failed" << std::endl;
       result = 1;
     }
 
