@@ -50,8 +50,10 @@ press Escape to exit. Use the mouse wheel to zoom, right- or middle-drag to
 pan. `M` toggles mutation playback, Space pauses rendering, and `R` forces a
 retained rebuild. The viewer prints frame rate once per second. LegacyGL requires a
 compatibility-profile build and `--gl-profile compat`; DrawList supports
-compatibility and core profiles. The DrawList path also performs a synchronous
-hover pick at the cursor so the interaction path is exercised.
+compatibility and core profiles. On stable scenes, the DrawList path queues a
+nonblocking hover pick and polls it on later frames. Mutation playback suspends
+hover sampling because each animation update would make an outstanding result
+stale.
 
 CTest also registers `CoinRenderWorkloadViewerSmoke`. It uses a hidden core
 context to render a small shared-recipe scene, resize its framebuffer, animate
@@ -113,17 +115,30 @@ warm hover queries, and target refresh after an incremental occurrence update.
 Refresh results report median and p95 wall, GPU timer-query, and synchronous
 readback time; each sample performs a distinct transform update and verifies
 one target rebuild.
-The asynchronous hover curve reports nonblocking PBO request and immediate-poll
-cost separately from eventual GPU completion. It is a backend mechanism; UI
-ownership, coalescing, and stale-result policy remain with the caller.
+The asynchronous hover curves report nonblocking request and immediate-poll
+cost separately from eventual GPU completion. The manager curve includes dirty
+target refresh and scene-result resolution; the backend curve isolates PBO
+submission and completion. UI ownership and request coalescing remain with the
+caller, while the manager rejects results made stale by a target update.
 Pick draw-call and instance counters verify that primitive-mapped occurrences
 remain batched instead of silently falling back to one draw per occurrence.
 When pick topology and render-plan order remain stable, the backend reuses the
 classified submission batches while refreshing their per-instance matrices.
 Selection curves render deterministic 1% and 10% selected sets, replace 10% of
-the selected occurrences between samples, and exercise one preselection. They
-report logical targets, physical draw calls, and instanced coverage without
-moving producer-owned selection policy into `SoRenderManager`.
+the selected occurrences between samples, select deterministic face and edge
+ranges, and exercise one preselection. They report logical targets, physical
+draw calls, and instanced coverage without moving producer-owned selection
+policy into `SoRenderManager`. The subelement curve requires instanced coverage
+for nontrivial sets so range selection cannot silently regress to one draw per
+target.
+
+The shared-assembly depth-stack curves place every occurrence on one view ray
+and request 1, 8, 32, and 128 primitive depth layers. They verify resolved
+front-to-back ordering, distinct occurrence identities, zero retained rebuilds,
+and instanced peel-pass coverage. Results separate initial depth rendering,
+peeling, synchronous readback, hit processing, target restoration, and scene
+result resolution. The expensive 32- and 128-layer curves use a bounded sample
+count so focused interaction runs remain practical.
 
 `incremental_update_median_ms` isolates retained dependency lookup and command
 patching from plan construction and backend submission.
@@ -166,6 +181,13 @@ time so a silent fallback cannot appear to be a valid incremental result. The
 normal and smoke benchmark runs include the same curves at their standard
 scene sizes.
 
+The same mutation run toggles visibility for batches of 1, 10, 100, and 1,000
+occurrences. These curves verify exact incremental command counts and expose
+the difference between inexpensive dependency updates and the subsequent
+whole-scene plan/submission work. A separate child insertion/removal curve must
+perform one full retained rebuild per sample and restore the original pixels
+after the edit is removed.
+
 The mutation run also edits one geometry definition in each assembly ownership
 model. Expanded geometry updates one face/edge pair; shared-source and
 shared-recipe geometry update every face/edge resource owned by the first
@@ -181,6 +203,26 @@ and irregular mappings remain ordering barriers. The benchmark requires
 multiple resolved hits, zero DrawList rebuilds, bounded draw calls per layer,
 and nonzero instanced coverage.
 
+The assembly scenes also measure batches of 1, 10, and 100 occurrence
+translations. Each occurrence must patch exactly its face and edge command
+without rebuilding the DrawList, and every final image is compared with an
+explicit rebuild. A forced-rebuild curve for each ownership model provides a
+direct baseline for deciding whether further matrix-replay optimization is
+worthwhile.
+
+Occurrence-local assembly materials use the same 1, 10, and 100 batch sizes
+across expanded, shared-source, and shared-recipe geometry ownership. Each
+material must patch exactly its face command, preserve edge state, rebuild the
+render plan without rebuilding the DrawList, and match a forced-rebuild image.
+A single-occurrence opacity curve crosses the opaque/transparent boundary to
+include blend classification and transparent ordering in the same invariants.
+
+Incremental notification batches are classified before retained state changes.
+Transform, material, geometry, and disjoint stable-switch batches commit only
+after every replacement is available. Mixed, shared-node, structural, and
+overlapping-switch changes retain the full-rebuild path; parent-occurrence
+classification is cached only for the lifetime of the current DrawList.
+
 The deterministic workloads currently cover traversal/IR construction, render
 plan construction (including transparent sorting and depth segments), retained
 pick-table construction and resolution, selection churn, and repeated frame
@@ -189,3 +231,7 @@ belong in an optional GL-backed extension so controlled runners can select the
 required compatibility or core context explicitly. `CoinRenderGLBenchmarks`
 provides that controlled A/B layer; the dependency-free executable remains the
 preferred benchmark smoke test on machines without suitable GL contexts.
+
+Longer-term pick-result layering and instrumentation constraints are recorded
+in `docs/retained-renderer-roadmap.txt`. Those are evidence-gated API follow-ups,
+not requirements for the benchmark suite or the current renderer stack.

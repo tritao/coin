@@ -1,0 +1,73 @@
+RETAINED RENDERER API ROADMAP
+=============================
+
+This file records design constraints that are not requirements for the current
+renderer stack. They should be validated with interaction benchmarks before
+they become additional public API.
+
+
+PICK RESULT LAYERING
+====================
+
+The current SoRenderManager closest-pick APIs resolve successful hits to
+SoPickedPoint. This preserves Coin scene/path semantics and keeps backend IDs
+private. It is the supported compatibility path, not a reason to expose
+SoGLRenderBackend or DrawList command indices.
+
+A future high-frequency interaction API may benefit from a renderer-neutral,
+value-type hit between GPU readback and SoPickedPoint construction:
+
+  asynchronous request
+          |
+  renderer-neutral hit value
+          |
+  optional scene/path resolution
+          |
+  SoPickedPoint
+
+Before adding that type, benchmarks must show that SoPickedPoint resolution or
+allocation is material to interaction latency. The value must identify an
+occurrence and optional subelement without exposing transient command indices,
+backend primitive IDs, or producer-owned selection policy. Its lifetime and
+stale-result rules must remain explicit. SoPickedPoint resolution should remain
+available as an additive layer rather than being replaced.
+
+PERFORMANCE INSTRUMENTATION
+===========================
+
+SoRenderManager::RenderPhaseStatistics is the current opt-in diagnostic
+snapshot. Timing remains disabled by default and must not affect normal render
+behavior. New benchmark needs should not automatically add permanent fields to
+the manager.
+
+If instrumentation continues to grow, prefer a versionable snapshot or event
+sink with these properties:
+
+  * no clock reads or callbacks while disabled;
+  * separate manager, backend CPU, GPU, picking, and selection phases;
+  * explicit schema/version information for persisted benchmark results;
+  * backend-neutral public data, with backend-specific details kept internal;
+  * one frame/request identifier so asynchronous work can be correlated;
+  * no ownership or control of rendering, picking, or selection policy.
+
+The benchmark JSON schema is a reporting format, not a production ABI. It may
+derive fields from several internal snapshots without forcing the same shape
+onto SoRenderManager.
+
+
+DECISION GATES
+==============
+
+Do not add either API solely for completeness. Revisit them when the remaining
+subelement-selection and depth-stack curves provide evidence for one of these
+conditions:
+
+  * scene-result resolution is a significant part of hover latency;
+  * consumers need a stable hit without a full SoPickedPoint;
+  * asynchronous phases cannot be attributed with the current snapshot;
+  * adding another RenderPhaseStatistics field would couple public API to one
+    backend implementation.
+
+Until then, evolve the retained implementation behind SoRenderManager and keep
+the current request token, backend requests, command identities, and timing
+machinery opaque.
