@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -41,6 +42,7 @@ struct Options {
   bool smoke = false;
   int samples = 0;
   int rebuildOnly = 0;
+  int mutationOnly = 0;
   std::string output;
 };
 
@@ -57,6 +59,8 @@ struct Measurement {
   double gpuP95Ms = 0.0;
   double completionMedianMs = 0.0;
   double completionP95Ms = 0.0;
+  double mutationMedianMs = 0.0;
+  double mutationP95Ms = 0.0;
   double drawListConstructionMedianMs = 0.0;
   double primitiveGenerationMedianMs = 0.0;
   double geometryPackingMedianMs = 0.0;
@@ -68,6 +72,7 @@ struct Measurement {
   double backendCommandExecutionMedianMs = 0.0;
   double backendSelectionMedianMs = 0.0;
   uint64_t drawListRebuilds = 0;
+  uint64_t incrementalCommandUpdates = 0;
   double coldPickMs = 0.0;
   double coldPickBufferUpdateMs = 0.0;
   double coldPickTargetPreparationMs = 0.0;
@@ -418,6 +423,305 @@ bool runVariant(GLTestProfile profile,
   return true;
 }
 
+bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
+                                   int samples,
+                                   std::vector<Measurement> & results,
+                                   std::string & unavailable)
+{
+  GLTestContextConfig config;
+  config.profile = profile;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 256;
+  config.height = 256;
+  GLTestContext context;
+  if (!context.initialize(config)) {
+    unavailable = "requested OpenGL context is unavailable";
+    return false;
+  }
+
+  SceneMutationHandles mutations;
+  SoOrthographicCamera * camera = NULL;
+  SoSeparator * scene = makeScene(
+    WorkloadKind::MaterialChurn, drawCount, camera, &mutations);
+  if (mutations.transforms.size() != static_cast<size_t>(drawCount) ||
+      mutations.materials.size() != static_cast<size_t>(drawCount) ||
+      mutations.coordinates.size() != static_cast<size_t>(drawCount)) {
+    unavailable = "mutation scene did not expose one target per command";
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+
+  SbViewportRegion viewport(SbVec2s(256, 256));
+  viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(256, 256));
+  SoRenderManager manager;
+  manager.setViewportRegion(viewport);
+  manager.setSceneGraph(scene);
+  manager.setCamera(camera);
+  manager.setLightingMode(SoRenderManager::UNLIT);
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+  manager.setRenderPhaseTimingEnabled(TRUE);
+  context.bindFramebuffer();
+  manager.render(TRUE, TRUE);
+
+  const auto measure = [&](const std::string & mutation, int changedCount,
+                           const std::function<void(int)> & mutate) {
+    std::vector<double> frameTimes;
+    std::vector<double> constructionTimes;
+    for (int sample = 0; sample < samples; ++sample) {
+      mutate(sample);
+      context.bindFramebuffer();
+      const Clock::time_point start = Clock::now();
+      manager.render(TRUE, TRUE);
+      frameTimes.push_back(elapsedMs(start));
+      const SoRenderManager::RenderPhaseStatistics phases =
+        manager.getRenderPhaseStatistics();
+      constructionTimes.push_back(
+        phases.drawListConstructionNanoseconds / 1000000.0);
+      if (phases.drawListRebuilds != 0 ||
+          phases.incrementalCommandUpdates !=
+            static_cast<uint64_t>(changedCount)) {
+        std::ostringstream reason;
+        reason << mutation << '_' << changedCount << " updated "
+               << phases.incrementalCommandUpdates << " commands with "
+               << phases.drawListRebuilds << " rebuilds";
+        unavailable = reason.str();
+        return false;
+      }
+    }
+
+    Measurement result;
+    result.workload = "incremental_" + mutation + '_' +
+      std::to_string(changedCount) + "_of_" + std::to_string(drawCount);
+    result.renderer = "DrawList";
+    result.profile = profile == GLTestProfile::Core
+      ? "core" : "compatibility";
+    result.executionMode = "incremental_update";
+    result.semanticDraws = drawCount;
+    result.samples = samples;
+    result.cpuMedianMs = percentile(frameTimes, 0.5);
+    result.cpuP95Ms = percentile(frameTimes, 0.95);
+    result.completionMedianMs = result.cpuMedianMs;
+    result.completionP95Ms = result.cpuP95Ms;
+    result.mutationMedianMs = result.cpuMedianMs;
+    result.mutationP95Ms = result.cpuP95Ms;
+    result.drawListConstructionMedianMs =
+      percentile(constructionTimes, 0.5);
+    result.incrementalCommandUpdates = static_cast<uint64_t>(changedCount);
+    result.pixelChecksum = checksumPixels(context.readPixels());
+    results.push_back(result);
+    return true;
+  };
+
+  std::vector<int> changedCounts;
+  const int requestedCounts[] = { 1, 10, 100 };
+  for (int requested : requestedCounts) {
+    const int count = std::min(drawCount, requested);
+    if (changedCounts.empty() || changedCounts.back() != count) {
+      changedCounts.push_back(count);
+    }
+  }
+
+  bool valid = true;
+  for (int changedCount : changedCounts) {
+    std::vector<SbVec3f> translations(static_cast<size_t>(changedCount));
+    std::vector<SbVec3f> positions(static_cast<size_t>(changedCount));
+    for (int i = 0; i < changedCount; ++i) {
+      translations[static_cast<size_t>(i)] =
+        mutations.transforms[static_cast<size_t>(i)]->translation.getValue();
+      positions[static_cast<size_t>(i)] =
+        mutations.coordinates[static_cast<size_t>(i)]->point[0];
+    }
+    valid = measure("translation", changedCount, [&](int sample) {
+      const float offset = (sample & 1) ? -0.01f : 0.01f;
+      for (int i = 0; i < changedCount; ++i) {
+        mutations.transforms[static_cast<size_t>(i)]->translation =
+          translations[static_cast<size_t>(i)] + SbVec3f(offset, 0.0f, 0.0f);
+      }
+    });
+    if (!valid) break;
+    valid = measure("material", changedCount, [&](int sample) {
+      const SbColor color = (sample & 1)
+        ? SbColor(0.75f, 0.25f, 0.15f) : SbColor(0.15f, 0.55f, 0.85f);
+      for (int i = 0; i < changedCount; ++i) {
+        mutations.materials[static_cast<size_t>(i)]->diffuseColor = color;
+      }
+    });
+    if (!valid) break;
+    if (changedCount == 1) {
+      valid = measure("geometry", changedCount, [&](int sample) {
+        const float offset = (sample & 1) ? -0.01f : 0.01f;
+        mutations.coordinates[0]->point.set1Value(
+          0, positions[0] + SbVec3f(offset, 0.0f, 0.0f));
+      });
+      if (!valid) break;
+    }
+  }
+
+  manager.releaseRenderBackendResources();
+  manager.setCamera(NULL);
+  manager.setSceneGraph(NULL);
+  camera->unref();
+  scene->unref();
+  return valid;
+}
+
+bool runAssemblyGeometryMutation(GLTestProfile profile, WorkloadKind workload,
+                                 int occurrenceCount, int samples,
+                                 std::vector<Measurement> & results,
+                                 std::string & unavailable)
+{
+  GLTestContextConfig config;
+  config.profile = profile;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 256;
+  config.height = 256;
+  GLTestContext context;
+  if (!context.initialize(config)) {
+    unavailable = "requested OpenGL context is unavailable";
+    return false;
+  }
+
+  SceneMutationHandles mutations;
+  SoOrthographicCamera * camera = NULL;
+  SoSeparator * scene = makeScene(
+    workload, occurrenceCount, camera, &mutations);
+  const int definitionCount = assemblyDefinitionCount(occurrenceCount);
+  if (mutations.coordinates.size() !=
+        static_cast<size_t>(occurrenceCount) ||
+      mutations.definitionCoordinates.size() !=
+        static_cast<size_t>(definitionCount)) {
+    unavailable = "assembly scene did not expose geometry mutation targets";
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+
+  SoCoordinate3 * target = workload == WorkloadKind::SharedAssemblyExpanded
+    ? mutations.coordinates[0] : mutations.definitionCoordinates[0];
+  const int firstDefinitionOccurrences = workload ==
+      WorkloadKind::SharedAssemblyExpanded
+    ? 1 : std::min(occurrenceCount,
+        (occurrenceCount + definitionCount - 1) / definitionCount);
+  // Every assembly occurrence emits one face and one edge command.
+  const uint64_t expectedUpdates =
+    static_cast<uint64_t>(firstDefinitionOccurrences) * 2;
+  const SbVec3f originalPosition = target->point[0];
+
+  SbViewportRegion viewport(SbVec2s(256, 256));
+  viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(256, 256));
+  SoRenderManager manager;
+  manager.setViewportRegion(viewport);
+  manager.setSceneGraph(scene);
+  manager.setCamera(camera);
+  manager.setLightingMode(SoRenderManager::UNLIT);
+  manager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
+  manager.setRenderPhaseTimingEnabled(TRUE);
+  context.bindFramebuffer();
+  manager.render(TRUE, TRUE);
+
+  std::vector<double> frameTimes;
+  for (int sample = 0; sample < samples; ++sample) {
+    const float offset = (sample & 1) ? -0.01f : 0.01f;
+    target->point.set1Value(
+      0, originalPosition + SbVec3f(offset, 0.0f, 0.0f));
+    context.bindFramebuffer();
+    const Clock::time_point start = Clock::now();
+    manager.render(TRUE, TRUE);
+    frameTimes.push_back(elapsedMs(start));
+    const SoRenderManager::RenderPhaseStatistics phases =
+      manager.getRenderPhaseStatistics();
+    if (phases.drawListRebuilds != 0 ||
+        phases.incrementalCommandUpdates != expectedUpdates) {
+      std::ostringstream reason;
+      reason << workloadName(workload) << " updated "
+             << phases.incrementalCommandUpdates << " commands with "
+             << phases.drawListRebuilds << " rebuilds; expected "
+             << expectedUpdates;
+      unavailable = reason.str();
+      manager.releaseRenderBackendResources();
+      manager.setCamera(NULL);
+      manager.setSceneGraph(NULL);
+      camera->unref();
+      scene->unref();
+      return false;
+    }
+  }
+
+  const std::vector<uint8_t> incrementalPixels = context.readPixels();
+  manager.invalidateDrawList();
+  context.bindFramebuffer();
+  manager.render(TRUE, TRUE);
+  const std::vector<uint8_t> rebuiltPixels = context.readPixels();
+  if (incrementalPixels != rebuiltPixels) {
+    unavailable = std::string(workloadName(workload)) +
+      " incremental geometry differs from a forced rebuild";
+    manager.releaseRenderBackendResources();
+    manager.setCamera(NULL);
+    manager.setSceneGraph(NULL);
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+
+  Measurement result;
+  result.workload = std::string("incremental_") + workloadName(workload) +
+    "_geometry_definition_" + std::to_string(firstDefinitionOccurrences) +
+    "_of_" + std::to_string(occurrenceCount);
+  result.renderer = "DrawList";
+  result.profile = profile == GLTestProfile::Core
+    ? "core" : "compatibility";
+  result.executionMode = "incremental_update";
+  result.semanticDraws = occurrenceCount * 2;
+  result.samples = samples;
+  result.cpuMedianMs = percentile(frameTimes, 0.5);
+  result.cpuP95Ms = percentile(frameTimes, 0.95);
+  result.completionMedianMs = result.cpuMedianMs;
+  result.completionP95Ms = result.cpuP95Ms;
+  result.mutationMedianMs = result.cpuMedianMs;
+  result.mutationP95Ms = result.cpuP95Ms;
+  result.incrementalCommandUpdates = expectedUpdates;
+  result.pixelChecksum = checksumPixels(rebuiltPixels);
+  results.push_back(result);
+
+  manager.releaseRenderBackendResources();
+  manager.setCamera(NULL);
+  manager.setSceneGraph(NULL);
+  camera->unref();
+  scene->unref();
+  return true;
+}
+
+void runMutationBenchmarks(GLTestProfile profile, int objectCount, int samples,
+                           std::vector<Measurement> & results,
+                           std::vector<std::string> & unavailable)
+{
+  const std::string profileName = profile == GLTestProfile::Core
+    ? "core" : "compatibility";
+  std::string reason;
+  if (!runIncrementalMutationScaling(
+        profile, objectCount, samples, results, reason)) {
+    unavailable.push_back(
+      "incremental mutations DrawList " + profileName + ": " + reason);
+  }
+
+  const WorkloadKind assemblies[] = {
+    WorkloadKind::SharedAssemblyExpanded,
+    WorkloadKind::SharedAssemblySources,
+    WorkloadKind::SharedAssemblyRecipe
+  };
+  for (WorkloadKind workload : assemblies) {
+    reason.clear();
+    if (!runAssemblyGeometryMutation(
+          profile, workload, objectCount, samples, results, reason)) {
+      unavailable.push_back(std::string(workloadName(workload)) +
+        " mutation DrawList " + profileName + ": " + reason);
+    }
+  }
+}
+
 Options parseOptions(int argc, char ** argv)
 {
   Options options;
@@ -427,10 +731,12 @@ Options parseOptions(int argc, char ** argv)
     else if (arg == "--samples" && i + 1 < argc) options.samples = std::atoi(argv[++i]);
     else if (arg == "--rebuild-only" && i + 1 < argc)
       options.rebuildOnly = std::atoi(argv[++i]);
+    else if (arg == "--mutation-only" && i + 1 < argc)
+      options.mutationOnly = std::atoi(argv[++i]);
     else if (arg == "--output" && i + 1 < argc) options.output = argv[++i];
     else {
       std::cerr << "Usage: CoinRenderGLBenchmarks [--smoke] [--samples N] "
-                   "[--rebuild-only N] [--output FILE]\n";
+                   "[--rebuild-only N] [--mutation-only N] [--output FILE]\n";
       std::exit(2);
     }
   }
@@ -443,8 +749,9 @@ std::string toJson(const std::vector<Measurement> & results,
 {
   std::ostringstream out;
   out << std::fixed << std::setprecision(6);
-  out << "{\n  \"schema_version\": 5,\n  \"mode\": \""
-      << (options.smoke ? "smoke" : "benchmark")
+  out << "{\n  \"schema_version\": 7,\n  \"mode\": \""
+      << (options.mutationOnly > 0 ? "mutation" :
+          (options.smoke ? "smoke" : "benchmark"))
       << "\",\n  \"time_unit\": \"ms\",\n  \"benchmarks\": [\n";
   for (size_t i = 0; i < results.size(); ++i) {
     const Measurement & r = results[i];
@@ -460,6 +767,8 @@ std::string toJson(const std::vector<Measurement> & results,
         << ", \"gpu_p95_ms\": " << r.gpuP95Ms
         << ", \"completion_median_ms\": " << r.completionMedianMs
         << ", \"completion_p95_ms\": " << r.completionP95Ms
+        << ", \"mutation_median_ms\": " << r.mutationMedianMs
+        << ", \"mutation_p95_ms\": " << r.mutationP95Ms
         << ", \"drawlist_construction_median_ms\": "
         << r.drawListConstructionMedianMs
         << ", \"drawlist_primitive_generation_median_ms\": "
@@ -481,6 +790,8 @@ std::string toJson(const std::vector<Measurement> & results,
         << ", \"backend_selection_median_ms\": "
         << r.backendSelectionMedianMs
         << ", \"drawlist_rebuilds\": " << r.drawListRebuilds
+        << ", \"incremental_command_updates\": "
+        << r.incrementalCommandUpdates
         << ", \"cold_pick_ms\": " << r.coldPickMs
         << ", \"cold_pick_buffer_update_ms\": "
         << r.coldPickBufferUpdateMs
@@ -538,6 +849,22 @@ int main(int argc, char ** argv)
   };
   std::vector<Measurement> results;
   std::vector<std::string> unavailable;
+  if (options.mutationOnly > 0) {
+    runMutationBenchmarks(GLTestProfile::Compatibility,
+                          options.mutationOnly, samples,
+                          results, unavailable);
+    runMutationBenchmarks(GLTestProfile::Core, options.mutationOnly, samples,
+                          results, unavailable);
+    const std::string document = toJson(results, unavailable, options);
+    if (options.output.empty()) std::cout << document;
+    else {
+      std::ofstream output(options.output.c_str());
+      if (!output) return 1;
+      output << document;
+    }
+    SoDB::finish();
+    return results.empty() ? 77 : 0;
+  }
   if (options.rebuildOnly > 0) {
     const WorkloadKind workload = WorkloadKind::FeatureRich;
     const int drawCount = options.rebuildOnly;
@@ -613,6 +940,10 @@ int main(int argc, char ** argv)
     }
     else unavailable.push_back(std::string(workloadName(workloads[i])) +
       ":DrawList core: " + coreReason);
+  }
+  for (GLTestProfile profile : { GLTestProfile::Compatibility,
+                                 GLTestProfile::Core }) {
+    runMutationBenchmarks(profile, draws, samples, results, unavailable);
   }
   const std::string document = toJson(results, unavailable, options);
   if (options.output.empty()) std::cout << document;

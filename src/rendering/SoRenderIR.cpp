@@ -275,6 +275,27 @@ SoIRBuffer::allocate(size_t bytes, size_t alignment)
   return ptr;
 }
 
+SoIRBuffer::Checkpoint
+SoIRBuffer::checkpoint() const
+{
+  Checkpoint result;
+  result.chunkCount = this->chunks.size();
+  result.totalAllocated = this->totalAllocated;
+  result.cursors.reserve(result.chunkCount);
+  for (const auto & chunk : this->chunks) result.cursors.push_back(chunk->cursor);
+  return result;
+}
+
+void
+SoIRBuffer::rewind(const Checkpoint & checkpoint)
+{
+  this->chunks.resize(checkpoint.chunkCount);
+  for (size_t i = 0; i < checkpoint.cursors.size(); ++i) {
+    this->chunks[i]->cursor = checkpoint.cursors[i];
+  }
+  this->totalAllocated = checkpoint.totalAllocated;
+}
+
 SoDrawList::SoDrawList()
 {
 }
@@ -289,13 +310,20 @@ SoDrawList::clear()
   this->selection = SoSelectionState();
   this->pickLUT.clear();
   this->generation++;
+  this->contentRevision++;
+  this->renderPlanRevision++;
+  this->resourceRevision++;
   this->pickLUTGeneration = 0;
+  this->pickLUTValid = false;
 }
 
 void
 SoDrawList::truncate(int count)
 {
   if (count < static_cast<int>(this->commands.size())) {
+    ++this->contentRevision;
+    ++this->renderPlanRevision;
+    ++this->resourceRevision;
     this->commands.resize(static_cast<size_t>(count));
     auto trimTargets = [count](std::vector<SoSelectionTarget> & targets) {
       targets.erase(
@@ -315,6 +343,7 @@ SoDrawList::truncate(int count)
     }
     this->pickLUT.clear();
     this->pickLUTGeneration = 0;
+    this->pickLUTValid = false;
   }
 }
 
@@ -327,14 +356,21 @@ SoDrawList::reserve(int count)
 void
 SoDrawList::addCommand(const SoRenderCommand & cmd)
 {
+  ++this->contentRevision;
+  ++this->renderPlanRevision;
+  ++this->resourceRevision;
   this->commands.push_back(cmd);
   this->pickLUT.clear();
   this->pickLUTGeneration = 0;
+  this->pickLUTValid = false;
 }
 
 SoRenderCommand &
 SoDrawList::emplaceCommand()
 {
+  ++this->contentRevision;
+  ++this->renderPlanRevision;
+  ++this->resourceRevision;
   this->pickLUT.clear();
   this->pickLUTGeneration = 0;
   this->commands.emplace_back();
@@ -374,6 +410,89 @@ SoDrawList::getNumGeometryResources() const
   return static_cast<int>(this->geometryResources.size());
 }
 
+void
+SoDrawList::truncateGeometryResources(int count)
+{
+  if (count >= 0 && count < static_cast<int>(this->geometryResources.size())) {
+    ++this->contentRevision;
+    ++this->renderPlanRevision;
+    ++this->resourceRevision;
+    this->geometryResources.resize(static_cast<size_t>(count));
+  }
+}
+
+void
+SoDrawList::markGeometryResourcesChanged()
+{
+  ++this->contentRevision;
+  ++this->renderPlanRevision;
+  ++this->resourceRevision;
+  this->pickLUT.clear();
+  this->pickLUTGeneration = 0;
+  this->pickLUTValid = false;
+}
+
+SoRenderCommand &
+SoDrawList::getCommandForRetainedUpdate(int i)
+{
+  return this->commands[static_cast<size_t>(i)];
+}
+
+SoDrawList::MutationCheckpoint
+SoDrawList::createMutationCheckpoint() const
+{
+  MutationCheckpoint checkpoint;
+  checkpoint.commandCount = static_cast<int>(this->commands.size());
+  checkpoint.geometryResourceCount =
+    static_cast<int>(this->geometryResources.size());
+  checkpoint.lightingSetupCount = static_cast<int>(this->lightingSetups.size());
+  checkpoint.depthEventCount = static_cast<int>(this->depthClearEvents.size());
+  checkpoint.selection = this->selection;
+  checkpoint.pickLUT = this->pickLUT;
+  checkpoint.generation = this->generation;
+  checkpoint.contentRevision = this->contentRevision;
+  checkpoint.renderPlanRevision = this->renderPlanRevision;
+  checkpoint.resourceRevision = this->resourceRevision;
+  checkpoint.pickLUTGeneration = this->pickLUTGeneration;
+  checkpoint.pickLUTRevision = this->pickLUTRevision;
+  checkpoint.pickLUTValid = this->pickLUTValid;
+  return checkpoint;
+}
+
+void
+SoDrawList::restoreMutationCheckpoint(const MutationCheckpoint & checkpoint)
+{
+  this->commands.resize(static_cast<size_t>(checkpoint.commandCount));
+  this->geometryResources.resize(
+    static_cast<size_t>(checkpoint.geometryResourceCount));
+  this->lightingSetups.resize(
+    static_cast<size_t>(checkpoint.lightingSetupCount));
+  this->depthClearEvents.resize(static_cast<size_t>(checkpoint.depthEventCount));
+  this->selection = checkpoint.selection;
+  this->pickLUT = checkpoint.pickLUT;
+  this->generation = checkpoint.generation;
+  this->contentRevision = checkpoint.contentRevision;
+  this->renderPlanRevision = checkpoint.renderPlanRevision;
+  this->resourceRevision = checkpoint.resourceRevision;
+  this->pickLUTGeneration = checkpoint.pickLUTGeneration;
+  this->pickLUTRevision = checkpoint.pickLUTRevision;
+  this->pickLUTValid = checkpoint.pickLUTValid;
+}
+
+void
+SoDrawList::applyRetainedInvalidation(const bool plan, const bool resources,
+                                      const bool pickTopology)
+{
+  ++this->contentRevision;
+  if (plan) ++this->renderPlanRevision;
+  if (resources) ++this->resourceRevision;
+  if (pickTopology) {
+    this->pickLUT.clear();
+    this->pickLUTGeneration = 0;
+    this->pickLUTValid = false;
+  }
+}
+
 const SoGeometryDesc &
 SoDrawList::getCommandGeometry(const SoRenderCommand & command) const
 {
@@ -396,6 +515,9 @@ SoDrawList::getCommandElementRanges(const SoRenderCommand & command) const
 void
 SoDrawList::addDepthClearEvent(const SoDepthClearEvent & event)
 {
+  ++this->contentRevision;
+  ++this->renderPlanRevision;
+  ++this->resourceRevision;
   SoDepthClearEvent recorded = event;
   recorded.sequence = std::min(recorded.sequence,
                                static_cast<uint32_t>(this->commands.size()));
@@ -411,8 +533,12 @@ SoDrawList::getNumCommands() const
 SoRenderCommand &
 SoDrawList::getCommand(int i)
 {
+  ++this->contentRevision;
+  ++this->renderPlanRevision;
+  ++this->resourceRevision;
   this->pickLUT.clear();
   this->pickLUTGeneration = 0;
+  this->pickLUTValid = false;
   return this->commands[static_cast<size_t>(i)];
 }
 
@@ -450,8 +576,11 @@ SoDrawList::getLighting(SoLightingHandle handle) const
 void
 SoDrawList::buildPickLUT() const
 {
+  if (this->pickLUTValid) return;
   this->pickLUT.clear();
   this->pickLUTGeneration = this->generation;
+  ++this->pickLUTRevision;
+  this->pickLUTValid = true;
 
   for (int commandIndex = 0; commandIndex < this->getNumCommands(); ++commandIndex) {
     const SoRenderCommand & command = this->getCommand(commandIndex);
@@ -505,16 +634,24 @@ SoDrawList::resolvePickId(uint32_t id) const
 SoRenderCommand *
 SoDrawList::begin()
 {
+  ++this->contentRevision;
+  ++this->renderPlanRevision;
+  ++this->resourceRevision;
   this->pickLUT.clear();
   this->pickLUTGeneration = 0;
+  this->pickLUTValid = false;
   return this->commands.empty() ? nullptr : this->commands.data();
 }
 
 SoRenderCommand *
 SoDrawList::end()
 {
+  ++this->contentRevision;
+  ++this->renderPlanRevision;
+  ++this->resourceRevision;
   this->pickLUT.clear();
   this->pickLUTGeneration = 0;
+  this->pickLUTValid = false;
   return this->commands.empty() ? nullptr : this->commands.data() + this->commands.size();
 }
 

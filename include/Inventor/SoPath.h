@@ -47,6 +47,7 @@ class SoWriteAction;
 class SoNotList;
 class SoInput;
 class SoPathList;
+class SoIRRenderAction;
 
 
 class COIN_DLL_API SoPath : public SoBase {
@@ -104,6 +105,8 @@ protected:
   void auditPath(const SbBool flag);
 
 private:
+  SoPath * copyWithAuditing(const int startfromnodeindex, int numnodes,
+                        SbBool audit) const;
   static void cleanupClass(void);
   static void * createInstance(void);
   void append(SoNode * const node, const int index);
@@ -122,6 +125,7 @@ private:
   friend class SoFullPath;
   friend class SoNodeKitPath;
   friend class SoAction;
+  friend class SoIRRenderAction;
   friend class SoTempPath;
 };
 

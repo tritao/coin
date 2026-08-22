@@ -1,6 +1,10 @@
 // src/actions/SoIRRenderAction.cpp
 
 #include <Inventor/actions/SoIRRenderAction.h>
+#include <Inventor/actions/SoCallbackAction.h>
+#include <Inventor/actions/SoGetMatrixAction.h>
+
+#include "rendering/SoRenderPlan.h"
 
 #include <Inventor/SoPath.h>
 #include <Inventor/SoDB.h>
@@ -85,6 +89,11 @@ public:
     bool hasTransparency = false;
   };
 
+  struct DependencyLink {
+    size_t commandIndex;
+    size_t next;
+  };
+
   SoIRRenderActionP() = default;
 
   SoIRBuffer geometryPool;
@@ -93,9 +102,86 @@ public:
   std::unordered_multimap<uint64_t, SoGeometryHandle> geometrySources;
   bool constructionTimingEnabled = false;
   SoIRRenderAction::ConstructionStatistics constructionStatistics;
+  std::vector<SbBool> commandAuthoredVisibility;
+  // A changed state node affects commands below its parent branch. Indexing
+  // that branch keeps incremental updates proportional to the affected
+  // subtree instead of the size of the complete retained frame. Commands are
+  // still checked against their full path because a node can be instanced in
+  // more than one scene-graph location.
+  std::unordered_map<SoNode *, size_t> branchDependencyHeads;
+  std::vector<DependencyLink> branchDependencyLinks;
+  bool recordBranchDependencies = true;
+  SoRenderStage renderStage = SoRenderStage::Main;
+  SoIRRenderContext renderContextOverride;
+  bool hasRenderContextOverride = false;
 };
 
-#define PRIVATE(obj) (obj->pimpl)
+#define PRIVATE(obj) ((obj)->pimpl)
+
+class SoRetainedMutationTransaction {
+public:
+  explicit SoRetainedMutationTransaction(SoIRRenderAction & action)
+    : action(action),
+      drawListCheckpoint(action.drawlist.createMutationCheckpoint()),
+      pathCount(action.commandPaths.size()),
+      unsupported(action.unsupportedRendering),
+      unsupportedNode(action.unsupportedNode),
+      unsupportedReason(action.unsupportedReason),
+      geometryCheckpoint(PRIVATE(&action)->geometryPool.checkpoint()),
+      recordingDependencies(PRIVATE(&action)->recordBranchDependencies)
+  {
+    PRIVATE(&this->action)->recordBranchDependencies = false;
+  }
+
+  ~SoRetainedMutationTransaction()
+  {
+    if (this->active) this->finish(false);
+  }
+
+  int originalCommandCount() const
+  { return this->drawListCheckpoint.commandCount; }
+  size_t originalPathCount() const { return this->pathCount; }
+
+  void finish(bool keepAllocations)
+  {
+    if (!this->active) return;
+    PRIVATE(&this->action)->recordBranchDependencies =
+      this->recordingDependencies;
+    this->action.drawlist.restoreMutationCheckpoint(this->drawListCheckpoint);
+    while (this->action.commandPaths.size() > this->pathCount) {
+      SoPath * path = this->action.commandPaths.back();
+      if (path) path->unref();
+      this->action.commandPaths.pop_back();
+    }
+    PRIVATE(&this->action)->commandAuthoredVisibility.resize(this->pathCount);
+    for (auto it = PRIVATE(&this->action)->geometrySources.begin();
+         it != PRIVATE(&this->action)->geometrySources.end();) {
+      if (it->second > static_cast<SoGeometryHandle>(
+            this->drawListCheckpoint.geometryResourceCount)) {
+        it = PRIVATE(&this->action)->geometrySources.erase(it);
+      }
+      else ++it;
+    }
+    this->action.unsupportedRendering = this->unsupported;
+    this->action.unsupportedNode = this->unsupportedNode;
+    this->action.unsupportedReason = this->unsupportedReason;
+    if (!keepAllocations) {
+      PRIVATE(&this->action)->geometryPool.rewind(this->geometryCheckpoint);
+    }
+    this->active = false;
+  }
+
+private:
+  SoIRRenderAction & action;
+  SoDrawList::MutationCheckpoint drawListCheckpoint;
+  size_t pathCount;
+  bool unsupported;
+  const SoNode * unsupportedNode;
+  const char * unsupportedReason;
+  SoIRBuffer::Checkpoint geometryCheckpoint;
+  bool recordingDependencies;
+  bool active = true;
+};
 
 void
 SoIRRenderAction::initClass(void)
@@ -276,15 +362,37 @@ SoIRRenderAction::addCommand(const SoRenderCommand & command)
   }
 
   const int commandIndex = this->drawlist.getNumCommands();
+  PRIVATE(this)->commandAuthoredVisibility.push_back(
+    retained.state.raster.visible);
   this->drawlist.addCommand(retained);
 
   const SoPath * currentPath = this->getCurPath();
-  SoPath * retainedPath = currentPath ? currentPath->copy() : NULL;
+  // A retained frame owns a snapshot of each command path. Keep the nodes
+  // referenced, but do not audit later scene-graph edits: those edits belong
+  // to a subsequent frame and registering auditors is costly for dense scenes.
+  SoPath * retainedPath = currentPath
+    ? currentPath->copyWithAuditing(0, 0, FALSE) : NULL;
   if (retainedPath) retainedPath->ref();
   if (static_cast<size_t>(commandIndex) >= this->commandPaths.size()) {
     this->commandPaths.resize(static_cast<size_t>(commandIndex) + 1, NULL);
   }
   this->commandPaths[static_cast<size_t>(commandIndex)] = retainedPath;
+
+  if (retainedPath && PRIVATE(this)->recordBranchDependencies) {
+    const size_t noDependency = std::numeric_limits<size_t>::max();
+    const int pathLength = retainedPath->getFullLength();
+    for (int i = 0; i + 1 < pathLength; ++i) {
+      SoNode * branchNode = static_cast<SoNode *>(retainedPath->nodes[i]);
+      const auto inserted = PRIVATE(this)->branchDependencyHeads.emplace(
+        branchNode, noDependency);
+      SoIRRenderActionP::DependencyLink link = {
+        static_cast<size_t>(commandIndex), inserted.first->second
+      };
+      PRIVATE(this)->branchDependencyLinks.push_back(link);
+      inserted.first->second =
+        PRIVATE(this)->branchDependencyLinks.size() - 1;
+    }
+  }
 }
 
 void
@@ -384,11 +492,11 @@ SoIRRenderAction::traverseAdditionalPathInternal(
   if (!path) return;
 
   this->traversalMethods->setUp();
-  const bool previousHasContext = this->hasRenderContextOverride;
-  const SoIRRenderContext previousContext = this->renderContextOverride;
-  this->hasRenderContextOverride = context != nullptr;
+  const bool previousHasContext = PRIVATE(this)->hasRenderContextOverride;
+  const SoIRRenderContext previousContext = PRIVATE(this)->renderContextOverride;
+  PRIVATE(this)->hasRenderContextOverride = context != nullptr;
   if (context) {
-    this->renderContextOverride = *context;
+    PRIVATE(this)->renderContextOverride = *context;
   }
   this->state->push();
   if (context) {
@@ -410,10 +518,360 @@ SoIRRenderAction::traverseAdditionalPathInternal(
   }
   this->switchToPathTraversal(path);
   this->state->pop();
-  this->hasRenderContextOverride = previousHasContext;
+  PRIVATE(this)->hasRenderContextOverride = previousHasContext;
   if (previousHasContext) {
-    this->renderContextOverride = previousContext;
+    PRIVATE(this)->renderContextOverride = previousContext;
   }
+}
+
+SoRenderStage
+SoIRRenderAction::getRenderStage() const
+{
+  return PRIVATE(this)->renderStage;
+}
+
+void
+SoIRRenderAction::setRenderStage(const SoRenderStage stage)
+{
+  PRIVATE(this)->renderStage = stage;
+}
+
+const SoIRRenderContext *
+SoIRRenderAction::getRenderContextOverride() const
+{
+  return PRIVATE(this)->hasRenderContextOverride
+    ? &PRIVATE(this)->renderContextOverride : nullptr;
+}
+
+int
+SoIRRenderAction::updateCommandMatricesForStatePath(const SoPath * statePath)
+{
+  std::vector<const SoPath *> statePaths(1, statePath);
+  return this->updateCommandMatricesForStatePaths(statePaths);
+}
+
+int
+SoIRRenderAction::updateCommandMatricesForStatePaths(
+  const std::vector<const SoPath *> & statePaths)
+{
+  std::vector<size_t> commandIndices;
+  this->findCommandsAffectedByStatePaths(statePaths, commandIndices);
+  SoGetMatrixAction matrixAction(this->vpRegion);
+  std::vector<SbMatrix> replacements;
+  replacements.reserve(commandIndices.size());
+  for (size_t commandIndex : commandIndices) {
+    const SoPath * commandPath = this->commandPaths[commandIndex];
+    if (!commandPath) return 0;
+    matrixAction.apply(const_cast<SoPath *>(commandPath));
+    replacements.push_back(matrixAction.getMatrix());
+  }
+  for (size_t i = 0; i < commandIndices.size(); ++i) {
+    SoRenderCommand & command = this->drawlist.getCommandForRetainedUpdate(
+      static_cast<int>(commandIndices[i]));
+    command.modelMatrix = replacements[i];
+  }
+  return static_cast<int>(commandIndices.size());
+}
+
+SbBool
+SoIRRenderAction::transformUpdateAffectsPlanning(
+  const std::vector<const SoPath *> & statePaths) const
+{
+  std::vector<size_t> commandIndices;
+  this->findCommandsAffectedByStatePaths(statePaths, commandIndices);
+  for (size_t commandIndex : commandIndices) {
+    const SoRenderCommand & command = this->drawlist.getCommand(
+      static_cast<int>(commandIndex));
+    if (SoRenderCommandTraits::transformAffectsPlanning(command)) return TRUE;
+  }
+  return FALSE;
+}
+
+void
+SoIRRenderAction::findCommandsAffectedByStatePaths(
+  const std::vector<const SoPath *> & statePaths,
+  std::vector<size_t> & commandIndices) const
+{
+  commandIndices.clear();
+  std::vector<size_t> found;
+  for (const SoPath * path : statePaths) {
+    this->findCommandsAffectedByStatePath(path, found);
+    commandIndices.insert(commandIndices.end(), found.begin(), found.end());
+  }
+  std::sort(commandIndices.begin(), commandIndices.end());
+  commandIndices.erase(
+    std::unique(commandIndices.begin(), commandIndices.end()),
+    commandIndices.end());
+}
+
+void
+SoIRRenderAction::findCommandsAffectedByStatePath(
+  const SoPath * statePath, std::vector<size_t> & commandIndices) const
+{
+  commandIndices.clear();
+  if (!statePath || statePath->getFullLength() < 2) return;
+  // Additional-root traversal records paths below the scene root, while the
+  // sensor path includes that root. A state node affects later siblings below
+  // the same parent.
+  const int statePathOffset = 1;
+  const int prefixLength =
+    statePath->getFullLength() - 1 - statePathOffset;
+  // Additional-root paths omit the applied root. Without one retained
+  // ancestor below it, replay cannot reconstruct root-level sibling state.
+  if (prefixLength <= 0) return;
+  const int changedStateIndex = statePath->getFullLength() - 1;
+  const int changedSiblingIndex = statePath->indices[changedStateIndex];
+  SoNode * branchNode = static_cast<SoNode *>(
+    statePath->nodes[statePathOffset + prefixLength - 1]);
+  const auto branch = PRIVATE(this)->branchDependencyHeads.find(branchNode);
+  if (branch == PRIVATE(this)->branchDependencyHeads.end()) return;
+  const size_t noDependency = std::numeric_limits<size_t>::max();
+  for (size_t linkIndex = branch->second; linkIndex != noDependency;
+       linkIndex = PRIVATE(this)->branchDependencyLinks[linkIndex].next) {
+    const size_t commandIndex =
+      PRIVATE(this)->branchDependencyLinks[linkIndex].commandIndex;
+    const SoPath * commandPath = this->commandPaths[commandIndex];
+    if (!commandPath || commandPath->getFullLength() <= prefixLength ||
+        commandPath->indices[prefixLength] <= changedSiblingIndex) continue;
+    bool matches = true;
+    for (int i = 0; matches && i < prefixLength; ++i) {
+      matches = commandPath->nodes[i] == statePath->nodes[statePathOffset + i] &&
+        commandPath->indices[i] == statePath->indices[statePathOffset + i];
+    }
+    if (matches) commandIndices.push_back(commandIndex);
+  }
+}
+
+namespace {
+struct MaterialReplay {
+  int materialIndex;
+  SoMaterialData material;
+};
+
+SoCallbackAction::Response
+captureEffectiveMaterial(void * data, SoCallbackAction * action,
+                         const SoNode *)
+{
+  MaterialReplay * replay = static_cast<MaterialReplay *>(data);
+  SoRenderIR::fillMaterialFromState(
+    action->getState(), replay->material, replay->materialIndex);
+  return SoCallbackAction::ABORT;
+}
+}
+
+int
+SoIRRenderAction::updateCommandDiffuseColorsForStatePath(
+  const SoPath * statePath)
+{
+  std::vector<const SoPath *> statePaths(1, statePath);
+  return this->updateCommandDiffuseColorsForStatePaths(statePaths);
+}
+
+int
+SoIRRenderAction::updateCommandDiffuseColorsForStatePaths(
+  const std::vector<const SoPath *> & statePaths)
+{
+  std::vector<size_t> commandIndices;
+  this->findCommandsAffectedByStatePaths(statePaths, commandIndices);
+  std::vector<MaterialReplay> replacements;
+  replacements.reserve(commandIndices.size());
+  for (size_t commandIndex : commandIndices) {
+    const SoPath * commandPath = this->commandPaths[commandIndex];
+    if (!commandPath) return 0;
+    const SoRenderCommand & command =
+      static_cast<const SoDrawList &>(this->drawlist).getCommand(
+        static_cast<int>(commandIndex));
+    MaterialReplay replay = { command.materialIndex, SoMaterialData() };
+    SoCallbackAction materialAction(this->vpRegion);
+    materialAction.addPreTailCallback(captureEffectiveMaterial, &replay);
+    materialAction.apply(const_cast<SoPath *>(commandPath));
+    replacements.push_back(replay);
+  }
+  for (size_t i = 0; i < commandIndices.size(); ++i) {
+    SoRenderCommand & command = this->drawlist.getCommandForRetainedUpdate(
+      static_cast<int>(commandIndices[i]));
+    const MaterialReplay & replay = replacements[i];
+    command.material.diffuse[0] = replay.material.diffuse[0];
+    command.material.diffuse[1] = replay.material.diffuse[1];
+    command.material.diffuse[2] = replay.material.diffuse[2];
+  }
+  return static_cast<int>(commandIndices.size());
+}
+
+int
+SoIRRenderAction::updateCommandVisibilityForSwitchPath(
+  const SoPath * switchPath, SbBool visible)
+{
+  if (!switchPath || switchPath->getFullLength() < 2) return 0;
+  const int pathOffset = 1;
+  const int prefixLength = switchPath->getFullLength() - pathOffset;
+  SoNode * switchNode = static_cast<SoNode *>(
+    switchPath->nodes[switchPath->getFullLength() - 1]);
+  const auto branch = PRIVATE(this)->branchDependencyHeads.find(switchNode);
+  if (branch == PRIVATE(this)->branchDependencyHeads.end()) return 0;
+
+  int updated = 0;
+  const size_t noDependency = std::numeric_limits<size_t>::max();
+  for (size_t linkIndex = branch->second; linkIndex != noDependency;
+       linkIndex = PRIVATE(this)->branchDependencyLinks[linkIndex].next) {
+    const size_t commandIndex =
+      PRIVATE(this)->branchDependencyLinks[linkIndex].commandIndex;
+    const SoPath * commandPath = this->commandPaths[commandIndex];
+    if (!commandPath || commandPath->getFullLength() <= prefixLength) continue;
+    bool matches = true;
+    for (int i = 0; matches && i < prefixLength; ++i) {
+      matches = commandPath->nodes[i] == switchPath->nodes[pathOffset + i] &&
+        commandPath->indices[i] == switchPath->indices[pathOffset + i];
+    }
+    if (!matches) continue;
+    SoRenderCommand & command =
+      this->drawlist.getCommandForRetainedUpdate(
+        static_cast<int>(commandIndex));
+    command.state.raster.visible = visible &&
+      PRIVATE(this)->commandAuthoredVisibility[commandIndex];
+    ++updated;
+  }
+  return updated;
+}
+
+int
+SoIRRenderAction::updateCommandGeometryForStatePath(
+  const SoPath * statePath)
+{
+  std::vector<const SoPath *> statePaths(1, statePath);
+  return this->updateCommandGeometryForStatePaths(statePaths);
+}
+
+int
+SoIRRenderAction::updateCommandGeometryForStatePaths(
+  const std::vector<const SoPath *> & statePaths)
+{
+  std::vector<size_t> commandIndices;
+  this->findCommandsAffectedByStatePaths(statePaths, commandIndices);
+  if (commandIndices.empty()) return 0;
+
+  struct ResourceUpdate {
+    SoGeometryHandle handle;
+    size_t representativeCommand;
+    SoGeometryResource original;
+    SoGeometryResource replacement;
+    std::vector<size_t> owners;
+  };
+  std::vector<ResourceUpdate> updates;
+  std::unordered_map<SoGeometryHandle, size_t> updateByHandle;
+  for (size_t commandIndex : commandIndices) {
+    const SoRenderCommand & command =
+      static_cast<const SoDrawList &>(this->drawlist).getCommand(
+        static_cast<int>(commandIndex));
+    const SoGeometryHandle handle = command.geometryHandle;
+    if (updateByHandle.find(handle) != updateByHandle.end()) continue;
+    const SoGeometryResource * resource =
+      this->drawlist.getGeometryResource(handle);
+    if (!resource || !this->commandPaths[commandIndex]) return 0;
+    ResourceUpdate update = {
+      handle, commandIndex, *resource, SoGeometryResource(), {}
+    };
+    updateByHandle.emplace(handle, updates.size());
+    updates.push_back(update);
+  }
+
+  // A shared producer can appear more than once through the same parent.
+  // SoPath cannot distinguish those notification occurrences, but each stable
+  // handle does identify the complete set of commands that must move together.
+  for (int commandIndex = 0;
+       commandIndex < this->drawlist.getNumCommands(); ++commandIndex) {
+    const SoGeometryHandle handle =
+      static_cast<const SoDrawList &>(this->drawlist)
+        .getCommand(commandIndex).geometryHandle;
+    const auto found = updateByHandle.find(handle);
+    if (found != updateByHandle.end()) {
+      updates[found->second].owners.push_back(
+        static_cast<size_t>(commandIndex));
+    }
+  }
+
+  SoRetainedMutationTransaction transaction(*this);
+  const int commandCount = transaction.originalCommandCount();
+  const size_t pathCount = transaction.originalPathCount();
+  bool replayedOneCommandPerResource = true;
+  for (const ResourceUpdate & update : updates) {
+    const int before = this->drawlist.getNumCommands();
+    this->traverseAdditionalPath(const_cast<SoPath *>(
+      this->commandPaths[update.representativeCommand]));
+    if (this->drawlist.getNumCommands() != before + 1) {
+      replayedOneCommandPerResource = false;
+      break;
+    }
+  }
+  bool valid = replayedOneCommandPerResource &&
+    this->drawlist.getNumCommands() ==
+      commandCount + static_cast<int>(updates.size()) &&
+    this->commandPaths.size() == pathCount + updates.size() &&
+    !this->unsupportedRendering;
+  for (size_t i = 0; valid && i < updates.size(); ++i) {
+    const SoRenderCommand & replayed =
+      this->drawlist.getCommand(commandCount + static_cast<int>(i));
+    const SoGeometryResource * replayedResource =
+      this->drawlist.getGeometryResource(replayed.geometryHandle);
+    valid = replayedResource != nullptr;
+    if (valid) updates[i].replacement = *replayedResource;
+  }
+
+  const auto sameLayout = [](const SoGeometryDesc & lhs,
+                             const SoGeometryDesc & rhs) {
+    return lhs.topology == rhs.topology &&
+      lhs.vertexCount == rhs.vertexCount &&
+      lhs.normalCount == rhs.normalCount &&
+      lhs.indexCount == rhs.indexCount &&
+      lhs.vertexStride == rhs.vertexStride &&
+      lhs.texcoordStride == rhs.texcoordStride &&
+      (lhs.positions != nullptr) == (rhs.positions != nullptr) &&
+      (lhs.normals != nullptr) == (rhs.normals != nullptr) &&
+      (lhs.texcoords != nullptr) == (rhs.texcoords != nullptr) &&
+      (lhs.colors != nullptr) == (rhs.colors != nullptr) &&
+      (lhs.indices != nullptr) == (rhs.indices != nullptr);
+  };
+  const auto sameRange = [](const SoRenderElementRange & lhs,
+                            const SoRenderElementRange & rhs) {
+    return lhs.type == rhs.type && lhs.elementIndex == rhs.elementIndex &&
+      lhs.drawStart == rhs.drawStart && lhs.drawCount == rhs.drawCount;
+  };
+  for (size_t i = 0; valid && i < updates.size(); ++i) {
+    const SoGeometryResource & original = updates[i].original;
+    const SoGeometryResource & replacement = updates[i].replacement;
+    valid = sameLayout(original.geometry, replacement.geometry) &&
+      original.elementRanges.size() == replacement.elementRanges.size() &&
+      std::equal(original.elementRanges.begin(), original.elementRanges.end(),
+                 replacement.elementRanges.begin(), sameRange);
+  }
+
+  transaction.finish(valid);
+  if (!valid) return 0;
+
+  // Keep successful replay allocations in the frame arena and redirect each
+  // stable handle only after the complete transaction has validated.
+  int updatedCommands = 0;
+  for (ResourceUpdate & update : updates) {
+    SoGeometryResource * destination =
+      this->drawlist.getGeometryResource(update.handle);
+    if (!destination) return 0;
+    const uint64_t nextRevision = destination->revision + 1;
+    const uint64_t sourceKey = destination->sourceKey;
+    update.replacement.sourceKey = sourceKey;
+    update.replacement.revision = nextRevision;
+    update.replacement.geometry.cacheKey = sourceKey;
+    update.replacement.geometry.revision = nextRevision;
+    *destination = update.replacement;
+    for (size_t commandIndex : update.owners) {
+      SoRenderCommand & command =
+        this->drawlist.getCommandForRetainedUpdate(
+          static_cast<int>(commandIndex));
+      command.geometry.cacheKey = sourceKey;
+      command.geometry.revision = nextRevision;
+      ++updatedCommands;
+    }
+  }
+  return updatedCommands;
 }
 
 void
@@ -565,13 +1023,13 @@ SoIRRenderAction::allocateTextureStorage(const unsigned char * source,
 void
 SoIRRenderAction::applyRenderStage(SoRenderCommand & command)
 {
-  if (this->renderStage == SoRenderStage::Background) {
+  if (PRIVATE(this)->renderStage == SoRenderStage::Background) {
     command.stage = SoRenderStage::Background;
   }
-  else if (this->renderStage == SoRenderStage::AfterMain) {
+  else if (PRIVATE(this)->renderStage == SoRenderStage::AfterMain) {
     command.stage = SoRenderStage::AfterMain;
   }
-  else if (this->renderStage == SoRenderStage::Foreground ||
+  else if (PRIVATE(this)->renderStage == SoRenderStage::Foreground ||
            SoRenderPlacementElement::getLayer(this->state) ==
              SoRenderPlacementElement::FOREGROUND) {
     command.stage = SoRenderStage::Foreground;
@@ -582,7 +1040,7 @@ void
 SoIRRenderAction::requestDepthClear()
 {
   SoDepthClearEvent event;
-  event.stage = this->renderStage;
+  event.stage = PRIVATE(this)->renderStage;
   if (SoRenderPlacementElement::getLayer(this->state) ==
       SoRenderPlacementElement::FOREGROUND) {
     event.stage = SoRenderStage::Foreground;
@@ -633,7 +1091,11 @@ SoIRRenderAction::clearCommandPaths()
     if (path && SoDB::isInitialized()) path->unref();
   }
   this->commandPaths.clear();
-  this->renderStage = SoRenderStage::Main;
-  this->hasRenderContextOverride = false;
-  this->renderContextOverride = SoIRRenderContext();
+  PRIVATE(this)->commandAuthoredVisibility.clear();
+  PRIVATE(this)->branchDependencyHeads.clear();
+  PRIVATE(this)->branchDependencyLinks.clear();
+  PRIVATE(this)->recordBranchDependencies = true;
+  PRIVATE(this)->renderStage = SoRenderStage::Main;
+  PRIVATE(this)->hasRenderContextOverride = false;
+  PRIVATE(this)->renderContextOverride = SoIRRenderContext();
 }

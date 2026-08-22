@@ -101,6 +101,7 @@
 #include "rendering/SoGLRenderBackend.h"
 #include "rendering/SoRenderBackend.h"
 #include "rendering/SoRenderPlan.h"
+#include "rendering/SoRetainedUpdater.h"
 #include "glue/glp.h"
 #include "coindefs.h"
 
@@ -611,9 +612,8 @@ void
 SoRenderManager::attachRootSensor(SoNode * const sceneroot)
 {
   if (!PRIVATE(this)->rootsensor) {
-    (SoRenderManagerRootSensor::debug()) ?
-      PRIVATE(this)->rootsensor = new SoRenderManagerRootSensor(SoRenderManager::nodesensorCB, this):
-      PRIVATE(this)->rootsensor = new SoNodeSensor(SoRenderManager::nodesensorCB, this);
+    PRIVATE(this)->rootsensor = new SoRenderManagerRootSensor(
+      SoRenderManager::nodesensorCB, this);
     // set a high priority on the root sensor. The actual redraw
     // scheduling is handled by the redraw sensor at the correct
     // priority (root sensor callback triggers the redraw sensor). Set
@@ -1028,6 +1028,7 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   phaseStatistics.backendCommandExecutionNanoseconds = 0;
   phaseStatistics.backendSelectionNanoseconds = 0;
   phaseStatistics.drawListRebuilds = 0;
+  phaseStatistics.incrementalCommandUpdates = 0;
   const SbBool measurePhases = PRIVATE(this)->renderPhaseTimingEnabled;
   const SoRenderManager::RenderMode renderMode = PRIVATE(this)->rendermode;
   const SoRenderManager::StereoMode stereoMode = PRIVATE(this)->stereomode;
@@ -1185,6 +1186,41 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   const uint64_t foregroundRevision = PRIVATE(this)->renderLayerForegroundRoot
     ? static_cast<uint64_t>(
         PRIVATE(this)->renderLayerForegroundRoot->getNodeId()) : 0;
+  const bool sceneRevisionChanged =
+    PRIVATE(this)->drawListSceneRevision != sceneRevision;
+  SoRenderManagerRootSensor * rootSensor =
+    static_cast<SoRenderManagerRootSensor *>(PRIVATE(this)->rootsensor);
+  const bool canPatchStateChanges = rootSensor &&
+    PRIVATE(this)->drawListValid && sceneRevisionChanged &&
+    rootSensor->getNotificationCount() <=
+      SoRenderManagerRootSensor::MAX_RETAINED_NOTIFICATIONS &&
+    rootSensor->getRetainedNotificationCount() > 0 &&
+    PRIVATE(this)->afterMainSceneCallbacks.empty() &&
+    PRIVATE(this)->drawListCameraRevision == cameraRevision &&
+    PRIVATE(this)->drawListBackgroundRevision == backgroundRevision &&
+    PRIVATE(this)->drawListForegroundRevision == foregroundRevision;
+  const unsigned int retainedNotificationCount = rootSensor
+    ? rootSensor->getRetainedNotificationCount() : 0;
+  SoRetainedUpdater::Result updateResult;
+  if (canPatchStateChanges) {
+    std::vector<SoRetainedNotification> notifications;
+    notifications.reserve(retainedNotificationCount);
+    for (unsigned int i = 0; i < retainedNotificationCount; ++i) {
+      SoRetainedNotification notification;
+      notification.node = rootSensor->getChangedNode(i);
+      notification.field = rootSensor->getChangedField(i);
+      notification.path = rootSensor->getChangedPath(i);
+      notifications.push_back(notification);
+    }
+    updateResult = PRIVATE(this)->retainedUpdater.update(*action, notifications);
+  }
+  if (updateResult.succeeded()) {
+    phaseStatistics.incrementalCommandUpdates =
+      static_cast<uint64_t>(updateResult.updatedCommands);
+    PRIVATE(this)->drawListDirty = FALSE;
+    PRIVATE(this)->drawListSceneRevision = sceneRevision;
+  }
+  if (rootSensor) rootSensor->resetNotification();
   const SbBool rebuildDrawList =
     !PRIVATE(this)->drawListValid || PRIVATE(this)->drawListDirty ||
     !PRIVATE(this)->afterMainSceneCallbacks.empty() ||
@@ -1197,7 +1233,10 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
     measurePhases && rebuildDrawList
       ? RenderPhaseClock::now() : RenderPhaseClock::time_point();
 
-  if (rebuildDrawList) action->beginFrame();
+  if (rebuildDrawList) {
+    PRIVATE(this)->retainedUpdater.reset();
+    action->beginFrame();
+  }
 
   const auto applyTraversalState = [this, renderMode](SoState * traversalState) {
     SoNode * stateNode = PRIVATE(this)->dummynode;
@@ -1396,7 +1435,7 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
     phaseStatistics.backendSelectionNanoseconds =
       backendPhases.selectionNanoseconds;
   }
-  if (rebuildDrawList) {
+  if (rebuildDrawList || updateResult.updatedCommands > 0) {
     PRIVATE(this)->pickTargetDirty = TRUE;
     PRIVATE(this)->pickTargetGeneration = 0;
   }

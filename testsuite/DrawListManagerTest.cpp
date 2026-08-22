@@ -15,12 +15,14 @@
 #include <Inventor/nodes/SoCube.h>
 #include <Inventor/nodes/SoDrawStyle.h>
 #include <Inventor/nodes/SoDirectionalLight.h>
+#include <Inventor/nodes/SoFaceSet.h>
 #include <Inventor/nodes/SoLineSet.h>
 #include <Inventor/nodes/SoPointLight.h>
 #include <Inventor/nodes/SoPerspectiveCamera.h>
 #include <Inventor/nodes/SoPointSet.h>
 #include <Inventor/nodes/SoScale.h>
 #include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/nodes/SoSwitch.h>
 #include <Inventor/nodes/SoLightModel.h>
 #include <Inventor/nodes/SoMaterial.h>
 #include <Inventor/nodes/SoTranslation.h>
@@ -186,8 +188,14 @@ runTest()
   SoSeparator * cubeRoot = new SoSeparator;
   SoTranslation * cubeTranslation = new SoTranslation;
   cubeTranslation->translation.setValue(0.0f, 0.0f, -3.0f);
-  cubeRoot->addChild(cubeTranslation);
-  cubeRoot->addChild(new SoCube);
+  SoTranslation * cubeNestedTranslation = new SoTranslation;
+  SoMaterial * cubeMaterial = new SoMaterial;
+  SoSeparator * cubeOccurrence = new SoSeparator;
+  cubeOccurrence->addChild(cubeTranslation);
+  cubeOccurrence->addChild(cubeNestedTranslation);
+  cubeOccurrence->addChild(cubeMaterial);
+  cubeOccurrence->addChild(new SoCube);
+  cubeRoot->addChild(cubeOccurrence);
   cubeRoot->ref();
 
   SoPerspectiveCamera * camera = new SoPerspectiveCamera;
@@ -307,6 +315,227 @@ runTest()
       std::cerr << "FAIL: unchanged retained frame was rebuilt" << std::endl;
       result = 1;
     }
+    cubeTranslation->translation.setValue(0.1f, 0.0f, -3.0f);
+    manager.render(TRUE, TRUE);
+    const SoRenderManager::RenderPhaseStatistics transformPhases =
+      manager.getRenderPhaseStatistics();
+    if (transformPhases.drawListRebuilds != 0 ||
+        transformPhases.incrementalCommandUpdates != 1) {
+      std::cerr << "FAIL: isolated translation did not patch its retained "
+                   "command" << std::endl;
+      result = 1;
+    }
+    cubeTranslation->translation.setValue(0.2f, 0.0f, -3.0f);
+    cubeNestedTranslation->translation.setValue(0.1f, 0.0f, 0.0f);
+    manager.render(TRUE, TRUE);
+    const SoRenderManager::RenderPhaseStatistics transformBatchPhases =
+      manager.getRenderPhaseStatistics();
+    if (transformBatchPhases.drawListRebuilds != 0 ||
+        transformBatchPhases.incrementalCommandUpdates != 1) {
+      std::cerr << "FAIL: transform batch did not patch its unique retained "
+                   "command" << std::endl;
+      result = 1;
+    }
+    cubeMaterial->diffuseColor.setValue(0.8f, 0.2f, 0.1f);
+    manager.render(TRUE, TRUE);
+    const SoRenderManager::RenderPhaseStatistics materialPhases =
+      manager.getRenderPhaseStatistics();
+    if (materialPhases.drawListRebuilds != 0 ||
+        materialPhases.incrementalCommandUpdates != 1) {
+      std::cerr << "FAIL: isolated diffuse color did not patch its retained "
+                   "command" << std::endl;
+      result = 1;
+    }
+    cubeMaterial->diffuseColor.setValue(0.7f, 0.3f, 0.2f);
+    cubeMaterial->diffuseColor.setValue(0.6f, 0.4f, 0.3f);
+    manager.render(TRUE, TRUE);
+    const SoRenderManager::RenderPhaseStatistics materialBatchPhases =
+      manager.getRenderPhaseStatistics();
+    if (materialBatchPhases.drawListRebuilds != 0 ||
+        materialBatchPhases.incrementalCommandUpdates != 1) {
+      std::cerr << "FAIL: repeated material notifications were not coalesced"
+                << std::endl;
+      result = 1;
+    }
+    cubeNestedTranslation->translation.setValue(0.2f, 0.0f, 0.0f);
+    cubeMaterial->diffuseColor.setValue(0.5f, 0.4f, 0.3f);
+    manager.render(TRUE, TRUE);
+    const SoRenderManager::RenderPhaseStatistics mixedBatchPhases =
+      manager.getRenderPhaseStatistics();
+    if (mixedBatchPhases.drawListRebuilds != 1 ||
+        mixedBatchPhases.incrementalCommandUpdates != 0) {
+      std::cerr << "FAIL: mixed state changes bypassed the safe rebuild path"
+                << std::endl;
+      result = 1;
+    }
+
+    const SbVec3f triangle[] = {
+      SbVec3f(-0.8f, -0.8f, 0.0f),
+      SbVec3f(0.8f, -0.8f, 0.0f),
+      SbVec3f(0.0f, 0.8f, 0.0f)
+    };
+    SoSeparator * geometryRoot = new SoSeparator;
+    SoSeparator * geometryOccurrence = new SoSeparator;
+    SoCoordinate3 * coordinates = new SoCoordinate3;
+    coordinates->point.setValues(0, 3, triangle);
+    geometryOccurrence->addChild(coordinates);
+    SoFaceSet * faceSet = new SoFaceSet;
+    faceSet->numVertices.set1Value(0, 3);
+    geometryOccurrence->addChild(faceSet);
+    geometryRoot->addChild(geometryOccurrence);
+    geometryRoot->ref();
+
+    SoRenderManager geometryManager;
+    geometryManager.setViewportRegion(testViewport);
+    geometryManager.setSceneGraph(geometryRoot);
+    geometryManager.setCamera(camera);
+    geometryManager.setRenderPipeline(
+      SoRenderManager::RenderPipeline::DRAW_LIST);
+    geometryManager.setRenderPhaseTimingEnabled(TRUE);
+    geometryManager.render(TRUE, TRUE);
+    coordinates->point.set1Value(0, SbVec3f(-0.6f, -0.8f, 0.0f));
+    geometryManager.render(TRUE, TRUE);
+    const SoRenderManager::RenderPhaseStatistics geometryPhases =
+      geometryManager.getRenderPhaseStatistics();
+    const std::vector<uint8_t> incrementalGeometryPixels =
+      context.readPixels();
+    geometryManager.invalidateDrawList();
+    geometryManager.render(TRUE, TRUE);
+    const std::vector<uint8_t> rebuiltGeometryPixels = context.readPixels();
+    size_t geometryPixelDifferences = 0;
+    int maximumGeometryDifference = 0;
+    for (size_t i = 0; i < incrementalGeometryPixels.size(); ++i) {
+      const int difference = std::abs(
+        static_cast<int>(incrementalGeometryPixels[i]) -
+        static_cast<int>(rebuiltGeometryPixels[i]));
+      if (difference != 0) ++geometryPixelDifferences;
+      maximumGeometryDifference = std::max(maximumGeometryDifference,
+                                           difference);
+    }
+    if (geometryPhases.drawListRebuilds != 0 ||
+        geometryPhases.incrementalCommandUpdates != 1 ||
+        incrementalGeometryPixels != rebuiltGeometryPixels) {
+      std::cerr << "FAIL: unique geometry resource did not update "
+                   "transactionally (rebuilds="
+                << geometryPhases.drawListRebuilds << ", updates="
+                << geometryPhases.incrementalCommandUpdates << ", parity="
+                << (incrementalGeometryPixels == rebuiltGeometryPixels)
+                << ", differing-bytes=" << geometryPixelDifferences
+                << ", max-difference=" << maximumGeometryDifference
+                << ')' << std::endl;
+      result = 1;
+    }
+
+    geometryRoot->addChild(geometryOccurrence);
+    geometryManager.render(TRUE, TRUE);
+    coordinates->point.set1Value(0, SbVec3f(-0.5f, -0.8f, 0.0f));
+    geometryManager.render(TRUE, TRUE);
+    const SoRenderManager::RenderPhaseStatistics sharedGeometryPhases =
+      geometryManager.getRenderPhaseStatistics();
+    const std::vector<uint8_t> sharedGeometryPixels = context.readPixels();
+    geometryManager.invalidateDrawList();
+    geometryManager.render(TRUE, TRUE);
+    const std::vector<uint8_t> rebuiltSharedGeometryPixels =
+      context.readPixels();
+    if (sharedGeometryPhases.drawListRebuilds != 0 ||
+        sharedGeometryPhases.incrementalCommandUpdates != 2 ||
+        sharedGeometryPixels != rebuiltSharedGeometryPixels) {
+      std::cerr << "FAIL: shared geometry resource was not regenerated "
+                   "transactionally (rebuilds="
+                << sharedGeometryPhases.drawListRebuilds << ", updates="
+                << sharedGeometryPhases.incrementalCommandUpdates
+                << ", parity="
+                << (sharedGeometryPixels == rebuiltSharedGeometryPixels)
+                << ')'
+                << std::endl;
+      result = 1;
+    }
+    geometryRoot->unref();
+
+    SoSeparator * visibilityRoot = new SoSeparator;
+    SoSwitch * visibilitySwitch = new SoSwitch;
+    visibilitySwitch->whichChild = SO_SWITCH_ALL;
+    SoSeparator * visibilityBranch = new SoSeparator;
+    SoTranslation * visibilityOffset = new SoTranslation;
+    visibilityOffset->translation.setValue(0.0f, 0.0f, -3.0f);
+    visibilityBranch->addChild(visibilityOffset);
+    visibilityBranch->addChild(new SoCube);
+    SoSeparator * authoredInvisible = new SoSeparator;
+    SoDrawStyle * invisibleStyle = new SoDrawStyle;
+    invisibleStyle->style = SoDrawStyle::INVISIBLE;
+    authoredInvisible->addChild(invisibleStyle);
+    authoredInvisible->addChild(new SoCube);
+    visibilityBranch->addChild(authoredInvisible);
+    visibilitySwitch->addChild(visibilityBranch);
+    visibilityRoot->addChild(visibilitySwitch);
+    visibilityRoot->ref();
+    {
+      SoRenderManager visibilityManager;
+      visibilityManager.setViewportRegion(testViewport);
+      visibilityManager.setSceneGraph(visibilityRoot);
+      visibilityManager.setCamera(camera);
+      visibilityManager.setRenderPipeline(
+        SoRenderManager::RenderPipeline::DRAW_LIST);
+      visibilityManager.render(TRUE, TRUE);
+      const std::vector<uint8_t> visiblePixels = context.readPixels();
+
+      visibilitySwitch->whichChild = SO_SWITCH_NONE;
+      visibilityManager.render(TRUE, TRUE);
+      const SoRenderManager::RenderPhaseStatistics hiddenPhases =
+        visibilityManager.getRenderPhaseStatistics();
+      const int hiddenPixels = countNonBlack(context);
+
+      visibilitySwitch->whichChild = SO_SWITCH_ALL;
+      visibilityManager.render(TRUE, TRUE);
+      const SoRenderManager::RenderPhaseStatistics shownPhases =
+        visibilityManager.getRenderPhaseStatistics();
+      const std::vector<uint8_t> shownPixels = context.readPixels();
+      if (hiddenPhases.drawListRebuilds != 0 ||
+          hiddenPhases.incrementalCommandUpdates != 2 ||
+          shownPhases.drawListRebuilds != 0 ||
+          shownPhases.incrementalCommandUpdates != 2 ||
+          hiddenPixels != 0 || shownPixels != visiblePixels) {
+        std::cerr << "FAIL: stable one-child switch did not patch visibility"
+                  << std::endl;
+        result = 1;
+      }
+      visibilityManager.releaseRenderBackendResources();
+      visibilityManager.setCamera(NULL);
+      visibilityManager.setSceneGraph(NULL);
+    }
+    visibilityRoot->unref();
+
+    SoSeparator * structuralSwitchRoot = new SoSeparator;
+    SoSwitch * structuralSwitch = new SoSwitch;
+    structuralSwitch->whichChild = 0;
+    structuralSwitch->addChild(new SoCube);
+    structuralSwitch->addChild(new SoCube);
+    structuralSwitchRoot->addChild(structuralSwitch);
+    structuralSwitchRoot->ref();
+    {
+      SoRenderManager structuralManager;
+      structuralManager.setViewportRegion(testViewport);
+      structuralManager.setSceneGraph(structuralSwitchRoot);
+      structuralManager.setCamera(camera);
+      structuralManager.setRenderPipeline(
+        SoRenderManager::RenderPipeline::DRAW_LIST);
+      structuralManager.render(TRUE, TRUE);
+      structuralSwitch->whichChild = 1;
+      structuralManager.render(TRUE, TRUE);
+      const SoRenderManager::RenderPhaseStatistics structuralPhases =
+        structuralManager.getRenderPhaseStatistics();
+      if (structuralPhases.drawListRebuilds != 1 ||
+          structuralPhases.incrementalCommandUpdates != 0) {
+        std::cerr << "FAIL: structural switch change did not rebuild"
+                  << std::endl;
+        result = 1;
+      }
+      structuralManager.releaseRenderBackendResources();
+      structuralManager.setCamera(NULL);
+      structuralManager.setSceneGraph(NULL);
+    }
+    structuralSwitchRoot->unref();
+
     cubeRoot->touch();
     manager.render(TRUE, TRUE);
     const SoRenderManager::RenderPhaseStatistics changedRenderPhases =

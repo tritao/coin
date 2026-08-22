@@ -121,6 +121,8 @@ public:
     uint64_t backendCommandExecutionNanoseconds = 0;
     uint64_t backendSelectionNanoseconds = 0;
     uint64_t drawListRebuilds = 0;
+    //! Commands patched without rebuilding the retained frame.
+    uint64_t incrementalCommandUpdates = 0;
     uint64_t pickPlanConstructionNanoseconds = 0;
     uint64_t pickBufferUpdateNanoseconds = 0;
     uint64_t pickQueryNanoseconds = 0;

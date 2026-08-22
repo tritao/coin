@@ -18,6 +18,7 @@ class SoPathList;
 class SoCamera;
 class SoNode;
 class SoIRRenderActionP;
+class SoRetainedMutationTransaction;
 
 /*!
   \class SoIRRenderAction SoIRRenderAction.h
@@ -165,11 +166,34 @@ public:
                               const SoIRRenderContext & context);
 #endif
 
-  SoRenderStage getRenderStage() const { return this->renderStage; }
-  void setRenderStage(SoRenderStage stage) { this->renderStage = stage; }
-  void applyRenderStage(SoRenderCommand & command);
   //! Record a depth-clear barrier at the current traversal position.
   void requestDepthClear();
+#ifdef COIN_INTERNAL
+  SoRenderStage getRenderStage() const;
+  void setRenderStage(SoRenderStage stage);
+  void applyRenderStage(SoRenderCommand & command);
+  //! Refresh matrices for commands affected by one state-node notification.
+  int updateCommandMatricesForStatePath(const SoPath * statePath);
+  //! Refresh unique commands affected by a batch of transform notifications.
+  int updateCommandMatricesForStatePaths(
+    const std::vector<const SoPath *> & statePaths);
+  //! Return whether moving affected commands changes planner ordering.
+  SbBool transformUpdateAffectsPlanning(
+    const std::vector<const SoPath *> & statePaths) const;
+  //! Refresh effective diffuse colors after one material notification.
+  int updateCommandDiffuseColorsForStatePath(const SoPath * statePath);
+  //! Refresh unique commands affected by diffuse-color notifications.
+  int updateCommandDiffuseColorsForStatePaths(
+    const std::vector<const SoPath *> & statePaths);
+  //! Toggle commands below a stable one-child switch.
+  int updateCommandVisibilityForSwitchPath(const SoPath * switchPath,
+                                           SbBool visible);
+  //! Regenerate a geometry resource affected by one state notification.
+  int updateCommandGeometryForStatePath(const SoPath * statePath);
+  //! Regenerate one completely-owned resource affected by changed paths.
+  int updateCommandGeometryForStatePaths(
+    const std::vector<const SoPath *> & statePaths);
+#endif
 
 
   //! Return the generated draw list for the current frame.
@@ -214,16 +238,20 @@ protected:
   virtual void beginTraversal(SoNode * node) override;
 
 private:
+  friend class SoRetainedMutationTransaction;
   void initializeCameraState(CameraPolicy policy);
   void resetFrameResources();
   void clearCommandPaths();
+#ifdef COIN_INTERNAL
+  void findCommandsAffectedByStatePath(
+    const SoPath * statePath, std::vector<size_t> & commandIndices) const;
+  void findCommandsAffectedByStatePaths(
+    const std::vector<const SoPath *> & statePaths,
+    std::vector<size_t> & commandIndices) const;
   void traverseAdditionalPathInternal(
     SoPath * path, const SoIRRenderContext * context);
-  const SoIRRenderContext * getRenderContextOverride() const
-  {
-    return this->hasRenderContextOverride
-      ? &this->renderContextOverride : nullptr;
-  }
+  const SoIRRenderContext * getRenderContextOverride() const;
+#endif
 
   SbViewportRegion vpRegion;
   SoCamera *       camera = nullptr;
@@ -232,9 +260,6 @@ private:
   SoDrawList       drawlist;
   std::vector<SoPath *> commandPaths;
   SoIRRenderActionP * pimpl;
-  SoRenderStage    renderStage = SoRenderStage::Main;
-  SoIRRenderContext renderContextOverride;
-  bool hasRenderContextOverride = false;
   bool unsupportedRendering = false;
   const SoNode * unsupportedNode = nullptr;
   const char * unsupportedReason = nullptr;

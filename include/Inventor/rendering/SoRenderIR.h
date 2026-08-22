@@ -659,9 +659,9 @@ struct SoRenderCommand {
 
   SoOpacityClass   opacityClass = SO_OPACITY_OPAQUE;
   SoRenderStage    stage = SoRenderStage::Main;
-  // Stable scene identity. Zero means that the producer did not provide one.
-  uint64_t         objectId = 0;
   SoLightingHandle lightingHandle = 0;
+  int32_t          materialIndex = 0; //!< Effective Inventor material index.
+  uint64_t         objectId = 0;   //!< Optional producer semantic identity.
   SoPixelRasterData pixelRaster;
   SoPickData       pick;
   void *           userData = nullptr; //!< Opaque, non-owned producer data.
@@ -694,6 +694,30 @@ public:
 
   //! Return the generation number incremented when clear() starts a new frame.
   uint32_t getGeneration() const { return generation; }
+  //! Monotonic serial for in-place retained content changes.
+  uint64_t getContentRevision() const { return contentRevision; }
+#ifdef COIN_INTERNAL
+  struct MutationCheckpoint {
+    int commandCount = 0;
+    int geometryResourceCount = 0;
+    int lightingSetupCount = 0;
+    int depthEventCount = 0;
+    SoSelectionState selection;
+    std::vector<SoPickLUTEntry> pickLUT;
+    uint32_t generation = 0;
+    uint64_t contentRevision = 0;
+    uint64_t renderPlanRevision = 0;
+    uint64_t resourceRevision = 0;
+    uint32_t pickLUTGeneration = 0;
+    uint64_t pickLUTRevision = 0;
+    bool pickLUTValid = false;
+  };
+
+  //! Internal serial for changes that may alter render-plan operation order.
+  uint64_t getRenderPlanRevision() const { return renderPlanRevision; }
+  //! Internal serial for changes that require GPU resource validation.
+  uint64_t getResourceRevision() const { return resourceRevision; }
+#endif
 
   void addCommand(const SoRenderCommand & cmd);
   SoRenderCommand & emplaceCommand();
@@ -705,6 +729,19 @@ public:
   const SoGeometryResource * getGeometryResource(
     SoGeometryHandle handle) const;
   int getNumGeometryResources() const;
+#ifdef COIN_INTERNAL
+  //! Discard resources appended by an internal transactional replay.
+  void truncateGeometryResources(int count);
+  void markGeometryResourcesChanged();
+  //! Mutable access used only inside an authoritative retained update.
+  SoRenderCommand & getCommandForRetainedUpdate(int i);
+  //! Capture and restore state touched by speculative retained replay.
+  MutationCheckpoint createMutationCheckpoint() const;
+  void restoreMutationCheckpoint(const MutationCheckpoint & checkpoint);
+  //! Apply one successful retained invalidation result to derived revisions.
+  void applyRetainedInvalidation(bool plan, bool resources,
+                                 bool pickTopology);
+#endif
   //! Resolve a command resource, falling back to its embedded descriptor.
   const SoGeometryDesc & getCommandGeometry(
     const SoRenderCommand & command) const;
@@ -744,6 +781,10 @@ public:
   const SoPickLUTEntry * resolvePickId(uint32_t id) const;
   //! Return the generation for which the current pick table was built.
   uint32_t getPickLUTGeneration() const { return pickLUTGeneration; }
+#ifdef COIN_INTERNAL
+  //! Internal serial incremented whenever the pick lookup is reconstructed.
+  uint64_t getPickLUTRevision() const { return pickLUTRevision; }
+#endif
   //! Return the immutable snapshot of the current frame's pick table.
   const std::vector<SoPickLUTEntry> & getPickLUT() const { return pickLUT; }
 
@@ -763,7 +804,12 @@ private:
   SoSelectionState selection;
   mutable std::vector<SoPickLUTEntry> pickLUT;
   uint32_t generation = 0;
+  uint64_t contentRevision = 0;
+  uint64_t renderPlanRevision = 0;
+  uint64_t resourceRevision = 0;
   mutable uint32_t pickLUTGeneration = 0;
+  mutable uint64_t pickLUTRevision = 0;
+  mutable bool pickLUTValid = false;
 };
 
 #endif // COIN_SORENDERIR_H

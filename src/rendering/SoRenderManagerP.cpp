@@ -385,10 +385,104 @@ SoRenderManagerP::invokeAfterMainSceneCallbacks(SoAction * action)
 #undef PUBLIC
 
 void
+SoRenderManagerRootSensor::resetNotification(void)
+{
+  this->unschedule();
+  this->changedNode = NULL;
+  this->changedField = NULL;
+  for (SoPath * path : this->changedPaths) {
+    if (path) path->unref();
+  }
+  this->changedPath = NULL;
+  this->notificationCount = 0;
+  this->changedNodes.clear();
+  this->changedFields.clear();
+  this->changedPaths.clear();
+}
+
+SoNode *
+SoRenderManagerRootSensor::getChangedNode(unsigned int index) const
+{
+  return index < this->changedNodes.size() ? this->changedNodes[index] : NULL;
+}
+
+SoField *
+SoRenderManagerRootSensor::getChangedField(unsigned int index) const
+{
+  return index < this->changedFields.size() ? this->changedFields[index] : NULL;
+}
+
+const SoPath *
+SoRenderManagerRootSensor::getChangedPath(unsigned int index) const
+{
+  return index < this->changedPaths.size() ? this->changedPaths[index] : NULL;
+}
+
+SoRenderManagerRootSensor::SoRenderManagerRootSensor(SoSensorCB * func,
+                                                     void * data)
+  : inherited(func, data), changedNode(NULL), changedField(NULL),
+    changedPath(NULL), notificationCount(0)
+{
+}
+
+SoRenderManagerRootSensor::~SoRenderManagerRootSensor()
+{
+  this->resetNotification();
+}
+
+void
 SoRenderManagerRootSensor::notify(SoNotList * l)
 {
-  l->print();
-  (void)fprintf(stdout, "end\n");
+  ++this->notificationCount;
+  // Notification storms must not grow the retained patch queue without
+  // bound. The total count still forces the manager down the rebuild path.
+  if (this->notificationCount > MAX_RETAINED_NOTIFICATIONS) {
+    inherited::notify(l);
+    return;
+  }
+  this->changedField = l->getLastField();
+  SoNotRec * changed = l->getFirstRecAtNode();
+  this->changedNode = changed
+    ? static_cast<SoNode *>(changed->getBase()) : NULL;
+  this->changedPath = NULL;
+  if (this->changedNode) {
+    const SoNotRec * record = l->getLastRec();
+    while (record &&
+           !record->getBase()->isOfType(SoNode::getClassTypeId())) {
+      record = record->getPrevious();
+    }
+    if (record) {
+      this->changedPath = new SoPath(
+        static_cast<SoNode *>(record->getBase()));
+      this->changedPath->ref();
+      while (record->getBase() != this->changedNode) {
+        record = record->getPrevious();
+        this->changedPath->append(
+          static_cast<SoNode *>(record->getBase()));
+      }
+    }
+  }
+  bool duplicate = false;
+  for (size_t i = 0; i < this->changedPaths.size(); ++i) {
+    const bool samePath = this->changedPath && this->changedPaths[i] &&
+      *this->changedPath == *this->changedPaths[i];
+    if (this->changedNode == this->changedNodes[i] &&
+        this->changedField == this->changedFields[i] && samePath) {
+      this->changedPath->unref();
+      this->changedPath = this->changedPaths[i];
+      duplicate = true;
+      break;
+    }
+  }
+  if (!duplicate) {
+    this->changedNodes.push_back(this->changedNode);
+    this->changedFields.push_back(this->changedField);
+    this->changedPaths.push_back(this->changedPath);
+  }
+  if (SoRenderManagerRootSensor::debug()) {
+    l->print();
+    (void)fprintf(stdout, "end\n");
+  }
 
   inherited::notify(l);
 }

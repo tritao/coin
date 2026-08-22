@@ -20,12 +20,20 @@ class SoState;
 */
 class SoIRBuffer {
 public:
+  struct Checkpoint {
+    std::vector<size_t> cursors;
+    size_t chunkCount = 0;
+    size_t totalAllocated = 0;
+  };
+
   SoIRBuffer();
   ~SoIRBuffer() = default;
 
   void clear();
   void reserve(size_t bytes);
   void * allocate(size_t bytes, size_t alignment = alignof(float));
+  Checkpoint checkpoint() const;
+  void rewind(const Checkpoint & checkpoint);
 
   template <typename T>
   T * allocateArray(size_t count, size_t alignment = alignof(T)) {

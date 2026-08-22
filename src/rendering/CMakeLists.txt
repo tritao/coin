@@ -8,6 +8,7 @@ set(COIN_RENDERING_FILES
 	SoRenderManagerP.cpp
 	SoRenderIR.cpp
 	SoRenderPlan.cpp
+	SoRetainedUpdater.cpp
 	SoRenderBackend.cpp
 	SoGLRenderBackend.cpp
 )

@@ -130,9 +130,7 @@ SoDrawList makeDrawList(int commandCount, bool transparent,
   drawlist.reserve(commandCount);
   for (int i = 0; i < commandCount; ++i) {
     SoRenderCommand command;
-    command.objectId = static_cast<SoObjectId>(i + 1);
-    command.nodeId = static_cast<SoNodeId>(i + 1);
-    command.instanceId = static_cast<SoInstanceId>(i + 1);
+    command.objectId = static_cast<uint64_t>(i + 1);
     command.geometry.vertexCount = 3;
     command.geometry.hasBounds = TRUE;
     command.geometry.boundsCenter = SbVec3f(0.0f, 0.0f,
@@ -228,9 +226,7 @@ Result benchmarkLifecycle(int frames, int commandCount)
     drawlist.reserve(commandCount);
     for (int i = 0; i < commandCount; ++i) {
       SoRenderCommand command;
-      command.objectId = static_cast<SoObjectId>(frame + i + 1);
-      command.nodeId = static_cast<SoNodeId>(i + 1);
-      command.instanceId = static_cast<SoInstanceId>(i + 1);
+      command.objectId = static_cast<uint64_t>(frame + i + 1);
       command.geometry.vertexCount = 3;
       command.opacityClass = (i % 7 == 0)
         ? SO_OPACITY_TRANSPARENT : SO_OPACITY_OPAQUE;

@@ -25,6 +25,58 @@ int drawOperationCount(const SoRenderPlan & plan)
 int
 main()
 {
+  bool result = true;
+#ifdef COIN_INTERNAL
+  SoDrawList revisions;
+  SoRenderCommand revisionCommand;
+  revisions.addCommand(revisionCommand);
+  uint64_t contentRevision = revisions.getContentRevision();
+  uint64_t planRevision = revisions.getRenderPlanRevision();
+  uint64_t resourceRevision = revisions.getResourceRevision();
+  revisions.getCommandForRetainedUpdate(0).modelMatrix.makeIdentity();
+  revisions.applyRetainedInvalidation(false, false, false);
+  result = check(revisions.getContentRevision() > contentRevision &&
+                 revisions.getRenderPlanRevision() == planRevision &&
+                 revisions.getResourceRevision() == resourceRevision,
+                 "dynamic state update invalidated derived layout") && result;
+
+  contentRevision = revisions.getContentRevision();
+  planRevision = revisions.getRenderPlanRevision();
+  resourceRevision = revisions.getResourceRevision();
+  revisions.getCommandForRetainedUpdate(0).opacityClass =
+    SO_OPACITY_TRANSPARENT;
+  revisions.applyRetainedInvalidation(true, false, false);
+  result = check(revisions.getContentRevision() > contentRevision &&
+                 revisions.getRenderPlanRevision() > planRevision &&
+                 revisions.getResourceRevision() == resourceRevision,
+                 "ordering update did not isolate render-plan invalidation") &&
+    result;
+
+  contentRevision = revisions.getContentRevision();
+  planRevision = revisions.getRenderPlanRevision();
+  resourceRevision = revisions.getResourceRevision();
+  revisions.getCommand(0).geometry.revision++;
+  result = check(revisions.getContentRevision() > contentRevision &&
+                 revisions.getRenderPlanRevision() > planRevision &&
+                 revisions.getResourceRevision() > resourceRevision,
+                 "generic mutation did not invalidate all derived state") &&
+    result;
+
+  revisions.buildPickLUT();
+  const uint64_t pickRevision = revisions.getPickLUTRevision();
+  planRevision = revisions.getRenderPlanRevision();
+  resourceRevision = revisions.getResourceRevision();
+  revisions.getCommandForRetainedUpdate(0).geometry.revision++;
+  revisions.applyRetainedInvalidation(true, true, true);
+  revisions.buildPickLUT();
+  result = check(revisions.getRenderPlanRevision() > planRevision &&
+                 revisions.getResourceRevision() > resourceRevision &&
+                 revisions.getPickLUTRevision() > pickRevision,
+                 "geometry invalidation did not refresh resources and picks") &&
+    result;
+
+#endif // COIN_INTERNAL
+
   SoDrawList drawlist;
   SoRenderCommand first;
   SoRenderCommand second;
@@ -45,7 +97,7 @@ main()
   SoRenderPlan plan;
   SoDrawList empty;
   planner.build(empty, plan);
-  bool result = check(drawOperationCount(plan) == 0 &&
+  result = check(drawOperationCount(plan) == 0 &&
                       plan.getNumOperations() > 0,
                       "empty DrawList did not produce a barrier-only plan");
 
