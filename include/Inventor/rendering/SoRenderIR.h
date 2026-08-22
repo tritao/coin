@@ -548,10 +548,6 @@ struct COIN_DLL_API SoIRRenderContext {
   void applyToState(SoState * state, SbBool applyModelMatrix = TRUE) const;
 };
 
-/*!
-  \enum SoPickElementType
-  \brief Backend-neutral identity kinds retained for picking.
-*/
 /*! \struct SoPickData
   \brief Backend-neutral pickability and optional subelement ranges.
 */

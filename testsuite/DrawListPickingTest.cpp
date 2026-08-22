@@ -520,6 +520,32 @@ runTest()
       }
     }
 
+    // Compatible whole-command overlays share one instance draw while
+    // retaining a separate color and transform for each target.
+    SoRenderCommand leftSelectionCommand = command;
+    leftSelectionCommand.geometry.cacheKey = 0x53454c454354ULL;
+    leftSelectionCommand.modelMatrix.setTranslate(SbVec3f(-0.2f, 0.0f, 0.0f));
+    SoRenderCommand rightSelectionCommand = command;
+    rightSelectionCommand.geometry.cacheKey = 0x53454c454354ULL;
+    rightSelectionCommand.modelMatrix.setTranslate(SbVec3f(0.2f, 0.0f, 0.0f));
+    drawlist.clear();
+    drawlist.addCommand(leftSelectionCommand);
+    drawlist.addCommand(rightSelectionCommand);
+    SoSelectionState instancedSelection;
+    SoSelectionTarget leftTarget;
+    leftTarget.commandIndex = 0;
+    leftTarget.color = SbColor4f(1.0f, 0.0f, 0.0f, 0.5f);
+    instancedSelection.selected.push_back(leftTarget);
+    SoSelectionTarget rightTarget;
+    rightTarget.commandIndex = 1;
+    rightTarget.color = SbColor4f(0.0f, 1.0f, 0.0f, 0.5f);
+    instancedSelection.selected.push_back(rightTarget);
+    if (!render(backend, drawlist, params) ||
+        !backend.renderSelection(drawlist, instancedSelection, params)) {
+      std::cerr << "FAIL: instanced selection overlay failed" << std::endl;
+      result = 1;
+    }
+
     // Explicit highlighting is independent of hit-test eligibility.
     SoRenderCommand nonPickableCommand = command;
     nonPickableCommand.pick.pickable = false;

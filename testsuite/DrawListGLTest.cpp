@@ -216,6 +216,80 @@ runTest()
     result = 1;
   }
 
+  // Identical indexed geometry with distinct transforms and unlit diffuse
+  // colors should retain command identity while sharing one instanced draw.
+  const float indexedInstanceQuad[] = {
+    -0.35f, -0.35f, 0.0f,
+     0.35f, -0.35f, 0.0f,
+     0.35f,  0.35f, 0.0f,
+    -0.35f,  0.35f, 0.0f
+  };
+  drawlist.clear();
+  SoRenderCommand indexedInstance;
+  indexedInstance.modelMatrix.setTranslate(SbVec3f(-0.5f, 0.0f, 0.0f));
+  indexedInstance.geometry.topology = SO_TOPOLOGY_TRIANGLES;
+  indexedInstance.geometry.vertexCount = 4;
+  indexedInstance.geometry.indexCount = 6;
+  indexedInstance.geometry.positions = indexedInstanceQuad;
+  indexedInstance.geometry.indices = indices;
+  indexedInstance.geometry.vertexStride = sizeof(float) * 3;
+  indexedInstance.geometry.cacheKey = 0x100u;
+  indexedInstance.geometry.revision = 1;
+  indexedInstance.material.diffuse = SbVec4f(1.0f, 0.0f, 0.0f, 1.0f);
+  drawlist.addCommand(indexedInstance);
+  indexedInstance.modelMatrix.setTranslate(SbVec3f(0.5f, 0.0f, 0.0f));
+  indexedInstance.material.diffuse = SbVec4f(0.0f, 0.0f, 1.0f, 1.0f);
+  drawlist.addCommand(indexedInstance);
+  if (!renderWithPlan(backend, drawlist, params)) {
+    std::cerr << "FAIL: indexed instanced execution failed" << std::endl;
+    result = 1;
+  }
+  else {
+    glFinish();
+    const std::vector<uint8_t> pixels = readPixels(context);
+    if (!nearColor(pixelAt(pixels, 8, 16), 255, 0, 0) ||
+        !nearColor(pixelAt(pixels, 24, 16), 0, 0, 255)) {
+      std::cerr << "FAIL: indexed instancing lost transform or color data"
+                << std::endl;
+      result = 1;
+    }
+  }
+
+  // Shared texture state remains batch-owned while transform and diffuse
+  // color are supplied per instance.
+  const unsigned char whiteTexel[] = { 255, 255, 255, 255 };
+  SoRenderCommand texturedInstance = indexedInstance;
+  texturedInstance.modelMatrix.setTranslate(SbVec3f(-0.5f, 0.0f, 0.0f));
+  texturedInstance.geometry.cacheKey = 0x300u;
+  texturedInstance.geometry.texcoords = texcoords;
+  texturedInstance.geometry.texcoordStride = sizeof(float) * 4;
+  texturedInstance.material.texture.pixels = whiteTexel;
+  texturedInstance.material.texture.width = 1;
+  texturedInstance.material.texture.height = 1;
+  texturedInstance.material.texture.numComponents = 4;
+  texturedInstance.material.texture.cacheKey = 0x400u;
+  texturedInstance.material.texture.revision = 1;
+  texturedInstance.material.diffuse = SbVec4f(1.0f, 0.0f, 0.0f, 1.0f);
+  drawlist.clear();
+  drawlist.addCommand(texturedInstance);
+  texturedInstance.modelMatrix.setTranslate(SbVec3f(0.5f, 0.0f, 0.0f));
+  texturedInstance.material.diffuse = SbVec4f(0.0f, 0.0f, 1.0f, 1.0f);
+  drawlist.addCommand(texturedInstance);
+  if (!renderWithPlan(backend, drawlist, params)) {
+    std::cerr << "FAIL: textured instanced execution failed" << std::endl;
+    result = 1;
+  }
+  else {
+    glFinish();
+    const std::vector<uint8_t> pixels = readPixels(context);
+    if (!nearColor(pixelAt(pixels, 8, 16), 255, 0, 0) ||
+        !nearColor(pixelAt(pixels, 24, 16), 0, 0, 255)) {
+      std::cerr << "FAIL: textured instancing lost transform or color data"
+                << std::endl;
+      result = 1;
+    }
+  }
+
   // Exercise unindexed geometry and the basic vertex-color path.
   const float triangle[] = {
     -0.8f, -0.8f, 0.0f,

@@ -12,6 +12,7 @@ uniform int u_textureModel;
 uniform vec4 u_textureBlendColor;
 uniform vec4 u_color;
 uniform float u_useVertexColor;
+uniform float u_instanced;
 uniform float u_vertexColorAlphaIncludesOpacity;
 uniform float u_textureAlphaIncludesOpacity;
 uniform float u_textureHasAlpha;
@@ -24,7 +25,9 @@ uniform float u_alphaTestReference;
 vec4
 coin_surface_fragment_color(vec4 vertexColor, vec3 litColor, vec2 texcoord)
 {
-  float materialAlpha = u_color.a;
+  // Instance colors carry the complete per-command diffuse RGBA. Avoid
+  // multiplying their alpha by the first command's material uniform again.
+  float materialAlpha = u_instanced > 0.5 ? 1.0 : u_color.a;
   if (u_useVertexColor > 0.5 &&
       u_vertexColorAlphaIncludesOpacity > 0.5) {
     materialAlpha = 1.0;

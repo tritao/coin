@@ -116,6 +116,14 @@ retained draw list; `drawlist_rebuilds` must therefore equal the sample count.
 This mode reuses the feature-rich workload rather than maintaining a separate
 benchmark scene.
 
+`shared_assembly_depth_stack` moves the shared occurrences onto one overlapping
+view ray and measures bounded front-to-back depth peeling. Its counters cover
+all rendered peel layers separately from ordinary hover-target construction.
+Each layer uses the same primitive-ID instance batches, while depth segments
+and irregular mappings remain ordering barriers. The benchmark requires
+multiple resolved hits, zero DrawList rebuilds, bounded draw calls per layer,
+and nonzero instanced coverage.
+
 The deterministic workloads currently cover traversal/IR construction, render
 plan construction (including transparent sorting and depth segments), retained
 pick-table construction and resolution, selection churn, and repeated frame

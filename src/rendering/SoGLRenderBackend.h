@@ -137,6 +137,7 @@ private:
       GLint view = -1;
       GLint projection = -1;
       GLint model = -1;
+      GLint instanced = -1;
     } transforms;
     struct Material {
       GLint color = -1;
@@ -265,6 +266,8 @@ private:
       GLint alphaTestFunction = -1;
       GLint alphaTestReference = -1;
       GLint pickId = -1;
+      GLint instanced = -1;
+      GLint primitivePickIds = -1;
       GLint vpSize = -1;
       GLint lineWidth = -1;
       GLint pointSize = -1;
@@ -285,6 +288,7 @@ private:
 
   struct PickPrograms {
     PickProgram visual;
+    PickProgram opaqueVisual;
     PickProgram line;
     PickProgram triangleLine;
     PickProgram point;
@@ -325,12 +329,24 @@ private:
                      const SbMat & viewMat,
                      const SbMat & projMat,
                      const SoRenderParams & params);
+  void drawInstancedPickCommands(const SoDrawList & drawlist,
+                                 const std::vector<uint32_t> & commandIndices,
+                                 const std::vector<GLuint> & pickIds,
+                                 const SoRenderParams & params,
+                                 bool primitivePickIds = false);
   void drawSelectionEntry(const SoDrawList & drawlist,
                           const SoPickLUTEntry & entry,
                           const SbColor4f & color,
                           const SbMat & viewMat,
                           const SbMat & projMat,
                           const SoRenderParams & params);
+  void drawInstancedSelectionCommands(
+    const SoDrawList & drawlist,
+    const std::vector<uint32_t> & commandIndices,
+    const std::vector<SbColor4f> & colors,
+    const std::vector<uint32_t> & primitiveIds,
+    const SoRenderParams & params,
+    bool primitiveSelection);
   void drawCoverageEntry(const SoDrawList & drawlist,
                          const SoPickLUTEntry & entry,
                          GLuint id,
@@ -413,6 +429,14 @@ private:
                               const SoGeometryDesc & geometry,
                               GLsizei vertexStride);
   void setupVisualVAO(CachedCommand & entry);
+  bool canInstanceCommand(const SoDrawList & drawlist,
+                          const SoRenderCommand & command) const;
+  bool canInstanceTogether(const SoDrawList & drawlist,
+                           const SoRenderCommand & first,
+                           const SoRenderCommand & next) const;
+  void drawInstancedCommands(const SoDrawList & drawlist,
+                             const std::vector<uint32_t> & commandIndices,
+                             const SoRenderParams & params);
   void destroyCacheEntry(CachedCommand & entry);
   bool textureDescriptionMatches(const CachedCommand & entry,
                                  const SoRenderCommand & command) const;
@@ -458,6 +482,7 @@ private:
   uint32_t cacheGeneration = 0;
   size_t cachedCommandCount = 0;
   bool haveCacheGeneration = false;
+  GLuint instanceBuffer = 0;
   SoRenderBackendPhaseStatistics phaseStatistics;
 };
 
