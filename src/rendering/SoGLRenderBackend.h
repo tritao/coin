@@ -480,7 +480,7 @@ private:
   std::unordered_map<const SoRenderCommand *, size_t> commandToCache;
   std::unordered_map<ResourceCacheKey, size_t, ResourceCacheKeyHash> resourceToCache;
   uint32_t cacheGeneration = 0;
-  uint64_t cacheContentRevision = 0;
+  uint64_t cacheResourceRevision = 0;
   size_t cachedCommandCount = 0;
   bool haveCacheGeneration = false;
   GLuint instanceBuffer = 0;

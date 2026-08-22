@@ -48,6 +48,7 @@ struct SoRenderBackendInitParams {
 
 //! Opt-in CPU phase timings reported by retained-rendering backends.
 struct SoRenderBackendPhaseStatistics {
+  uint64_t resourceValidations = 0;
   uint64_t frameSetupNanoseconds = 0;
   uint64_t resourcePreparationNanoseconds = 0;
   uint64_t commandExecutionNanoseconds = 0;

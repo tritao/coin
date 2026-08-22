@@ -169,9 +169,11 @@ const SoRenderPlan &
 resolveRetainedRenderPlan(SoRenderManagerP * manager,
                           const SoDrawList & drawlist,
                           const SbMatrix & viewMatrix,
-                          uint64_t & constructionNanoseconds)
+                          uint64_t & constructionNanoseconds,
+                          bool * constructed = nullptr)
 {
   constructionNanoseconds = 0;
+  if (constructed) *constructed = false;
   const uint64_t planRevision = drawlist.getRenderPlanRevision();
   if (!manager->renderPlanValid ||
       manager->renderPlanDrawList != &drawlist ||
@@ -187,6 +189,7 @@ resolveRetainedRenderPlan(SoRenderManagerP * manager,
     manager->renderPlanRevision = planRevision;
     manager->renderPlanViewMatrix = viewMatrix;
     manager->renderPlanValid = TRUE;
+    if (constructed) *constructed = true;
     if (manager->renderPhaseTimingEnabled) {
       constructionNanoseconds = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1062,6 +1065,8 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   phaseStatistics.backendCommandExecutionNanoseconds = 0;
   phaseStatistics.backendSelectionNanoseconds = 0;
   phaseStatistics.drawListRebuilds = 0;
+  phaseStatistics.renderPlanConstructions = 0;
+  phaseStatistics.resourceValidations = 0;
   phaseStatistics.incrementalCommandUpdates = 0;
   const SbBool measurePhases = PRIVATE(this)->renderPhaseTimingEnabled;
   const SoRenderManager::RenderMode renderMode = PRIVATE(this)->rendermode;
@@ -1440,9 +1445,11 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   params.flags = (clearwindow ? SO_PARAM_CLEAR_WINDOW : 0u) |
                  (clearzbuffer ? SO_PARAM_CLEAR_DEPTH : 0u) |
                  (!rebuildDrawList ? SO_PARAM_REUSE_DRAW_LIST : 0u);
+  bool planConstructed = false;
   const SoRenderPlan & plan = resolveRetainedRenderPlan(
     PRIVATE(this), drawlist, params.viewMatrix,
-    phaseStatistics.planConstructionNanoseconds);
+    phaseStatistics.planConstructionNanoseconds, &planConstructed);
+  phaseStatistics.renderPlanConstructions = planConstructed ? 1 : 0;
 
   const RenderPhaseClock::time_point submissionStart = measurePhases
     ? RenderPhaseClock::now() : RenderPhaseClock::time_point();
@@ -1462,6 +1469,8 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
     phaseStatistics.backendSelectionNanoseconds =
       backendPhases.selectionNanoseconds;
   }
+  phaseStatistics.resourceValidations =
+    PRIVATE(this)->renderBackend->getPhaseStatistics().resourceValidations;
   if (rebuildDrawList || updateResult.updatedCommands > 0) {
     PRIVATE(this)->pickTargetDirty = TRUE;
     PRIVATE(this)->pickTargetGeneration = 0;

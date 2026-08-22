@@ -121,6 +121,10 @@ public:
     uint64_t backendCommandExecutionNanoseconds = 0;
     uint64_t backendSelectionNanoseconds = 0;
     uint64_t drawListRebuilds = 0;
+    //! Number of render plans constructed for the most recent frame.
+    uint64_t renderPlanConstructions = 0;
+    //! Number of backend geometry-cache validation passes.
+    uint64_t resourceValidations = 0;
     //! Commands patched without rebuilding the retained frame.
     uint64_t incrementalCommandUpdates = 0;
     uint64_t pickPlanConstructionNanoseconds = 0;

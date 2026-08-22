@@ -109,6 +109,10 @@ classification and order, so their plan-construction time remains zero.
 Geometry, visibility, and transparent-depth changes conservatively advance the
 plan revision and rebuild the derived operation sequence.
 
+GPU-resource revision is tracked separately from dynamic command state. Matrix
+and material patches therefore retain validated geometry resources, while
+geometry and structural mutations still force resource validation.
+
 The timed render samples represent steady-state frames. The retained manager
 reuses its draw list until a scene, camera, layer, viewport-dependent traversal
 setting, or explicit `invalidateDrawList()` call invalidates it. The

@@ -887,7 +887,7 @@ SoGLRenderBackend::discard()
   this->cachedCommandCount = 0;
   this->haveCacheGeneration = false;
   this->cacheGeneration = 0;
-  this->cacheContentRevision = 0;
+  this->cacheResourceRevision = 0;
   this->visualProgram = VisualProgram();
   this->rasterPrograms = RasterPrograms();
   this->pickPrograms = PickPrograms();
@@ -1584,7 +1584,7 @@ SoGLRenderBackend::prepareGeometryCache(const SoDrawList & drawlist,
   const size_t commandCount = static_cast<size_t>(drawlist.getNumCommands());
   if (allowReuse && this->haveCacheGeneration &&
       this->cacheGeneration == drawlist.getGeneration() &&
-      this->cacheContentRevision == drawlist.getContentRevision() &&
+      this->cacheResourceRevision == drawlist.getResourceRevision() &&
       this->cachedCommandCount == commandCount) {
     return;
   }
@@ -1594,6 +1594,7 @@ SoGLRenderBackend::prepareGeometryCache(const SoDrawList & drawlist,
 void
 SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
 {
+  ++this->phaseStatistics.resourceValidations;
   const uint32_t generation = drawlist.getGeneration();
   const size_t commandCount = static_cast<size_t>(drawlist.getNumCommands());
   if (!this->haveCacheGeneration || this->cacheGeneration != generation) {
@@ -1613,7 +1614,7 @@ SoGLRenderBackend::updateGeometryCache(const SoDrawList & drawlist)
     this->commandToCache.clear();
   }
   this->cacheGeneration = generation;
-  this->cacheContentRevision = drawlist.getContentRevision();
+  this->cacheResourceRevision = drawlist.getResourceRevision();
   this->haveCacheGeneration = true;
   this->cachedCommandCount = commandCount;
 
@@ -4125,6 +4126,7 @@ SoGLRenderBackend::render(const SoDrawList & drawlist,
   const bool measurePhases = this->isPhaseTimingEnabled();
   this->phaseStatistics.frameSetupNanoseconds = 0;
   this->phaseStatistics.resourcePreparationNanoseconds = 0;
+  this->phaseStatistics.resourceValidations = 0;
   this->phaseStatistics.commandExecutionNanoseconds = 0;
   this->phaseStatistics.selectionNanoseconds = 0;
 
