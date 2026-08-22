@@ -21,6 +21,8 @@ build-bench/bin/CoinRenderGLBenchmarks --rebuild-only 5000 \
   --samples 10 --output rebuild-5000.json
 build-bench/bin/CoinRenderGLBenchmarks --mutation-only 50000 \
   --samples 20 --output mutations-50000.json
+build-bench/bin/CoinRenderGLBenchmarks --interaction-only 50000 \
+  --samples 50 --output interactions-50000.json
 ```
 
 ## Viewing generated workloads
@@ -95,15 +97,36 @@ explicitly. This keeps the common hover path distinct from the more expensive
 selection-cycling operation.
 
 The GL benchmark explicitly enables renderer phase timing. JSON schema version
-7 identifies each result as `per_frame_traversal`, `steady_state`,
-`forced_rebuild`, or `incremental_update`. It separates draw-list construction into primitive generation,
-geometry packing, and command emission, and also reports render-plan construction
-and backend submission. Command emission includes command state capture and path
-retention. Work outside these nested shape phases remains visible as the
-difference from total draw-list construction. Backend submission is divided into frame setup,
+13 identifies each result as `per_frame_traversal`, `steady_state`,
+`forced_rebuild`, or `incremental_update`. It separates draw-list construction
+into primitive generation, geometry packing, and command emission, and also
+reports incremental command updates, render-plan construction, and backend
+submission. Command emission includes command state capture and path retention.
+Work outside these nested shape phases remains visible as the difference from
+total draw-list construction. Backend submission is divided into frame setup,
 resource preparation, command execution, and selection overlays. Picking
 reports target preparation and rendering, depth rendering and peeling,
 readback, hit processing, target restoration, and final scene-result resolution.
+
+The shared-assembly interaction curves distinguish cold hover-target creation,
+warm hover queries, and target refresh after an incremental occurrence update.
+Refresh results report median and p95 wall, GPU timer-query, and synchronous
+readback time; each sample performs a distinct transform update and verifies
+one target rebuild.
+The asynchronous hover curve reports nonblocking PBO request and immediate-poll
+cost separately from eventual GPU completion. It is a backend mechanism; UI
+ownership, coalescing, and stale-result policy remain with the caller.
+Pick draw-call and instance counters verify that primitive-mapped occurrences
+remain batched instead of silently falling back to one draw per occurrence.
+When pick topology and render-plan order remain stable, the backend reuses the
+classified submission batches while refreshing their per-instance matrices.
+Selection curves render deterministic 1% and 10% selected sets, replace 10% of
+the selected occurrences between samples, and exercise one preselection. They
+report logical targets, physical draw calls, and instanced coverage without
+moving producer-owned selection policy into `SoRenderManager`.
+
+`incremental_update_median_ms` isolates retained dependency lookup and command
+patching from plan construction and backend submission.
 
 Timing remains disabled for normal `SoRenderManager` users, so clock reads do
 not affect ordinary rendering. A zero-valued phase means it did not run; for

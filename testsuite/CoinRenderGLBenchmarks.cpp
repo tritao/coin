@@ -1,12 +1,17 @@
 #include "support/GLTestContext.h"
 #include "support/RenderWorkloads.h"
+#include "rendering/SoGLRenderBackend.h"
+#include "rendering/SoRenderPlan.h"
 
 #include <Inventor/SoDB.h>
 #include <Inventor/SoPickedPoint.h>
+#include <Inventor/SoPath.h>
+#include <Inventor/lists/SoPickedPointList.h>
 #include <Inventor/SoRenderManager.h>
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/system/gl.h>
 #include <Inventor/actions/SoRayPickAction.h>
+#include <Inventor/actions/SoIRRenderAction.h>
 #if COIN_HAVE_LEGACY_GL_RENDERER
 #include <Inventor/actions/SoGLRenderAction.h>
 #endif
@@ -43,6 +48,7 @@ struct Options {
   int samples = 0;
   int rebuildOnly = 0;
   int mutationOnly = 0;
+  int interactionOnly = 0;
   std::string output;
 };
 
@@ -52,6 +58,18 @@ struct Measurement {
   std::string profile;
   std::string executionMode;
   int semanticDraws = 0;
+  uint64_t submittedDrawCalls = 0;
+  uint64_t instancedTriangleBatches = 0;
+  uint64_t instancedTriangleCommands = 0;
+  uint64_t instancedLineBatches = 0;
+  uint64_t instancedLineCommands = 0;
+  uint64_t selectionTargets = 0;
+  uint64_t selectionDrawCalls = 0;
+  uint64_t selectionInstancedBatches = 0;
+  uint64_t selectionInstancedCommands = 0;
+  uint64_t pickDrawCalls = 0;
+  uint64_t pickInstancedBatches = 0;
+  uint64_t pickInstancedCommands = 0;
   int samples = 0;
   double cpuMedianMs = 0.0;
   double cpuP95Ms = 0.0;
@@ -78,9 +96,20 @@ struct Measurement {
   double coldPickTargetPreparationMs = 0.0;
   double coldPickTargetRenderingMs = 0.0;
   double refreshPickMs = 0.0;
+  double refreshPickP95Ms = 0.0;
+  double refreshPickGpuMedianMs = 0.0;
+  double refreshPickGpuP95Ms = 0.0;
   double refreshPickBufferUpdateMs = 0.0;
   double refreshPickTargetPreparationMs = 0.0;
   double refreshPickTargetRenderingMs = 0.0;
+  double refreshPickReadbackMedianMs = 0.0;
+  double refreshPickReadbackP95Ms = 0.0;
+  double refreshPickResultResolutionMedianMs = 0.0;
+  double asyncPickRequestMedianMs = 0.0;
+  double asyncPickRequestP95Ms = 0.0;
+  double asyncPickPollMedianMs = 0.0;
+  double asyncPickCompletionMedianMs = 0.0;
+  double asyncPickCompletionP95Ms = 0.0;
   double pickMedianMs = 0.0;
   double pickP95Ms = 0.0;
   double pickQueryMedianMs = 0.0;
@@ -236,6 +265,15 @@ bool runVariant(GLTestProfile profile,
       renderPhases.backendCommandExecutionNanoseconds / 1000000.0);
     backendSelection.push_back(
       renderPhases.backendSelectionNanoseconds / 1000000.0);
+    result.submittedDrawCalls = renderPhases.submittedDrawCalls;
+    if (renderPhases.semanticDrawCommands != 0) {
+      result.semanticDraws = static_cast<int>(
+        renderPhases.semanticDrawCommands);
+    }
+    result.instancedTriangleBatches = renderPhases.instancedTriangleBatches;
+    result.instancedTriangleCommands = renderPhases.instancedTriangleCommands;
+    result.instancedLineBatches = renderPhases.instancedLineBatches;
+    result.instancedLineCommands = renderPhases.instancedLineCommands;
     result.drawListRebuilds += renderPhases.drawListRebuilds;
     glEndQuery(GL_TIME_ELAPSED);
     GLuint64 nanoseconds = 0;
@@ -371,7 +409,10 @@ bool runVariant(GLTestProfile profile,
   result.executionMode = forceDrawListRebuild ? "forced_rebuild" :
     (pipeline == SoRenderManager::RenderPipeline::LEGACY_GL ?
       "per_frame_traversal" : "steady_state");
-  result.semanticDraws = drawCount;
+  if (result.semanticDraws == 0) {
+    result.semanticDraws = isAssemblyWorkload(workload)
+      ? drawCount * 2 : drawCount;
+  }
   result.samples = samples;
   result.cpuMedianMs = percentile(cpu, 0.5);
   result.cpuP95Ms = percentile(cpu, 0.95);
@@ -575,10 +616,11 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
   return valid;
 }
 
-bool runAssemblyGeometryMutation(GLTestProfile profile, WorkloadKind workload,
-                                 int occurrenceCount, int samples,
-                                 std::vector<Measurement> & results,
-                                 std::string & unavailable)
+bool runAssemblyMutations(GLTestProfile profile, WorkloadKind workload,
+                          int occurrenceCount, int samples,
+                          std::vector<Measurement> & results,
+                          std::string & unavailable,
+                          bool hoverOnly = false)
 {
   GLTestContextConfig config;
   config.profile = profile;
@@ -629,6 +671,329 @@ bool runAssemblyGeometryMutation(GLTestProfile profile, WorkloadKind workload,
   manager.setRenderPhaseTimingEnabled(TRUE);
   context.bindFramebuffer();
   manager.render(TRUE, TRUE);
+  context.bindFramebuffer();
+  manager.render(TRUE, TRUE);
+
+  // Occurrence transforms affect both the face and edge command emitted by
+  // each assembly instance. Measure the scaling of the manager's batched
+  // matrix replay before changing shared geometry below.
+  std::vector<SbVec3f> originalTranslations;
+  originalTranslations.reserve(mutations.transforms.size());
+  for (SoTranslation * transform : mutations.transforms) {
+    originalTranslations.push_back(transform->translation.getValue());
+  }
+  if (workload == WorkloadKind::SharedAssemblyRecipe) {
+    const auto pickAt = [&](const SbVec2s & cursor, SoNode *& identity) {
+      SoPickedPoint * picked = NULL;
+      if (!manager.pickClosest(cursor[0], cursor[1], 4, picked) || !picked) {
+        return false;
+      }
+      identity = NULL;
+      SoPath * path = picked->getPath();
+      for (int i = 0; path && i < path->getLength(); ++i) {
+        if (path->getNode(i)->isOfType(SoTranslation::getClassTypeId())) {
+          identity = path->getNode(i);
+        }
+      }
+      delete picked;
+      return true;
+    };
+
+    Measurement hover;
+    hover.workload = "shared_assembly_hover_pick_" +
+      std::to_string(occurrenceCount);
+    hover.renderer = "DrawList";
+    hover.profile = profile == GLTestProfile::Core
+      ? "core" : "compatibility";
+    hover.executionMode = "interaction";
+    hover.semanticDraws = occurrenceCount * 2;
+    hover.samples = samples;
+    SoPickedPointList visible;
+    Clock::time_point start = Clock::now();
+    if (!manager.pickVisibleRegion(SbBox2s(0, 0, 255, 255), visible) ||
+        visible.getLength() == 0) {
+      unavailable = "assembly cold pick target contained no occurrences";
+      manager.releaseRenderBackendResources();
+      manager.setCamera(NULL);
+      manager.setSceneGraph(NULL);
+      camera->unref();
+      scene->unref();
+      return false;
+    }
+    std::vector<SbVec2s> pickCursors;
+    const size_t desiredCursors = static_cast<size_t>(
+      std::max(16, samples * 4));
+    for (int y = 2; y < 256 && pickCursors.size() < desiredCursors; y += 4) {
+      for (int x = 2; x < 256 && pickCursors.size() < desiredCursors; x += 4) {
+        SoNode * candidateIdentity = NULL;
+        const SbVec2s candidate(static_cast<short>(x),
+                                static_cast<short>(y));
+        if (pickAt(candidate, candidateIdentity)) {
+          pickCursors.push_back(candidate);
+        }
+      }
+    }
+    if (pickCursors.size() < static_cast<size_t>(std::min(samples, 2))) {
+      unavailable = "assembly hover setup found too few visible occurrences";
+      manager.releaseRenderBackendResources();
+      manager.setCamera(NULL);
+      manager.setSceneGraph(NULL);
+      camera->unref();
+      scene->unref();
+      return false;
+    }
+
+    // Discovery is setup work. Recreate the backend target so cold latency
+    // measures the same closest-hit operation used by warm hover queries.
+    manager.releaseRenderBackendResources();
+    context.bindFramebuffer();
+    manager.render(TRUE, TRUE);
+    SoNode * identity = NULL;
+    start = Clock::now();
+    if (!pickAt(pickCursors.front(), identity)) {
+      unavailable = "assembly cold hover pick returned no occurrence";
+      manager.releaseRenderBackendResources();
+      manager.setCamera(NULL);
+      manager.setSceneGraph(NULL);
+      camera->unref();
+      scene->unref();
+      return false;
+    }
+    hover.coldPickMs = elapsedMs(start);
+    SoRenderManager::RenderPhaseStatistics pickPhases =
+      manager.getRenderPhaseStatistics();
+    hover.coldPickBufferUpdateMs =
+      pickPhases.pickBufferUpdateNanoseconds / 1000000.0;
+    hover.coldPickTargetPreparationMs =
+      pickPhases.backendPickTargetPreparationNanoseconds / 1000000.0;
+    hover.coldPickTargetRenderingMs =
+      pickPhases.backendPickTargetRenderingNanoseconds / 1000000.0;
+
+    std::vector<double> pickTimes;
+    std::vector<double> pickQueryTimes;
+    std::vector<double> pickResolutionTimes;
+    SbVec2s refreshCursor;
+    for (int sample = 0; sample < samples; ++sample) {
+      const SbVec2s cursor = pickCursors[
+        static_cast<size_t>((sample * 7919) % pickCursors.size())];
+      start = Clock::now();
+      if (!pickAt(cursor, identity)) {
+        unavailable = "assembly warm hover pick returned no occurrence";
+        manager.releaseRenderBackendResources();
+        manager.setCamera(NULL);
+        manager.setSceneGraph(NULL);
+        camera->unref();
+        scene->unref();
+        return false;
+      }
+      pickTimes.push_back(elapsedMs(start));
+      if (sample == 0) refreshCursor = cursor;
+      pickPhases = manager.getRenderPhaseStatistics();
+      pickQueryTimes.push_back(
+        pickPhases.pickQueryNanoseconds / 1000000.0);
+      pickResolutionTimes.push_back(
+        pickPhases.pickResultResolutionNanoseconds / 1000000.0);
+      if (pickPhases.pickBufferRefreshes != 0 ||
+          pickPhases.drawListRebuilds != 0) {
+        unavailable = "warm assembly hover unexpectedly refreshed state";
+        manager.releaseRenderBackendResources();
+        manager.setCamera(NULL);
+        manager.setSceneGraph(NULL);
+        camera->unref();
+        scene->unref();
+        return false;
+      }
+    }
+    hover.pickMedianMs = percentile(pickTimes, 0.5);
+    hover.pickP95Ms = percentile(pickTimes, 0.95);
+    hover.pickQueryMedianMs = percentile(pickQueryTimes, 0.5);
+    hover.pickResultResolutionMedianMs =
+      percentile(pickResolutionTimes, 0.5);
+
+    const uint64_t semanticPickCommands =
+      static_cast<uint64_t>(occurrenceCount) * 2;
+    std::vector<double> refreshTimes;
+    std::vector<double> refreshGpuTimes;
+    std::vector<double> refreshUpdateTimes;
+    std::vector<double> refreshPreparationTimes;
+    std::vector<double> refreshRenderingTimes;
+    std::vector<double> refreshReadbackTimes;
+    std::vector<double> refreshResolutionTimes;
+    GLuint refreshQuery = 0;
+    glGenQueries(1, &refreshQuery);
+    for (int sample = 0; sample < samples; ++sample) {
+      const float offset = (sample & 1) ? -0.001f : 0.001f;
+      mutations.transforms[0]->translation = originalTranslations[0] +
+        SbVec3f(offset, 0.0f, 0.0f);
+      context.bindFramebuffer();
+      manager.render(TRUE, TRUE);
+      glBeginQuery(GL_TIME_ELAPSED, refreshQuery);
+      start = Clock::now();
+      if (!pickAt(refreshCursor, identity)) {
+        unavailable = "assembly hover refresh returned no occurrence";
+        glEndQuery(GL_TIME_ELAPSED);
+        glDeleteQueries(1, &refreshQuery);
+        manager.releaseRenderBackendResources();
+        manager.setCamera(NULL);
+        manager.setSceneGraph(NULL);
+        camera->unref();
+        scene->unref();
+        return false;
+      }
+      refreshTimes.push_back(elapsedMs(start));
+      glEndQuery(GL_TIME_ELAPSED);
+      GLuint64 gpuNanoseconds = 0;
+      glGetQueryObjectui64v(
+        refreshQuery, GL_QUERY_RESULT, &gpuNanoseconds);
+      refreshGpuTimes.push_back(
+        static_cast<double>(gpuNanoseconds) / 1000000.0);
+      pickPhases = manager.getRenderPhaseStatistics();
+      refreshUpdateTimes.push_back(
+        pickPhases.pickBufferUpdateNanoseconds / 1000000.0);
+      refreshPreparationTimes.push_back(
+        pickPhases.backendPickTargetPreparationNanoseconds / 1000000.0);
+      refreshRenderingTimes.push_back(
+        pickPhases.backendPickTargetRenderingNanoseconds / 1000000.0);
+      refreshReadbackTimes.push_back(
+        pickPhases.backendPickReadbackNanoseconds / 1000000.0);
+      refreshResolutionTimes.push_back(
+        pickPhases.pickResultResolutionNanoseconds / 1000000.0);
+      hover.pickDrawCalls = pickPhases.pickDrawCalls;
+      hover.pickInstancedBatches = pickPhases.pickInstancedBatches;
+      hover.pickInstancedCommands = pickPhases.pickInstancedCommands;
+      if (pickPhases.pickBufferRefreshes != 1 ||
+          hover.pickInstancedBatches == 0 ||
+          hover.pickInstancedCommands != semanticPickCommands ||
+          hover.pickDrawCalls >= semanticPickCommands) {
+        unavailable = "assembly hover refresh invariant failed";
+        glDeleteQueries(1, &refreshQuery);
+        manager.releaseRenderBackendResources();
+        manager.setCamera(NULL);
+        manager.setSceneGraph(NULL);
+        camera->unref();
+        scene->unref();
+        return false;
+      }
+    }
+    glDeleteQueries(1, &refreshQuery);
+    hover.refreshPickMs = percentile(refreshTimes, 0.5);
+    hover.refreshPickP95Ms = percentile(refreshTimes, 0.95);
+    hover.refreshPickGpuMedianMs = percentile(refreshGpuTimes, 0.5);
+    hover.refreshPickGpuP95Ms = percentile(refreshGpuTimes, 0.95);
+    hover.refreshPickBufferUpdateMs = percentile(refreshUpdateTimes, 0.5);
+    hover.refreshPickTargetPreparationMs =
+      percentile(refreshPreparationTimes, 0.5);
+    hover.refreshPickTargetRenderingMs =
+      percentile(refreshRenderingTimes, 0.5);
+    hover.refreshPickReadbackMedianMs =
+      percentile(refreshReadbackTimes, 0.5);
+    hover.refreshPickReadbackP95Ms = percentile(refreshReadbackTimes, 0.95);
+    hover.refreshPickResultResolutionMedianMs =
+      percentile(refreshResolutionTimes, 0.5);
+
+    mutations.transforms[0]->translation = originalTranslations[0];
+    context.bindFramebuffer();
+    manager.render(TRUE, TRUE);
+    hover.pixelChecksum = checksumPixels(context.readPixels());
+    results.push_back(hover);
+    if (hoverOnly) {
+      manager.releaseRenderBackendResources();
+      manager.setCamera(NULL);
+      manager.setSceneGraph(NULL);
+      camera->unref();
+      scene->unref();
+      return true;
+    }
+  }
+  const int requestedTransformCounts[] = { 1, 10, 100 };
+  for (size_t batchIndex = 0;
+       batchIndex < sizeof(requestedTransformCounts) /
+         sizeof(requestedTransformCounts[0]);
+       ++batchIndex) {
+    const int changedCount = std::min(
+      occurrenceCount, requestedTransformCounts[batchIndex]);
+    if (batchIndex > 0 && changedCount == std::min(
+          occurrenceCount, requestedTransformCounts[batchIndex - 1])) {
+      continue;
+    }
+    std::vector<double> frameTimes;
+    std::vector<double> constructionTimes;
+    std::vector<double> planTimes;
+    const float magnitude = 0.002f * static_cast<float>(batchIndex + 1);
+    for (int sample = 0; sample < samples; ++sample) {
+      const float offset = (sample & 1) ? -magnitude : magnitude;
+      for (int occurrence = 0; occurrence < changedCount; ++occurrence) {
+        mutations.transforms[static_cast<size_t>(occurrence)]->translation =
+          originalTranslations[static_cast<size_t>(occurrence)] +
+          SbVec3f(offset, 0.0f, 0.0f);
+      }
+      context.bindFramebuffer();
+      const Clock::time_point start = Clock::now();
+      manager.render(TRUE, TRUE);
+      frameTimes.push_back(elapsedMs(start));
+      const SoRenderManager::RenderPhaseStatistics phases =
+        manager.getRenderPhaseStatistics();
+      constructionTimes.push_back(
+        phases.drawListConstructionNanoseconds / 1000000.0);
+      planTimes.push_back(phases.planConstructionNanoseconds / 1000000.0);
+      const uint64_t expectedUpdates =
+        static_cast<uint64_t>(changedCount) * 2;
+      if (phases.drawListRebuilds != 0 ||
+          phases.incrementalCommandUpdates != expectedUpdates) {
+        std::ostringstream reason;
+        reason << "assembly transform batch " << changedCount << " updated "
+               << phases.incrementalCommandUpdates << " commands with "
+               << phases.drawListRebuilds << " rebuilds; expected "
+               << expectedUpdates;
+        unavailable = reason.str();
+        manager.releaseRenderBackendResources();
+        manager.setCamera(NULL);
+        manager.setSceneGraph(NULL);
+        camera->unref();
+        scene->unref();
+        return false;
+      }
+    }
+
+    const std::vector<uint8_t> incrementalPixels = context.readPixels();
+    manager.invalidateDrawList();
+    context.bindFramebuffer();
+    manager.render(TRUE, TRUE);
+    if (incrementalPixels != context.readPixels()) {
+      unavailable = "assembly transform batch differs from a forced rebuild";
+      manager.releaseRenderBackendResources();
+      manager.setCamera(NULL);
+      manager.setSceneGraph(NULL);
+      camera->unref();
+      scene->unref();
+      return false;
+    }
+
+    Measurement transformResult;
+    transformResult.workload = "incremental_" +
+      std::string(workloadName(workload)) + "_translation_" +
+      std::to_string(changedCount) + "_of_" +
+      std::to_string(occurrenceCount);
+    transformResult.renderer = "DrawList";
+    transformResult.profile = profile == GLTestProfile::Core
+      ? "core" : "compatibility";
+    transformResult.executionMode = "incremental_update";
+    transformResult.semanticDraws = occurrenceCount * 2;
+    transformResult.samples = samples;
+    transformResult.cpuMedianMs = percentile(frameTimes, 0.5);
+    transformResult.cpuP95Ms = percentile(frameTimes, 0.95);
+    transformResult.completionMedianMs = transformResult.cpuMedianMs;
+    transformResult.completionP95Ms = transformResult.cpuP95Ms;
+    transformResult.mutationMedianMs = transformResult.cpuMedianMs;
+    transformResult.mutationP95Ms = transformResult.cpuP95Ms;
+    transformResult.drawListConstructionMedianMs =
+      percentile(constructionTimes, 0.5);
+    transformResult.planConstructionMedianMs = percentile(planTimes, 0.5);
+    transformResult.incrementalCommandUpdates =
+      static_cast<uint64_t>(changedCount) * 2;
+    transformResult.pixelChecksum = checksumPixels(incrementalPixels);
+    results.push_back(transformResult);
+  }
 
   std::vector<double> frameTimes;
   for (int sample = 0; sample < samples; ++sample) {
@@ -694,12 +1059,295 @@ bool runAssemblyGeometryMutation(GLTestProfile profile, WorkloadKind workload,
   result.pixelChecksum = checksumPixels(rebuiltPixels);
   results.push_back(result);
 
+  std::vector<double> rebuildTimes;
+  std::vector<double> rebuildConstructionTimes;
+  for (int sample = 0; sample < samples; ++sample) {
+    manager.invalidateDrawList();
+    context.bindFramebuffer();
+    const Clock::time_point start = Clock::now();
+    manager.render(TRUE, TRUE);
+    rebuildTimes.push_back(elapsedMs(start));
+    const SoRenderManager::RenderPhaseStatistics phases =
+      manager.getRenderPhaseStatistics();
+    rebuildConstructionTimes.push_back(
+      phases.drawListConstructionNanoseconds / 1000000.0);
+    if (phases.drawListRebuilds != 1 ||
+        phases.incrementalCommandUpdates != 0) {
+      unavailable = std::string(workloadName(workload)) +
+        " forced rebuild did not reconstruct the retained frame";
+      manager.releaseRenderBackendResources();
+      manager.setCamera(NULL);
+      manager.setSceneGraph(NULL);
+      camera->unref();
+      scene->unref();
+      return false;
+    }
+  }
+  Measurement rebuildResult;
+  rebuildResult.workload = "forced_" + std::string(workloadName(workload)) +
+    "_rebuild_" + std::to_string(occurrenceCount);
+  rebuildResult.renderer = "DrawList";
+  rebuildResult.profile = profile == GLTestProfile::Core
+    ? "core" : "compatibility";
+  rebuildResult.executionMode = "forced_rebuild";
+  rebuildResult.semanticDraws = occurrenceCount * 2;
+  rebuildResult.samples = samples;
+  rebuildResult.cpuMedianMs = percentile(rebuildTimes, 0.5);
+  rebuildResult.cpuP95Ms = percentile(rebuildTimes, 0.95);
+  rebuildResult.completionMedianMs = rebuildResult.cpuMedianMs;
+  rebuildResult.completionP95Ms = rebuildResult.cpuP95Ms;
+  rebuildResult.drawListConstructionMedianMs =
+    percentile(rebuildConstructionTimes, 0.5);
+  rebuildResult.drawListRebuilds = static_cast<uint64_t>(samples);
+  rebuildResult.pixelChecksum = checksumPixels(context.readPixels());
+  results.push_back(rebuildResult);
+
   manager.releaseRenderBackendResources();
   manager.setCamera(NULL);
   manager.setSceneGraph(NULL);
   camera->unref();
   scene->unref();
   return true;
+}
+
+bool runAssemblySelectionInteractions(
+  GLTestProfile profile, int occurrenceCount, int samples,
+  std::vector<Measurement> & results, std::string & unavailable)
+{
+  GLTestContextConfig config;
+  config.profile = profile;
+  config.major = 3;
+  config.minor = 3;
+  config.width = 256;
+  config.height = 256;
+  GLTestContext context;
+  if (!context.initialize(config)) {
+    unavailable = "requested OpenGL context is unavailable";
+    return false;
+  }
+
+  SoOrthographicCamera * camera = NULL;
+  SoSeparator * scene = makeScene(
+    WorkloadKind::SharedAssemblyRecipe, occurrenceCount, camera);
+  SbViewportRegion viewport(SbVec2s(256, 256));
+  viewport.setViewportPixels(SbVec2s(0, 0), SbVec2s(256, 256));
+  SoIRRenderAction action(viewport);
+  action.setCamera(camera);
+  action.setCameraPolicy(
+    SoIRRenderAction::CameraPolicy::USE_CONFIGURED_CAMERA);
+  action.apply(scene);
+  SoDrawList & drawlist = action.getMutableDrawList();
+  if (drawlist.getNumCommands() != occurrenceCount * 2) {
+    unavailable = "assembly selection scene emitted an unexpected command count";
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+
+  SoRenderParams params = {};
+  params.viewport = viewport;
+  SbViewportRegion cameraViewport = viewport;
+  static_cast<SoCamera *>(camera)->getViewVolume(
+    viewport, cameraViewport).getMatrices(
+    params.viewMatrix, params.projMatrix);
+  params.viewport = cameraViewport;
+  params.clearColor = SbColor4f(0.0f, 0.0f, 0.0f, 1.0f);
+  params.clearDepth = 1.0f;
+  params.flags = SO_PARAM_CLEAR_WINDOW | SO_PARAM_CLEAR_DEPTH;
+  SoRenderPlanner planner;
+  SoRenderPlan plan;
+  planner.build(drawlist, plan);
+  SoGLRenderBackend backend;
+  backend.setPhaseTimingEnabled(TRUE);
+  SoRenderBackendInitParams initparams = {};
+  if (!backend.initialize(initparams) ||
+      !backend.render(drawlist, plan, params)) {
+    unavailable = "assembly selection backend could not render the scene";
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+  const uint64_t baselineChecksum = checksumPixels(context.readPixels());
+
+  if (!backend.updatePickBuffer(drawlist, plan, params)) {
+    unavailable = "assembly asynchronous pick target update failed";
+    backend.shutdown();
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+  SbVec2s asyncCursor;
+  SoPickResult setupHit;
+  bool foundAsyncCursor = false;
+  for (int y = 2; y < 256 && !foundAsyncCursor; y += 4) {
+    for (int x = 2; x < 256; x += 4) {
+      if (backend.pickClosest(x, y, 4, setupHit)) {
+        asyncCursor = SbVec2s(static_cast<short>(x), static_cast<short>(y));
+        foundAsyncCursor = true;
+        break;
+      }
+    }
+  }
+  if (!foundAsyncCursor) {
+    unavailable = "assembly asynchronous pick setup found no visible hit";
+    backend.shutdown();
+    camera->unref();
+    scene->unref();
+    return false;
+  }
+  std::vector<double> asyncRequestTimes;
+  std::vector<double> asyncPollTimes;
+  std::vector<double> asyncCompletionTimes;
+  for (int sample = 0; sample < samples; ++sample) {
+    SbMatrix matrix = static_cast<const SoDrawList &>(drawlist)
+      .getCommand(0).modelMatrix;
+    matrix[3][0] += (sample & 1) ? -0.001f : 0.001f;
+    drawlist.getCommandForRetainedUpdate(0).modelMatrix = matrix;
+    drawlist.applyRetainedInvalidation(false, false, false);
+    if (!backend.updatePickBuffer(drawlist, plan, params)) {
+      unavailable = "assembly asynchronous pick refresh failed";
+      backend.shutdown();
+      camera->unref();
+      scene->unref();
+      return false;
+    }
+    SoAsyncPickRequest request;
+    const Clock::time_point completionStart = Clock::now();
+    Clock::time_point phaseStart = Clock::now();
+    if (!backend.requestPickClosestAsync(
+          asyncCursor[0], asyncCursor[1], 4, request)) {
+      unavailable = "assembly asynchronous pick request failed";
+      backend.shutdown();
+      camera->unref();
+      scene->unref();
+      return false;
+    }
+    asyncRequestTimes.push_back(elapsedMs(phaseStart));
+    SoPickResult asyncHit;
+    phaseStart = Clock::now();
+    SoAsyncPickStatus status =
+      backend.pollPickClosestAsync(request, asyncHit);
+    asyncPollTimes.push_back(elapsedMs(phaseStart));
+    if (status == SoAsyncPickStatus::PENDING) {
+      glFinish();
+      status = backend.pollPickClosestAsync(request, asyncHit);
+    }
+    asyncCompletionTimes.push_back(elapsedMs(completionStart));
+    if (status != SoAsyncPickStatus::HIT ||
+        asyncHit.commandIndex < 0 || asyncHit.id == 0) {
+      unavailable = "assembly asynchronous pick did not resolve a hit";
+      backend.shutdown();
+      camera->unref();
+      scene->unref();
+      return false;
+    }
+  }
+  Measurement asyncHover;
+  asyncHover.workload = "shared_assembly_backend_async_hover_" +
+    std::to_string(occurrenceCount);
+  asyncHover.renderer = "DrawList";
+  asyncHover.profile = profile == GLTestProfile::Core
+    ? "core" : "compatibility";
+  asyncHover.executionMode = "interaction";
+  asyncHover.semanticDraws = occurrenceCount * 2;
+  asyncHover.samples = samples;
+  asyncHover.asyncPickRequestMedianMs =
+    percentile(asyncRequestTimes, 0.5);
+  asyncHover.asyncPickRequestP95Ms = percentile(asyncRequestTimes, 0.95);
+  asyncHover.asyncPickPollMedianMs = percentile(asyncPollTimes, 0.5);
+  asyncHover.asyncPickCompletionMedianMs =
+    percentile(asyncCompletionTimes, 0.5);
+  asyncHover.asyncPickCompletionP95Ms =
+    percentile(asyncCompletionTimes, 0.95);
+  asyncHover.pixelChecksum = baselineChecksum;
+  results.push_back(asyncHover);
+
+  const auto measureSelection = [&](const char * label,
+                                    const int selectedOccurrences,
+                                    const bool churn,
+                                    const bool highlighted) {
+    std::vector<double> timings;
+    SoRenderBackendStatistics statistics;
+    for (int sample = 0; sample < samples; ++sample) {
+      context.bindFramebuffer();
+      if (!backend.render(drawlist, plan, params)) return false;
+      SoSelectionState selection;
+      if (highlighted) {
+        SoSelectionTarget target;
+        target.commandIndex = setupHit.commandIndex;
+        target.color = SbColor4f(0.0f, 1.0f, 1.0f, 0.8f);
+        selection.highlighted.push_back(target);
+      }
+      else {
+        selection.selected.reserve(
+          static_cast<size_t>(selectedOccurrences) * 2);
+        const int offset = churn ? sample : 0;
+        for (int selected = 0; selected < selectedOccurrences; ++selected) {
+          const int occurrence = (selected * 7919 + offset) % occurrenceCount;
+          for (int commandOffset = 0; commandOffset < 2; ++commandOffset) {
+            SoSelectionTarget target;
+            target.commandIndex = occurrence * 2 + commandOffset;
+            target.color = SbColor4f(1.0f, 0.75f, 0.0f, 0.65f);
+            selection.selected.push_back(target);
+          }
+        }
+      }
+      const Clock::time_point start = Clock::now();
+      if (!backend.renderSelection(drawlist, selection, params)) return false;
+      timings.push_back(elapsedMs(start));
+      statistics = backend.getStatistics();
+      const uint64_t expectedTargets = highlighted ? 1 :
+        static_cast<uint64_t>(selectedOccurrences) * 2;
+      if (statistics.selection.targets != expectedTargets ||
+          statistics.selection.drawCalls > expectedTargets ||
+          statistics.selection.instancedCommands > expectedTargets) {
+        return false;
+      }
+    }
+
+    Measurement result;
+    result.workload = std::string(label) + '_' +
+      std::to_string(occurrenceCount);
+    result.renderer = "DrawList";
+    result.profile = profile == GLTestProfile::Core
+      ? "core" : "compatibility";
+    result.executionMode = "selection_interaction";
+    result.semanticDraws = occurrenceCount * 2;
+    result.samples = samples;
+    result.cpuMedianMs = percentile(timings, 0.5);
+    result.cpuP95Ms = percentile(timings, 0.95);
+    result.backendSelectionMedianMs = result.cpuMedianMs;
+    result.selectionTargets = statistics.selection.targets;
+    result.selectionDrawCalls = statistics.selection.drawCalls;
+    result.selectionInstancedBatches =
+      statistics.selection.instancedBatches;
+    result.selectionInstancedCommands =
+      statistics.selection.instancedCommands;
+    result.pixelChecksum = checksumPixels(context.readPixels());
+    if (result.pixelChecksum == 0 || result.pixelChecksum == baselineChecksum ||
+        (selectedOccurrences >= 10 &&
+         result.selectionDrawCalls >= result.selectionTargets)) {
+      return false;
+    }
+    results.push_back(result);
+    return true;
+  };
+
+  const int onePercent = std::max(1, occurrenceCount / 100);
+  const int tenPercent = std::max(1, occurrenceCount / 10);
+  const bool valid =
+    measureSelection(
+      "shared_assembly_selection_1_percent", onePercent, false, false) &&
+    measureSelection(
+      "shared_assembly_selection_10_percent", tenPercent, false, false) &&
+    measureSelection(
+      "shared_assembly_selection_churn", tenPercent, true, false) &&
+    measureSelection("shared_assembly_preselection", 1, false, true);
+  if (!valid) unavailable = "assembly selection interaction invariant failed";
+  backend.shutdown();
+  camera->unref();
+  scene->unref();
+  return valid;
 }
 
 void runMutationBenchmarks(GLTestProfile profile, int objectCount, int samples,
@@ -722,11 +1370,17 @@ void runMutationBenchmarks(GLTestProfile profile, int objectCount, int samples,
   };
   for (WorkloadKind workload : assemblies) {
     reason.clear();
-    if (!runAssemblyGeometryMutation(
+    if (!runAssemblyMutations(
           profile, workload, objectCount, samples, results, reason)) {
       unavailable.push_back(std::string(workloadName(workload)) +
         " mutation DrawList " + profileName + ": " + reason);
     }
+  }
+  reason.clear();
+  if (!runAssemblySelectionInteractions(
+        profile, objectCount, samples, results, reason)) {
+    unavailable.push_back(
+      "shared assembly selection DrawList " + profileName + ": " + reason);
   }
 }
 
@@ -741,10 +1395,13 @@ Options parseOptions(int argc, char ** argv)
       options.rebuildOnly = std::atoi(argv[++i]);
     else if (arg == "--mutation-only" && i + 1 < argc)
       options.mutationOnly = std::atoi(argv[++i]);
+    else if (arg == "--interaction-only" && i + 1 < argc)
+      options.interactionOnly = std::atoi(argv[++i]);
     else if (arg == "--output" && i + 1 < argc) options.output = argv[++i];
     else {
       std::cerr << "Usage: CoinRenderGLBenchmarks [--smoke] [--samples N] "
-                   "[--rebuild-only N] [--mutation-only N] [--output FILE]\n";
+                   "[--rebuild-only N] [--mutation-only N] "
+                   "[--interaction-only N] [--output FILE]\n";
       std::exit(2);
     }
   }
@@ -757,9 +1414,11 @@ std::string toJson(const std::vector<Measurement> & results,
 {
   std::ostringstream out;
   out << std::fixed << std::setprecision(6);
-  out << "{\n  \"schema_version\": 7,\n  \"mode\": \""
-      << (options.mutationOnly > 0 ? "mutation" :
-          (options.smoke ? "smoke" : "benchmark"))
+  const char * mode = options.interactionOnly > 0 ? "interaction" :
+    (options.mutationOnly > 0 ? "mutation" :
+      (options.smoke ? "smoke" : "benchmark"));
+  out << "{\n  \"schema_version\": 13,\n  \"mode\": \""
+      << mode
       << "\",\n  \"time_unit\": \"ms\",\n  \"benchmarks\": [\n";
   for (size_t i = 0; i < results.size(); ++i) {
     const Measurement & r = results[i];
@@ -797,6 +1456,22 @@ std::string toJson(const std::vector<Measurement> & results,
         << r.backendCommandExecutionMedianMs
         << ", \"backend_selection_median_ms\": "
         << r.backendSelectionMedianMs
+        << ", \"submitted_draw_calls\": " << r.submittedDrawCalls
+        << ", \"instanced_triangle_batches\": "
+        << r.instancedTriangleBatches
+        << ", \"instanced_triangle_commands\": "
+        << r.instancedTriangleCommands
+        << ", \"instanced_line_batches\": " << r.instancedLineBatches
+        << ", \"instanced_line_commands\": " << r.instancedLineCommands
+        << ", \"selection_targets\": " << r.selectionTargets
+        << ", \"selection_draw_calls\": " << r.selectionDrawCalls
+        << ", \"selection_instanced_batches\": "
+        << r.selectionInstancedBatches
+        << ", \"selection_instanced_commands\": "
+        << r.selectionInstancedCommands
+        << ", \"pick_draw_calls\": " << r.pickDrawCalls
+        << ", \"pick_instanced_batches\": " << r.pickInstancedBatches
+        << ", \"pick_instanced_commands\": " << r.pickInstancedCommands
         << ", \"drawlist_rebuilds\": " << r.drawListRebuilds
         << ", \"incremental_command_updates\": "
         << r.incrementalCommandUpdates
@@ -808,12 +1483,32 @@ std::string toJson(const std::vector<Measurement> & results,
         << ", \"cold_pick_target_rendering_ms\": "
         << r.coldPickTargetRenderingMs
         << ", \"refresh_pick_ms\": " << r.refreshPickMs
+        << ", \"refresh_pick_p95_ms\": " << r.refreshPickP95Ms
+        << ", \"refresh_pick_gpu_median_ms\": "
+        << r.refreshPickGpuMedianMs
+        << ", \"refresh_pick_gpu_p95_ms\": " << r.refreshPickGpuP95Ms
         << ", \"refresh_pick_buffer_update_ms\": "
         << r.refreshPickBufferUpdateMs
         << ", \"refresh_pick_target_preparation_ms\": "
         << r.refreshPickTargetPreparationMs
         << ", \"refresh_pick_target_rendering_ms\": "
         << r.refreshPickTargetRenderingMs
+        << ", \"refresh_pick_readback_median_ms\": "
+        << r.refreshPickReadbackMedianMs
+        << ", \"refresh_pick_readback_p95_ms\": "
+        << r.refreshPickReadbackP95Ms
+        << ", \"refresh_pick_result_resolution_median_ms\": "
+        << r.refreshPickResultResolutionMedianMs
+        << ", \"async_pick_request_median_ms\": "
+        << r.asyncPickRequestMedianMs
+        << ", \"async_pick_request_p95_ms\": "
+        << r.asyncPickRequestP95Ms
+        << ", \"async_pick_poll_median_ms\": "
+        << r.asyncPickPollMedianMs
+        << ", \"async_pick_completion_median_ms\": "
+        << r.asyncPickCompletionMedianMs
+        << ", \"async_pick_completion_p95_ms\": "
+        << r.asyncPickCompletionP95Ms
         << ", \"pick_median_ms\": " << r.pickMedianMs
         << ", \"pick_p95_ms\": " << r.pickP95Ms
         << ", \"pick_query_median_ms\": " << r.pickQueryMedianMs
@@ -853,10 +1548,40 @@ int main(int argc, char ** argv)
     WorkloadKind::ManyDraws,
     WorkloadKind::MaterialChurn,
     WorkloadKind::Transparency,
-    WorkloadKind::DensePicking
+    WorkloadKind::DensePicking,
+    WorkloadKind::SharedAssemblyExpanded,
+    WorkloadKind::SharedAssemblySources,
+    WorkloadKind::SharedAssemblyRecipe
   };
   std::vector<Measurement> results;
   std::vector<std::string> unavailable;
+  if (options.interactionOnly > 0) {
+    const GLTestProfile profiles[] = {
+      GLTestProfile::Compatibility, GLTestProfile::Core
+    };
+    for (GLTestProfile profile : profiles) {
+      std::string reason;
+      if (!runAssemblyMutations(
+            profile, WorkloadKind::SharedAssemblyRecipe,
+            options.interactionOnly, samples, results, reason, true)) {
+        unavailable.push_back("shared assembly hover: " + reason);
+      }
+      reason.clear();
+      if (!runAssemblySelectionInteractions(
+            profile, options.interactionOnly, samples, results, reason)) {
+        unavailable.push_back("shared assembly interactions: " + reason);
+      }
+    }
+    const std::string document = toJson(results, unavailable, options);
+    if (options.output.empty()) std::cout << document;
+    else {
+      std::ofstream output(options.output.c_str());
+      if (!output) return 1;
+      output << document;
+    }
+    SoDB::finish();
+    return results.empty() ? 77 : 0;
+  }
   if (options.mutationOnly > 0) {
     runMutationBenchmarks(GLTestProfile::Compatibility,
                           options.mutationOnly, samples,
