@@ -165,6 +165,37 @@ retainedRenderParams(const SoRenderManagerP * manager)
   return params;
 }
 
+const SoRenderPlan &
+resolveRetainedRenderPlan(SoRenderManagerP * manager,
+                          const SoDrawList & drawlist,
+                          const SbMatrix & viewMatrix,
+                          uint64_t & constructionNanoseconds)
+{
+  constructionNanoseconds = 0;
+  const uint64_t planRevision = drawlist.getRenderPlanRevision();
+  if (!manager->renderPlanValid ||
+      manager->renderPlanDrawList != &drawlist ||
+      manager->renderPlanRevision != planRevision ||
+      manager->renderPlanViewMatrix != viewMatrix) {
+    const std::chrono::steady_clock::time_point start =
+      manager->renderPhaseTimingEnabled
+        ? std::chrono::steady_clock::now()
+        : std::chrono::steady_clock::time_point();
+    SoRenderPlanner planner;
+    planner.build(drawlist, manager->renderPlan);
+    manager->renderPlanDrawList = &drawlist;
+    manager->renderPlanRevision = planRevision;
+    manager->renderPlanViewMatrix = viewMatrix;
+    manager->renderPlanValid = TRUE;
+    if (manager->renderPhaseTimingEnabled) {
+      constructionNanoseconds = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+          std::chrono::steady_clock::now() - start).count());
+    }
+  }
+  return manager->renderPlan;
+}
+
 SoDetail *
 detailFromPickResult(const SoPickResult & hit)
 {
@@ -408,6 +439,9 @@ SoRenderManager::SoRenderManager(void)
   PRIVATE(this)->renderBackend = NULL;
   PRIVATE(this)->renderPhaseTimingEnabled = FALSE;
   PRIVATE(this)->renderPhaseStatistics = RenderPhaseStatistics();
+  PRIVATE(this)->renderPlanDrawList = NULL;
+  PRIVATE(this)->renderPlanRevision = 0;
+  PRIVATE(this)->renderPlanValid = FALSE;
   PRIVATE(this)->renderBackendContextId = 0;
   PRIVATE(this)->drawListCallbackScope = FALSE;
   PRIVATE(this)->drawListValid = FALSE;
@@ -1406,16 +1440,9 @@ SoRenderManager::renderDrawListPipeline(const SbBool clearwindow,
   params.flags = (clearwindow ? SO_PARAM_CLEAR_WINDOW : 0u) |
                  (clearzbuffer ? SO_PARAM_CLEAR_DEPTH : 0u) |
                  (!rebuildDrawList ? SO_PARAM_REUSE_DRAW_LIST : 0u);
-  SoRenderPlanner planner;
-  SoRenderPlan plan;
-  const RenderPhaseClock::time_point planStart = measurePhases
-    ? RenderPhaseClock::now() : RenderPhaseClock::time_point();
-  planner.build(drawlist, plan);
-  if (measurePhases) {
-    phaseStatistics.planConstructionNanoseconds =
-      static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-        RenderPhaseClock::now() - planStart).count());
-  }
+  const SoRenderPlan & plan = resolveRetainedRenderPlan(
+    PRIVATE(this), drawlist, params.viewMatrix,
+    phaseStatistics.planConstructionNanoseconds);
 
   const RenderPhaseClock::time_point submissionStart = measurePhases
     ? RenderPhaseClock::now() : RenderPhaseClock::time_point();

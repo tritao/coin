@@ -269,6 +269,9 @@ add_executable(RenderPlanTest
 	RenderPlanTest.cpp
 	${PROJECT_SOURCE_DIR}/src/rendering/SoRenderPlan.cpp)
 target_link_libraries(RenderPlanTest Coin ${COIN_TARGET_LINK_LIBRARIES})
+if(NOT WIN32 OR NOT COIN_BUILD_SHARED_LIBS)
+	target_compile_definitions(RenderPlanTest PRIVATE COIN_INTERNAL)
+endif()
 target_include_directories(RenderPlanTest PRIVATE
 	${PROJECT_SOURCE_DIR}/src
 	${PROJECT_SOURCE_DIR}/include

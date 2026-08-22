@@ -45,12 +45,14 @@
 
 #include <Inventor/system/gl.h>
 #include <Inventor/SbColor4f.h>
+#include <Inventor/SbMatrix.h>
 #include <Inventor/SoRenderManager.h>
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/elements/SoLazyElement.h>
 #include <Inventor/sensors/SoNodeSensor.h>
 #include <Inventor/misc/SoNotification.h>
 #include "rendering/SoRetainedUpdater.h"
+#include "rendering/SoRenderPlan.h"
 
 class SbMatrix;
 class SoNodeSensor;
@@ -130,6 +132,11 @@ public:
   SoRenderBackend * renderBackend;
   SbBool renderPhaseTimingEnabled;
   SoRenderManager::RenderPhaseStatistics renderPhaseStatistics;
+  SoRenderPlan renderPlan;
+  const SoDrawList * renderPlanDrawList;
+  SbMatrix renderPlanViewMatrix;
+  uint64_t renderPlanRevision;
+  SbBool renderPlanValid;
   uint32_t renderBackendContextId;
   SbBool drawListCallbackScope;
   SbBool drawListValid;

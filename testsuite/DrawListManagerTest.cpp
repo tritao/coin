@@ -320,9 +320,10 @@ runTest()
     const SoRenderManager::RenderPhaseStatistics transformPhases =
       manager.getRenderPhaseStatistics();
     if (transformPhases.drawListRebuilds != 0 ||
-        transformPhases.incrementalCommandUpdates != 1) {
+        transformPhases.incrementalCommandUpdates != 1 ||
+        transformPhases.planConstructionNanoseconds != 0) {
       std::cerr << "FAIL: isolated translation did not patch its retained "
-                   "command" << std::endl;
+                   "command while preserving the render plan" << std::endl;
       result = 1;
     }
     cubeTranslation->translation.setValue(0.2f, 0.0f, -3.0f);
@@ -331,7 +332,8 @@ runTest()
     const SoRenderManager::RenderPhaseStatistics transformBatchPhases =
       manager.getRenderPhaseStatistics();
     if (transformBatchPhases.drawListRebuilds != 0 ||
-        transformBatchPhases.incrementalCommandUpdates != 1) {
+        transformBatchPhases.incrementalCommandUpdates != 1 ||
+        transformBatchPhases.planConstructionNanoseconds != 0) {
       std::cerr << "FAIL: transform batch did not patch its unique retained "
                    "command" << std::endl;
       result = 1;
@@ -341,9 +343,10 @@ runTest()
     const SoRenderManager::RenderPhaseStatistics materialPhases =
       manager.getRenderPhaseStatistics();
     if (materialPhases.drawListRebuilds != 0 ||
-        materialPhases.incrementalCommandUpdates != 1) {
+        materialPhases.incrementalCommandUpdates != 1 ||
+        materialPhases.planConstructionNanoseconds != 0) {
       std::cerr << "FAIL: isolated diffuse color did not patch its retained "
-                   "command" << std::endl;
+                   "command while preserving the render plan" << std::endl;
       result = 1;
     }
     cubeMaterial->diffuseColor.setValue(0.7f, 0.3f, 0.2f);
@@ -352,7 +355,8 @@ runTest()
     const SoRenderManager::RenderPhaseStatistics materialBatchPhases =
       manager.getRenderPhaseStatistics();
     if (materialBatchPhases.drawListRebuilds != 0 ||
-        materialBatchPhases.incrementalCommandUpdates != 1) {
+        materialBatchPhases.incrementalCommandUpdates != 1 ||
+        materialBatchPhases.planConstructionNanoseconds != 0) {
       std::cerr << "FAIL: repeated material notifications were not coalesced"
                 << std::endl;
       result = 1;

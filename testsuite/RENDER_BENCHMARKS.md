@@ -104,6 +104,11 @@ not affect ordinary rendering. A zero-valued phase means it did not run; for
 example, a warm hover pick normally reuses its existing pick buffer, and a
 frame without selected objects performs no selection-overlay work.
 
+Opaque matrix updates and diffuse-color updates preserve render-plan
+classification and order, so their plan-construction time remains zero.
+Geometry, visibility, and transparent-depth changes conservatively advance the
+plan revision and rebuild the derived operation sequence.
+
 The timed render samples represent steady-state frames. The retained manager
 reuses its draw list until a scene, camera, layer, viewport-dependent traversal
 setting, or explicit `invalidateDrawList()` call invalidates it. The

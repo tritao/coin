@@ -467,8 +467,11 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
 
   const auto measure = [&](const std::string & mutation, int changedCount,
                            const std::function<void(int)> & mutate) {
+    const bool preservesRenderPlan =
+      mutation == "translation" || mutation == "material";
     std::vector<double> frameTimes;
     std::vector<double> constructionTimes;
+    std::vector<double> planTimes;
     for (int sample = 0; sample < samples; ++sample) {
       mutate(sample);
       context.bindFramebuffer();
@@ -479,9 +482,13 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
         manager.getRenderPhaseStatistics();
       constructionTimes.push_back(
         phases.drawListConstructionNanoseconds / 1000000.0);
+      planTimes.push_back(phases.planConstructionNanoseconds / 1000000.0);
       if (phases.drawListRebuilds != 0 ||
           phases.incrementalCommandUpdates !=
-            static_cast<uint64_t>(changedCount)) {
+            static_cast<uint64_t>(changedCount) ||
+          (preservesRenderPlan
+             ? phases.planConstructionNanoseconds != 0
+             : phases.planConstructionNanoseconds == 0)) {
         std::ostringstream reason;
         reason << mutation << '_' << changedCount << " updated "
                << phases.incrementalCommandUpdates << " commands with "
@@ -508,6 +515,7 @@ bool runIncrementalMutationScaling(GLTestProfile profile, int drawCount,
     result.mutationP95Ms = result.cpuP95Ms;
     result.drawListConstructionMedianMs =
       percentile(constructionTimes, 0.5);
+    result.planConstructionMedianMs = percentile(planTimes, 0.5);
     result.incrementalCommandUpdates = static_cast<uint64_t>(changedCount);
     result.pixelChecksum = checksumPixels(context.readPixels());
     results.push_back(result);
