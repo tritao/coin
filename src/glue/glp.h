@@ -250,6 +250,22 @@ typedef void (APIENTRY * COIN_PFNGLARRAYELEMENTPROC)(GLint i);
 typedef void (APIENTRY * COIN_PFNGLBINDVERTEXARRAYPROC)(GLuint array);
 typedef void (APIENTRY * COIN_PFNGLDELETEVERTEXARRAYSPROC)(GLsizei n, const GLuint * arrays);
 typedef void (APIENTRY * COIN_PFNGLGENVERTEXARRAYSPROC)(GLsizei n, GLuint * arrays);
+typedef void (APIENTRY * COIN_PFNGLVERTEXATTRIBDIVISORPROC)(GLuint index,
+                                                            GLuint divisor);
+typedef void (APIENTRY * COIN_PFNGLVERTEXATTRIBIPOINTERPROC)(GLuint index,
+                                                             GLint size,
+                                                             GLenum type,
+                                                             GLsizei stride,
+                                                             const GLvoid * pointer);
+typedef void (APIENTRY * COIN_PFNGLDRAWARRAYSINSTANCEDPROC)(GLenum mode,
+                                                            GLint first,
+                                                            GLsizei count,
+                                                            GLsizei instancecount);
+typedef void (APIENTRY * COIN_PFNGLDRAWELEMENTSINSTANCEDPROC)(GLenum mode,
+                                                              GLsizei count,
+                                                              GLenum type,
+                                                              const GLvoid * indices,
+                                                              GLsizei instancecount);
 
 /* Core framebuffer entry points which are not exported by the Windows
    OpenGL 1.1 import library and may be absent from older platform headers. */
@@ -732,6 +748,10 @@ struct cc_glglue {
   COIN_PFNGLBINDVERTEXARRAYPROC glBindVertexArray;
   COIN_PFNGLDELETEVERTEXARRAYSPROC glDeleteVertexArrays;
   COIN_PFNGLGENVERTEXARRAYSPROC glGenVertexArrays;
+  COIN_PFNGLVERTEXATTRIBDIVISORPROC glVertexAttribDivisor;
+  COIN_PFNGLVERTEXATTRIBIPOINTERPROC glVertexAttribIPointer;
+  COIN_PFNGLDRAWARRAYSINSTANCEDPROC glDrawArraysInstanced;
+  COIN_PFNGLDRAWELEMENTSINSTANCEDPROC glDrawElementsInstanced;
   COIN_PFNGLCLEARBUFFERUIVPROC glClearBufferuiv;
   COIN_PFNGLCLEARBUFFERFVPROC glClearBufferfv;
   COIN_PFNGLUNIFORM1UIPROC glUniform1ui;

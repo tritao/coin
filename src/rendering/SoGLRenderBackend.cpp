@@ -1330,20 +1330,22 @@ SoGLRenderBackend::setupVisualVAO(CachedCommand & entry)
       this->glue, attribute, 4, GL_FLOAT, GL_FALSE, sizeof(InstanceRecord),
       reinterpret_cast<const void *>(
         static_cast<uintptr_t>(column * sizeof(float) * 4)));
-    glVertexAttribDivisor(attribute, 1);
+    cc_glglue_glVertexAttribDivisor(this->glue, attribute, 1);
   }
   const GLuint colorAttribute = INSTANCE_MODEL_ATTRIBUTE + 4;
   cc_glglue_glEnableVertexAttribArray(this->glue, colorAttribute);
   cc_glglue_glVertexAttribPointer(
     this->glue, colorAttribute, 4, GL_FLOAT, GL_FALSE, sizeof(InstanceRecord),
     reinterpret_cast<const void *>(sizeof(float) * 16));
-  glVertexAttribDivisor(colorAttribute, 1);
+  cc_glglue_glVertexAttribDivisor(this->glue, colorAttribute, 1);
   cc_glglue_glEnableVertexAttribArray(this->glue,
                                       INSTANCE_PICK_ID_ATTRIBUTE);
-  glVertexAttribIPointer(
-    INSTANCE_PICK_ID_ATTRIBUTE, 1, GL_UNSIGNED_INT, sizeof(InstanceRecord),
+  cc_glglue_glVertexAttribIPointer(
+    this->glue, INSTANCE_PICK_ID_ATTRIBUTE, 1, GL_UNSIGNED_INT,
+    sizeof(InstanceRecord),
     reinterpret_cast<const void *>(offsetof(InstanceRecord, pickId)));
-  glVertexAttribDivisor(INSTANCE_PICK_ID_ATTRIBUTE, 1);
+  cc_glglue_glVertexAttribDivisor(this->glue,
+                                  INSTANCE_PICK_ID_ATTRIBUTE, 1);
   this->glue->glBindVertexArray(0);
   cc_glglue_glBindBuffer(this->glue, GL_ARRAY_BUFFER, 0);
   cc_glglue_glBindBuffer(this->glue, GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -2208,15 +2210,16 @@ SoGLRenderBackend::drawInstancedCommands(
                          1.0f);
   this->glue->glBindVertexArray(entry.vertexArray);
   if (geometry.indices && geometry.indexCount) {
-    glDrawElementsInstanced(GL_TRIANGLES,
-                            static_cast<GLsizei>(geometry.indexCount),
-                            GL_UNSIGNED_INT, nullptr,
-                            static_cast<GLsizei>(commandIndices.size()));
+    cc_glglue_glDrawElementsInstanced(
+      this->glue, GL_TRIANGLES,
+      static_cast<GLsizei>(geometry.indexCount), GL_UNSIGNED_INT, nullptr,
+      static_cast<GLsizei>(commandIndices.size()));
   }
   else {
-    glDrawArraysInstanced(GL_TRIANGLES, 0,
-                          static_cast<GLsizei>(geometry.vertexCount),
-                          static_cast<GLsizei>(commandIndices.size()));
+    cc_glglue_glDrawArraysInstanced(
+      this->glue, GL_TRIANGLES, 0,
+      static_cast<GLsizei>(geometry.vertexCount),
+      static_cast<GLsizei>(commandIndices.size()));
   }
   this->glue->glUniform1f(this->visualProgram.surface.transforms.instanced,
                          0.0f);
@@ -2949,14 +2952,14 @@ SoGLRenderBackend::drawInstancedPickCommands(
   this->glue->glBindVertexArray(cache.vertexArray);
   const GLsizei count = static_cast<GLsizei>(records.size());
   if (geometry.indices && geometry.indexCount) {
-    glDrawElementsInstanced(
-      GL_TRIANGLES, static_cast<GLsizei>(geometry.indexCount),
+    cc_glglue_glDrawElementsInstanced(
+      this->glue, GL_TRIANGLES, static_cast<GLsizei>(geometry.indexCount),
       GL_UNSIGNED_INT, nullptr, count);
   }
   else {
-    glDrawArraysInstanced(GL_TRIANGLES, 0,
-                          static_cast<GLsizei>(geometry.vertexCount),
-                          count);
+    cc_glglue_glDrawArraysInstanced(
+      this->glue, GL_TRIANGLES, 0,
+      static_cast<GLsizei>(geometry.vertexCount), count);
   }
   this->glue->glUniform1f(uniforms.instanced, 0.0f);
   this->glue->glUniform1f(uniforms.primitivePickIds, 0.0f);
@@ -3058,14 +3061,14 @@ SoGLRenderBackend::drawInstancedSelectionCommands(
   const GLsizei instanceCount = static_cast<GLsizei>(records.size());
   const GLenum primitive = topologyToGL(geometry.topology);
   if (geometry.indices && geometry.indexCount) {
-    glDrawElementsInstanced(
-      primitive, static_cast<GLsizei>(geometry.indexCount),
+    cc_glglue_glDrawElementsInstanced(
+      this->glue, primitive, static_cast<GLsizei>(geometry.indexCount),
       GL_UNSIGNED_INT, nullptr, instanceCount);
   }
   else {
-    glDrawArraysInstanced(primitive, 0,
-                          static_cast<GLsizei>(geometry.vertexCount),
-                          instanceCount);
+    cc_glglue_glDrawArraysInstanced(
+      this->glue, primitive, 0, static_cast<GLsizei>(geometry.vertexCount),
+      instanceCount);
   }
   this->glue->glUniform1f(uniforms.instanced, 0.0f);
   if (uniforms.primitivePickIds >= 0) {

@@ -1213,6 +1213,42 @@ glglue_resolve_symbols(cc_glglue * w)
     }
   }
 
+  /* Instancing and integer attributes were promoted under different names.
+     Normalize them here so renderers do not depend on platform header
+     spellings or exported symbols. */
+  w->glVertexAttribDivisor = (COIN_PFNGLVERTEXATTRIBDIVISORPROC)
+    cc_glglue_getprocaddress(w, "glVertexAttribDivisor");
+  if (!w->glVertexAttribDivisor) {
+    w->glVertexAttribDivisor = (COIN_PFNGLVERTEXATTRIBDIVISORPROC)
+      cc_glglue_getprocaddress(w, "glVertexAttribDivisorARB");
+  }
+  w->glVertexAttribIPointer = (COIN_PFNGLVERTEXATTRIBIPOINTERPROC)
+    cc_glglue_getprocaddress(w, "glVertexAttribIPointer");
+  if (!w->glVertexAttribIPointer) {
+    w->glVertexAttribIPointer = (COIN_PFNGLVERTEXATTRIBIPOINTERPROC)
+      cc_glglue_getprocaddress(w, "glVertexAttribIPointerEXT");
+  }
+  w->glDrawArraysInstanced = (COIN_PFNGLDRAWARRAYSINSTANCEDPROC)
+    cc_glglue_getprocaddress(w, "glDrawArraysInstanced");
+  if (!w->glDrawArraysInstanced) {
+    w->glDrawArraysInstanced = (COIN_PFNGLDRAWARRAYSINSTANCEDPROC)
+      cc_glglue_getprocaddress(w, "glDrawArraysInstancedARB");
+  }
+  if (!w->glDrawArraysInstanced) {
+    w->glDrawArraysInstanced = (COIN_PFNGLDRAWARRAYSINSTANCEDPROC)
+      cc_glglue_getprocaddress(w, "glDrawArraysInstancedEXT");
+  }
+  w->glDrawElementsInstanced = (COIN_PFNGLDRAWELEMENTSINSTANCEDPROC)
+    cc_glglue_getprocaddress(w, "glDrawElementsInstanced");
+  if (!w->glDrawElementsInstanced) {
+    w->glDrawElementsInstanced = (COIN_PFNGLDRAWELEMENTSINSTANCEDPROC)
+      cc_glglue_getprocaddress(w, "glDrawElementsInstancedARB");
+  }
+  if (!w->glDrawElementsInstanced) {
+    w->glDrawElementsInstanced = (COIN_PFNGLDRAWELEMENTSINSTANCEDPROC)
+      cc_glglue_getprocaddress(w, "glDrawElementsInstancedEXT");
+  }
+
   /* These core framebuffer entry points are not exported by the Windows
      OpenGL 1.1 import library.  Resolve them through the active context just
      like the vertex-array entry points above. */
@@ -3749,6 +3785,25 @@ cc_glglue_glDrawElements(const cc_glglue * glue,
 }
 
 void
+cc_glglue_glDrawArraysInstanced(const cc_glglue * glue,
+                                GLenum mode, GLint first, GLsizei count,
+                                GLsizei instancecount)
+{
+  assert(glue->glDrawArraysInstanced);
+  glue->glDrawArraysInstanced(mode, first, count, instancecount);
+}
+
+void
+cc_glglue_glDrawElementsInstanced(const cc_glglue * glue,
+                                  GLenum mode, GLsizei count, GLenum type,
+                                  const GLvoid * indices,
+                                  GLsizei instancecount)
+{
+  assert(glue->glDrawElementsInstanced);
+  glue->glDrawElementsInstanced(mode, count, type, indices, instancecount);
+}
+
+void
 cc_glglue_glDrawRangeElements(const cc_glglue * glue,
                               GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type,
                               const GLvoid * indices)
@@ -4583,6 +4638,23 @@ cc_glglue_glVertexAttribPointer(const cc_glglue * glue,
                                 const GLvoid *pointer)
 {
   glue->glVertexAttribPointer(index, size, type, normalized, stride, pointer);
+}
+
+void
+cc_glglue_glVertexAttribIPointer(const cc_glglue * glue,
+                                 GLuint index, GLint size, GLenum type,
+                                 GLsizei stride, const GLvoid * pointer)
+{
+  assert(glue->glVertexAttribIPointer);
+  glue->glVertexAttribIPointer(index, size, type, stride, pointer);
+}
+
+void
+cc_glglue_glVertexAttribDivisor(const cc_glglue * glue,
+                                GLuint index, GLuint divisor)
+{
+  assert(glue->glVertexAttribDivisor);
+  glue->glVertexAttribDivisor(index, divisor);
 }
 
 void

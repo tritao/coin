@@ -376,6 +376,15 @@ COIN_DLL_API void cc_glglue_glDrawArrays(const cc_glglue * glue,
                                          GLenum mode, GLint first, GLsizei count);
 COIN_DLL_API void cc_glglue_glDrawElements(const cc_glglue * glue, 
                                            GLenum mode, GLsizei count, GLenum type, const GLvoid * indices);
+COIN_DLL_API void cc_glglue_glDrawArraysInstanced(const cc_glglue * glue,
+                                                  GLenum mode, GLint first,
+                                                  GLsizei count,
+                                                  GLsizei instancecount);
+COIN_DLL_API void cc_glglue_glDrawElementsInstanced(const cc_glglue * glue,
+                                                    GLenum mode, GLsizei count,
+                                                    GLenum type,
+                                                    const GLvoid * indices,
+                                                    GLsizei instancecount);
 COIN_DLL_API void cc_glglue_glDrawRangeElements(const cc_glglue * glue, 
                                                 GLenum mode, GLuint start, GLuint end, GLsizei count, GLenum type, const GLvoid * indices);
 COIN_DLL_API void cc_glglue_glArrayElement(const cc_glglue * glue, GLint i);
@@ -524,6 +533,13 @@ COIN_DLL_API void cc_glglue_glVertexAttrib4Nuiv(const cc_glglue * glue, GLuint i
 COIN_DLL_API void cc_glglue_glVertexAttribPointer(const cc_glglue * glue, GLuint index, GLint size, 
                                                   GLenum type, GLboolean normalized, GLsizei stride, 
                                                   const GLvoid *pointer);
+COIN_DLL_API void cc_glglue_glVertexAttribIPointer(const cc_glglue * glue,
+                                                   GLuint index, GLint size,
+                                                   GLenum type, GLsizei stride,
+                                                   const GLvoid * pointer);
+COIN_DLL_API void cc_glglue_glVertexAttribDivisor(const cc_glglue * glue,
+                                                  GLuint index,
+                                                  GLuint divisor);
 COIN_DLL_API void cc_glglue_glEnableVertexAttribArray(const cc_glglue * glue, GLuint index);
 COIN_DLL_API void cc_glglue_glDisableVertexAttribArray(const cc_glglue * glue, GLuint index);
 COIN_DLL_API void cc_glglue_glGetVertexAttribdv(const cc_glglue * glue, GLuint index, GLenum pname, 
