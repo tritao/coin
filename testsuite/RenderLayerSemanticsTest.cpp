@@ -1,5 +1,7 @@
 #include <Inventor/SoDB.h>
 #include <Inventor/SbViewportRegion.h>
+#include <Inventor/SoRenderManager.h>
+#include <Inventor/actions/SoAction.h>
 #include <Inventor/actions/SoIRRenderAction.h>
 #include <Inventor/nodes/SoCube.h>
 #include <Inventor/nodes/SoMaterial.h>
@@ -7,6 +9,15 @@
 #include <Inventor/nodes/SoSeparator.h>
 
 #include <iostream>
+
+namespace {
+
+void
+afterMain(void *, SoRenderManager *, SoAction *)
+{
+}
+
+}
 
 static int
 runTest()
@@ -49,6 +60,40 @@ runTest()
   action.apply(root);
 
   int result = 0;
+
+  // Manager layer ownership and callback registration are platform-neutral
+  // contracts. Keep them here so every build validates the public API even
+  // when hardware OpenGL integration tests are unavailable.
+  SoSeparator * backgroundRoot = new SoSeparator;
+  SoSeparator * foregroundRoot = new SoSeparator;
+  {
+    SoRenderManager manager;
+    manager.setRenderLayerRoot(
+      SoRenderManager::RENDER_LAYER_BACKGROUND, backgroundRoot);
+    manager.setRenderLayerRoot(
+      SoRenderManager::RENDER_LAYER_FOREGROUND, foregroundRoot);
+    manager.addAfterMainSceneCallback(afterMain, NULL);
+
+    if (manager.getRenderLayerRoot(
+          SoRenderManager::RENDER_LAYER_BACKGROUND) != backgroundRoot ||
+        manager.getRenderLayerRoot(
+          SoRenderManager::RENDER_LAYER_FOREGROUND) != foregroundRoot) {
+      std::cerr << "FAIL: render manager did not preserve layer roots"
+                << std::endl;
+      result = 1;
+    }
+
+    manager.setRenderLayerRoot(
+      SoRenderManager::RENDER_LAYER_FOREGROUND, NULL);
+    manager.removeAfterMainSceneCallback(afterMain, NULL);
+    if (manager.getRenderLayerRoot(
+          SoRenderManager::RENDER_LAYER_FOREGROUND) != NULL) {
+      std::cerr << "FAIL: render manager did not remove a layer root"
+                << std::endl;
+      result = 1;
+    }
+  }
+
   if (action.getDrawList().getNumCommands() != 3) {
     std::cerr << "FAIL: retained layer did not consistently skip invalid subtrees" << std::endl;
     result = 1;
