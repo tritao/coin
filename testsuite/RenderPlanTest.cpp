@@ -175,5 +175,30 @@ main()
   }
   result = check(sawEndBeforeClear && sawClear && sawDrawAfterClear,
                  "planner did not preserve a depth-clear barrier") && result;
+
+  first.material.shadingModel = SO_SHADING_UNLIT;
+  SoRenderCommand traitPeer = first;
+  result = check(
+    SoRenderCommandTraits::sameMaterialUniformState(first.material,
+                                                    traitPeer.material) &&
+    SoRenderCommandTraits::sameTextureBinding(first.material.texture,
+                                              traitPeer.material.texture) &&
+    SoRenderCommandTraits::sameBlendState(first.state.blend,
+                                          traitPeer.state.blend),
+    "identical commands did not share planner traits") && result;
+  traitPeer.material.diffuse = SbColor4f(0.25f, 0.5f, 0.75f, 1.0f);
+  result = check(
+    !SoRenderCommandTraits::sameMaterialUniformState(first.material,
+                                                     traitPeer.material) &&
+    SoRenderCommandTraits::sameInstancedMaterialState(first.material,
+                                                      traitPeer.material),
+    "instanced material traits did not isolate per-instance diffuse color") &&
+    result;
+  traitPeer.material.texture.revision++;
+  result = check(
+    !SoRenderCommandTraits::sameTextureBinding(first.material.texture,
+                                               traitPeer.material.texture),
+    "texture revision did not affect planner traits") && result;
+
   return result ? 0 : 1;
 }

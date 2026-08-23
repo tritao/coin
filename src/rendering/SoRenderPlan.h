@@ -8,6 +8,25 @@
 #include <vector>
 
 /*!
+  \class SoRenderCommandTraits
+  \brief Shared semantic comparisons used by planning and submission.
+
+  These comparisons describe which command state may be shared without
+  changing rendering semantics. Device capability checks remain backend-owned.
+*/
+class SoRenderCommandTraits {
+public:
+  static bool sameMaterialUniformState(const SoMaterialData & lhs,
+                                       const SoMaterialData & rhs);
+  static bool sameInstancedMaterialState(const SoMaterialData & lhs,
+                                         const SoMaterialData & rhs);
+  static bool sameTextureBinding(const SoTextureData & lhs,
+                                 const SoTextureData & rhs);
+  static bool sameBlendState(const SoBlendState & lhs,
+                             const SoBlendState & rhs);
+};
+
+/*!
   \struct SoPlannedDraw
   \brief One draw operation in a resolved retained-render plan.
 */

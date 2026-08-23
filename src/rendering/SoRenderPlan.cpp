@@ -3,6 +3,68 @@
 
 #include <algorithm>
 
+bool
+SoRenderCommandTraits::sameMaterialUniformState(const SoMaterialData & lhs,
+                                                const SoMaterialData & rhs)
+{
+  return lhs.diffuse == rhs.diffuse && lhs.ambient == rhs.ambient &&
+    lhs.specular == rhs.specular && lhs.emissive == rhs.emissive &&
+    lhs.shadingModel == rhs.shadingModel && lhs.shininess == rhs.shininess &&
+    lhs.texture.cacheKey == rhs.texture.cacheKey &&
+    lhs.texture.revision == rhs.texture.revision &&
+    lhs.texture.model == rhs.texture.model &&
+    lhs.texture.blendColor == rhs.texture.blendColor &&
+    lhs.textureAlphaIncludesOpacity == rhs.textureAlphaIncludesOpacity &&
+    lhs.vertexColorAlphaIncludesOpacity ==
+      rhs.vertexColorAlphaIncludesOpacity &&
+    lhs.twoSidedLighting == rhs.twoSidedLighting;
+}
+
+bool
+SoRenderCommandTraits::sameInstancedMaterialState(
+  const SoMaterialData & lhs, const SoMaterialData & rhs)
+{
+  return lhs.shadingModel == SO_SHADING_UNLIT &&
+    rhs.shadingModel == SO_SHADING_UNLIT &&
+    lhs.ambient == rhs.ambient && lhs.specular == rhs.specular &&
+    lhs.emissive == rhs.emissive && lhs.shininess == rhs.shininess &&
+    lhs.texture.cacheKey == rhs.texture.cacheKey &&
+    lhs.texture.revision == rhs.texture.revision &&
+    lhs.texture.model == rhs.texture.model &&
+    lhs.texture.blendColor == rhs.texture.blendColor &&
+    lhs.textureAlphaIncludesOpacity == rhs.textureAlphaIncludesOpacity &&
+    lhs.vertexColorAlphaIncludesOpacity ==
+      rhs.vertexColorAlphaIncludesOpacity &&
+    lhs.twoSidedLighting == rhs.twoSidedLighting;
+}
+
+bool
+SoRenderCommandTraits::sameTextureBinding(const SoTextureData & lhs,
+                                          const SoTextureData & rhs)
+{
+  return lhs.cacheKey == rhs.cacheKey && lhs.revision == rhs.revision &&
+    lhs.width == rhs.width && lhs.height == rhs.height &&
+    lhs.numComponents == rhs.numComponents &&
+    lhs.hasTransparency == rhs.hasTransparency &&
+    lhs.minFilter == rhs.minFilter && lhs.magFilter == rhs.magFilter &&
+    lhs.wrapS == rhs.wrapS && lhs.wrapT == rhs.wrapT &&
+    lhs.anisotropic == rhs.anisotropic &&
+    lhs.model == rhs.model && lhs.blendColor == rhs.blendColor;
+}
+
+bool
+SoRenderCommandTraits::sameBlendState(const SoBlendState & lhs,
+                                      const SoBlendState & rhs)
+{
+  return lhs.enabled == rhs.enabled &&
+    lhs.srcRGBFactor == rhs.srcRGBFactor &&
+    lhs.dstRGBFactor == rhs.dstRGBFactor &&
+    lhs.srcAlphaFactor == rhs.srcAlphaFactor &&
+    lhs.dstAlphaFactor == rhs.dstAlphaFactor &&
+    lhs.rgbEquation == rhs.rgbEquation &&
+    lhs.alphaEquation == rhs.alphaEquation;
+}
+
 void
 SoRenderPlanner::build(const SoDrawList & drawlist,
                        SoRenderPlan & plan) const
