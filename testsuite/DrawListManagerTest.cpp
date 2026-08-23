@@ -115,8 +115,8 @@ PixelRGB centerPixel(GLTestContext & context)
   return { pixels[offset], pixels[offset + 1], pixels[offset + 2] };
 }
 
-void addTransparentCube(SoSeparator * root, const float z,
-                        const SbColor & color)
+SoTranslation * addTransparentCube(SoSeparator * root, const float z,
+                                   const SbColor & color)
 {
   SoSeparator * group = new SoSeparator;
   SoTranslation * translation = new SoTranslation;
@@ -128,6 +128,7 @@ void addTransparentCube(SoSeparator * root, const float z,
   group->addChild(material);
   group->addChild(new SoCube);
   root->addChild(group);
+  return translation;
 }
 
 PixelRGB renderTransparentOrder(GLTestContext & context,
@@ -303,7 +304,9 @@ runTest()
         renderPhases.backendSubmissionNanoseconds == 0 ||
         renderPhases.backendFrameSetupNanoseconds == 0 ||
         renderPhases.backendResourcePreparationNanoseconds == 0 ||
-        renderPhases.backendCommandExecutionNanoseconds == 0) {
+        renderPhases.backendCommandExecutionNanoseconds == 0 ||
+        renderPhases.renderPlanConstructions != 1 ||
+        renderPhases.resourceValidations != 1) {
       std::cerr << "FAIL: retained render phases were not measured" << std::endl;
       result = 1;
     }
@@ -311,7 +314,9 @@ runTest()
     const SoRenderManager::RenderPhaseStatistics reusedRenderPhases =
       manager.getRenderPhaseStatistics();
     if (reusedRenderPhases.drawListRebuilds != 0 ||
-        reusedRenderPhases.drawListConstructionNanoseconds != 0) {
+        reusedRenderPhases.drawListConstructionNanoseconds != 0 ||
+        reusedRenderPhases.renderPlanConstructions != 0 ||
+        reusedRenderPhases.resourceValidations != 0) {
       std::cerr << "FAIL: unchanged retained frame was rebuilt" << std::endl;
       result = 1;
     }
@@ -321,7 +326,8 @@ runTest()
       manager.getRenderPhaseStatistics();
     if (transformPhases.drawListRebuilds != 0 ||
         transformPhases.incrementalCommandUpdates != 1 ||
-        transformPhases.planConstructionNanoseconds != 0) {
+        transformPhases.renderPlanConstructions != 0 ||
+        transformPhases.resourceValidations != 0) {
       std::cerr << "FAIL: isolated translation did not patch its retained "
                    "command while preserving the render plan" << std::endl;
       result = 1;
@@ -344,9 +350,14 @@ runTest()
       manager.getRenderPhaseStatistics();
     if (materialPhases.drawListRebuilds != 0 ||
         materialPhases.incrementalCommandUpdates != 1 ||
-        materialPhases.planConstructionNanoseconds != 0) {
+        materialPhases.renderPlanConstructions != 0 ||
+        materialPhases.resourceValidations != 0) {
       std::cerr << "FAIL: isolated diffuse color did not patch its retained "
-                   "command while preserving the render plan" << std::endl;
+                   "command while preserving the render plan (rebuilds="
+                << materialPhases.drawListRebuilds << ", updates="
+                << materialPhases.incrementalCommandUpdates << ", plans="
+                << materialPhases.renderPlanConstructions << ", resources="
+                << materialPhases.resourceValidations << ")" << std::endl;
       result = 1;
     }
     cubeMaterial->diffuseColor.setValue(0.7f, 0.3f, 0.2f);
@@ -418,6 +429,8 @@ runTest()
     }
     if (geometryPhases.drawListRebuilds != 0 ||
         geometryPhases.incrementalCommandUpdates != 1 ||
+        geometryPhases.renderPlanConstructions != 1 ||
+        geometryPhases.resourceValidations != 1 ||
         incrementalGeometryPixels != rebuiltGeometryPixels) {
       std::cerr << "FAIL: unique geometry resource did not update "
                    "transactionally (rebuilds="
@@ -735,6 +748,35 @@ runTest()
     std::cerr << "FAIL: manager transparent scheduling depends on insertion order" << std::endl;
     result = 1;
   }
+
+  SoSeparator * transparentMutationRoot = new SoSeparator;
+  transparentMutationRoot->ref();
+  SoLightModel * transparentLightModel = new SoLightModel;
+  transparentLightModel->model = SoLightModel::BASE_COLOR;
+  transparentMutationRoot->addChild(transparentLightModel);
+  SoTranslation * transparentTranslation = addTransparentCube(
+    transparentMutationRoot, -2.0f, SbColor(1.0f, 0.0f, 0.0f));
+  SoRenderManager transparentMutationManager;
+  transparentMutationManager.setViewportRegion(testViewport);
+  transparentMutationManager.setSceneGraph(transparentMutationRoot);
+  transparentMutationManager.setCamera(camera);
+  transparentMutationManager.setRenderPipeline(
+    SoRenderManager::RenderPipeline::DRAW_LIST);
+  transparentMutationManager.render(TRUE, TRUE);
+  transparentMutationManager.render(TRUE, TRUE);
+  transparentTranslation->translation.setValue(0.0f, 0.0f, -2.1f);
+  transparentMutationManager.render(TRUE, TRUE);
+  const SoRenderManager::RenderPhaseStatistics transparentMutationPhases =
+    transparentMutationManager.getRenderPhaseStatistics();
+  if (transparentMutationPhases.drawListRebuilds != 0 ||
+      transparentMutationPhases.incrementalCommandUpdates != 1 ||
+      transparentMutationPhases.renderPlanConstructions != 1 ||
+      transparentMutationPhases.resourceValidations != 0) {
+    std::cerr << "FAIL: transparent translation did not rebuild only its "
+                 "render plan" << std::endl;
+    result = 1;
+  }
+  transparentMutationRoot->unref();
 
   // Reinitialization and replacement must not delete GL names owned by the
   // new context while disposing of resources created in the old context.
