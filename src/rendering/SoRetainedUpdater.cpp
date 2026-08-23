@@ -18,7 +18,7 @@ enum class UpdateKind {
   Unsupported,
   Switch,
   Translation,
-  DiffuseColor,
+  LegacyDiffuseColor,
   Geometry
 };
 
@@ -47,7 +47,7 @@ classify(const SoRetainedNotification & notification,
            notification.node->isOfType(SoMaterial::getClassTypeId()) &&
            notification.field ==
              &static_cast<SoMaterial *>(notification.node)->diffuseColor) {
-    return UpdateKind::DiffuseColor;
+    return UpdateKind::LegacyDiffuseColor;
   }
   else if (notification.node->isOfType(SoCoordinate3::getClassTypeId()) &&
            notification.field ==
@@ -65,7 +65,7 @@ invalidationFor(UpdateKind kind, bool transformAffectsPlan)
     return transformAffectsPlan
       ? SoRenderInvalidation::Content | SoRenderInvalidation::Plan
       : SoRenderInvalidation::Content;
-  case UpdateKind::DiffuseColor:
+  case UpdateKind::LegacyDiffuseColor:
     return SoRenderInvalidation::Content;
   case UpdateKind::Switch:
     return SoRenderInvalidation::Content | SoRenderInvalidation::Plan;
@@ -142,7 +142,7 @@ SoRetainedUpdater::update(
       result.invalidation = invalidationFor(kind, affectsPlan);
     }
   }
-  else if (kind == UpdateKind::DiffuseColor) {
+  else if (kind == UpdateKind::LegacyDiffuseColor) {
     result.updatedCommands =
       action.updateCommandDiffuseColorsForStatePaths(paths);
   }
