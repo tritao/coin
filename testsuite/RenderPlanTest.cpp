@@ -114,6 +114,65 @@ main()
                  "planner did not schedule transparent commands back-to-front") &&
     result;
 
+  SoDrawList groupedDrawList;
+  SoRenderCommand surfaceA1;
+  SoRenderCommand edge;
+  SoRenderCommand edge2;
+  SoRenderCommand surfaceB;
+  SoRenderCommand surfaceA2;
+  surfaceA1.geometry.topology = SO_TOPOLOGY_TRIANGLES;
+  surfaceA1.geometry.cacheKey = 10;
+  surfaceA2.geometry = surfaceA1.geometry;
+  surfaceB.geometry.topology = SO_TOPOLOGY_TRIANGLES;
+  surfaceB.geometry.cacheKey = 20;
+  edge.geometry.topology = SO_TOPOLOGY_LINES;
+  edge.geometry.cacheKey = 5;
+  edge2.geometry = edge.geometry;
+  groupedDrawList.addCommand(surfaceA1);
+  groupedDrawList.addCommand(edge);
+  groupedDrawList.addCommand(surfaceB);
+  groupedDrawList.addCommand(edge2);
+  groupedDrawList.addCommand(surfaceA2);
+  planner.build(groupedDrawList, plan);
+  std::vector<uint32_t> groupedDraws;
+  for (int i = 0; i < plan.getNumOperations(); ++i) {
+    if (plan.getOperation(i).type == SoRenderOperationType::DRAW) {
+      groupedDraws.push_back(plan.getOperation(i).commandIndex);
+    }
+  }
+  result = check(groupedDraws.size() == 5 && groupedDraws[0] == 0 &&
+                 groupedDraws[1] == 1 && groupedDraws[2] == 2 &&
+                 groupedDraws[3] == 3 && groupedDraws[4] == 4,
+                 "planner reordered non-adjacent opaque commands") &&
+    result;
+
+  const SoDepthFunction orderSensitiveDepthFunctions[] = {
+    SO_DEPTH_LESS, SO_DEPTH_LEQUAL, SO_DEPTH_EQUAL, SO_DEPTH_ALWAYS
+  };
+  for (const SoDepthFunction function : orderSensitiveDepthFunctions) {
+    SoDrawList depthDrawList;
+    SoRenderCommand depthFirst = surfaceA1;
+    SoRenderCommand depthSecond = surfaceB;
+    SoRenderCommand depthThird = surfaceA2;
+    depthFirst.state.depth.func = function;
+    depthSecond.state.depth.func = function;
+    depthThird.state.depth.func = function;
+    depthDrawList.addCommand(depthFirst);
+    depthDrawList.addCommand(depthSecond);
+    depthDrawList.addCommand(depthThird);
+    planner.build(depthDrawList, plan);
+    std::vector<uint32_t> depthDraws;
+    for (int i = 0; i < plan.getNumOperations(); ++i) {
+      if (plan.getOperation(i).type == SoRenderOperationType::DRAW) {
+        depthDraws.push_back(plan.getOperation(i).commandIndex);
+      }
+    }
+    result = check(depthDraws.size() == 3 && depthDraws[0] == 0 &&
+                   depthDraws[1] == 1 && depthDraws[2] == 2,
+                   "planner changed opaque depth-test insertion order") &&
+      result;
+  }
+
   // The model origin is not a geometry depth. These objects deliberately
   // place their origins on opposite sides of their actual local geometry.
   SoDrawList boundsDrawList;

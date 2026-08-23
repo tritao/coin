@@ -16,6 +16,17 @@
 */
 class SoRenderCommandTraits {
 public:
+  enum class PlanningClass : uint8_t {
+    OPAQUE_INSERTION_ORDER,
+    TRANSPARENT_DEPTH_SORTED
+  };
+
+  enum class OpaqueGroup : uint8_t {
+    TRIANGLES,
+    NATIVE_LINES,
+    NONE
+  };
+
   static bool sameMaterialUniformState(const SoMaterialData & lhs,
                                        const SoMaterialData & rhs);
   static bool sameInstancedMaterialState(const SoMaterialData & lhs,
@@ -24,6 +35,10 @@ public:
                                  const SoTextureData & rhs);
   static bool sameBlendState(const SoBlendState & lhs,
                              const SoBlendState & rhs);
+  static OpaqueGroup classifyOpaqueGroup(const SoRenderCommand & command,
+                                         const SoGeometryDesc & geometry);
+  static PlanningClass classifyPlanning(const SoRenderCommand & command);
+  static bool transformAffectsPlanning(const SoRenderCommand & command);
 };
 
 /*!
@@ -48,9 +63,10 @@ struct SoRenderOperation {
 
   The plan owns no command data. It contains only stable indices into the
   source SoDrawList and is therefore cheap to rebuild for each invocation.
-  Opaque commands retain insertion order; transparent commands are resolved
-  back-to-front after opaque commands within each depth segment.  The plan
-  also owns the stage and depth-barrier execution sequence.
+  Opaque commands retain insertion order. Adjacent compatible triangle or
+  native-line commands may still be submitted as one instanced batch by the
+  backend. Transparent commands are resolved back-to-front within each depth
+  segment. The plan also owns the stage and depth-barrier execution sequence.
 */
 class SoRenderPlan {
 public:
