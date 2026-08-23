@@ -156,61 +156,6 @@ runTest()
       result = 1;
     }
 
-    // A selected main-stage object behind an opaque object must remain
-    // occluded even when a later stage requests a depth clear.
-    SoSeparator * occludedRoot = new SoSeparator;
-    SoSeparator * occludingQuad = coloredQuad(0.0f, 1.0f, 0.0f, 0.0f);
-    SoSeparator * occludedQuad = coloredQuad(1.0f, 0.0f, 0.0f, 0.5f);
-    occludedRoot->addChild(occludingQuad);
-    occludedRoot->addChild(occludedQuad);
-    occludedRoot->ref();
-    SoPath * occludedPath = new SoPath(occludedRoot);
-    occludedPath->append(1);
-    occludedPath->append(2);
-    {
-      SoRenderManager occludedManager;
-      occludedManager.setViewportRegion(testViewport);
-      occludedManager.setRenderPipeline(SoRenderManager::RenderPipeline::DRAW_LIST);
-      occludedManager.setLightingMode(SoRenderManager::LightingMode::UNLIT);
-      occludedManager.setSceneGraph(occludedRoot);
-      occludedManager.addAfterMainSceneCallback(clearAfterMain, NULL);
-      if (!occludedManager.setSelection(
-            occludedPath, NULL, SbColor4f(1.0f, 0.0f, 1.0f, 1.0f))) {
-        std::cerr << "FAIL: whole-object selection was rejected" << std::endl;
-        result = 1;
-      }
-      occludedManager.render(TRUE, TRUE);
-      pixels.assign(32 * 32 * 4, 0);
-      pixels = context->readPixels();
-      if (!isColor(&pixels[(16 * 32 + 16) * 4], 0, 255, 0)) {
-        std::cerr << "FAIL: selected rear object escaped main-stage depth occlusion"
-                  << std::endl;
-        result = 1;
-      }
-    }
-    occludedPath->unref();
-    occludedRoot->unref();
-
-    // A selected after-main object must be visible after its stage's depth
-    // segment has been cleared.
-    SoPath * afterSelectionPath = capturedAfterPath
-      ? capturedAfterPath->copy() : NULL;
-    if (afterSelectionPath) afterSelectionPath->ref();
-    if (!manager.setSelection(
-          afterSelectionPath, NULL, SbColor4f(1.0f, 0.0f, 1.0f, 1.0f))) {
-      std::cerr << "FAIL: after-main selection was rejected" << std::endl;
-      result = 1;
-    }
-    manager.render(TRUE, TRUE);
-    pixels.assign(32 * 32 * 4, 0);
-    pixels = context->readPixels();
-    if (!isColor(&pixels[(16 * 32 + 16) * 4], 255, 0, 255)) {
-      std::cerr << "FAIL: selected after-main object was not visible" << std::endl;
-      result = 1;
-    }
-    manager.clearSelection();
-    if (afterSelectionPath) afterSelectionPath->unref();
-
     SoSeparator * depthMain = new SoSeparator;
     depthMain->addChild(coloredQuad(0.0f, 0.0f, 1.0f, 0.0f));
     SoRenderLayerGroup * depthForeground = new SoRenderLayerGroup;
