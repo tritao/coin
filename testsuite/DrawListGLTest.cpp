@@ -179,16 +179,37 @@ runTest()
   const SoRenderParams params = renderParams();
   int result = 0;
   SoDrawList empty;
+
+  // GLTestContext renders through an application-owned offscreen FBO. Keep
+  // this assertion explicit: the retained backend consumes the framebuffer
+  // that is currently bound; it neither assumes framebuffer zero nor takes
+  // ownership of the application's frame target.
+  GLint applicationFramebuffer = 0;
+  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &applicationFramebuffer);
+  if (applicationFramebuffer == 0) {
+    std::cerr << "FAIL: DrawList test did not start on its application-owned "
+              << "framebuffer" << std::endl;
+    result = 1;
+  }
   if (!renderWithPlan(backend, empty, params)) {
     std::cerr << "FAIL: empty draw list was not accepted" << std::endl;
     result = 1;
   }
 
-  if (!renderWithPlan(backend, drawlist, params)) {
+  const SbBool rendered = renderWithPlan(backend, drawlist, params);
+  if (!rendered) {
     std::cerr << "FAIL: indexed draw-list execution failed" << std::endl;
     result = 1;
   }
-  else {
+
+  GLint framebufferAfterRender = 0;
+  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &framebufferAfterRender);
+  if (framebufferAfterRender != applicationFramebuffer) {
+    std::cerr << "FAIL: retained rendering replaced the application-owned "
+              << "draw framebuffer" << std::endl;
+    result = 1;
+  }
+  if (rendered) {
     glFinish();
     const std::vector<uint8_t> pixels = readPixels(context);
     if (!nearColor(pixelAt(pixels, 4, 16), 220, 220, 220)) {
