@@ -259,10 +259,14 @@ struct SoPixelRasterData {
 
 /*!
   \struct SoMaterialData
-  \brief Snapshot of the logical Inventor material state for one draw call.
+  \brief Resolved material payload for one draw call.
 
-  Texture pixels are embedded in the IR as borrowed data; the producer owns the
-  storage and keeps it alive until the backend finishes consuming the frame.
+  This is the resolved state required to reproduce today's retained Inventor
+  rendering semantics. It is not a universal material schema: future material
+  work should evolve the abstraction into resolved material resources rather
+  than append every authoring model's parameters to this command payload.
+  Texture pixels are embedded as borrowed data; the producer owns the storage
+  and keeps it alive until the backend finishes consuming the frame.
 */
 struct SoMaterialData {
   SbVec4f  diffuse = {0.8f, 0.8f, 0.8f, 1.0f};
@@ -442,7 +446,10 @@ enum SoLightType : uint8_t {
 
 /*!
   \struct SoLightData
-  \brief View-space light description used by the render backend.
+  \brief View-space light description for resolved legacy lighting.
+
+  View space is part of today's LegacyInventor payload, not a permanent
+  requirement for future light resources or render passes.
 */
 struct SoLightData {
   SoLightType type = SO_LIGHT_DIRECTIONAL;
@@ -456,7 +463,10 @@ struct SoLightData {
 
 /*!
   \struct SoLightingData
-  \brief Shared lighting setup referenced by render commands.
+  \brief Resolved LegacyInventor lighting setup referenced by render commands.
+
+  ambient preserves Coin's legacy ambient-light semantics. It is not an
+  environment-lighting or image-based-lighting representation.
 */
 struct SoLightingData {
   SbVec3f ambient = SbVec3f(0.2f, 0.2f, 0.2f);
